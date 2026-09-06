@@ -63,9 +63,9 @@ stateDiagram-v2
   registered --> importing: POST import {source, token}
   importing --> verifying: import done
   importing --> failed: import failed
-  verifying --> mirrored: refs and rev-list equal on both sides
+  verifying --> mirrored: every reference equal on both sides
   verifying --> failed: any difference
-  mirrored --> cut_over: prior host freezes its copy, redirects, unfreezes on Origo
+  mirrored --> cut_over: prior host freezes its copy, verifies once more, redirects
   cut_over --> [*]
   failed --> importing: retry after the cause is fixed
 ```
@@ -73,10 +73,10 @@ stateDiagram-v2
 | Phase | Origo | Prior host |
 |---|---|---|
 | registered | `POST /v1/repos` with the prior host's id for the repository, so the id never changes across the migration (spec 003) | records the Origo repository id on its own record |
-| importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: 256 MiB batches, 30 minute budget, `transfer.fsckObjects`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
-| verifying | `verify` (below) compares the two sides | none |
-| mirrored | serves reads; writes are allowed but the prior host has not yet sent any | keeps serving both |
-| cut_over | `POST /v1/repos/{id}/unfreeze` if frozen; from now on the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; its mounts clone from Origo |
+| importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: one entry, 30 minute budget, `transfer.fsckObjects`, the source host in `ORIGO_EGRESS_ALLOW`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
+| verifying | `verify` (below) compares the two sides and records the result in `meta` | none |
+| mirrored | serves reads; writes are allowed but the prior host has not yet sent any; Origo's copy is never frozen by this protocol | keeps serving both |
+| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; its mounts clone from Origo |
 
 A repository whose verification finds a difference is imported again
 after the operator fixes the cause; the import refuses a non-empty
@@ -94,32 +94,57 @@ second is the default because it keeps the failed attempt for inspection.
 |---|---|
 | `Origo-Source-Token` | the bearer Origo presents to the source for `verify` and `import`; never logged |
 
-The node runs `git ls-remote`
-against the source and against its own copy and compares every reference
-by name and hash, then `git rev-list --all --count` and the set of
-reachable object ids on both sides for repositories under 10 000
-objects, or the reference comparison alone above that with the count as
-a second check. Response:
+The node runs `git ls-remote --end-of-options <source>` with the token
+in the environment the way spec 019's import does, and `git
+for-each-ref` on its own copy, and compares every reference by name and
+hash; `equal` is true when the two maps are identical. It then counts
+the reachable objects on its own side with `git rev-list --objects
+--all` and reports the count, which the operator compares with the
+prior host's own figure; nothing is counted on the source, because a
+count over a remote needs a clone. Response:
 
 ```json
-{"equal": true, "refs": {"source": 42, "origo": 42, "differing": []},
- "objects": {"source": 18211, "origo": 18211}, "checked_at": "…"}
+{"equal": true,
+ "refs": {"source": 42, "origo": 42, "differing": [{"name": "refs/heads/main", "source": "<sha>", "origo": "<sha>"}]},
+ "objects": {"origo": 18211}, "checked_at": "…"}
 ```
 
-`equal: false` lists every differing reference with both hashes. The
-check is read-only on both sides, bounded by the 30 second read budget
-of spec 009, and idempotent.
+`differing` lists every reference present on one side only or with two
+hashes, with the missing side's hash empty. The node then writes
+`verified_at` and `verified_equal` into `meta` (spec 004), which `GET
+/v1/repos/{id}` reports (null when never verified); that is the state
+`origod migrate` resumes from. The check is read-only on both sides,
+bounded by the 30 second read budget of spec 009, and idempotent.
 
 ### Batches
 
-The operator drives many repositories with `origod migrate`, a
-subcommand of the binary that reads a manifest of `{id, owner, slug,
-source, token_env}` lines, runs the phases above concurrently, writes a
-report line per repository
-as it finishes, and exits non-zero when any repository is `failed`. It
-resumes: a repository already `mirrored` or `cut_over` is skipped by
-reading Origo's state. Tokens come from the environment variables the
-manifest names, never from the manifest itself.
+The operator drives many repositories with `origod migrate -manifest
+<file> -report <file>`, a subcommand of the binary that reads the
+manifest, drives each repository from `registered` to `mirrored`
+concurrently, writes a report line per repository as it finishes, and
+exits non-zero when any repository is `failed`. Cut-over is the prior
+host's step and is not driven by the command.
+
+The manifest is JSON lines, one object per repository:
+
+```json
+{"id": "<uuid>", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME"}
+```
+
+Tokens come from the environment variables `token_env` names, never
+from the manifest itself. The report is JSON lines, one object per
+repository in finishing order:
+
+```json
+{"id": "<uuid>", "owner": "acme", "slug": "api", "state": "mirrored", "refs": 42, "objects": 18211, "seconds": 31.4, "error": ""}
+```
+
+`state` is `mirrored`, `skipped`, or `failed`, and `error` carries the
+failing step and Origo's error code for `failed`. The command resumes
+from Origo's state and nothing else: `GET /v1/repos/{id}` answering
+404 means `registered` is needed, `GET /v1/repos/{id}/import` says
+whether the import ran, and `verified_at` with `verified_equal: true`
+means `mirrored`, which is reported as `skipped` on a second run.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -138,7 +163,7 @@ polling.
 
 | Event | Extra fields |
 |---|---|
-| `verified` | `equal`, `refs`, `objects` as in the `verify` response |
+| `verified` | `equal`, `refs`, `objects`, `checked_at` as in the `verify` response |
 
 ### Worked example: the Latere data plane
 
@@ -162,15 +187,18 @@ host's data model.
 
 ## Acceptance criteria
 
-- `verify` on an identical fixture returns `equal: true` with matching
-  counts, and after one extra commit on the source returns `equal: false`
-  naming that reference with both hashes (proposed: `internal/api`,
-  `TestVerifyDetectsADivergedReference`).
-- `origod migrate` over a manifest of 20 fixture repositories with
-  parallelism 4 reaches `mirrored` for all 20, writes one report line
-  each, skips all 20 on a second run, and exits non-zero when one source
-  is unreachable, naming it (proposed: `cmd/origod`,
-  `TestMigrateBatchIsResumableAndReportsFailures`).
+- `verify` on an identical fixture returns `equal: true` with the
+  reference counts equal and `objects.origo` equal to the fixture's
+  reachable-object count, writes `verified_at` and `verified_equal`
+  into `meta`, and after one extra commit on the source returns
+  `equal: false` naming that reference with both hashes (proposed:
+  `internal/api`, `TestVerifyDetectsADivergedReference`).
+- `origod migrate` over a manifest of 20 fixture repositories served by
+  the stub source of spec 019 with parallelism 4 reaches `mirrored` for
+  all 20, writes one report line each in the documented shape, reports
+  all 20 as `skipped` on a second run without importing again, and
+  exits non-zero when one source is unreachable, naming it in `error`
+  (proposed: `cmd/origod`, `TestMigrateBatchIsResumableAndReportsFailures`).
 - A write on the source between import and verification is detected by
   verification, and after a fresh id and a second import the repository
   reaches `mirrored` (proposed: `test/e2e`, `TestMigrationCatchesALateWrite`).
@@ -179,6 +207,8 @@ host's data model.
   (proposed: `test/e2e`, `TestOldCloneURLRedirectsToOrigo`).
 - `verified` events are delivered with the documented payload
   (proposed: `internal/events`, `TestVerifiedEventPayload`).
-- `docs/migration.md` walks the operator through one repository and one
-  batch, and is exercised by a maintainer once before the first migration
-  at Latere.
+- The shell blocks of `docs/migration.md`, one repository and then one
+  batch, run unchanged against the kind stack of spec 013 and end with
+  `mirrored` for every repository (proposed: `test/e2e`,
+  `TestMigrationDocCommandsRun`, which extracts the fenced `sh` blocks
+  and runs them with the stack's URLs in the environment).
