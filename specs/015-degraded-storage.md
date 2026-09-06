@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, docs/operations.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -47,16 +47,27 @@ failure toward the breaker.
 
 ### Breaker per operation class
 
-`internal/wal` wraps the `Store` in two `circuitbreaker.BackoffBreaker`
-from `latere.ai/x/pkg/circuitbreaker` (`NewBackoff(BackoffConfig{BaseDelay: 1s, MaxDelay: 60s})`):
-one for reads (`Get`, `Head`, `List`) and one for writes (`Put`,
-`Create`, `Delete`), so a write-side outage does not stop reads the
-cache can answer. A breaker opens on the 5th consecutive failure or
-timeout, stays open for the backoff (1 s, doubled per reopening, capped
-at 60 s, no jitter), and half-opens with one probe request; a success
-closes it. `origo_storage_breaker_state{class}` reports 0, 1, or 2, and
-`OrigoBreakerOpen` (spec 011) fires. `origo_storage_ops_total{op,result}`
-and `origo_storage_seconds{op}` are recorded on every call.
+`internal/wal` wraps the `Store` in two `circuitbreaker.Breaker` from
+`latere.ai/x/pkg/circuitbreaker`, each `circuitbreaker.New(5,
+30*time.Second)`: one for reads (`Get`, `Head`, `List`) and one for
+writes (`Put`, `Create`, `Delete`), so a write-side outage does not
+stop reads the cache can answer. The wrapper calls `Allow` before every
+`Store` call and refuses at once when it answers false; after the call
+it records one success or one failure. One `Store` call is one count
+whatever `pkg/s3` did inside it: its three attempts under
+`DefaultRetry` are one failure when the last attempt fails, and a
+timeout, a transport error, and a 5xx are failures, while a 404, a
+412, and a 304 are successes. The breaker does what the package does:
+it opens on the 5th consecutive failure, stays open for 30 seconds,
+then `Allow` admits one probe and answers false to everyone else until
+the probe reports; a success closes the breaker and a failure reopens
+it for another 30 seconds. There is no doubling.
+`origo_storage_breaker_state{class}` reports the package's `State`: 0
+closed, 1 open, 2 half-open, and `OrigoBreakerOpen` (spec 011) fires.
+The wrapper records the time it saw the breaker open so it can send
+`Retry-After` as the whole seconds of the 30 that remain, at least 1.
+`origo_storage_ops_total{op,result}` and `origo_storage_seconds{op}`
+are recorded on every call.
 
 ### Reads while degraded
 
@@ -82,14 +93,17 @@ counts them.
 
 A push needs the entry written and the index created; neither can be
 faked. With the write breaker open, `info/refs?service=git-receive-pack`
-answers the client before it uploads a pack: 503 `storage_unavailable`
-with `Retry-After` set to the breaker's remaining backoff in whole
-seconds and the sideband line `storage_unavailable: <the sentence of
-spec 003>`, so a client does not spend a minute uploading a pack that
-cannot land. A pack already spooled when
-the breaker opens is committed under the breaker's half-open probes for
-at most 60 seconds, then refused the same way; the entry, if written, is
-an orphan the sweeper removes.
+refuses the client before it uploads a pack, in the one form git shows
+the user: HTTP 200 with `Content-Type:
+application/x-git-receive-pack-advertisement`, `Retry-After` set to
+the breaker's remaining open time in whole seconds, and a body of the
+`# service=git-receive-pack` line, a flush, and one `ERR
+storage_unavailable: <the sentence of spec 003>` pkt-line. Git prints
+`fatal: remote error: storage_unavailable: …` and sends no pack; a 503
+would show the user only the status. A pack already spooled when the
+breaker opens is committed under the breaker's half-open probes for at
+most 60 seconds, then refused with the same line in the sideband; the
+entry, if written, is an orphan the sweeper removes.
 
 ### Partial failure
 
@@ -124,15 +138,21 @@ Queueing pushes for later commit.
 - With the bucket unreachable, a warm repository clones with
   `Origo-Stale` for 5 minutes (fake clock) and answers 503
   `storage_unavailable` afterwards; a cold one answers 503 at once; a
-  push is refused at `info/refs` with the documented sideband message
-  before any pack is uploaded (proposed: `internal/httpgit`,
-  `TestReadBreakerServesStaleThenRefuses`, `TestWriteBreakerRefusesBeforeUpload`).
+  push is refused at `info/refs` with the `ERR` pkt-line before any
+  pack is uploaded (proposed: `internal/httpgit`,
+  `TestReadBreakerServesStaleThenRefuses`).
 - With every store call answering after 15 seconds, reads and writes
-  fail after `ORIGO_STORAGE_TIMEOUT` and the breaker opens on the 5th
-  failure; after the store recovers, the first request after the
-  half-open probe is served without `Origo-Stale` (proposed:
-  `internal/wal`, `TestBreakerOpensOnTimeoutsAndRecovers` with
-  `MemStore.SetFault`).
+  fail after `ORIGO_STORAGE_TIMEOUT`, one call with three internal
+  attempts counts one failure, and the breaker opens on the 5th; after
+  30 seconds with a fake clock one probe is admitted while a concurrent
+  call is refused, a failed probe reopens for 30 seconds and not 60,
+  and after the store recovers the first request after a successful
+  probe is served without `Origo-Stale` (proposed: `internal/wal`,
+  `TestBreakerOpensOnTimeoutsAndRecovers` with `MemStore.SetFault`).
+- With the write breaker open, `info/refs?service=git-receive-pack`
+  answers 200 with the `ERR` pkt-line and `Retry-After`, and `git push`
+  exits with the sentence in `remote error` having sent no pack
+  (proposed: `internal/httpgit`, `TestWriteBreakerRefusesBeforeUpload`).
 - A missing pack object makes that repository 503 `repository_unavailable`
   with `details.key`, increments `origo_log_integrity_errors_total`, and
   leaves another repository served (proposed: `internal/repo`,
