@@ -16,24 +16,28 @@ author: changkun
 
 ## Overview
 
-Placeholder, not scheduled. A platform that automates changes across many
-repositories (the migration tooling Latere's hosting product plans, a
-review flow, a bot fixing a dependency) wants to create a commit without
-cloning: write files at a path on a branch, merge one branch into another
-with a fast-forward or a merge commit, cherry-pick, revert. Every one of
-these is a `git` plumbing sequence on the node's warm copy that produces
-a pack and a reference transaction, which is exactly what a push produces,
-so they commit through the same log path and appear as pushes with the
-service as actor and the requesting subject in `act`. Fixed now so the
-design space stays open: no operation runs user code; conflicts are
-reported, never resolved automatically; every operation is one entry;
-and the API shape is `POST /v1/repos/{id}/commits` with a body naming the
-branch, the expected parent (so a stale caller gets `non_fast_forward`
-rather than clobbering), and the changes.
+Placeholder, not scheduled. A platform that automates changes across
+many repositories (a migration tool, a review flow, a bot fixing a
+dependency) wants to create a commit without cloning: write files at a
+path on a branch, merge one branch into another with a fast-forward or a
+merge commit, cherry-pick, revert. Every one of these is a git plumbing
+sequence on the node's warm copy that produces a pack and a reference
+transaction, which is exactly what a push produces, so they commit
+through `Log.Commit` of spec 004 and appear as `push` entries with the
+service as actor and the requesting subject in `act` (spec 007). Fixed
+now so the design space stays open: no operation runs user code;
+conflicts are reported, never resolved automatically; every operation is
+one entry; and the API shape is a `POST` to `/v1/repos/{id}/commits` with a
+body naming the branch, the expected parent (so a stale caller gets 409
+`non_fast_forward` rather than clobbering), and the changes.
 
 ## Design
 
 To be written when a consumer needs it.
+
+## Not in this spec
+
+Everything until it is drafted.
 
 ## Acceptance criteria
 
