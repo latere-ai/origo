@@ -4,7 +4,7 @@ status: in-progress
 track: infra
 depends_on:
   - specs/001-architecture.md
-affects: [internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
+affects: [internal/contract/, internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-06
@@ -16,164 +16,226 @@ author: changkun
 ## Overview
 
 This is the document a platform integrating Origo reads. It names every
-endpoint, header, and behaviour a consumer may rely on, and nothing else
-is promised. A consumer that codes against this contract can run its
-tests against the conformance stub (spec 013) and against a live Origo
-and get the same answers.
+endpoint, header, capability, and error a consumer may rely on, and
+nothing else is promised. A consumer that codes against this contract can
+run its tests against the conformance stub (spec 013) and against a live
+Origo and get the same answers. Specs 007, 008, 009, 010, and 019 add
+surfaces to the contract; each owns its own table, and this document
+points at them so the contract is one document with five appendices.
 
 ## Current state
 
-Latere's hosting product codes against this contract with its data plane
-product as the interim provider, so the contract is fixed before Origo
-ships its first release.
+Phase 1 serves the part of this contract one node can serve without
+identity: smart HTTP in both URL forms from `internal/httpgit`, the
+repository lifecycle from `internal/api`, the error envelope and the
+`Origo-Contract` header from `internal/contract` over
+`latere.ai/x/pkg/httpjson`. Identity is the static bearer of spec 002's
+Outcome. The Outcome below lists what is served and what is promised.
 
 ## Design
 
 ### Identity
 
-Every request carries `Authorization: Bearer <token>`, a JWT from one of
-the configured OIDC issuers, or git's basic auth with any username and the
-token as the password. Origo verifies signature, issuer, expiry, and
-audience `origo`. A service token may carry an `act` claim naming the
-subject it acts for; the effective subject is then that one, and the
-service is recorded as the actor (spec 007). Origo never decides who may
-do what: it asks the consumer's authorizer with the effective subject,
-the repository, and the action (`read`, `write`, `admin`), and caches
-the answer for 60 seconds.
+Every request carries `Authorization: Bearer <token>` or git's basic auth
+with any username and the token as the password. From spec 007 on, the
+token is a JWT from one of the configured OIDC issuers with audience
+`origo`, or a repository-bound token Origo minted; a service token may
+carry an `act` claim naming the subject it acts for, and the service is
+then recorded as the actor. Origo never decides who may do what: it asks
+the consumer's authorizer with the effective subject, the repository, and
+the action (`read`, `write`, `admin`), and caches the answer for the
+`ttl` the authorizer returns, 60 seconds by default (spec 007). In phase
+1 the token is the one value of `ORIGO_DEV_TOKEN` and every request
+carries the subject `dev`.
+
+A request without a valid token answers 401 `unauthenticated` with
+`WWW-Authenticate: Basic realm="origo"`, on every path including
+`info/refs`, so git prompts for credentials.
 
 ### Repository lifecycle
 
-| Method | Path | Body | Result |
+A repository is identified by a lower-case UUID the consumer chooses,
+matching `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
+unique forever: an id is never reused, even after deletion and purge.
+`owner` and `slug` are labels Origo stores for URLs and never interprets,
+matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, not `.` or `..`; the owners
+`r` and `v1` are reserved because both are path segments of the public
+surface. Bodies are JSON, at most 64 KiB, unknown fields refused.
+
+| Method | Path | Request | Response |
 |---|---|---|---|
-| POST | `/v1/repos` | `{"id": "<uuid>", "owner": "<opaque>", "slug": "<name>", "default_branch": "main"}` | 201; `id` chosen by the consumer, unique forever; `owner` and `slug` are labels Origo stores for URLs and never interprets |
-| GET | `/v1/repos/{id}` | | `{id, owner, slug, default_branch, size_bytes, head, updated_at}` |
-| PATCH | `/v1/repos/{id}` | `{"owner", "slug", "default_branch"}` any subset | renames take effect at once; the old URL answers 404 |
-| DELETE | `/v1/repos/{id}` | | 202; objects are deleted from the log after a 7 day hold during which the consumer may undelete |
-| POST | `/v1/repos/{id}/undelete` | | 200 within the hold |
+| POST | `/v1/repos` | `{"id", "owner", "slug", "default_branch"}`; `default_branch` defaults to `main` and must be a valid branch name | 201 with the representation; 409 `repo_exists` on a duplicate id or a taken `owner/slug`; 400 `invalid_request` |
+| GET | `/v1/repos/{id}` | | 200 `{"id", "owner", "slug", "default_branch", "size_bytes", "head", "updated_at"}`; 404 `repo_not_found` for an unknown, malformed, or deleted id |
+| PATCH | `/v1/repos/{id}` | any subset of `{"owner", "slug", "default_branch"}` | 200 with the representation; a rename takes effect at once and the old URL answers 404; `default_branch` moves `HEAD` through the log; 409 `repo_exists` when the name is taken |
+| DELETE | `/v1/repos/{id}` | | 202 `{"id", "deleted_at", "purge_after"}`; every other endpoint answers 404 from then on; objects are purged after the 7 day hold; repeated on a deleted repository, 202 with the original times |
+| POST | `/v1/repos/{id}/undelete` | | 200 with the representation within the hold; 410 `gone` after the purge (spec 019) |
+
+`size_bytes` is the sum of the pack bytes in the log since creation;
+`head` is the object id of the default branch, empty when the branch does
+not exist; `updated_at` is the time of the last create or rename of the
+metadata, not the last push (spec 009 adds `pushed_at`).
 
 Clone URLs are `<ORIGO_PUBLIC_URL>/<owner>/<slug>.git`; the id form
-`<ORIGO_PUBLIC_URL>/r/<id>.git` always works and is what a consumer should
-store.
+`<ORIGO_PUBLIC_URL>/r/<id>.git` always works and is what a consumer
+should store. In the tables below `{repo}` stands for either
+`r/{id}.git` or `{owner}/{slug}.git`.
 
 ### Smart HTTP
 
-`GET .../info/refs?service=git-upload-pack|git-receive-pack`,
-`POST .../git-upload-pack`, `POST .../git-receive-pack`, protocol v2
-advertised, v0 accepted. Capabilities a consumer may rely on:
+| Method | Path | Behaviour |
+|---|---|---|
+| GET | `/{repo}/info/refs` | `?service=git-upload-pack` or `git-receive-pack`; any other value 400 `invalid_request`; protocol v2 advertised when the client sends `Git-Protocol: version=2`, v0 otherwise |
+| POST | `/{repo}/git-upload-pack` | a fetch or clone; `Content-Encoding: gzip` accepted |
+| POST | `/{repo}/git-receive-pack` | a push; `Content-Encoding: gzip` accepted; the body is spooled to disk before git runs |
+
+Capabilities a consumer may rely on:
 
 | Capability | Meaning |
 |---|---|
-| `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want` | shallow fetch of any reachable commit by hash, which is how a build fetches a deploy's commit |
+| `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want` | fetch of any reachable commit by hash, which is how a build fetches a deploy's commit |
 | `filter` | partial clone (`blob:none`, `tree:0`) |
 | `shallow`, `deepen-since`, `deepen-not` | shallow clones and deepening |
-| `atomic` | a push with several reference updates lands entirely or not at all |
-| `push-options` | `origo.event=off` suppresses the push event for that push |
+| `atomic` | a push with several reference updates lands entirely or not at all; every push through Origo is atomic whether or not the client asks, because a push is one log entry |
+| `push-options` | options are recorded in the entry; `origo.event=off` suppresses the push event for that push (spec 008) |
 | `report-status-v2` | per-reference results |
 
-A push is acknowledged only when durable (spec 001). A push that races
-another on the same reference gets git's standard non-fast-forward
-rejection and can be retried after a fetch. There is no lock a consumer
-can take; a consumer that needs a single writer serializes on its own side.
+A push is acknowledged only when durable (spec 001, invariant 1). A push
+that races another on the same reference gets git's rejection with
+`non_fast_forward` in the sideband and can be retried after a fetch. A
+push to `HEAD` is refused. There is no lock a consumer can take; a
+consumer that needs a single writer serializes on its own side.
 
 ### Read operations
 
-All under `/v1/repos/{id}` and detailed in spec 009: `refs`, `commits`
-(log with paging), `commits/{sha}`, `compare/{base}...{head}` (diff, capped),
-`tree/{sha}?path=`, `blob/{sha}` (raw bytes with content type), and
-`archive/{sha}.tar.zst` streaming a tarball of the tree at that commit
-with a stable entry order and no `.git`.
+All under `/v1/repos/{id}` with action `read` and defined in spec 009:
+`refs`, `commits`, `commits/{sha}`, `compare/{base}...{head}`,
+`tree/{sha}`, `blob/{sha}`, and `archive/{sha}.tar.gz`.
 
 ### Push events
 
-When `ORIGO_EVENTS_URL` is set, every reference update sends one signed
-`POST` per push (spec 008):
+When `ORIGO_EVENTS_URL` is set, every acknowledged push sends one signed
+`POST` (spec 008 owns delivery, signing, retries, and the `kind` values):
 
 ```json
-{"id": "<event uuid>", "repo": "<uuid>", "owner": "…", "slug": "…",
+{"id": "<event uuid>", "kind": "push", "repo": "<uuid>", "owner": "…", "slug": "…",
  "pusher": {"sub": "…", "actor": "…"},
  "updates": [{"ref": "refs/heads/main", "before": "<sha>", "after": "<sha>", "forced": false}],
  "at": "2026-09-06T10:00:00Z"}
 ```
 
-Header `Origo-Signature: sha256=<hmac>` over the body with the shared
-secret; retried with backoff for 24 hours; delivered at least once, so the
-consumer keys on `id`.
+Delivery is at least once, so a consumer keys on `id`.
 
-### Delegation
+### Delegation and tokens
 
-A consumer that commits or pushes on behalf of a user does so with its own
-service token carrying `act`; the reflog and the push event carry both the
-effective subject and the actor. A consumer that lets a build fetch mints a
-short-lived read token through `POST /v1/repos/{id}/tokens {"scope": "read",
-"ttl": 1200}`, which returns a token bound to that repository only.
+A consumer that commits or pushes on behalf of a user does so with its
+own service token carrying `act`; the entry and the event carry both the
+effective subject and the actor. A consumer that lets a build fetch mints
+a repository-bound token through `POST /v1/repos/{id}/tokens` (spec 007).
 
 ### Errors
 
-Family envelope `{"error": {"code", "message", "details"}}` with stable
-codes: `unauthenticated`, `forbidden`, `repo_not_found`, `repo_exists`,
-`ref_not_found`, `non_fast_forward`, `over_quota`, `rate_limited`,
-`storage_unavailable`. Git protocol errors use git's own sideband
-messages with the same codes as text.
+The envelope is `latere.ai/x/pkg/httpjson`:
+`{"error": {"code": "<code>", "message": "<one user sentence>", "details": {…}}}`.
+`code` is stable, `message` is the one sentence fixed here for the code
+and never built from the underlying error, `details` is an object of the
+developer fields named below, present only when there is one. Git
+protocol errors use the sideband as `<code>: <message>`. Codes other
+specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
+`repository_unavailable` (015), `gone`, `repo_frozen`, `repo_importing`,
+`repo_not_empty` (019).
+
+| Code | Status | Message | Details |
+|---|---|---|---|
+| `invalid_request` | 400 | The request is malformed. | `reason`: the validation failure in the developer register; `field` when one field is at fault |
+| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `expired`, `issuer`, `audience`, `signature`, `scope` |
+| `forbidden` | 403 | You do not have permission to do this. | `action`, `subject`, `reason` from the authorizer |
+| `repo_not_found` | 404 | Repository not found. | `id`, or `owner` and `slug` |
+| `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |
+| `repo_exists` | 409 | A repository with this id or name already exists. | `field`: `id` or `name`; `id`, `owner`, `slug` |
+| `non_fast_forward` | sideband; 409 on the JSON API | The reference moved since you fetched. Fetch, then push again. | `ref`, `expected`, `actual` |
+| `over_quota` | 413 | The push exceeds the repository's limit. | `limit`: `repository`, `push`, or `refs`; `bytes`; `max` |
+| `rate_limited` | 429 with `Retry-After` | Too many requests. Wait and try again. | `limit`, `retry_after` |
+| `storage_unavailable` | 503 | The repository is temporarily unavailable. Nothing was lost. Try again in a few minutes. | `op`, `key`, `error` |
+
+Every response, success or error, carries `Origo-Contract`.
+
+| Header | Meaning |
+|---|---|
+| `Origo-Contract` | the contract version, `1`; on every response of the public listener |
 
 ### Compatibility
 
-The contract is versioned by the `Origo-Contract: 1` response header.
-Additive changes keep the number; a removal or a semantic change bumps it
-and the previous number stays served for twelve months.
+Additive changes (a new endpoint, field, capability, header, or code)
+keep the number. A removal or a semantic change bumps it, and the
+previous number stays served for twelve months, selected by a request
+header `Origo-Contract: <n>` from the next major version on (spec 017).
 
 ## Acceptance criteria
 
 - The conformance suite (spec 013) exercises every row of every table
-  above against a live node and against the stub, and both pass.
+  above against a live node and against the stub, and both pass
+  (`test/conformance`, `TestContract`).
 - A consumer's integration tests written against the stub pass unchanged
-  against a live node.
-- An unknown capability, endpoint, or field is not relied upon by any
-  consumer in the organization, checked by grepping consumers for
-  `/v1/repos` paths and comparing to this document.
+  against a live node (spec 013, the stub criterion).
+- Every code in the table above and in the tables of specs 007, 009,
+  015, and 019 has exactly one `message`, asserted by a test over
+  `internal/contract` that lists the codes and their sentences and by the
+  conformance suite comparing responses to it (proposed:
+  `internal/contract`, `TestEveryCodeHasOneSentence`).
+- A repository created with an id, renamed, deleted, and undeleted goes
+  through every status of the lifecycle table, the old URL answers 404
+  after the rename, and a duplicate id or a taken name answers 409
+  (`internal/api`, `TestRepositoryLifecycle`).
+- Clone, fetch, push, partial clone with `blob:none`, shallow clone with
+  deepening, fetch by reachable hash, an atomic multi-reference push, and
+  push options work over both URL forms with the real git
+  (`internal/httpgit`, `TestCloneFetchPushOverSmartHTTP`).
+- A push over a moved reference is refused with `non_fast_forward` in the
+  sideband and a concurrent push to another branch lands
+  (`internal/httpgit`, `TestStalePushIsRefusedAndConcurrentBranchesLand`,
+  `TestReferenceMovedBetweenAdvertisementAndPush`).
 
 ## Outcome
 
 Phase 1 shipped, on 2026-09-06, the part of the contract one node can
-serve without identity: smart HTTP in both URL forms and the repository
-lifecycle. Everything else in this document is promised, not yet served.
-
-Served:
-
-- `GET .../info/refs?service=`, `POST .../git-upload-pack`,
-  `POST .../git-receive-pack` at `/r/<id>.git` and `/<owner>/<slug>.git`,
-  protocol v2 advertised and v0 accepted. Capabilities verified with the
-  real git client: `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`,
-  `filter` (`blob:none`), `shallow`, `deepen-since`, `deepen-not`,
-  `atomic`, `push-options` (recorded in the entry header; `origo.event=off`
-  is read by spec 008), `report-status-v2`.
-- A push is acknowledged only after its entry and index object are
-  durable; a push over a reference another writer moved gets git's
-  rejection with the `non_fast_forward` code in the sideband.
-- `POST /v1/repos` (201, `repo_exists` on a duplicate id or a taken
-  name), `GET`, `PATCH` (rename takes effect at once and the old URL
-  answers 404; `default_branch` moves HEAD through the log), `DELETE`
-  (202, 7 day hold), `POST .../undelete`.
-- The error envelope with the codes named here and the
-  `Origo-Contract: 1` header on every response.
+serve without identity. Served: both URL forms of smart HTTP with every
+capability in the table, verified with the real git client; a push
+acknowledged only after its entry and index object are durable; the
+lifecycle table; the envelope with the codes named here; the
+`Origo-Contract: 1` header on every response.
 
 Not yet served (phase 2 and later): OIDC identity, the authorizer,
-delegation and `act`, `POST .../tokens`, the read operations of spec 009,
-push events of spec 008, and the conformance suite of spec 013, which is
-what this spec's acceptance criteria require. In phase 1 every request
-carries the one static bearer of `ORIGO_DEV_TOKEN` (spec 002, Outcome).
+delegation and `act`, `POST /v1/repos/{id}/tokens`, the read operations
+of spec 009, push events of spec 008, and the conformance suite of spec
+013, which is what the first two acceptance criteria require. In phase 1
+every request carries the one static bearer of `ORIGO_DEV_TOKEN`.
 
-Divergences:
+Divergences recorded against the first draft, all kept:
 
-- `owner` and `slug` are restricted to `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`
-  and the owners `r` and `v1` are reserved, because both appear as path
-  segments of the public surface.
-- `updated_at` in the repository representation is the metadata's update
-  time (creation or rename), not the last push: the index objects carry
-  no timestamp. Spec 009 decides whether that field moves with a push.
+- `owner` and `slug` are restricted to the grammar above and `r` and
+  `v1` are reserved.
+- `updated_at` is the metadata's update time, not the last push: the
+  index objects carry no timestamp. Spec 009 adds `pushed_at` from the
+  newest entry's header.
 - The name is stored beside the log as `origo/names/<owner>/<slug>`,
-  created by create-if-absent so a taken name is refused by the store.
-  Spec 004's object table did not list it.
-- The status codes for the lifecycle errors: 400 `invalid_request` for a
-  malformed body, 404 `repo_not_found`, 409 `repo_exists`, 503
-  `storage_unavailable`. `invalid_request` is an addition to the code
-  list.
+  created by create-if-absent, so a taken name is refused by the store.
+- `invalid_request` was added for a malformed body, id, label, branch
+  name, or service parameter.
+- `POST /v1/repos/{id}/undelete` after the purge answers 404
+  `repo_not_found` today, because the purge removes `meta`; 410 `gone`
+  needs the tombstone spec 019 defines.
+
+Divergences to fix, owned by spec 013's code-table test:
+
+- Phase 1 sends `message` in lower case without a period (`a bearer
+  token is required`, `repository not found`, `repository unavailable`),
+  two sentences for `repo_exists` (`a repository with this id exists`,
+  `a repository with this owner and slug exists`), and the validation
+  reason inside `message` for `invalid_request`. The table above is the
+  contract; the code moves the reason into `details.reason` and sends the
+  fixed sentences.
+- The unknown-route handler in `cmd/origod` answers 404 `repo_not_found`
+  with `no such route`; it moves to `invalid_request` with
+  `details.reason: "no such route"`.
+- The sideband for a refused commit is `storage_unavailable: the push
+  was not recorded, retry`; it becomes the table's sentence.
