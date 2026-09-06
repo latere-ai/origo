@@ -1,10 +1,10 @@
 ---
 title: "Repository scaffold: module, binary, configuration, quality gate, release"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/001-architecture.md
-affects: [cmd/origod/, internal/config/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, deploy/, .github/workflows/]
+affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-06
@@ -19,150 +19,211 @@ A compiling, testable, releasable repository before any protocol code
 exists: the Go module, the binary, typed configuration, the quality gate,
 the container image, the release pipeline, and the deploy manifests. The
 shape is chosen so the repository reads as an ordinary open source Go
-service to a newcomer and passes the same bar as every Latere service.
+service to a newcomer. This spec is also the configuration reference: it
+owns every `ORIGO_*` variable the node reads, including the ones later
+specs give a meaning to, so an operator has one table.
 
 ## Current state
 
-The repository holds a README, a license, the spec deck, a `go.mod` with
-the gate as a tool dependency, and one workflow that runs the gate.
+Built in phase 1 and in the tree. `cmd/origod` is the binary,
+`internal/config` the typed configuration, `internal/version` the build
+identity, `Makefile` the gate's entry point, `Dockerfile` and
+`Dockerfile.ci` the images, `docker-compose.yml` the local MinIO,
+`deploy/base`, `deploy/prod`, and `deploy/bootstrap` the manifests,
+`.github/workflows/verify.yml` and `release.yml` the thin callers of the
+shared pipeline in `latere-ai/ci`, and `tools/smoke/release.sh` the
+post-deploy smoke. No tag has been cut. The Outcome lists what diverged
+from the first draft.
 
 ## Design
 
 ### Layout
 
+What exists today is marked as such; the rest lands with the spec named.
+
 ```
-cmd/origod/             main: configuration, listeners, run group
-internal/config/        typed configuration from environment; missing keys fail startup with one message
-internal/wal/           write-ahead log client: entries, index, compare-and-swap (spec 004)
-internal/repo/          local repository cache: materialize, evict, git subprocess wrapper (spec 004, 005)
-internal/placement/     rendezvous hashing, gossip (spec 005)
-internal/compact/       compaction (spec 006)
-internal/auth/          token verification, authorizer, delegation (spec 007)
-internal/httpgit/       smart HTTP: info/refs, upload-pack, receive-pack
-internal/api/           JSON API: repositories, refs, log, diff, tree, blob, archive (spec 009)
-internal/lfs/           batch API and presigned transfer (spec 010)
-internal/events/        push events (spec 008)
-internal/limits/        quotas and rate limits (spec 012)
-deploy/base|prod|bootstrap/  manifests: Deployment with a local cache volume, Service, Ingress,
-                        HorizontalPodAutoscaler and PodDisruptionBudget (spec 005), PrometheusRule (spec 011)
-test/e2e/               conformance suite (spec 013)
-test/conformance/       the suite as an importable package for consumers' stubs
-Makefile, make/         the gate: go tool lateregate from .lateregate.yaml
-Dockerfile, Dockerfile.ci
+cmd/origod/             main: configuration, listeners, run group, readiness, the sweeper loop
+internal/config/        typed configuration from the environment; every problem in one message
+internal/version/       build identity set by -ldflags
+internal/contract/      the Origo-Contract header and the error codes (spec 003)
+internal/auth/          the phase 1 static bearer; OIDC, the authorizer, delegation (spec 007)
+internal/wal/           the write-ahead log: formats, commit, currency check, metadata, sweeper, the Store (spec 004)
+internal/repo/          the local repository cache and the git subprocess wrapper (spec 004, 005)
+internal/httpgit/       smart HTTP: info/refs, upload-pack, receive-pack, the pre-receive hook (spec 003, 004)
+internal/api/           the JSON API: repositories today (spec 003); reads (spec 009); administration (spec 019)
+internal/gittest/       test support over the real git
+internal/placement/     rendezvous hashing, gossip, eviction (spec 005)      -- not yet
+internal/compact/       compaction (spec 006)                                 -- not yet
+internal/events/        push events (spec 008)                                -- not yet
+internal/lfs/           the LFS batch API (spec 010)                          -- not yet
+internal/limits/        quotas and rate limits (spec 012)                     -- not yet
+test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
+test/conformance/       the contract as an importable test package (spec 013) -- not yet
+tools/smoke/            the post-deploy smoke the release pipeline runs
+tools/spike/            the conditional-write probe; its own module
+tools/specindex/        the cross-reference table of specs/README.md; its own module
+deploy/base/            Deployment, Service, headless gossip Service, Ingress, PodDisruptionBudget, ServiceAccount
+deploy/prod/            the overlay the release pipeline applies; namespace origo
+deploy/bootstrap/       Namespace and the Secret templates, applied by hand once
 ```
 
 ### Binary and listeners
 
-| Listener | Port | Serves |
+| Listener | Default address | Serves |
 |---|---|---|
-| public | `:8080` | `/<owner>/<repo>.git/*` smart HTTP, `/v1/*` JSON API, LFS |
-| internal | `:8081` | `/livez`, `/readyz`, `/metrics` |
-| gossip | `:7946/udp` | node to node sequence announcements (spec 005) |
+| public | `:8080` (`ORIGO_PUBLIC_ADDR`) | `/r/{id}.git/*` and `/{owner}/{slug}.git/*` smart HTTP, `/v1/*`, LFS, plus `GET /readyz` and `GET /version` so the release smoke reaches them through the ingress |
+| internal | `:8081` (`ORIGO_INTERNAL_ADDR`) | the four probes below |
+| gossip | `:7946/udp` (`ORIGO_GOSSIP_ADDR`) | node to node sequence announcements (spec 005); until then datagrams are read and discarded |
 
-Readiness requires object storage reachable and the local disk writable.
+The probes are `latere.ai/x/pkg/health`, mounted whole on the internal
+listener and path by path on the public one.
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/livez` | 200 `ok`, touches no dependency |
+| GET | `/readyz` | 200 `ok` when every check passes; 503 `not ready: <check>: <error>` otherwise, and `not ready: draining` during shutdown; text, the developer register |
+| GET | `/version` | `{"version","commit","build_time"}` from `internal/version`, set by `-ldflags` |
+| GET | `/metrics` | the `latere.ai/x/pkg/metrics` registry in the Prometheus text format |
+
+Readiness runs two checks with a 2 second budget: `storage` (one listing
+of at most one key under `origo/`) and `disk` (create and remove a file
+under `ORIGO_DATA_DIR`). Shutdown on `SIGTERM` or `SIGINT`: readiness
+answers 503 at once, the node waits a 3 second drain delay, then closes
+the HTTP servers with a 60 second grace period, then the gossip socket,
+then the background loops. The Deployment's
+`terminationGracePeriodSeconds` is 90.
+
+`origod -version` prints `origod <version> (<commit>, <date>)` and exits
+0; a bad flag exits 2; a configuration or start-up failure exits 1 with
+one line on stderr prefixed `origod:`.
 
 ### Configuration
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `ORIGO_S3_ENDPOINT`, `ORIGO_S3_REGION`, `ORIGO_S3_BUCKET`, `ORIGO_S3_KEY`, `ORIGO_S3_SECRET` | yes | the bucket; prefix `origo/` fixed; path-style when `ORIGO_S3_PATH_STYLE=1` |
-| `ORIGO_DATA_DIR` | no | `/var/lib/origo` default; must be a local disk, not a network file system |
-| `ORIGO_CACHE_BYTES` | no | eviction ceiling for the repository cache, default 80% of the disk |
-| `ORIGO_PUBLIC_URL` | yes | `https://git.example.com`, used in clone URLs and event payloads |
-| `ORIGO_OIDC_ISSUERS` | yes | comma separated issuer URLs whose tokens are accepted (spec 007) |
-| `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | yes | the consumer's authorization endpoint (spec 007) |
-| `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | no | push event sink and HMAC key (spec 008) |
-| `ORIGO_NODE_NAME` | no | pod name by default; the identity used in gossip and placement |
-| `ORIGO_GOSSIP_PEERS` | no | a DNS name that resolves to all nodes; the headless Service in Kubernetes |
-| `OTEL_*` | no | standard exporter configuration |
-| `ORIGO_STORAGE_TIMEOUT` | no | per object operation, default 10 seconds; the circuit breaker of spec 015 opens on repeated timeouts |
+Every variable is read once at start-up by `internal/config.Load`, which
+collects every problem and fails with one message
+`configuration: missing ORIGO_A; missing ORIGO_B; ...` sorted by name.
+`Resolve` then creates `ORIGO_DATA_DIR` and derives `ORIGO_CACHE_BYTES`.
+Variables a later spec reads are listed here with that spec; they are
+read today so a deployment that sets them is not refused.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `ORIGO_S3_ENDPOINT`, `ORIGO_S3_REGION`, `ORIGO_S3_BUCKET`, `ORIGO_S3_KEY`, `ORIGO_S3_SECRET` | yes | none | the bucket; the prefix `origo/` is fixed |
+| `ORIGO_S3_PATH_STYLE` | no | unset | `1` addresses the bucket as a path segment (MinIO, any endpoint by IP) |
+| `ORIGO_S3_PUBLIC_ENDPOINT` | spec 010 | `ORIGO_S3_ENDPOINT` | the bucket endpoint LFS clients reach; presigned URLs are signed against it |
+| `ORIGO_PUBLIC_URL` | yes | none | an absolute URL such as `https://git.example.com`; trailing slash removed; used in clone URLs and event payloads |
+| `ORIGO_DEV_TOKEN` | yes, until spec 007 | none | the phase 1 bearer: the public listener accepts exactly this token (spec 007 removes it) |
+| `ORIGO_DATA_DIR` | no | `/var/lib/origo` | the repository cache; `repos/`, `spool/`, and `home/` under it; a local disk, never a network file system |
+| `ORIGO_CACHE_BYTES` | no | 80% of the file system holding `ORIGO_DATA_DIR` | eviction ceiling of the cache (spec 005); a positive integer |
+| `ORIGO_PUBLIC_ADDR`, `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` | no | `:8080`, `:8081`, `:7946` | listen addresses; a test binds `127.0.0.1:0` |
+| `ORIGO_NODE_NAME` | no | the host name, `origod` when unknown | the identity used in gossip and placement (spec 005); the pod name in Kubernetes |
+| `ORIGO_GOSSIP_PEERS` | no | unset | a DNS name resolving to every node (spec 005); the headless Service `origod-gossip` |
+| `ORIGO_SWEEP_INTERVAL` | no | `10m` | how often the sweeper runs over every repository (spec 004); `0` disables it |
+| `ORIGO_SWEEP_MIN_AGE` | no | `1h` | how old an orphan must be before the sweeper deletes it (spec 004) |
+| `ORIGO_FAILPOINT` | no | unset | the name of an injected failure, `commit.before-index`, for the end-to-end suite; empty in every deployment |
+| `ORIGO_OIDC_ISSUERS` | spec 007 | unset | comma separated issuer URLs whose tokens are accepted |
+| `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | spec 007 | unset | the consumer's authorization endpoint and the bearer Origo sends it |
+| `ORIGO_TOKEN_KEY` | spec 007 | unset | PEM-encoded ECDSA P-256 private key that signs repository-bound tokens |
+| `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | spec 008 | unset | the push event sink and the HMAC key; events are off when the URL is unset |
+| `ORIGO_STORAGE_TIMEOUT` | spec 015 | `10s` | the deadline of one object storage operation |
+| `ORIGO_STALE_MAX` | spec 015 | `5m` | how long a warm repository is served from the local copy while the read breaker is open |
+| `ORIGO_MAX_GIT_PROCS` | spec 012 | `64` | concurrent git subprocesses per node |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_*` | spec 011 | unset | the standard OpenTelemetry exporter variables, read by `latere.ai/x/pkg/otel`; telemetry is off without the endpoint |
+
+Durations are Go durations (`10m`, `500ms`). A malformed value is a
+problem in the same start-up message as a missing key.
 
 ### Quality bar
 
-Bare `make` runs `go tool lateregate`: format, vet, lint, modernize, per
-package coverage floor 90%, the suite with only the toolchain on `PATH`,
-the suite against an empty `TMPDIR`, the spec tree. `git` is the one
-binary the suite may require beyond the toolchain, declared in the
-hermetic allow list with the reason. Fuzz tests cover every parser that
-reads bytes from a client: pkt-line, the index, entry headers.
+Bare `make` runs `go tool lateregate`, the gates of `latere.ai/x/ci-gate`
+configured in `.lateregate.yaml`: `fmt-check`, `modernize`, `cgo-free`,
+`otel-client`, `license` (MIT, holder Latere AI), `spec-lint`, `lint`,
+`vuln`, `test`, `race`, `hermetic` (the suite with only the toolchain and
+`/usr/bin` on `PATH`, because git is the one binary origod needs beside
+itself), `tempdir` (the suite against an empty temporary directory), and
+`cover` (90% per package, no exemptions). `make test-integration` runs
+the tiers that need MinIO: the store suite (`integration` tag) and the
+end-to-end suite (`e2e` tag). Fuzz tests cover every parser that reads
+bytes from a client: pkt-line, the receive-pack request, the entry
+header, the reference transaction, and the index object.
 
 ### Release
 
-A tag `v*` runs the reusable release pipeline: build the binary, package
-it with `Dockerfile.ci`, push `ghcr.io/latere-ai/origod:<tag>`, apply
-`deploy/prod/`, wait for rollout, run the conformance suite against the
-live service, publish the release with the evidence attached. Direct
-pushes to `main` run verify only. Both callers are thin files under
-`.github/workflows/`.
+`.github/workflows/release.yml` runs the shared `service-release.yml` of
+`latere-ai/ci` on a `v*` tag: build the binary, package it with
+`Dockerfile.ci`, push `ghcr.io/latere-ai/origod:<tag>`, apply
+`deploy/prod/`, wait for the rollout, run `tools/smoke/release.sh`
+against the public URL (`GET /readyz` answers 200 and `GET /version`
+serves the tag), and publish the GitHub release with the
+smoke's markdown evidence and the `CHANGELOG.md` section for the tag.
+`verify.yml` runs the gate on every push to `main` and every pull
+request. Spec 017 fixes the artifacts, the version promise, and the
+release evidence beyond the smoke.
+
+### Images
+
+`Dockerfile` builds the binary inside the image for a developer;
+`Dockerfile.ci` copies `out/origod` the verify run built. Both share one
+runtime stage, byte for byte: Debian bookworm-slim pinned by digest with
+`git` and `ca-certificates`, user `65532`, `/var/lib/origo` owned by it,
+ports `8080`, `8081`, `7946/udp`. The runtime is not distroless because
+origod runs git as a subprocess.
 
 ## Acceptance criteria
 
-- `make` passes on a clean checkout with no protocol code.
-- `origod` starts against MinIO and an empty disk, serves `/readyz` 200,
-  and refuses to start without the bucket variables with one message that
-  names every missing key.
-- Coverage of `internal/config` is 100%.
-- A tag on a fork builds and publishes the image.
+- `make` passes on a clean checkout (`verify.yml`, every push).
+- `origod` started against MinIO with an empty `ORIGO_DATA_DIR` answers
+  `GET /readyz` 200 on the internal listener within 10 seconds
+  (`test/e2e`, `startNode` in `harness_test.go`, which every end-to-end
+  test goes through; `cmd/origod`, `TestReadyzReportsStorage`).
+- Started without the five bucket variables, `origod` exits 1 with one
+  stderr line naming every missing key (`cmd/origod`,
+  `TestMissingConfigurationIsOneMessage`; `internal/config`,
+  `TestLoadNamesEveryMissingKeyInOneMessage`).
+- Every optional variable is read with its default from the table and a
+  malformed duration or byte count is reported in the same message
+  (`internal/config`, `TestLoadAppliesDefaults`,
+  `TestLoadReadsEveryOptionalValue`, `TestLoadReportsMalformedValuesTogether`).
+- `GET /readyz` answers 503 naming `disk` when `ORIGO_DATA_DIR` is not
+  writable and 503 `draining` after `SIGTERM` (`cmd/origod`,
+  `TestReadyzFailsWhenTheDiskIsNotWritable`, `TestReadyzReportsDrainingDuringShutdown`).
+- Coverage of `internal/config` is 100% (`cover` gate, checked on every
+  push).
 
 ## Outcome
 
-Phase 1 shipped the scaffold on 2026-09-06. What runs: `cmd/origod`
-with typed configuration from `internal/config` (100% covered, one
-start-up message names every missing key), the public listener on
-`:8080`, the internal listener on `:8081` with `/livez`, `/readyz`,
-`/version`, and `/metrics`, and the gossip UDP port `:7946` that reads
-and discards datagrams until spec 005 gives them a meaning. Readiness
-reports object storage (one listing) and the disk. The Makefile is the
-gate binary's entry point plus `build`, `fmt`, `hooks`, `dev`,
-`test-integration`, and `clean`; `docker-compose.yml`, `Dockerfile`, and
-`Dockerfile.ci` follow the Latere service template; `deploy/base`,
-`deploy/prod`, and `deploy/bootstrap` carry the manifests; a `v*` tag
-runs the shared release pipeline and `tools/smoke/release.sh` checks
-`/readyz` and `/version`. No tag was cut.
+Phase 1 shipped the scaffold on 2026-09-06. Every criterion above has a
+passing test in the tree, so the spec is complete. "A tag on a fork builds
+and publishes the image" was a criterion of the first draft; no tag was
+cut in phase 1, and the criterion moved to spec 017, which owns the
+release and verifies the first tag.
 
-Acceptance: `make` passes on the checkout; `origod` starts against
-MinIO with an empty disk and serves `/readyz` 200; without the bucket
-variables it refuses with one message naming every missing key;
-`internal/config` is at 100%. "A tag on a fork builds and publishes the
-image" is unverified: no tag was cut in phase 1.
-
-Divergences from this spec:
+Divergences from the first draft:
 
 - Authentication is a phase 1 stand-in: the public listener accepts one
-  static bearer from `ORIGO_DEV_TOKEN` (as a Bearer header or as git's
-  basic auth password) and refuses everything else. `ORIGO_DEV_TOKEN` is
-  required until spec 007 lands; `ORIGO_OIDC_ISSUERS`,
-  `ORIGO_AUTHORIZER_URL`, and `ORIGO_AUTHORIZER_TOKEN` are read but
-  optional. The code is marked in `internal/auth`.
-- Variables added beyond the table: `ORIGO_PUBLIC_ADDR`,
-  `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` (the spec's ports as
-  defaults, so a test binds an ephemeral port), `ORIGO_SWEEP_INTERVAL`
-  and `ORIGO_SWEEP_MIN_AGE` (spec 004's values as defaults), and
-  `ORIGO_FAILPOINT` (empty in every deployment; the end-to-end suite
-  kills a node with it). `ORIGO_CACHE_BYTES` is read and resolved but
-  eviction is spec 005.
-- `/readyz` and `/version` are also served on the public listener so
-  the release smoke reaches them through the ingress; `/livez` and
-  `/metrics` stay internal.
-- The runtime image is Debian slim with git, not the static distroless
-  base of the template: origod runs git as a subprocess. The hermetic
-  allow list admits `/usr/bin` for the same reason.
-- Layout additions beyond the table: `internal/contract` (the error
-  envelope and `Origo-Contract` header of spec 003), `internal/metrics`
-  (counters and histograms in the Prometheus text format, no client
-  library), and `internal/gittest` (test support over the real git).
-- Moved to `latere.ai/x/pkg` once a second consumer existed: the error
-  envelope is `httpjson.Error` (the codes and the `Origo-Contract`
-  header stay in `internal/contract`), the metrics registry is
-  `pkg/metrics`, the probes on the internal listener are `pkg/health`
-  (`/livez`, `/readyz`, `/version`, `/metrics`, text bodies), and the
-  cancellable sleep and the sweep ticker are `pkg/wait`;
-  `internal/metrics` is gone.
-  `internal/placement`, `compact`, `lfs`, `events`, `limits`, and
-  `test/conformance` do not exist yet; they land with their specs.
-- `make/` fragments were not adopted: latere-ai/ci-gate's own Makefile is
-  the reference shape, and every gate-named target lives in the gate.
-- The integration tiers (`make test-integration`: the store suite on
-  MinIO and the end-to-end suite) are not run by CI: latere-ai/ci's
-  `lateregate.yml` has no services step. CI runs the unit tiers, which
-  cover every package at 90% or more on an in-process store.
+  static bearer from `ORIGO_DEV_TOKEN` (as a Bearer header, as git's
+  basic auth password with any username, or as the basic auth username
+  with an empty password) and refuses everything else with 401
+  `unauthenticated` and `WWW-Authenticate: Basic realm="origo"`. Every
+  admitted request carries the subject `dev`. The code is
+  `internal/auth.StaticBearer`; spec 007 replaces it.
+- Variables added beyond the first table: `ORIGO_PUBLIC_ADDR`,
+  `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR`, `ORIGO_SWEEP_INTERVAL`,
+  `ORIGO_SWEEP_MIN_AGE`, `ORIGO_FAILPOINT`, `ORIGO_DEV_TOKEN`.
+  `ORIGO_CACHE_BYTES` is read and resolved; eviction is spec 005.
+  `ORIGO_STORAGE_TIMEOUT`, `ORIGO_STALE_MAX`, `ORIGO_MAX_GIT_PROCS`, and
+  `ORIGO_TOKEN_KEY` are in the table for their specs and are not read yet.
+- `/readyz` and `/version` are also served on the public listener;
+  `/livez` and `/metrics` stay internal.
+- The runtime image is Debian slim with git, not distroless.
+- `internal/contract` and `internal/gittest` were added; `internal/metrics`
+  existed briefly and moved to `latere.ai/x/pkg/metrics`. The error
+  envelope is `httpjson.Error`, the probes `pkg/health`, the cancellable
+  sleep and the sweep ticker `pkg/wait`, the S3 client `pkg/s3`.
+- `make/` fragments were not adopted; every gate-named target lives in
+  the gate.
+- The integration tiers are not run by CI: the shared `lateregate.yml`
+  has no services step. Spec 013 adds the job.
+- `deploy/base` has no HorizontalPodAutoscaler and no PrometheusRule yet;
+  they land with specs 005 and 011. The PodDisruptionBudget keeps
+  `minAvailable: 1`.
