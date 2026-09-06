@@ -64,18 +64,25 @@ flowchart LR
     A[consumer authorizer]
     E[events sink]
   end
+  subgraph external
+    X[import / verify source]
+  end
   C -->|TLS, bearer| H
   H -->|argv, stdin, GIT_DIR| G
   H --> W --> S
   H -->|JWKS| I
   H -->|service token| A
   H -->|HMAC| E
+  G -->|https, egress allow-list| X
 ```
 
 Everything left of `origod` is hostile. The bucket, the issuer, the
 authorizer, and the sink are trusted for what they say but not for
 availability (spec 015). Gossip peers (spec 005) are trusted for
 nothing: an announcement triggers a currency check and grants nothing.
+The source of an `import` or a `verify` (specs 019, 014) is a host the
+caller names, so it is hostile until the egress allow-list admits it,
+and trusted only for the bytes git checks.
 A git subprocess handles hostile bytes and is treated as semi-trusted:
 it runs with the minimal environment below, no shell, no network, a
 deadline, and under the pod's security context.
@@ -90,6 +97,8 @@ deadline, and under the pod's security context.
 | Malformed or malicious git objects | `receive.fsckObjects` (phase 1), `transfer.fsckObjects`, `core.protectNTFS` (phase 1), `core.protectHFS`; Origo never checks out a tree on the server except into the archive stream, which is `git archive` with no filesystem write | 004, 009 |
 | Command injection through refs, owner, slug, or paths | reference names validated by `internal/wal.ValidRefName`; owner and slug by the grammar of spec 003; subprocess arguments never pass through a shell; `GIT_DIR` set explicitly; the only hook is Origo's own pre-receive, installed by the node and never from a push | 003, 004 |
 | Resource exhaustion by one client | per-subject rate limit, per-node subprocess cap, body and repository size limits, subprocess deadlines | 012 |
+| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, a source whose name resolves to a loopback, link-local, private (RFC 1918, ULA), or unspecified address, or to the cluster's service or pod range, is refused, and every redirect hop is checked the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened | 019, 014 |
+| Amplification through gossip | a datagram is at most one catch-up, and catch-ups triggered by gossip are rate-limited to one per repository per second, so a flood costs one `HEAD` per named repository per second and nothing else; a datagram that names a repository the node does not hold is dropped | 005 |
 | Exhaustion through the bucket | breakers and per-operation deadlines so one slow client cannot hold a subprocess open against a slow bucket | 015 |
 | Token theft | short-lived repository tokens; issuer tokens verified for audience; tokens never logged, never in URLs on the server side; the basic auth password is accepted for git and never written to a log line | 007, 011 |
 | Secret exposure in logs or metrics | fixed-vocabulary labels; the redaction test of spec 011; the registers rule for messages | 011 |
@@ -148,11 +157,24 @@ Audit export beyond the log itself.
   packs built by `internal/gittest`).
 - A reference name, owner, or slug containing a shell metacharacter,
   `..`, or a control character is refused by the validators and no
-  subprocess starts (`internal/wal`, `TestValidRefName`; proposed:
-  `FuzzValidRefName`, `FuzzValidLabel`).
+  subprocess starts (`internal/wal`, `TestValidRefName`), and
+  `FuzzValidRefName` and `FuzzValidLabel` in `internal/wal` find no
+  input the validator accepts that git refuses: each runs as a
+  seed-corpus test in the suite on every push and for 40 seconds under
+  `make fuzz` (spec 002) on the weekly schedule (proposed:
+  `internal/wal`, `FuzzValidRefName`, `FuzzValidLabel`).
 - A git subprocess observes exactly the documented environment
   (proposed: `internal/repo`, `TestSubprocessEnvironment`, running `env`
   through `Git.Command`).
+- An `import` or `verify` whose source is not on `ORIGO_EGRESS_ALLOW`,
+  or resolves to `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, or `fd00::1`
+  though listed, or redirects to one of those, is 400 `invalid_request`
+  with `details.reason: "egress"` and opens no connection, asserted by a
+  listener that counts connections; with the list unset every source is
+  refused (proposed: `internal/api`,
+  `TestServerSideFetchHonoursTheEgressList`).
+- 10 000 gossip datagrams for one repository in one second cause at most
+  one catch-up (spec 005, `TestGossipCatchUpIsRateLimited`).
 - The pod runs with the documented security context in the kind stack,
   and a test overlay that sets `allowPrivilegeEscalation: true` is refused
   by Pod Security admission at `restricted` (proposed: `test/e2e`,
