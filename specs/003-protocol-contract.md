@@ -18,10 +18,11 @@ author: changkun
 This is the document a platform integrating Origo reads. It names every
 endpoint, header, capability, and error a consumer may rely on, and
 nothing else is promised. A consumer that codes against this contract can
-run its tests against the conformance stub (spec 013) and against a live
-Origo and get the same answers. Specs 007, 008, 009, 010, and 019 add
-surfaces to the contract; each owns its own table, and this document
-points at them so the contract is one document with five appendices.
+run its tests against the contract stub (spec 013) and against a live
+Origo and get the same answers, which the conformance suite (spec 021)
+proves. Specs 007, 008, 009, 010, and 019 add surfaces to the contract;
+each owns its own table, and this document points at them so the
+contract is one document with five appendices.
 
 ## Current state
 
@@ -133,15 +134,17 @@ When `ORIGO_EVENTS_URL` is set, every acknowledged push sends one signed
 `POST` (spec 008 owns delivery, signing, retries, and the `kind` values):
 
 ```json
-{"id": "<event uuid>", "kind": "push", "repo": "<uuid>", "owner": "…", "slug": "…",
+{"id": "<event uuid>", "kind": "push", "repo": "<uuid>", "seq": 1044, "owner": "…", "slug": "…",
  "pusher": {"sub": "…", "actor": "…"},
  "updates": [{"ref": "refs/heads/main", "before": "<sha>", "after": "<sha>", "forced": false}],
  "at": "2026-09-06T10:00:00Z"}
 ```
 
-Delivery is at least once, so a consumer keys on `id`. Spec 008 defines
-two optional fields: `kind_detail` on a push whose `updates` is empty,
-and `operation` on a push made by a server-side operation (spec 020).
+Delivery is at least once, so a consumer keys on `id`, which spec 008
+derives from `repo` and `seq` so a redelivery carries the same id. Spec
+008 defines two optional fields: `kind_detail` on a push that changes
+no branch or tag, and `operation` on a push made by a server-side
+operation (spec 020).
 
 ### Delegation and tokens
 
@@ -160,13 +163,13 @@ developer fields named below, present only when there is one. Git
 protocol errors use the sideband as `<code>: <message>`. Codes other
 specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
 `repository_unavailable` (015), `gone`, `repo_frozen`, `repo_importing`,
-`repo_not_empty` (019), `merge_conflict`, `invalid_change`,
-`operation_timeout` (020).
+`repo_not_empty`, `import_not_found` (019), `merge_conflict`,
+`invalid_change`, `operation_timeout` (020).
 
 | Code | Status | Message | Details |
 |---|---|---|---|
 | `invalid_request` | 400 | The request is malformed. | `reason`: the validation failure in the developer register; `field` when one field is at fault |
-| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `audience`, `expired`, `nbf`, `iat`, `kid`; spec 007 says which check produces each |
+| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `issuer_unavailable`, `audience`, `expired`, `nbf`, `iat`, `unknown_key`; spec 007 says which check produces each |
 | `forbidden` | 403 | You do not have permission to do this. | `action`, `subject`, `reason` from the authorizer |
 | `repo_not_found` | 404 | Repository not found. | `id`, or `owner` and `slug` |
 | `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |
@@ -182,6 +185,18 @@ Every response, success or error, carries `Origo-Contract`.
 |---|---|
 | `Origo-Contract` | the contract version, `1`; on every response of the public listener |
 
+Headers other specs add, listed here so a consumer reads them from the
+contract; each is defined by the spec named:
+
+| Spec | Header | Meaning |
+|---|---|---|
+| this spec | `Origo-Contract` | the contract version, above |
+| 005 | `Origo-Prefer` | on every response that names a repository: the nodes that hold it warm, highest score first; a hint for routing, never a redirect |
+| 015 | `Origo-Stale` | on a response served from the local copy without a currency check while the bucket is unreachable: the whole seconds since the last check that answered; absent on every consistent response, so a consumer that must not read stale refuses the response by this header |
+
+The read API's `Origo-Commit` and `Origo-Truncated` are spec 009's; the
+event delivery headers are spec 008's.
+
 ### Compatibility
 
 Additive changes (a new endpoint, field, capability, header, or code)
@@ -191,7 +206,7 @@ header `Origo-Contract: <n>` from the next major version on (spec 017).
 
 ## Acceptance criteria
 
-- The conformance suite (spec 013) exercises every row of every table
+- The conformance suite (spec 021) exercises every row of every table
   above against a live node and against the stub, and both pass
   (`test/conformance`, `TestContract`).
 - A consumer's integration tests written against the stub pass unchanged
@@ -226,7 +241,7 @@ lifecycle table; the envelope with the codes named here; the
 Not yet served (phase 2 and later): OIDC identity, the authorizer,
 delegation and `act`, `POST /v1/repos/{id}/tokens`, the read operations
 of spec 009, push events of spec 008, and the conformance suite of spec
-013, which is what the first two acceptance criteria require. In phase 1
+021, which is what the first two acceptance criteria require. In phase 1
 every request carries the one static bearer of `ORIGO_DEV_TOKEN`.
 
 Divergences recorded against the first draft, all kept:
@@ -244,7 +259,7 @@ Divergences recorded against the first draft, all kept:
   `repo_not_found` today, because the purge removes `meta`; 410 `gone`
   needs the tombstone spec 019 defines.
 
-Divergences to fix, owned by spec 013's code-table test:
+Divergences to fix, owned by spec 021's code-table test:
 
 - Phase 1 sends `message` in lower case without a period (`a bearer
   token is required`, `repository not found`, `repository unavailable`),
