@@ -54,41 +54,70 @@ than clobbering:
 |---|---|
 | `branch` | `refs/heads/<name>` or a short name; must exist except for `commits` with `create_branch: true` |
 | `expected_head` | the commit the caller believes the branch points at; `null` for a new branch; mismatch is 409 `non_fast_forward` with the details of spec 003: `ref`, `expected`, `actual` |
-| `author` | `{"name", "email"}`; the committer is always Origo with the effective subject's identity in the message trailer `Origo-Subject:` and the actor in `Origo-Actor:` (spec 007) |
+| `author` | required: `{"name", "email"}`, both non-empty, `email` with one `@`; a missing or empty field is 400 `invalid_request` with `details.field: "author"`; the committer is always `Origo <origo@<host of ORIGO_PUBLIC_URL>>` with the effective subject's identity in the message trailer `Origo-Subject:` and the actor in `Origo-Actor:` (spec 007) |
 | `message` | the commit message, 1 to 64 KiB |
 | `dry_run` | `true` computes the result and returns it without committing |
 
 Response 201 `{"commit": "<sha>", "branch", "entry_seq", "tree": "<sha>"}`;
 for `dry_run`, 200 with the same fields and `"committed": false`. One
-operation is one entry, one commit, one event (`push` with one update,
-`Origo-Operation: <name>` on the event). No operation runs user code:
-no hooks, no filters, no smudge, no submodule fetch.
+operation is one entry, one commit, one event: a `push` with one
+update whose `operation` field (spec 008) is the operation's name,
+carried in the entry header as the push option `origo.operation=<name>`
+so the repair sweep of spec 008 can rebuild the event. No operation
+runs user code: no hooks, no filters, no smudge, no submodule fetch.
 
 ### Operations
 
 | Operation | Path | Body beyond the common fields | Result |
 |---|---|---|---|
-| write files | `commits` | `changes: [{"path", "content" (base64, at most 10 MiB per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes, paths validated as git does (`git check-ref-format --allow-onelevel` semantics for components, no `.git`, no `..`) | one commit with `expected_head` as parent |
+| write files | `commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
 | merge | `merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
 | cherry-pick | `cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
 | revert | `revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
 
+### Paths
+
+A change's `path` is accepted when every rule holds, and otherwise
+the request is 400 `invalid_change` with `details.index` and
+`details.reason: "path"`: at most 4 096 bytes; no leading slash; no
+empty component (no `//`, no trailing slash); no component `.` or
+`..`; no NUL byte; no component that names the git directory,
+case-insensitively, in any of the forms git's `core.protectNTFS` and
+`core.protectHFS` refuse (`.git`, `.git` followed by dots or spaces,
+`git~1` and the other 8.3 short names, and the HFS forms with ignorable
+code points); and a `120000` change's content is a relative target
+under the same rules. The rules are one function, `ValidChangePath`,
+which `FuzzChangePath` covers and spec 009's `?path=` also uses.
+
 ### Mechanics
 
-The node runs the operation in a temporary index and worktree-free
-sequence on the warm copy: `git read-tree` of `expected_head`,
-`git update-index --cacheinfo` or `hash-object -w` per change,
-`git write-tree`, `git commit-tree` with the author and the trailers;
+The node runs the operation on the warm copy, acquired for writing for
+the duration (the write lock of spec 004, which a push also takes), in
+a temporary index and without a worktree: `git read-tree` of
+`expected_head` into the temporary index, `git update-index
+--cacheinfo` or `git hash-object -w` per change, `git write-tree`,
+`git commit-tree` with the author, the committer, and the trailers;
 `git merge-tree --write-tree` for merges, cherry-picks, and reverts,
-which produces a tree without a worktree and reports conflicts as data.
-The new objects are packed with `git pack-objects --revs` from the old
-head to the new, and the pack plus the single reference update go through
-the receive path of spec 004 as if a client had pushed them, so every
-check a push gets (fsck, quota, size) applies. The warm copy is acquired
-for writing for the duration, the same lock compaction takes (spec 006),
-bounded by the 30 second budget of spec 009 for `commits` and 5 minutes
-for the merge family; over budget is 504 `operation_timeout` and nothing
-is committed.
+which produces a tree without a worktree and reports conflicts as
+data. Every argument that came from the request follows
+`--end-of-options` and a value starting with `-` is refused (spec 009).
+The new objects are written into the copy's object store by those
+commands; they are unreachable until the reference moves, so a failure
+leaves nothing a reader can see.
+
+Then, without a synthesized `receive-pack`: `git pack-objects --revs
+--end-of-options` over `<expected_head>..<new>` writes the entry's
+pack; `git index-pack --strict` over that pack and `git fsck
+--connectivity-only --no-progress <new>` check the new objects the way
+`receive.fsckObjects` would; the pack's size is checked against
+`quota_bytes` and the push size limit (spec 012); and `Log.Commit` of
+spec 004 commits the pack with the one-update transaction, the
+subject and actor, and `push_options: ["origo.operation=<name>"]`,
+after which `Cache.Advance` records the sequence and the branch is
+moved with `git update-ref`. `commits` is bounded by the 30 second
+budget of spec 009 and the merge family by 5 minutes; over budget is
+504 `operation_timeout`, nothing is committed, and the loose objects
+stay unreachable until the next compaction removes them.
 
 Concurrent operations on one branch serialize on `expected_head`: the
 second sees a mismatch and retries after reading the branch. Operations
@@ -114,13 +143,22 @@ elsewhere.
 
 ### Limits
 
-| Limit | Value |
-|---|---|
-| changes per `commits` request | 1 000 |
-| content per file | 10 MiB inline; larger content is uploaded through LFS (spec 010) and referenced by pointer, or pushed |
-| request body | 64 MiB |
-| commits per cherry-pick or revert | 100 |
-| operations per repository per minute | 60, then `rate_limited` |
+The `commits` operation has two size limits that both hold: at most 10
+MiB of decoded content per file, and at most 64 MiB for the whole
+request body, so a request of six 10 MiB files is refused by the body
+limit and one 11 MiB file by the file limit.
+
+| Limit | Value | Answer |
+|---|---|---|
+| changes per `commits` request | 1 000 | 400 `invalid_change`, `details.reason: "too_many"` |
+| content per file | 10 MiB decoded, inline; larger content is uploaded through LFS (spec 010) and referenced by pointer, or pushed | 400 `invalid_change`, `details.reason: "too_large"`, `details.index` |
+| request body | 64 MiB, every operation; spec 012's 64 KiB JSON limit does not apply to these routes | 400 `invalid_request` |
+| commits per cherry-pick or revert | 100 | 400 `invalid_change`, `details.reason: "too_many"` |
+| operations per repository per minute | 60, a token bucket per repository per node like spec 012's per-subject one | 429 `rate_limited` with `Retry-After`, `details.limit: "repository"`, `details.retry_after`, counted on `origo_rate_limited_total{limit="repository"}` |
+
+`git merge-tree --write-tree` with conflict output as data needs git
+2.40, which raises the floor spec 018's check enforces from 2.39 to
+2.40.
 
 ## Not in this spec
 
@@ -134,10 +172,13 @@ consumer's.
 ## Acceptance criteria
 
 - `commits` with three changes (add, modify with `content_ref`, delete)
-  on a fixture branch produces one commit whose tree equals a client-side
-  commit of the same changes, one entry, and one `push` event with
-  `Origo-Operation: commits`; a second request with the stale
-  `expected_head` is 409 `non_fast_forward` (proposed: `internal/api`,
+  on a fixture branch produces one commit whose tree equals a
+  client-side commit of the same changes, with the committer `Origo
+  <origo@<host>>` and the author from the request, one entry whose
+  header carries `origo.operation=commits`, and one `push` event with
+  `operation: "commits"`; a second request with the stale
+  `expected_head` is 409 `non_fast_forward`, and a request without
+  `author` is 400 (proposed: `internal/api`,
   `TestCommitsWritesOneEntryAndRefusesStaleHead`).
 - `merge` with `fast_forward_if_possible` fast-forwards when it can and
   creates a two-parent commit when it cannot; a conflicting merge is 409
@@ -147,14 +188,23 @@ consumer's.
   nothing and names the second commit (proposed: `internal/api`,
   `TestCherryPickIsAtomic`).
 - A `commits` request whose pack would exceed `quota_bytes` is
-  `over_quota` and commits nothing; a request exceeding the change or
-  size limits is `invalid_change` with the index (proposed:
+  `over_quota` and commits nothing; a request with 1 001 changes, one
+  with an 11 MiB file, and one with six 10 MiB files are refused with
+  the documented code and reason; the 61st operation on a repository
+  in one minute is 429 with `details.limit: "repository"` (proposed:
   `internal/api`, `TestServerSideOperationsHonourLimits`).
+- Every path in a table of accepted and refused paths (`a/b`, `.git/x`,
+  `a/.GIT/x`, `git~1/x`, `a//b`, `/a`, `a/../b`, a 4 097 byte path, a
+  path with a NUL) is classified as the rules say and no refused path
+  reaches a subprocess (proposed: `internal/api`, `TestChangePathRules`).
 - Twenty concurrent `commits` requests on one branch with the same
   `expected_head` produce exactly one commit and nineteen
   `non_fast_forward` answers (proposed: `internal/api`,
   `TestConcurrentCommitsSerializeOnExpectedHead`).
-- Fuzzing the change path validator and the operation bodies finds no
-  panic and never reaches a subprocess with a path git would reject
-  (proposed: `internal/api`, `FuzzChangePath`, `FuzzOperationBody`).
+- `FuzzChangePath` and `FuzzOperationBody` in `internal/api` find no
+  panic and no path the validator accepts that `git update-index`
+  refuses: each runs as a seed-corpus test in the suite on every push
+  and for 40 seconds under `make fuzz` (spec 002) on the weekly
+  schedule (proposed: `internal/api`, `FuzzChangePath`,
+  `FuzzOperationBody`).
 - The conformance suite (spec 013) gains one case per operation.
