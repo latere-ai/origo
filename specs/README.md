@@ -33,7 +33,7 @@ stateDiagram-v2
 |---|---|---|---|
 | [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | drafted |
 | [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | testing |
-| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | validated |
+| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | in-progress |
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | drafted |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | drafted |
