@@ -1,6 +1,6 @@
 ---
 title: "Observability: metrics, traces, logs, alerts"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, cmd/origod/, deploy/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -66,7 +66,7 @@ never recorded and are replaced by the names below.
 | `origo_compaction_seconds` | histogram | | compaction (006) |
 | `origo_authorizer_seconds` | histogram | `result` (`allow`, `deny`, `error`) | the authorizer client (007) |
 | `origo_events_delivered_total`, `origo_events_dead_total` | counter | | event delivery (008) |
-| `origo_rate_limited_total` | counter | `limit` (`subject`, `subprocesses`) | limits (012) |
+| `origo_rate_limited_total` | counter | `limit` (`subject`, `subprocesses`, `repository`) | limits (012), the per-repository limits of 019 and 020 |
 | `origo_storage_ops_total` | counter | `op` (`get`, `put`, `create`, `head`, `delete`, `list`), `result` (`ok`, `not_found`, `exists`, `error`) | the store adapter (015) |
 | `origo_storage_seconds` | histogram | `op` | same |
 | `origo_storage_breaker_state` | gauge | `class` (`read`, `write`); 0 closed, 1 open, 2 half-open | the breakers (015) |
@@ -82,7 +82,9 @@ time.
 ### Traces
 
 `cmd/origod` calls `otel.Bootstrap(ctx, otel.Config{ServiceName:
-"origod", Version, Replica})`, wraps the public handler in
+"origod", Version, Replica, Stdout})` with `Stdout` a JSON handler on
+standard output, because `Bootstrap` defaults to standard error and the
+node's log lines stay on standard output (spec 002), wraps the public handler in
 `otel.Handler` with `WithRouteTemplate` returning the mux pattern and
 `WithMetricsHook` feeding the two request metrics, and wraps the storage
 transport in `otel.Transport`. One trace per request; a push's spans are
