@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 // Command condwrite probes an S3 endpoint for the conditional primitives
-// spec 004 builds on: create-if-absent (PUT If-None-Match: *),
-// compare-and-swap (PUT If-Match: <etag>), and the conditional GET that
-// answers 304. It records whether each primitive behaves, races concurrent
-// writers on one key to confirm exactly one winner, measures the latency of
-// a 304 and of a successful CAS, and probes the fallbacks (CopyObject with a
-// destination condition, bucket versioning) so a provider that lacks the
-// primitive is still characterised. Everything it writes lives under one
+// spec 004 builds on: create-if-absent (PUT If-None-Match: *), HEAD as the
+// currency check, and the conditional GET that answers 304; and for the
+// compare-and-swap (PUT If-Match: <etag>) the design no longer relies on,
+// so a provider table says what each store lacks. It records whether each
+// primitive behaves, races concurrent writers to create one key and to CAS
+// one key to confirm exactly one winner, measures the latency of each
+// operation, and probes the fallbacks (CopyObject with a destination
+// condition, bucket versioning). Everything it writes lives under one
 // random prefix that it deletes at the end.
 package main
 
@@ -49,6 +50,10 @@ type check struct {
 	// recorded but does not decide the exit status: the design needs the
 	// primary primitives, and a fallback matters only when those are absent.
 	Fallback bool `json:"fallback,omitempty"`
+	// Optional marks a primitive the design no longer relies on (If-Match
+	// on PUT, which not every provider honours). It is recorded so the
+	// provider table stays complete and never decides the exit status.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // latency summarises N timed samples of one operation.
@@ -156,26 +161,31 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	// One connection per concurrent writer, so the race measures the store
-	// and not the client's connection pool.
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.MaxIdleConnsPerHost = o.writers + 4
 	rec := &serverRecorder{next: tr}
-	client := s3.New(s3.Options{
-		Region:                     o.region,
-		BaseEndpoint:               aws.String(o.endpoint),
-		UsePathStyle:               o.pathStyle,
-		Credentials:                credentials.NewStaticCredentialsProvider(o.key, o.secret, ""),
-		HTTPClient:                 &http.Client{Transport: rec},
-		RetryMaxAttempts:           1,
-		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
-		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
-	})
-	p := &probe{c: client, bucket: o.bucket, prefix: o.prefix, o: o}
+	newClient := func(rt http.RoundTripper) *s3.Client {
+		return s3.New(s3.Options{
+			Region:                     o.region,
+			BaseEndpoint:               aws.String(o.endpoint),
+			UsePathStyle:               o.pathStyle,
+			Credentials:                credentials.NewStaticCredentialsProvider(o.key, o.secret, ""),
+			HTTPClient:                 &http.Client{Transport: rt},
+			RetryMaxAttempts:           1,
+			RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+			ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
+		})
+	}
+	// The races open one connection per write. A pooled connection that
+	// the server closed after a 412 fails the next write on the client side
+	// before it is sent, which measures the client's pool, not the store.
+	// The timed operations keep the pool: that is the path a node runs.
+	raceTr := tr.Clone()
+	raceTr.DisableKeepAlives = true
+	p := &probe{c: newClient(rec), rc: newClient(raceTr), bucket: o.bucket, prefix: o.prefix, o: o}
 	rep := &report{Endpoint: o.endpoint, Bucket: o.bucket, Prefix: o.prefix, Started: time.Now().UTC()}
 
 	if o.createBucket {
-		if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &o.bucket}); err != nil {
+		if _, err := p.c.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &o.bucket}); err != nil {
 			return fmt.Errorf("create bucket: %w", err)
 		}
 	}
@@ -188,7 +198,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 
 	rep.Checks = append(rep.Checks, p.primitives(ctx)...)
-	rep.Checks = append(rep.Checks, p.race(ctx))
+	rep.Checks = append(rep.Checks, p.createRace(ctx), p.casRace(ctx))
 	rep.Checks = append(rep.Checks, p.copyFallback(ctx)...)
 	// Timing runs before the versioning probe, which may change the
 	// bucket's write path on a bucket this run created.
@@ -206,7 +216,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 	}
 	for _, c := range rep.Checks {
-		if !c.Pass && !c.Fallback {
+		if !c.Pass && !c.Fallback && !c.Optional {
 			return errors.New("at least one primitive did not behave; see the table")
 		}
 	}
@@ -214,7 +224,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 }
 
 type probe struct {
-	c      *s3.Client
+	c      *s3.Client // pooled connections: primitives, timing, cleanup
+	rc     *s3.Client // one connection per request: the races
 	bucket string
 	prefix string
 	o      options
@@ -245,14 +256,18 @@ func got(err error) string {
 }
 
 func (p *probe) put(ctx context.Context, key string, body []byte, ifMatch, ifNoneMatch string) (string, error) {
-	in := &s3.PutObjectInput{Bucket: &p.bucket, Key: &key, Body: bytes.NewReader(body), ContentLength: aws.Int64(int64(len(body)))}
+	return putWith(ctx, p.c, p.bucket, key, body, ifMatch, ifNoneMatch)
+}
+
+func putWith(ctx context.Context, c *s3.Client, bucket, key string, body []byte, ifMatch, ifNoneMatch string) (string, error) {
+	in := &s3.PutObjectInput{Bucket: &bucket, Key: &key, Body: bytes.NewReader(body), ContentLength: aws.Int64(int64(len(body)))}
 	if ifMatch != "" {
 		in.IfMatch = &ifMatch
 	}
 	if ifNoneMatch != "" {
 		in.IfNoneMatch = &ifNoneMatch
 	}
-	res, err := p.c.PutObject(ctx, in)
+	res, err := c.PutObject(ctx, in)
 	if err != nil {
 		return "", err
 	}
@@ -271,6 +286,14 @@ func (p *probe) get(ctx context.Context, key, ifNoneMatch string) ([]byte, strin
 	defer res.Body.Close()
 	b, err := io.ReadAll(res.Body)
 	return b, aws.ToString(res.ETag), err
+}
+
+func (p *probe) head(ctx context.Context, key string) (string, error) {
+	res, err := p.c.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &p.bucket, Key: &key})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(res.ETag), nil
 }
 
 // body returns an index-sized payload that differs per tag.
@@ -298,30 +321,42 @@ func (p *probe) primitives(ctx context.Context) []check {
 	unchanged := gerr == nil && bytes.Equal(b, body("a"))
 	add("PUT If-None-Match:* on existing key", "412, content unchanged", got(err), status(err) == 412 && unchanged, fmt.Sprintf("content unchanged: %v", unchanged))
 
-	// 3. CAS with the current ETag succeeds with a new ETag.
+	// 3. CAS with the current ETag succeeds with a new ETag. Optional: the
+	// design no longer relies on it, and a provider may refuse it.
 	e2, err := p.put(ctx, key, body("c"), e1, "")
 	b, e2get, gerr := p.get(ctx, key, "")
 	applied := gerr == nil && bytes.Equal(b, body("c")) && e2get == e2
-	add("PUT If-Match:<current> ", "200 + new ETag, applied", got(err), err == nil && e2 != "" && e2 != e1 && applied, fmt.Sprintf("etag %s -> %s, GET agrees: %v", e1, e2, applied))
+	add("PUT If-Match:<current>", "200 + new ETag, applied", got(err), err == nil && e2 != "" && e2 != e1 && applied, fmt.Sprintf("etag %s -> %s, GET agrees: %v", e1, e2, applied))
+	cs[len(cs)-1].Optional = true
+	cur, want := e2, body("c")
 	if err != nil {
-		return cs
+		cur, want = e1, body("a")
 	}
 
 	// 4. CAS with a stale ETag is refused and not applied.
-	_, err = p.put(ctx, key, body("d"), e1, "")
+	stale := `"0123456789abcdef0123456789abcdef"`
+	_, err = p.put(ctx, key, body("d"), stale, "")
 	b, e3get, gerr := p.get(ctx, key, "")
-	unchanged = gerr == nil && bytes.Equal(b, body("c")) && e3get == e2
+	unchanged = gerr == nil && bytes.Equal(b, want) && e3get == cur
 	add("PUT If-Match:<stale>", "412, content unchanged", got(err), status(err) == 412 && unchanged, fmt.Sprintf("content unchanged: %v", unchanged))
+	cs[len(cs)-1].Optional = true
 
 	// 5. Conditional GET with the current ETag answers 304.
-	_, _, err = p.get(ctx, key, e2)
+	_, _, err = p.get(ctx, key, cur)
 	add("GET If-None-Match:<current>", "304", got(err), status(err) == 304, "")
 
 	// 6. Conditional GET with a stale ETag answers 200 with the body.
-	b, e4, err := p.get(ctx, key, e1)
-	add("GET If-None-Match:<stale>", "200 + body", got(err), err == nil && bytes.Equal(b, body("c")) && e4 == e2, "")
+	b, e4, err := p.get(ctx, key, stale)
+	add("GET If-None-Match:<stale>", "200 + body", got(err), err == nil && bytes.Equal(b, want) && e4 == cur, "")
 
-	// 7. Informational: If-Match on an absent key. AWS documents 404; the
+	// 7. HEAD on an absent and on a present key, the currency check of the
+	// immutable-index design.
+	_, err = p.head(ctx, p.key("absent"))
+	add("HEAD absent key", "404", got(err), status(err) == 404, "")
+	h, err := p.head(ctx, key)
+	add("HEAD existing key", "200 + ETag", got(err), err == nil && h == cur, fmt.Sprintf("etag agrees with GET: %v", h == cur))
+
+	// 8. Informational: If-Match on an absent key. AWS documents 404; the
 	// design never issues this, so any refusal passes.
 	absent := p.key("absent")
 	_, err = p.put(ctx, absent, body("e"), `"0123456789abcdef0123456789abcdef"`, "")
@@ -330,18 +365,45 @@ func (p *probe) primitives(ctx context.Context) []check {
 	return cs
 }
 
-// race has writers read one ETag and fire a CAS on it at the same instant,
-// for several rounds. Exactly one 200 per round and the stored body being
-// the winner's is the property spec 004 relies on.
-func (p *probe) race(ctx context.Context) check {
+// createRace has writers race to create one key with If-None-Match: * at
+// the same instant, for several rounds, one key per round. Exactly one 200
+// per round with the stored object being the winner's is the property the
+// immutable-index design of spec 004 commits with.
+func (p *probe) createRace(ctx context.Context) check {
+	c := p.contend(ctx, "c", func(round int) string { return p.key(fmt.Sprintf("create/%012d", round)) },
+		func(ctx context.Context, key, _ string, b []byte) (string, error) {
+			return putWith(ctx, p.rc, p.bucket, key, b, "", "*")
+		})
+	c.Name = "concurrent create race (If-None-Match:*)"
+	return c
+}
+
+// casRace has writers read one ETag and fire a CAS on it at the same
+// instant, for several rounds on one key. Optional: it documents whether
+// the provider has a working If-Match, which the design no longer needs.
+func (p *probe) casRace(ctx context.Context) check {
 	key := p.key("race")
-	etag, err := p.put(ctx, key, body("seed"), "", "*")
-	if err != nil {
-		return check{Name: "race", Expect: "1 winner per round", Got: got(err), Note: "seed write failed"}
+	if _, err := p.put(ctx, key, body("seed"), "", "*"); err != nil {
+		return check{Name: "concurrent CAS race (If-Match)", Expect: "1 applied per round", Got: got(err), Note: "seed write failed", Optional: true}
 	}
+	c := p.contend(ctx, "r", func(int) string { return key },
+		func(ctx context.Context, key, prev string, b []byte) (string, error) {
+			return putWith(ctx, p.rc, p.bucket, key, b, prev, "")
+		})
+	c.Name, c.Optional = "concurrent CAS race (If-Match)", true
+	return c
+}
+
+// contend runs rounds of writers that each fire one write at the same
+// instant and settles every round from the stored object. write receives
+// the key for the round, the ETag read back after the previous round (the
+// seed's on the first), and the writer's body.
+func (p *probe) contend(ctx context.Context, tag string, keyFor func(round int) string, write func(ctx context.Context, key, prev string, b []byte) (string, error)) check {
 	var bad []string
 	winners, losers, ambiguous, ackLost, other := 0, 0, 0, 0, 0
+	etag, _ := p.head(ctx, keyFor(0))
 	for round := range p.o.rounds {
+		key := keyFor(round)
 		type result struct {
 			etag string
 			err  error
@@ -353,7 +415,7 @@ func (p *probe) race(ctx context.Context) check {
 		for i := range p.o.writers {
 			wg.Go(func() {
 				<-start
-				e, err := p.put(ctx, key, body(fmt.Sprintf("r%dw%d", round, i)), etag, "")
+				e, err := write(ctx, key, etag, body(fmt.Sprintf("%s%dw%d", tag, round, i)))
 				results[i] = result{e, err, i}
 			})
 		}
@@ -389,7 +451,7 @@ func (p *probe) race(ctx context.Context) check {
 		}
 		stored := -1
 		for i := range p.o.writers {
-			if bytes.Equal(b, body(fmt.Sprintf("r%dw%d", round, i))) {
+			if bytes.Equal(b, body(fmt.Sprintf("%s%dw%d", tag, round, i))) {
 				stored = i
 			}
 		}
@@ -410,7 +472,7 @@ func (p *probe) race(ctx context.Context) check {
 	if len(bad) > 0 {
 		note += "; " + strings.Join(bad, "; ")
 	}
-	return check{Name: "concurrent CAS race", Expect: "exactly 1 applied per round, rest 412", Got: fmt.Sprintf("%d applied / %d rounds", winners+ackLost, p.o.rounds), Pass: len(bad) == 0 && winners+ackLost == p.o.rounds, Note: note}
+	return check{Expect: "exactly 1 applied per round, rest 412", Got: fmt.Sprintf("%d applied / %d rounds", winners+ackLost, p.o.rounds), Pass: len(bad) == 0 && winners+ackLost == p.o.rounds, Note: note}
 }
 
 // copyFallback asks whether CopyObject honours If-Match and If-None-Match
@@ -453,7 +515,9 @@ func (p *probe) copyFallback(ctx context.Context) []check {
 
 	e1, err := cp(e0, "")
 	b, eget, _ := p.get(ctx, dst, "")
-	cs = append(cs, check{Name: "CopyObject If-Match:<current> on dst", Expect: "200, dst replaced", Got: got(err), Pass: err == nil && bytes.Equal(b, body("copy1")) && eget == e1, Note: fmt.Sprintf("etag %s -> %s", e0, e1)})
+	// Some providers return the copy result's ETag without quotes.
+	same := strings.Trim(eget, `"`) == strings.Trim(e1, `"`)
+	cs = append(cs, check{Name: "CopyObject If-Match:<current> on dst", Expect: "200, dst replaced", Got: got(err), Pass: err == nil && bytes.Equal(b, body("copy1")) && same, Note: fmt.Sprintf("etag %s -> %s", e0, e1)})
 	for i := range cs {
 		cs[i].Fallback = true
 	}
@@ -520,6 +584,18 @@ func (p *probe) latencies(ctx context.Context) []latency {
 	}))
 	out = append(out, timeIt("GET unconditional -> 200", n, func(i int) error {
 		_, _, err := p.get(ctx, key, "")
+		return err
+	}))
+	missing := p.key("missing")
+	out = append(out, timeIt("HEAD missing key -> 404", n, func(i int) error {
+		_, err := p.head(ctx, missing)
+		if status(err) != 404 {
+			return fmt.Errorf("sample %d: %s", i, got(err))
+		}
+		return nil
+	}))
+	out = append(out, timeIt("HEAD existing key -> 200", n, func(i int) error {
+		_, err := p.head(ctx, key)
 		return err
 	}))
 	out = append(out, timeIt("PUT If-Match -> 200 (CAS)", n, func(i int) error {
@@ -643,6 +719,8 @@ func print(w io.Writer, r *report) {
 			res = "honoured"
 		case c.Fallback:
 			res = "not honoured"
+		case c.Optional && !c.Pass:
+			res = "absent"
 		case !c.Pass:
 			res = "FAIL"
 		}
