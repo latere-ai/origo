@@ -20,3 +20,8 @@ committed: the commit log already holds that.
 - Container images, Kubernetes manifests under `deploy/`, and the release
   pipeline on a `v*` tag.
 - Phase 1 authentication is one static bearer from `ORIGO_DEV_TOKEN`.
+- The write-ahead log (spec 004): entries, immutable index objects
+  committed by create-if-absent, the `HEAD` currency check, repository
+  metadata, and the sweeper, over an S3 client signed by the standard
+  library. Repositories materialize from the log into `ORIGO_DATA_DIR`
+  and are rebuilt when corrupt.

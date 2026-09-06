@@ -19,8 +19,10 @@ the log as the source of truth (specs 002, 003, 004). The spec deck under
 [`specs/`](specs/README.md) describes the whole system and is the build
 plan. What runs today: the `origod` binary with its typed configuration,
 the three listeners with `/livez`, `/readyz`, `/version`, and `/metrics`,
-the quality gate, the container images, and the release pipeline. The
-write-ahead log and the smart HTTP surface land next.
+the write-ahead log with its create-if-absent commit, the repository
+cache that materializes from the log, the sweeper, the quality gate, the
+container images, and the release pipeline. The smart HTTP surface lands
+next.
 
 Authentication in phase 1 is a single static bearer read from
 `ORIGO_DEV_TOKEN`; the public listener accepts it and refuses everything
