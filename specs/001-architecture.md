@@ -44,7 +44,7 @@ single-cluster, object-storage-first deployment.
 |---|---|---|
 | Replicated repositories with a consensus protocol | three copies per repository, every push a three-phase commit, a routing table naming where each repository lives | latency bound by the slowest replica, throughput falls as replicas are added, a corrupt quorum blocks pushes, and a million small repositories cost three copies each |
 | Packfiles in object storage, references in a relational database | objects are blobs, refs are rows | two systems to keep consistent, a database in the push path, and git's own tooling cannot operate on the stored form |
-| Write-ahead log in object storage, repositories as a cache | every push is a log entry; the log index is updated by compare-and-swap; nodes materialize repositories from the log and repack on the primary | chosen: linearized pushes with no leader, consistent reads by one conditional request, stateless nodes, and idle repositories that hold no local copy |
+| Write-ahead log in object storage, repositories as a cache | every push is a log entry; the log index is a sequence of immutable objects, each committed by create-if-absent; nodes materialize repositories from the log and repack on the primary | chosen: linearized pushes with no leader, consistent reads by one `HEAD`, stateless nodes, and idle repositories that hold no local copy |
 
 ## Design
 
@@ -65,7 +65,7 @@ flowchart LR
   I[OIDC issuer]
   G -->|smart HTTP, bearer| N1
   P -->|JSON API, delegation| N2
-  N1 & N2 & N3 <-->|WAL entries, CAS on the index| S
+  N1 & N2 & N3 <-->|WAL entries, create-if-absent on index/seq| S
   N1 <-.->|gossip| N2 <-.->|gossip| N3
   N1 & N2 & N3 -->|JWKS| I
   N2 -->|push events| P
@@ -90,14 +90,16 @@ and never reused. Under `origo/repos/<id>/`:
 
 | Prefix | Content |
 |---|---|
-| `wal/<seq>.entry` | one push or one compaction: a packfile plus the reference transaction it carries (spec 004) |
-| `index` | the WAL index: the ordered list of entries and the current refs; updated only by compare-and-swap on its ETag |
-| `packs/<hash>.pack`, `.idx` | packs produced by compaction, referenced from the index |
+| `wal/<seq>.<nonce>.entry` | one push or one compaction: a packfile plus the reference transaction it carries (spec 004) |
+| `index/<seq>` | the WAL index after entry `seq`: the current refs and the entries since the last compaction; immutable, created once with `If-None-Match: *` |
+| `index/latest` | the newest sequence as a hint; written unconditionally, may lag, never leads correctness |
+| `packs/<hash>.pack`, `.idx` | packs produced by compaction, referenced from the index objects |
 | `lfs/<oid>` | LFS objects (spec 010) |
 
-A node materializes `<id>` by reading the index and applying entries into a
-bare repository at `/var/lib/origo/repos/<id>.git`. The local repository
-is a cache: it is rebuilt from the log when missing and evicted when idle.
+A node materializes `<id>` by reading the newest index object and applying
+entries into a bare repository at `/var/lib/origo/repos/<id>.git`. The
+local repository is a cache: it is rebuilt from the log when missing and
+evicted when idle.
 
 ### Write path
 
@@ -108,37 +110,41 @@ sequenceDiagram
   participant S as object storage
   C->>N: receive-pack: packfile + ref updates
   N->>N: index the pack, verify connectivity against the local copy
-  N->>S: PUT wal/<seq>.entry (pack + ref transaction)
-  N->>S: PUT index If-Match: <etag> (append entry, apply refs)
-  alt CAS succeeds
-    S-->>N: 200, new ETag
-    N->>N: apply refs locally, gossip the new sequence
+  N->>S: PUT wal/<n+1>.<nonce>.entry (pack + ref transaction)
+  N->>S: PUT index/<n+1> If-None-Match: * (refs, entries, packs)
+  alt create succeeds
+    S-->>N: 200
+    N->>S: PUT index/latest = n+1 (unconditional hint)
+    N->>N: apply refs locally, gossip n+1
     N-->>C: ok
-  else CAS fails
+  else key exists
     S-->>N: 412
-    N->>N: fetch the newer index, catch up, retry the transaction
+    N->>N: GET index/<n+1>, catch up, retry at n+2
   end
 ```
 
-A push is acknowledged only after the index write succeeds. Two nodes
-pushing to one repository race on the ETag; one wins, the other applies the
-winner's entries and retries with git's usual non-fast-forward semantics.
-There is no primary for writes.
+A push is acknowledged only after the create of the next index object
+succeeds. Two nodes pushing to one repository race to create the same
+`index/<n+1>`; one wins, the other applies the winner's entry and retries
+with git's usual non-fast-forward semantics. There is no primary for
+writes.
 
 ### Read path
 
 Every read that must be consistent (advertising refs, serving a fetch, the
-JSON API) starts with a conditional GET on the index using the ETag the
-node holds. A 304 costs under 10 milliseconds and means the local copy is
-current. A 200 carries the newer index; the node applies the missing
-entries before serving. Gossip between nodes makes the 304 the common case;
-correctness never depends on gossip arriving.
+JSON API) starts with a `HEAD` on `index/<n+1>` for the sequence `n` the
+node holds. A 404 is one round trip with no body and means the local copy
+is current. A 200 means a newer index exists; the node fetches it, applies
+the missing entry, and asks again until a 404. Gossip between nodes makes
+the single 404 the common case; correctness never depends on gossip
+arriving.
 
 ## Invariants
 
 1. A push is durable in object storage before the client sees success.
-2. Reference transactions of one repository are linearized by the index's
-   compare-and-swap. There is no other lock.
+2. Reference transactions of one repository are linearized by
+   create-if-absent on the next index object: `index/<n+1>` is created at
+   most once. There is no other lock.
 3. A node holds no state a request cannot rebuild from the log. Deleting a
    node's disk loses nothing.
 4. A read that starts with a fresh index never returns a reference older
@@ -169,8 +175,8 @@ existing repositories in.
 - A node with an empty disk serves a clone of a repository that exists only
   in object storage, and the clone's history equals the pushed history.
 - Two nodes accept concurrent pushes to different branches of one
-  repository; both land, the index has both, and neither client sees a
-  spurious failure.
+  repository; both land, the newest index object has both, and neither
+  client sees a spurious failure.
 - Killing a node mid-push leaves either a fully acknowledged push or no
   change; a retry from the client converges.
 - A grep of the module for cloud SDK imports and for Kubernetes API clients
