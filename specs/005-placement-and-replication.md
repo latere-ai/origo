@@ -4,10 +4,12 @@ status: drafted
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
+  - specs/007-authentication-and-delegation.md
+  - specs/013-conformance-suite.md
 affects: [internal/placement/, internal/repo/, cmd/origod/, deploy/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -45,10 +47,18 @@ as a big-endian integer, and the `k` nodes with the highest scores are
 the preferred replicas. `k` is per repository from the authorizer's
 `replicas` field (spec 007), default 1, at most the node count. There is
 no table; a node joining or leaving moves only the repositories that
-hash to it. The live node set is the addresses `ORIGO_GOSSIP_PEERS`
-resolves to, refreshed every 10 seconds, mapped to names by the gossip
-announcements heard from each address in the last 60 seconds; a node
-with a single-node set is preferred for everything.
+hash to it.
+
+Membership is by heartbeat. Every 10 seconds a node sends one datagram
+in the gossip format below with an empty `repo` and `seq` 0 to every
+address `ORIGO_GOSSIP_PEERS` resolves to, the resolution refreshed every
+10 seconds. The live node set is the names heard, by heartbeat or by an
+announcement, in the last 60 seconds, plus the node's own name, which is
+always in the set. A node with a single-node set is preferred for
+everything. The set is what placement, the compaction primary (spec
+006), the import lease (spec 019), and the event repair sweep (spec 008)
+read; each of those also needs the time a node was last heard, which
+the set records per name.
 
 | Header | Meaning |
 |---|---|
@@ -66,9 +76,13 @@ the gossip port, with no acknowledgement:
 {"v": 1, "node": "<ORIGO_NODE_NAME>", "repo": "<id>", "seq": 1044}
 ```
 
+The same format with `repo` empty and `seq` 0 is the heartbeat above; a
+receiver records the sender's name and the time and does nothing else.
 A receiver that holds the repository locally below `seq` schedules one
 background catch-up (an `Acquire` for writing that returns at once) so
-the next request finds the copy current. A datagram that fails to parse,
+the next request finds the copy current, at most one catch-up per
+repository per second whatever the datagram rate, which bounds what a
+forged flood can cost (spec 016). A datagram that fails to parse,
 carries another version, or names a repository the node does not hold is
 dropped. Gossip carries no secret and grants nothing: the currency check
 still decides, so a forged announcement costs at most one `HEAD`. It is
@@ -124,7 +138,7 @@ else.
 |---|---|---|
 | reads: clone, fetch, the read API, archive | linearly; every node serves any repository after one materialization | the bucket's request rate and each node's disk |
 | pushes to different repositories | linearly; commits to different repositories never contend | same |
-| pushes to one repository | does not scale; every push to a repository serializes on its create-if-absent commit, whichever node receives it | on the order of ten pushes per second per repository against object storage (phase 1 measured 9.7 per second on MinIO in a laptop virtual machine, spec 004 Outcome); a busier repository needs batching of concurrent pushes into one commit, which is not in this spec |
+| pushes to one repository | does not scale; every push to a repository serializes on its create-if-absent commit, whichever node receives it | on the order of ten pushes per second per repository against object storage (phase 1 measured 9.7 per second on MinIO in a laptop virtual machine, spec 004 Outcome); a busier repository needs batching of concurrent pushes into one commit, which is out of scope for every spec in the deck and listed as a future spec in `specs/README.md` |
 
 The autoscaler is a HorizontalPodAutoscaler in `deploy/base`:
 `minReplicas: 2`, `maxReplicas: 32`, target CPU utilization 70% of the
@@ -149,21 +163,34 @@ correct; it is only slower until warm.
 
 ### Materialization budget
 
-Phase 1 applied entries one at a time with two git subprocesses each and
-measured 70.7 seconds for 1 000 entries (spec 004 Outcome). The budget is
-10 seconds per 1 000 entries against MinIO on the CI runner, reached by
-two changes to `internal/repo.Cache.Apply`: entries are fetched ahead
-with 4 concurrent downloads while the previous one is indexed, and the
-per-entry `update-ref` is dropped because step 4 of materialization
-reconciles the whole map once. Compaction (spec 006) keeps the entry
-count under 64 for any repository that is pushed to. A materialization
-over 60 seconds is visible on `origo_repo_materialize_seconds` and the
-alert of spec 011.
+Phase 1 applied entries one at a time, one `GET`, one `index-pack`, and
+one `update-ref` each, and measured 70.7 seconds for 1 000 entries,
+about 70 ms per entry, on a laptop against MinIO (spec 004 Outcome).
+`internal/repo.Cache.Apply` changes in two ways. Entries are fetched and
+indexed by concurrent workers, 4 by default: each worker takes the next
+entry in sequence order, downloads it, verifies its length and
+`pack_sha256`, and runs `git index-pack --stdin --fix-thin --strict`
+against the shared object store, which is safe because objects are
+content addressed and git writes packs atomically. A thin pack can need
+objects from an earlier entry; a worker whose `index-pack` fails with a
+missing base waits until every lower entry has landed and runs once
+more, and a failure after that is corruption (spec 004). The per-entry
+`update-ref` is dropped: references are applied once at the end by step
+4 of materialization, which reconciles the whole map to the index. On
+the phase 1 numbers that reaches about 20 ms per entry with 4 workers,
+so 1 000 entries in about 20 seconds on the laptop; the acceptance
+threshold on the CI runner is 30 seconds for 1 000 entries. Compaction
+(spec 006) keeps the entry count under 64 for any repository that is
+pushed to, so the budget matters on a cold node after a compaction gap,
+not on every request. A materialization over 60 seconds is visible on
+`origo_repo_materialize_seconds` and the alert of spec 011.
 
 ## Not in this spec
 
-Batching concurrent pushes into one commit. Routing by `Origo-Prefer` at
-the ingress. Deleting the cache on shutdown.
+Batching concurrent pushes to one repository into one commit: out of
+scope for every spec in the deck, and the future spec `specs/README.md`
+lists under Later. Routing by `Origo-Prefer` at the ingress. Deleting
+the cache on shutdown.
 
 ## Acceptance criteria
 
@@ -172,10 +199,21 @@ the ingress. Deleting the cache on shutdown.
   clone sent to that node leaves `origo_repo_materialized_total` on it
   unchanged (proposed: `internal/placement`, `TestRendezvousAgreesAcrossNodes`;
   `test/e2e`, `TestPreferredNodeIsWarm`).
-- A push on node A is visible to a fetch on node B within 100 ms with
-  gossip, and within one request with gossip disabled (`ORIGO_GOSSIP_PEERS`
-  unset), measured as the time until B's `HEAD` answers 200 (proposed:
-  `test/e2e`, `TestGossipShortensTheCatchUp`).
+- A push acknowledged on node A is returned by a fetch on node B: with
+  gossip, a fetch on B started 100 ms after A's acknowledgement returns
+  the pushed commit with B's currency check answering 404, so the
+  catch-up happened before the request; with gossip disabled
+  (`ORIGO_GOSSIP_PEERS` unset) the first fetch on B returns the pushed
+  commit after one currency check that answers 200. The test measures
+  the time from A's acknowledgement until a fetch on B returns the
+  commit (proposed: `test/e2e`, `TestGossipShortensTheCatchUp`).
+- Three nodes exchanging heartbeats agree on the live set within 60
+  seconds of a node joining and drop a node 60 seconds after its last
+  datagram with a fake clock, and a node's own name is in its set with
+  no peers (proposed: `internal/placement`, `TestMembershipByHeartbeat`).
+- 10 000 gossip datagrams for one repository in one second cause at most
+  one catch-up on the receiver (proposed: `internal/placement`,
+  `TestGossipCatchUpIsRateLimited`).
 - Filling the cache past `ORIGO_CACHE_BYTES` with 20 repositories evicts
   the least recently acquired ones, never one holding a lock, and a
   subsequent read materializes an evicted one with identical
@@ -194,6 +232,9 @@ the ingress. Deleting the cache on shutdown.
   acknowledged and in the newest index or refused with
   `storage_unavailable` and absent (proposed: `test/e2e`,
   `TestDrainLosesNoPush`).
-- Materializing 1 000 entries from an empty disk finishes under 10
-  seconds against MinIO on the CI runner (`test/e2e`, `TestMeasure`,
-  `materialize 1000 entries`, with the threshold asserted).
+- Materializing 1 000 entries from an empty disk with 4 workers
+  finishes under 30 seconds against MinIO on the CI runner, and a thin
+  entry whose base is in the previous entry lands on the retry
+  (`test/e2e`, `TestMeasure`, `materialize 1000 entries`, with the
+  threshold asserted; proposed: `internal/repo`,
+  `TestConcurrentWorkersApplyThinEntries`).
