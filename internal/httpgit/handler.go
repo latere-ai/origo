@@ -32,9 +32,11 @@ import (
 	"syscall"
 	"time"
 
+	"latere.ai/x/pkg/httpjson"
+	"latere.ai/x/pkg/metrics"
+
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -71,11 +73,14 @@ func New(o Options) *Handler {
 	}
 	reg := o.Metrics
 	if reg == nil {
-		reg = metrics.New()
+		reg = metrics.NewRegistry()
 	}
 	h.pushes = reg.Counter("origo_pushes_total", "pushes acknowledged")
 	h.rejected = reg.Counter("origo_pushes_rejected_total", "pushes refused by the log")
 	h.fetches = reg.Counter("origo_fetches_total", "upload-pack requests served")
+	for _, c := range []*metrics.Counter{h.pushes, h.rejected, h.fetches} {
+		c.Add(nil, 0) // the series reads 0 before the first event
+	}
 	return h
 }
 
@@ -97,7 +102,7 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request) (string, bool)
 	id, err := h.log.Resolve(r.Context(), r.PathValue("owner"), strings.TrimSuffix(r.PathValue("slug"), ".git"))
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
-			contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "repository not found")
+			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
 		} else {
 			h.storageError(w, r, err)
 		}
@@ -112,7 +117,7 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
-			contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "repository not found")
+			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
 		default:
 			h.storageError(w, r, err)
 		}
@@ -123,7 +128,7 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	h.logger.ErrorContext(r.Context(), "repository unavailable", "path", r.URL.Path, "error", err)
-	contract.WriteError(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, "repository unavailable")
+	httpjson.WriteError(w, http.StatusServiceUnavailable, httpjson.Error{Code: contract.CodeStorageUnavailable, Message: "repository unavailable"})
 }
 
 // gitCommand builds a git service subprocess against the repository
@@ -144,7 +149,7 @@ func (h *Handler) gitCommand(ctx context.Context, r *http.Request, rp *repo.Repo
 func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 	service := r.URL.Query().Get("service")
 	if service != "git-upload-pack" && service != "git-receive-pack" {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "smart HTTP only: service must be git-upload-pack or git-receive-pack")
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "smart HTTP only: service must be git-upload-pack or git-receive-pack"})
 		return
 	}
 	id, ok := h.resolve(w, r)
@@ -185,7 +190,7 @@ func (h *Handler) uploadPack(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	body, closeBody, err := requestBody(r)
 	if err != nil {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, err.Error())
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
 		return
 	}
 	defer closeBody()
@@ -199,7 +204,7 @@ func (h *Handler) uploadPack(w http.ResponseWriter, r *http.Request) {
 		h.logger.ErrorContext(r.Context(), "upload-pack failed", "repo", id, "error", err, "stderr", stderr.String())
 		return
 	}
-	h.fetches.Inc()
+	h.fetches.Inc(nil)
 }
 
 // requestBody returns the request body, inflated when the client sent
@@ -232,13 +237,13 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 
 	spool, err := spoolBody(r, h.cache.SpoolDir())
 	if err != nil {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, err.Error())
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
 		return
 	}
 	defer func() { _ = spool.Close(); _ = os.Remove(spool.Name()) }()
 	req, err := parseReceive(spool)
 	if err != nil {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, err.Error())
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
 		return
 	}
 	if err := installHook(rp.Dir); err != nil {
@@ -270,7 +275,9 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		err  error
 	}
 	fromHook := make(chan updates, 1)
+	hookDone := make(chan struct{})
 	go func() {
+		defer close(hookDone)
 		refs, ok, err := ch.readUpdates()
 		fromHook <- updates{refs, ok, err}
 	}()
@@ -294,7 +301,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	case runErr = <-exited:
 		// git refused the push before the hook ran: bad objects, a
 		// failed connectivity check, or a client that went away.
-		ch.release()
+		ch.drain(hookDone)
 		<-fromHook
 	}
 	if runErr != nil {
@@ -306,7 +313,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 				h.logger.ErrorContext(r.Context(), "local sequence not advanced", "repo", id, "error", err)
 			}
 		}
-		h.pushes.Inc()
+		h.pushes.Inc(nil)
 		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()))
 	}
 }
@@ -327,7 +334,7 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 		return h.cache.Apply(ctx, rp, ix)
 	})
 	if err != nil {
-		h.rejected.Inc()
+		h.rejected.Inc(nil)
 		if conflict, ok := errors.AsType[*wal.ConflictError](err); ok {
 			return nil, fmt.Sprintf("reject %s: %s moved to %s since you fetched; fetch first", contract.CodeNonFastForward, conflict.Ref, short(conflict.Actual))
 		}

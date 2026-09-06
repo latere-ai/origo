@@ -21,7 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/pkg/metrics"
+
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -120,20 +121,24 @@ func New(o Options) (*Cache, error) {
 	}
 	reg := o.Metrics
 	if reg == nil {
-		reg = metrics.New()
+		reg = metrics.NewRegistry()
 	}
 	fsckEvery := o.FsckEvery
 	if fsckEvery == 0 {
 		fsckEvery = 256
 	}
-	return &Cache{
+	c := &Cache{
 		dir: o.Dir, log: o.Log, git: &Git{Bin: path, Home: home, Timeout: timeout},
 		fsckEvery: fsckEvery, logger: logger, repos: map[string]*Repo{},
 		materialized: reg.Counter("origo_repo_materialized_total", "repositories built from the log onto an empty disk"),
 		applied:      reg.Counter("origo_repo_entries_applied_total", "log entries applied to local copies"),
 		rebuilt:      reg.Counter("origo_repo_rebuilt_total", "local copies removed as corrupt and rebuilt"),
 		materialize:  reg.Histogram("origo_repo_materialize_seconds", "time to bring a local copy current", []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60}),
-	}, nil
+	}
+	for _, m := range []*metrics.Counter{c.materialized, c.applied, c.rebuilt} {
+		m.Add(nil, 0) // the series reads 0 before the first event
+	}
+	return c, nil
 }
 
 // SpoolDir is where request bodies larger than memory are spooled.
@@ -272,7 +277,7 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 		if err := c.initBare(ctx, r); err != nil {
 			return err
 		}
-		c.materialized.Inc()
+		c.materialized.Inc(nil)
 	}
 	if fresh || r.Seq < ix.CompactedThrough {
 		for _, p := range ix.Packs {
@@ -287,13 +292,13 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 		}
 		if err := c.applyEntry(ctx, r, e); err != nil {
 			if IsCorruption(err) {
-				c.rebuilt.Inc()
+				c.rebuilt.Inc(nil)
 				c.evict(r)
 				return fmt.Errorf("%w: %w", ErrCorrupt, err)
 			}
 			return err
 		}
-		c.applied.Inc()
+		c.applied.Inc(nil)
 	}
 	if err := c.reconcileRefs(ctx, r, ix); err != nil {
 		return err
@@ -302,7 +307,7 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 		return err
 	}
 	r.Seq, r.Local, r.Index = ix.Seq, true, ix
-	c.materialize.Observe(time.Since(start).Seconds())
+	c.materialize.Observe(nil, time.Since(start).Seconds())
 	return nil
 }
 
@@ -497,7 +502,7 @@ func (c *Cache) writeState(r *Repo, seq uint64) error {
 // the next open rebuilds it from the log.
 func (c *Cache) Verify(ctx context.Context, r *Repo) error {
 	if _, err := c.git.Run(ctx, r.Dir, nil, "fsck", "--connectivity-only", "--no-progress"); err != nil {
-		c.rebuilt.Inc()
+		c.rebuilt.Inc(nil)
 		c.evict(r)
 		c.logger.WarnContext(ctx, "local copy corrupt, evicted for rebuild", "repo", r.ID, "error", err)
 		return fmt.Errorf("%w: %w", ErrCorrupt, err)

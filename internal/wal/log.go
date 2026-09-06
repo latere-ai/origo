@@ -12,11 +12,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"strconv"
 	"time"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/pkg/metrics"
+	"latere.ai/x/pkg/retry"
+	"latere.ai/x/pkg/wait"
 )
 
 // Options configures a Log.
@@ -73,7 +74,7 @@ func New(o Options) *Log {
 		logger: o.Logger, maxAttempts: o.MaxCommitAttempts, sleep: o.Sleep,
 	}
 	if l.sleep == nil {
-		l.sleep = sleepContext
+		l.sleep = func(ctx context.Context, d time.Duration) { _ = wait.Sleep(ctx, d) }
 	}
 	if l.prefix == "" {
 		l.prefix = "origo/"
@@ -92,7 +93,7 @@ func New(o Options) *Log {
 	}
 	reg := o.Metrics
 	if reg == nil {
-		reg = metrics.New()
+		reg = metrics.NewRegistry()
 	}
 	l.commits = reg.Counter("origo_wal_commits_total", "index objects this node created")
 	l.conflicts = reg.Counter("origo_wal_commit_conflicts_total", "commits refused because a reference moved")
@@ -100,6 +101,11 @@ func New(o Options) *Log {
 	l.entryByte = reg.Counter("origo_wal_entry_bytes_total", "bytes written as entries")
 	l.headCheck = reg.Histogram("origo_wal_head_check_seconds", "latency of the HEAD currency check",
 		[]float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5})
+	// A scrape before the first event reads the series at 0 rather than
+	// not at all, which is the shape spec 011's dashboards expect.
+	for _, c := range []*metrics.Counter{l.commits, l.conflicts, l.retries, l.entryByte} {
+		c.Add(nil, 0)
+	}
 	return l
 }
 
@@ -142,7 +148,7 @@ func (l *Log) ReadIndex(ctx context.Context, repo string, seq uint64) (*Index, e
 func (l *Log) HasIndex(ctx context.Context, repo string, seq uint64) (bool, error) {
 	start := time.Now()
 	_, err := l.store.Head(ctx, l.key(repo, IndexKey(seq)))
-	l.headCheck.Observe(time.Since(start).Seconds())
+	l.headCheck.Observe(nil, time.Since(start).Seconds())
 	if errors.Is(err, ErrNotFound) {
 		return false, nil
 	}
@@ -321,7 +327,7 @@ type Committed struct {
 func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, catchUp func(context.Context, *Index) error) (*Committed, error) {
 	for attempt := range l.maxAttempts {
 		if attempt > 0 {
-			l.retries.Inc()
+			l.retries.Inc(nil)
 			// Writers that lost the same round would otherwise replay it
 			// in step and lose again together; a jittered pause spreads
 			// them out so every one of them lands.
@@ -331,7 +337,7 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 			}
 		}
 		if err := l.checkTransaction(base, e.Refs); err != nil {
-			l.conflicts.Inc()
+			l.conflicts.Inc(nil)
 			return nil, err
 		}
 		seq := base.Seq + 1
@@ -376,7 +382,7 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 			}
 		}
 		if won {
-			l.commits.Inc()
+			l.commits.Inc(nil)
 			l.writeHint(ctx, repo, seq)
 			return &Committed{Index: next, Key: key}, nil
 		}
@@ -384,13 +390,14 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 	return nil, ErrContended
 }
 
-// commitBackoff is the pause before replaying a lost round: random up
-// to 1ms doubled per consecutive loss, capped at 16ms. It stays small
-// because a loser already pays a read and a re-upload before its next
-// attempt; the jitter only breaks lockstep between losers.
+// commitPolicy is the pause before replaying a lost round: up to 1ms
+// doubled per consecutive loss, capped at 16ms, fully jittered. It stays
+// small because a loser already pays a read and a re-upload before its
+// next attempt; the jitter only breaks lockstep between losers.
+var commitPolicy = retry.Policy{Base: time.Millisecond, Max: 16 * time.Millisecond, Jitter: 1}
+
 func commitBackoff(lost int) time.Duration {
-	base := time.Millisecond << min(lost-1, 4)
-	return time.Duration(rand.Int64N(int64(base)))
+	return commitPolicy.Delay(lost)
 }
 
 func (l *Log) checkTransaction(base *Index, refs []RefUpdate) error {
@@ -432,7 +439,7 @@ func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) 
 	if _, err := l.store.Put(ctx, l.key(repo, key), body); err != nil {
 		return "", fmt.Errorf("wal: write entry: %w", err)
 	}
-	l.entryByte.Add(body.Size)
+	l.entryByte.Add(nil, uint64(body.Size)) //nolint:gosec // a size is never negative
 	return key, nil
 }
 

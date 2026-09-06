@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,12 +15,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"latere.ai/x/pkg/health"
+	"latere.ai/x/pkg/httpjson"
+	"latere.ai/x/pkg/metrics"
+	"latere.ai/x/pkg/wait"
+
 	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/httpgit"
-	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -84,7 +87,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	n := &node{
 		cfg:        cfg,
 		logger:     logger,
-		reg:        metrics.New(),
+		reg:        metrics.NewRegistry(),
 		exit:       os.Exit,
 		drainDelay: defaultDrainDelay,
 		started:    make(chan struct{}),
@@ -118,10 +121,10 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg}).Register(app)
 	api.New(n.cache, logger).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "no such route")
+		httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "no such route"})
 	})
 	guard := &auth.StaticBearer{Token: cfg.DevToken, Deny: func(w http.ResponseWriter, _ *http.Request, code, message string) {
-		contract.WriteError(w, http.StatusUnauthorized, code, message)
+		httpjson.WriteError(w, http.StatusUnauthorized, httpjson.Error{Code: code, Message: message})
 	}}
 	n.public = contract.Middleware(guard.Middleware(app))
 	return n, nil
@@ -158,18 +161,12 @@ func (n *node) sweep(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	t := time.NewTicker(n.cfg.SweepInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-t.C:
-			if err := n.log.SweepAll(ctx, n.cfg.SweepMinAge); err != nil && ctx.Err() == nil {
-				n.logger.WarnContext(ctx, "sweep", "error", err)
-			}
+	wait.Every(ctx, n.cfg.SweepInterval, func(ctx context.Context) {
+		if err := n.log.SweepAll(ctx, n.cfg.SweepMinAge); err != nil && ctx.Err() == nil {
+			n.logger.WarnContext(ctx, "sweep", "error", err)
 		}
-	}
+	})
+	return ctx.Err()
 }
 
 // diskWritable proves the data directory accepts a write. A read-only
@@ -185,17 +182,22 @@ func (n *node) diskWritable(context.Context) error {
 	return os.Remove(name)
 }
 
-// internalHandler serves the probe and telemetry paths. They are on their
-// own listener so nothing in front of the public surface can shadow them.
+// internalHandler serves the probe and telemetry paths, the four every
+// Latere service carries (pkg/health). They are on their own listener so
+// nothing in front of the public surface can shadow them.
 func (n *node) internalHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	return health.Handler(health.Options{
+		Ready: n.ready, Timeout: readyCheckTimeout, Metrics: n.metricsHandler(),
+		Version: versionpkg.Version, Commit: versionpkg.Commit, BuildTime: versionpkg.Date,
 	})
-	mux.HandleFunc("GET /readyz", n.handleReady)
-	mux.HandleFunc("GET /version", handleVersion)
-	mux.Handle("GET /metrics", n.reg.Handler())
-	return mux
+}
+
+// metricsHandler serves the registry in the Prometheus text format.
+func (n *node) metricsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		n.reg.WritePrometheus(w)
+	})
 }
 
 // publicHandler serves the application surface with /readyz and /version
@@ -203,62 +205,28 @@ func (n *node) internalHandler() http.Handler {
 // release smoke reaches them through the ingress; /livez and /metrics stay
 // internal.
 func (n *node) publicHandler() http.Handler {
+	probes := n.internalHandler()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /readyz", n.handleReady)
-	mux.HandleFunc("GET /version", handleVersion)
+	mux.Handle("GET /readyz", probes)
+	mux.Handle("GET /version", probes)
 	mux.Handle("/", n.public)
 	return mux
 }
 
-func handleVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"version": versionpkg.Version, "commit": versionpkg.Commit, "date": versionpkg.Date,
-	})
-}
-
-type checkResult struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
-}
-
-// handleReady runs every check with a bounded context. During the drain
-// window the answer is 503 without running them: the replica is leaving.
-func (n *node) handleReady(w http.ResponseWriter, r *http.Request) {
+// ready runs every check. During the drain window the answer is not
+// ready without running them: the replica is leaving.
+func (n *node) ready(ctx context.Context) error {
 	if n.draining.Load() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "draining"})
-		return
+		return errDraining
 	}
-	status := http.StatusOK
-	results := make([]checkResult, 0, len(n.checks))
+	checks := make([]health.Check, 0, len(n.checks))
 	for _, c := range n.checks {
-		ctx, cancel := context.WithTimeout(r.Context(), readyCheckTimeout)
-		err := c.fn(ctx)
-		cancel()
-		res := checkResult{Name: c.name, Status: "ok"}
-		if err != nil {
-			res.Status, res.Error = "fail", err.Error()
-			status = http.StatusServiceUnavailable
-		}
-		results = append(results, res)
+		checks = append(checks, health.Check{Name: c.name, Run: c.fn})
 	}
-	body := map[string]any{"status": "ok", "checks": results}
-	if status != http.StatusOK {
-		body["status"] = "fail"
-	}
-	writeJSON(w, status, body)
+	return health.Checks(checks...)(ctx)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	body, err := json.Marshal(v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
-}
+var errDraining = errors.New("draining")
 
 // run binds the listeners, serves until ctx ends or a listener fails, then
 // drains: unready first, the drain delay, the HTTP servers with the grace
@@ -316,7 +284,7 @@ func (n *node) run(ctx context.Context) error {
 	n.draining.Store(true)
 	n.logger.InfoContext(shutdownCtx, "draining", "delay", n.drainDelay)
 	if runErr == nil {
-		sleepContext(shutdownCtx, n.drainDelay)
+		_ = wait.Sleep(shutdownCtx, n.drainDelay)
 	}
 	graceCtx, cancelGrace := context.WithTimeout(shutdownCtx, gracePeriod)
 	defer cancelGrace()
@@ -346,15 +314,6 @@ func readGossip(conn net.PacketConn) {
 		if _, _, err := conn.ReadFrom(buf); err != nil {
 			return
 		}
-	}
-}
-
-func sleepContext(ctx context.Context, d time.Duration) {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-	case <-t.C:
 	}
 }
 

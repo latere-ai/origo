@@ -391,8 +391,8 @@ func TestReadersUpgradeAndWritersAdvance(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if h.cache.materialized.Value() != 1 {
-		t.Fatalf("materialized %d times", h.cache.materialized.Value())
+	if h.cache.materialized.Value(nil) != 1 {
+		t.Fatalf("materialized %d times", h.cache.materialized.Value(nil))
 	}
 	// A writer that applied through git's own path, as a served push
 	// does, advances the record without a second apply.

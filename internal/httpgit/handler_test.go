@@ -21,10 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/httpjson"
+	"latere.ai/x/pkg/metrics"
+
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -48,7 +50,7 @@ type node struct {
 func newNode(t *testing.T, store wal.Store) *node {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	reg := metrics.New()
+	reg := metrics.NewRegistry()
 	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: reg})
 	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, Metrics: reg})
 	if err != nil {
@@ -122,7 +124,7 @@ func TestCloneFetchPushOverSmartHTTP(t *testing.T) {
 	if err != nil || ix.Seq != 1 || ix.Refs["refs/heads/main"] != c1 || ix.Entries[0].PackSHA256 == "" {
 		t.Fatalf("after push: %+v, %v", ix, err)
 	}
-	if n.h.pushes.Value() != 1 {
+	if n.h.pushes.Value(nil) != 1 {
 		t.Fatal("push not counted")
 	}
 	// The entry holds the pack the client sent, verified by digest, and
@@ -193,8 +195,8 @@ func TestCloneFetchPushOverSmartHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != 200 || n.h.fetches.Value() == 0 {
-		t.Fatalf("chunked fetch: %d, %d fetches counted", resp.StatusCode, n.h.fetches.Value())
+	if resp.StatusCode != 200 || n.h.fetches.Value(nil) == 0 {
+		t.Fatalf("chunked fetch: %d, %d fetches counted", resp.StatusCode, n.h.fetches.Value(nil))
 	}
 }
 
@@ -264,7 +266,7 @@ func TestStalePushIsRefusedAndConcurrentBranchesLand(t *testing.T) {
 	if ix.Seq != 6 || ix.Refs["refs/heads/left"] == "" || ix.Refs["refs/heads/right"] == "" {
 		t.Fatalf("after concurrent pushes: %+v", ix)
 	}
-	if n.reg.Counter("origo_wal_commit_retries_total", "").Value()+other.reg.Counter("origo_wal_commit_retries_total", "").Value() == 0 {
+	if n.reg.Counter("origo_wal_commit_retries_total", "").Value(nil)+other.reg.Counter("origo_wal_commit_retries_total", "").Value(nil) == 0 {
 		t.Log("the two pushes did not overlap; both landed anyway")
 	}
 }
@@ -297,7 +299,7 @@ func TestRoutesRefuseWhatTheyCannotServe(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 	code := func(body string) string {
-		var env contract.Envelope
+		var env httpjson.ErrorEnvelope
 		_ = json.Unmarshal([]byte(body), &env)
 		return env.Error.Code
 	}
@@ -469,7 +471,7 @@ func TestReferenceMovedBetweenAdvertisementAndPush(t *testing.T) {
 	if ix.Seq != 2 || ix.Refs["refs/heads/main"] != aHead {
 		t.Fatalf("log after the refused push: %+v", ix)
 	}
-	if n.reg.Counter("origo_wal_commit_retries_total", "").Value() != 0 || n.h.rejected.Value() != 1 {
+	if n.reg.Counter("origo_wal_commit_retries_total", "").Value(nil) != 0 || n.h.rejected.Value(nil) != 1 {
 		t.Fatal("the refused push was not caught before the commit")
 	}
 
@@ -514,7 +516,7 @@ func TestReferenceMovedBetweenAdvertisementAndPush(t *testing.T) {
 	if ix.Seq != 4 || ix.Refs["refs/heads/main"] != dHead || ix.Refs["refs/heads/other"] != cHead {
 		t.Fatalf("log after the replay: %+v", ix)
 	}
-	if n.reg.Counter("origo_wal_commit_retries_total", "").Value() != 1 {
+	if n.reg.Counter("origo_wal_commit_retries_total", "").Value(nil) != 1 {
 		t.Fatal("the push did not replay one round")
 	}
 	// The local copy holds the interloper's objects and reference too.
@@ -559,7 +561,7 @@ func (s *gittestSource) thinPack(want, have string) []byte {
 func newNodeAt(t *testing.T, store wal.Store, dataDir, gitBin string) *node {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	reg := metrics.New()
+	reg := metrics.NewRegistry()
 	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: reg})
 	cache, err := repo.New(repo.Options{Dir: dataDir, Log: l, Logger: logger, Metrics: reg, GitBin: gitBin})
 	if err != nil {

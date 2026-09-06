@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"time"
 
+	"latere.ai/x/pkg/httpjson"
+
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -75,7 +77,7 @@ func decode(r *http.Request, v any) error {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
 	if err := decode(r, &req); err != nil {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "body: "+err.Error())
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "body: " + err.Error()})
 		return
 	}
 	if req.DefaultBranch == "" {
@@ -83,22 +85,22 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case !wal.ValidID(req.ID):
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "id must be a lower-case UUID")
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "id must be a lower-case UUID"})
 		return
 	case !wal.ValidLabel(req.Owner) || reservedOwners[req.Owner] || !wal.ValidLabel(req.Slug):
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "owner and slug must be URL-safe labels")
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "owner and slug must be URL-safe labels"})
 		return
 	case !wal.ValidRefName("refs/heads/" + req.DefaultBranch):
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "default_branch is not a valid branch name")
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "default_branch is not a valid branch name"})
 		return
 	}
 	ix, err := h.log.CreateRepo(r.Context(), wal.Meta{ID: req.ID, Owner: req.Owner, Slug: req.Slug}, req.DefaultBranch)
 	if err != nil {
 		switch {
 		case errors.Is(err, wal.ErrExists):
-			contract.WriteError(w, http.StatusConflict, contract.CodeRepoExists, "a repository with this id exists")
+			httpjson.WriteError(w, http.StatusConflict, httpjson.Error{Code: contract.CodeRepoExists, Message: "a repository with this id exists"})
 		case errors.Is(err, wal.ErrNameTaken):
-			contract.WriteError(w, http.StatusConflict, contract.CodeRepoExists, "a repository with this owner and slug exists")
+			httpjson.WriteError(w, http.StatusConflict, httpjson.Error{Code: contract.CodeRepoExists, Message: "a repository with this owner and slug exists"})
 		default:
 			h.storageError(w, r, err)
 		}
@@ -109,7 +111,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		h.storageError(w, r, err)
 		return
 	}
-	contract.WriteJSON(w, http.StatusCreated, represent(m, ix))
+	httpjson.Write(w, http.StatusCreated, represent(m, ix))
 }
 
 func represent(m *wal.Meta, ix *wal.Index) Repository {
@@ -126,7 +128,7 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request, allowDeleted bool
 	m, err := h.log.ReadMeta(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
-			contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "repository not found")
+			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
 		} else {
 			h.storageError(w, r, err)
 		}
@@ -135,14 +137,14 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request, allowDeleted bool
 	ix, _, err := h.log.Newest(r.Context(), id, 0, false)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
-			contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "repository not found")
+			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
 		} else {
 			h.storageError(w, r, err)
 		}
 		return nil, nil, false
 	}
 	if ix.DeletedAt != nil && !allowDeleted {
-		contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "repository not found")
+		httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
 		return nil, nil, false
 	}
 	return m, ix, true
@@ -153,7 +155,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	contract.WriteJSON(w, http.StatusOK, represent(m, ix))
+	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }
 
 type patchRequest struct {
@@ -165,7 +167,7 @@ type patchRequest struct {
 func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 	var req patchRequest
 	if err := decode(r, &req); err != nil {
-		contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "body: "+err.Error())
+		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "body: " + err.Error()})
 		return
 	}
 	m, ix, ok := h.load(w, r, false)
@@ -181,13 +183,13 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 			slug = *req.Slug
 		}
 		if !wal.ValidLabel(owner) || reservedOwners[owner] || !wal.ValidLabel(slug) {
-			contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "owner and slug must be URL-safe labels")
+			httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "owner and slug must be URL-safe labels"})
 			return
 		}
 		renamed, err := h.log.Rename(r.Context(), m.ID, owner, slug)
 		if err != nil {
 			if errors.Is(err, wal.ErrNameTaken) {
-				contract.WriteError(w, http.StatusConflict, contract.CodeRepoExists, "a repository with this owner and slug exists")
+				httpjson.WriteError(w, http.StatusConflict, httpjson.Error{Code: contract.CodeRepoExists, Message: "a repository with this owner and slug exists"})
 			} else {
 				h.storageError(w, r, err)
 			}
@@ -197,7 +199,7 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DefaultBranch != nil && *req.DefaultBranch != ix.DefaultBranch() {
 		if !wal.ValidRefName("refs/heads/" + *req.DefaultBranch) {
-			contract.WriteError(w, http.StatusBadRequest, contract.CodeInvalid, "default_branch is not a valid branch name")
+			httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "default_branch is not a valid branch name"})
 			return
 		}
 		// HEAD moves through the log like any reference, so every node
@@ -212,7 +214,7 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 		}
 		ix = c.Index
 	}
-	contract.WriteJSON(w, http.StatusOK, represent(m, ix))
+	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }
 
 func noCatchUp(context.Context, *wal.Index) error { return nil }
@@ -232,7 +234,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	// Nodes evict the local copy at once and answer 404 from here on.
 	h.cache.Evict(m.ID)
-	contract.WriteJSON(w, http.StatusAccepted, map[string]any{
+	httpjson.Write(w, http.StatusAccepted, map[string]any{
 		"id": m.ID, "deleted_at": ix.DeletedAt, "purge_after": ix.DeletedAt.Add(wal.DeleteHold),
 	})
 }
@@ -250,10 +252,10 @@ func (h *Handler) undelete(w http.ResponseWriter, r *http.Request) {
 		}
 		ix = c.Index
 	}
-	contract.WriteJSON(w, http.StatusOK, represent(m, ix))
+	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }
 
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	h.logger.ErrorContext(r.Context(), "repository operation failed", "path", r.URL.Path, "error", err)
-	contract.WriteError(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, "repository unavailable")
+	httpjson.WriteError(w, http.StatusServiceUnavailable, httpjson.Error{Code: contract.CodeStorageUnavailable, Message: "repository unavailable"})
 }

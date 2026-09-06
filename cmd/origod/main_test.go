@@ -159,6 +159,19 @@ func get(t *testing.T, url string) (int, map[string]any) {
 	return resp.StatusCode, body
 }
 
+// probe reads a text probe: the status and the body as sent.
+func probe(t *testing.T, url string) (int, string) {
+	t.Helper()
+	client := &http.Client{Transport: &http.Transport{}}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
 func TestInternalListenerServesProbes(t *testing.T) {
 	env := testEnv(t)
 	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
@@ -166,13 +179,13 @@ func TestInternalListenerServesProbes(t *testing.T) {
 	n, stop := startNode(t, env)
 	public, internal, gossip := n.addrs()
 	base := "http://" + internal
-	if code, body := get(t, base+"/livez"); code != 200 || body["status"] != "ok" {
-		t.Fatalf("livez: %d %v", code, body)
+	if code, body := probe(t, base+"/livez"); code != 200 || body != "ok\n" {
+		t.Fatalf("livez: %d %q", code, body)
 	}
 	// The public listener serves the two probes the release smoke reads,
 	// and nothing else yet.
-	if code, body := get(t, "http://"+public+"/readyz"); code != 200 || body["status"] != "ok" {
-		t.Fatalf("public readyz: %d %v", code, body)
+	if code, body := probe(t, "http://"+public+"/readyz"); code != 200 || body != "ok\n" {
+		t.Fatalf("public readyz: %d %q", code, body)
 	}
 	if code, body := get(t, "http://"+public+"/version"); code != 200 || body["version"] != "dev" {
 		t.Fatalf("public version: %d %v", code, body)
@@ -214,8 +227,8 @@ func TestInternalListenerServesProbes(t *testing.T) {
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown route: %d", resp.StatusCode)
 	}
-	if code, body := get(t, base+"/readyz"); code != 200 || body["status"] != "ok" {
-		t.Fatalf("readyz: %d %v", code, body)
+	if code, body := probe(t, base+"/readyz"); code != 200 || body != "ok\n" {
+		t.Fatalf("readyz: %d %q", code, body)
 	}
 	if code, body := get(t, base+"/version"); code != 200 || body["version"] != "dev" {
 		t.Fatalf("version: %d %v", code, body)
@@ -255,9 +268,9 @@ func TestReadyzFailsWhenTheDiskIsNotWritable(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root writes to a read-only directory")
 	}
-	code, body := get(t, "http://"+internal+"/readyz")
-	if code != 503 || body["status"] != "fail" {
-		t.Fatalf("readyz: %d %v", code, body)
+	code, body := probe(t, "http://"+internal+"/readyz")
+	if code != 503 || !strings.HasPrefix(body, "not ready: disk: ") {
+		t.Fatalf("readyz: %d %q", code, body)
 	}
 }
 
@@ -265,8 +278,8 @@ func TestReadyzReportsDrainingDuringShutdown(t *testing.T) {
 	n, stop := startNode(t, testEnv(t))
 	n.draining.Store(true)
 	_, internal, _ := n.addrs()
-	if code, body := get(t, "http://"+internal+"/readyz"); code != 503 || body["status"] != "draining" {
-		t.Fatalf("readyz: %d %v", code, body)
+	if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || body != "not ready: draining\n" {
+		t.Fatalf("readyz: %d %q", code, body)
 	}
 	_ = stop()
 }
@@ -324,9 +337,9 @@ func TestReadyzReportsStorage(t *testing.T) {
 	env := testEnv(t)
 	n, stop := startNode(t, env)
 	_, internal, _ := n.addrs()
-	code, body := get(t, "http://"+internal+"/readyz")
-	if code != 503 || body["status"] != "fail" {
-		t.Fatalf("unreachable storage: %d %v", code, body)
+	code, body := probe(t, "http://"+internal+"/readyz")
+	if code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
+		t.Fatalf("unreachable storage: %d %q", code, body)
 	}
 	_ = stop()
 
@@ -336,8 +349,8 @@ func TestReadyzReportsStorage(t *testing.T) {
 	env["ORIGO_SWEEP_INTERVAL"] = "10ms"
 	n, stop = startNode(t, env)
 	_, internal, _ = n.addrs()
-	if code, body := get(t, "http://"+internal+"/readyz"); code != 200 || body["status"] != "ok" {
-		t.Fatalf("reachable storage: %d %v", code, body)
+	if code, body := probe(t, "http://"+internal+"/readyz"); code != 200 || body != "ok\n" {
+		t.Fatalf("reachable storage: %d %q", code, body)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for lists.Load() < 3 && time.Now().Before(deadline) {

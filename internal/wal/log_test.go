@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/pkg/metrics"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
@@ -46,7 +46,7 @@ func noCatchUp(context.Context, *Index) error { return nil }
 func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
-	reg := metrics.New()
+	reg := metrics.NewRegistry()
 	l := New(Options{Store: store, Metrics: reg, Now: func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }})
 	base := createRepo(t, l, repoA)
 	c, err := l.Commit(ctx, repoA, base, push("refs/heads/main", ZeroSHA, sha(1)), noCatchUp)
@@ -89,7 +89,7 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	if ix, err := l.ReadIndex(ctx, repoA, 1); err != nil || ix.Seq != 1 {
 		t.Fatalf("read index: %+v, %v", ix, err)
 	}
-	if reg.Counter("origo_wal_commits_total", "").Value() != 1 {
+	if reg.Counter("origo_wal_commits_total", "").Value(nil) != 1 {
 		t.Fatal("commit not counted")
 	}
 	// A second push builds on the first and lists both entries.
@@ -397,7 +397,7 @@ func TestNewestFindsTheNewestIndex(t *testing.T) {
 func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
-	reg := metrics.New()
+	reg := metrics.NewRegistry()
 	l := New(Options{Store: store, Metrics: reg, Logger: slog.New(slog.DiscardHandler)})
 	base := createRepo(t, l, repoA)
 	const writers, rounds = 16, 20
@@ -450,7 +450,7 @@ func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 			t.Errorf("index lists %s at %d, winner was %s", newest.Entries[seq-1].Key, seq, winners[seq])
 		}
 	}
-	if reg.Counter("origo_wal_commit_retries_total", "").Value() == 0 {
+	if reg.Counter("origo_wal_commit_retries_total", "").Value(nil) == 0 {
 		t.Fatal("no writer ever lost a round; the race did not race")
 	}
 	// Losing writers left entries behind at sequences that were taken;
