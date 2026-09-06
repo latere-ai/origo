@@ -1,0 +1,140 @@
+{
+  "endpoint": "http://127.0.0.1:49992",
+  "bucket": "origo-spike",
+  "prefix": "origo-spike/409b29d896f5e884/",
+  "server_header": "MinIO",
+  "started": "2026-09-06T13:58:01.298438Z",
+  "checks": [
+    {
+      "name": "PUT If-None-Match:* on absent key",
+      "expect": "200 + ETag",
+      "got": "200",
+      "pass": true,
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\""
+    },
+    {
+      "name": "PUT If-None-Match:* on existing key",
+      "expect": "412, content unchanged",
+      "got": "412",
+      "pass": true,
+      "note": "content unchanged: true"
+    },
+    {
+      "name": "PUT If-Match:\u003ccurrent\u003e ",
+      "expect": "200 + new ETag, applied",
+      "got": "200",
+      "pass": true,
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e \"e2eb411a4df5a1513ab0bf6b89ad6b1d\", GET agrees: true"
+    },
+    {
+      "name": "PUT If-Match:\u003cstale\u003e",
+      "expect": "412, content unchanged",
+      "got": "412",
+      "pass": true,
+      "note": "content unchanged: true"
+    },
+    {
+      "name": "GET If-None-Match:\u003ccurrent\u003e",
+      "expect": "304",
+      "got": "304",
+      "pass": true
+    },
+    {
+      "name": "GET If-None-Match:\u003cstale\u003e",
+      "expect": "200 + body",
+      "got": "200",
+      "pass": true
+    },
+    {
+      "name": "PUT If-Match:\u003cany\u003e on absent key",
+      "expect": "412 or 404, nothing created",
+      "got": "404",
+      "pass": true,
+      "note": "informational"
+    },
+    {
+      "name": "concurrent CAS race",
+      "expect": "exactly 1 applied per round, rest 412",
+      "got": "20 applied / 20 rounds",
+      "pass": true,
+      "note": "20 rounds x 16 writers: 20 x 200, 300 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other"
+    },
+    {
+      "name": "CopyObject If-None-Match:* on existing dst",
+      "expect": "412, dst unchanged",
+      "got": "200",
+      "pass": false,
+      "note": "dst unchanged: false",
+      "fallback": true
+    },
+    {
+      "name": "CopyObject If-Match:\u003cstale\u003e on dst",
+      "expect": "412, dst unchanged",
+      "got": "200",
+      "pass": false,
+      "note": "dst unchanged: false",
+      "fallback": true
+    },
+    {
+      "name": "CopyObject If-Match:\u003ccurrent\u003e on dst",
+      "expect": "200, dst replaced",
+      "got": "200",
+      "pass": true,
+      "note": "etag \"fbf726df327298902d86c6a5fc0d89ad\" -\u003e \"0d397da4c3b89f02477084e65fd7708e\"",
+      "fallback": true
+    },
+    {
+      "name": "bucket versioning",
+      "expect": "informational",
+      "got": "enabled, 2 versions listed",
+      "pass": true,
+      "note": "PUT version ids \"528b54b2-1729-4d94-b275-3399c9b27a01\", \"e527c927-f53f-4277-9a49-8072d1d56d12\"; ListObjectVersions: e527c927-f53f-4277-9a49-8072d1d56d12 latest=true, 528b54b2-1729-4d94-b275-3399c9b27a01 latest=false"
+    }
+  ],
+  "latencies": [
+    {
+      "name": "GET If-None-Match -\u003e 304",
+      "n": 200,
+      "min_ms": 1.087709,
+      "p50_ms": 1.499125,
+      "p95_ms": 3.107125,
+      "p99_ms": 4.584959,
+      "max_ms": 7.011125,
+      "mean_ms": 1.730328,
+      "failures": 0
+    },
+    {
+      "name": "GET unconditional -\u003e 200",
+      "n": 200,
+      "min_ms": 1.308875,
+      "p50_ms": 1.914375,
+      "p95_ms": 3.873209,
+      "p99_ms": 5.887958,
+      "max_ms": 7.333875,
+      "mean_ms": 2.213387,
+      "failures": 0
+    },
+    {
+      "name": "PUT If-Match -\u003e 200 (CAS)",
+      "n": 200,
+      "min_ms": 4.655375,
+      "p50_ms": 7.400792,
+      "p95_ms": 17.131084,
+      "p99_ms": 27.420333,
+      "max_ms": 35.445917,
+      "mean_ms": 8.781233,
+      "failures": 0
+    },
+    {
+      "name": "PUT unconditional -\u003e 200",
+      "n": 200,
+      "min_ms": 4.100083,
+      "p50_ms": 6.348625,
+      "p95_ms": 12.562542,
+      "p99_ms": 19.693417,
+      "max_ms": 29.306125,
+      "mean_ms": 7.197066,
+      "failures": 0
+    }
+  ]
+}
