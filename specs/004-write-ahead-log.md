@@ -220,13 +220,17 @@ hook and the node talk over two FIFOs in a per-request directory:
 
 | Variable | Set by | Meaning |
 |---|---|---|
-| `ORIGO_HOOK_DIR` | the node, on `git receive-pack` only | the directory holding the `updates` FIFO (the hook writes the transaction git resolved) and the `verdict` FIFO (the node answers `ok` or `reject <code>: <message>`) |
+| `ORIGO_HOOK_DIR` | the node, on `git receive-pack` only | the directory holding the `updates` FIFO (the hook writes one line `quarantine <GIT_QUARANTINE_PATH>` and then the transaction git resolved, so the node can read the pushed objects before git migrates them) and the `verdict` FIFO (the node answers `ok` or `reject <code>: <message>`) |
 
 Git quarantines and checks the objects, runs the hook, and the hook
 blocks on the verdict while the node writes the entry and commits the
-index object. `ok` lets git move the references; `reject` becomes the
+index object. After the commit and before it answers, the node runs
+what needs the pushed objects (the `forced` flag of spec 008) with
+`GIT_ALTERNATE_OBJECT_DIRECTORIES` set to the quarantine path the hook
+reported. `ok` lets git move the references; `reject` becomes the
 hook's stderr and git relays it in the sideband. The node then records
-the new sequence without re-applying (`Cache.Advance`). A push git
+the new sequence without re-applying (`Cache.Advance`) and enqueues the
+push event (spec 008). A push git
 refuses before the hook (bad objects, a failed connectivity check, a
 client that went away) never touches the log.
 
@@ -265,9 +269,10 @@ transaction).
 
 ## Not in this spec
 
-Multi-part entries for a push above 2 GiB. Prefetching entries and a
-single `update-ref` per bulk apply (spec 005, materialization budget).
-Compaction itself (spec 006). Enforcement of the size limits (spec 012).
+Multi-part entries for a push above 2 GiB. Concurrent `index-pack`
+workers and one reference apply per bulk materialization (spec 005,
+materialization budget). Compaction itself (spec 006). Enforcement of
+the size limits (spec 012).
 
 ## Acceptance criteria
 
@@ -297,10 +302,11 @@ Compaction itself (spec 006). Enforcement of the size limits (spec 012).
 - A local copy with a deliberately corrupted pack is evicted and rebuilt
   from the log and serves the same history (`internal/repo`,
   `TestCorruptCopyIsRebuiltFromTheLog`).
-- Fuzzing the entry header, the reference transaction, the index parser,
-  and the pkt-line reader finds no panic in 40 seconds each on every push
-  (`internal/wal`, `FuzzParseHeader`, `FuzzParseTransaction`,
-  `FuzzParseIndex`; `internal/httpgit`, `FuzzReadPkt`, `FuzzParseReceive`).
+- `FuzzParseHeader`, `FuzzParseTransaction`, and `FuzzParseIndex` in
+  `internal/wal` and `FuzzReadPkt` and `FuzzParseReceive` in
+  `internal/httpgit` find no panic: each runs as a seed-corpus test in
+  the suite on every push and for 40 seconds under `make fuzz` (spec
+  002) on the weekly schedule.
 - 100 concurrent pushes to distinct branches from 8 clients all land and
   the newest index lists 100 entries in sequence order (proposed:
   `test/e2e`, `TestHundredConcurrentPushesFromEightClients`, after spec
@@ -357,6 +363,9 @@ Divergences from the first draft, all kept and now in the Design:
   to `ErrExists`, `ErrNotModified`). The
   client sends `If-None-Match` only, asserted by the fake endpoint.
 - The commit backoff is a `retry.Policy` from `latere.ai/x/pkg/retry`.
+- The five fuzz functions run as seed-corpus tests in the suite; no gate
+  runs them for 40 seconds. The 40 second run is `make fuzz` of spec 002
+  with its weekly schedule, a builder item there.
 - The sampled connectivity check runs on every 256th write open.
 - Without compaction the `entries` list grows by one row per push; the
   1 MiB ceiling holds for roughly ten thousand pushes.
