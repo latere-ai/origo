@@ -28,6 +28,22 @@ Spec 001 fixes the model. Object storage offers `PUT` with `If-Match` on
 an ETag, which is the only primitive the design needs beyond `GET` and
 `PUT`.
 
+The spike in [docs/spikes/2026-09-06-conditional-writes.md](../docs/spikes/2026-09-06-conditional-writes.md)
+verified the primitives against MinIO with the probe under
+`tools/spike/condwrite/`: a stale `If-Match` is refused with 412 and never
+applied, a current one succeeds with a new ETag, `If-None-Match: *`
+refuses an existing key, concurrent writers racing on one ETag saw
+exactly one applied write per round, and a 304 costs under a millisecond
+locally. Decision: proceed as designed, index CAS on `PUT If-Match` and
+index creation on `PUT If-None-Match: *`. The fallbacks are not
+substitutes: MinIO ignores `If-Match` on a `CopyObject` destination, and
+versioning orders writes without refusing the loser. One addition the
+spike forced: a CAS whose response is lost in transport may have been
+applied, so the retry path reads the index and treats its own entry
+being listed as success. DigitalOcean Spaces and AWS S3 were not run
+because no credentials were on the machine; the probe must pass against
+the production endpoint before this spec is validated.
+
 ## Design
 
 ### Entry
