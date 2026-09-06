@@ -65,11 +65,8 @@ func measurePushes(t *testing.T, s *stack) {
 					t.Error(err)
 					return
 				}
-				mustGit(t, dir, "commit", "-q", "-am", fmt.Sprintf("c%d", i))
-				if i == 0 {
-					mustGit(t, dir, "add", "payload")
-					mustGit(t, dir, "commit", "-q", "-m", "c0")
-				}
+				mustGit(t, dir, "add", "payload")
+				mustGit(t, dir, "commit", "-q", "-m", fmt.Sprintf("c%d", i))
 				start := time.Now()
 				if out, err := git(t, dir, "push", "-q", "origin", fmt.Sprintf("HEAD:refs/heads/client-%d", c)); err != nil {
 					t.Errorf("push: %v\n%s", err, out)

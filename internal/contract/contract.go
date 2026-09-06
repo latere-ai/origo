@@ -39,25 +39,22 @@ type Envelope struct {
 
 // Detail is the error inside the envelope.
 type Detail struct {
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details,omitempty"`
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Details map[string]string `json:"details,omitempty"`
 }
 
-// WriteError sends the envelope with the status. Three strings always
-// encode, so the encoding error is not a branch.
+// WriteError sends the envelope with the status.
 func WriteError(w http.ResponseWriter, status int, code, message string) {
-	body, _ := json.Marshal(Envelope{Error: Detail{Code: code, Message: message}})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	WriteJSON(w, status, Envelope{Error: Detail{Code: code, Message: message}})
 }
 
-// WriteJSON sends v with the status.
+// WriteJSON sends v with the status. A value that cannot be encoded is
+// reported as plain text, which only a programming error produces.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, CodeStorageUnavailable, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
