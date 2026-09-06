@@ -1,0 +1,50 @@
+# The shared quality bar, read by `go tool lateregate`. The gates live in
+# latere.ai/x/ci-gate, pinned in go.mod; only repository-specific values are
+# here. While the repository holds specs only, the spec gate is the one that
+# runs; the others engage as code lands.
+
+cover:
+  threshold: 90.0
+  trim_prefix: github.com/latere-ai/origo/
+  exempt: {}
+
+spec:
+  dir: specs
+  status:
+    - vague
+    - drafted
+    - validated
+    - dispatched
+    - in-progress
+    - testing
+    - complete
+    - stale
+    - superseded
+  require: [title, status, track, depends_on, affects, effort, created, updated, author]
+  index: specs/README.md
+  wikilinks: true
+  numbered: true
+  started: [dispatched, in-progress, testing, complete]
+  settled: [complete, superseded]
+  require_section:
+    - Overview
+    - Design
+    - Acceptance criteria
+  require_section_by_status:
+    complete: [Outcome]
+
+hermetic:
+  allow: []
+
+tempdir:
+  allow: {}
+
+otel_client:
+  skip: [tools, test]
+
+modernize:
+  disable: []
+
+license:
+  spdx: MIT
+  holder: Latere AI

@@ -1,0 +1,10 @@
+name: verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gate:
+    uses: latere-ai/ci/.github/workflows/lateregate.yml@v1

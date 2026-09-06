@@ -1,0 +1,4 @@
+github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
+github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
+latere.ai/x/ci-gate v0.28.0 h1:C3R/KTQs3fvktwoy3kOT7JHtmshC8AClmT6jV/HEbZ0=
+latere.ai/x/ci-gate v0.28.0/go.mod h1:q2A9P8rq93BL+RO/JHxpXwnTuP2pb9xFoGo5jFVxUYk=

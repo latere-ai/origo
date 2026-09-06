@@ -1,0 +1,13 @@
+/out/
+*.cover.out
+*.prof
+*.test
+.env
+.env.*
+!.env.example
+.DS_Store
+*.swp
+.idea/
+.vscode/
+# rendered by the gate from latere.ai/x/ci-gate, never committed
+.golangci.yml
