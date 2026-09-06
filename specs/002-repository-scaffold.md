@@ -35,14 +35,9 @@ identity, `Makefile` the gate's entry point, `Dockerfile` and
 `.github/workflows/verify.yml` and `release.yml` the thin callers of the
 shared pipeline in `latere-ai/ci`, and `tools/smoke/release.sh` the
 post-deploy smoke. No tag has been cut. The Outcome lists what diverged
-from the first draft.
-
-Added to the design after completion and not yet in the tree, for the
-builder: the `make fuzz` target and its weekly schedule in `verify.yml`,
-the `test-tiers` target spec 013 calls from CI, the rows the table below
-gained for later specs, the Failpoint table, and the local stack running
-the stub issuer and authorizer of spec 013 once spec 007 removes
-`ORIGO_DEV_TOKEN`.
+from the first draft. The rows the table below gained for later specs
+and the Failpoint table are reference entries; the spec named in each
+row builds what reads it.
 
 ## Design
 
@@ -67,8 +62,8 @@ internal/events/        push events (spec 008)                                --
 internal/lfs/           the LFS batch API (spec 010)                          -- not yet
 internal/limits/        quotas and rate limits (spec 012)                     -- not yet
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
-test/conformance/       the contract as an importable test package (spec 013) -- not yet
-test/stubs/             the stub issuer, authorizer, event sink, and contract stub, importable (spec 013) -- not yet
+test/conformance/       the contract as an importable test package (spec 021) -- not yet
+test/stubs/             the stub issuer, authorizer, event sink, contract stub, and slow proxy, importable (spec 013, 015) -- not yet
 tools/smoke/            the post-deploy smoke the release pipeline runs
 tools/spike/            the conditional-write probe; its own module
 tools/specindex/        the cross-reference table of specs/README.md; its own module
@@ -83,16 +78,13 @@ deploy/examples/kind/   MinIO, three nodes, and the stubs in a kind cluster (spe
 `make dev` builds the binary, starts MinIO from `docker-compose.yml`
 with the bucket, and runs `origod` in the foreground with the variables
 of the table below set to local values. In phase 1 the clone line it
-prints carries `ORIGO_DEV_TOKEN`. From spec 007 on, `make dev` also runs
-the stub issuer and the stub authorizer of spec 013
-(`test/stubs/cmd/origo-stubs`) beside MinIO, points `ORIGO_OIDC_ISSUERS`
-and `ORIGO_AUTHORIZER_URL` at them, and prints a clone line with a token
-the stub issuer minted. `make test-integration` starts the same MinIO
-and runs `make test-tiers`; `test-tiers` runs the `integration` and
-`e2e` tiers against whatever values of the test bucket variables
-(`ORIGO_TEST_S3_ENDPOINT` and the rest of that row below) the
-environment carries, which is what CI calls with its service container
-(spec 013).
+prints carries `ORIGO_DEV_TOKEN`. `make test-integration` starts the
+same MinIO and runs the `integration` and `e2e` tiers against it. Spec
+013 owns what the local stack becomes once spec 007 removes
+`ORIGO_DEV_TOKEN`: `make dev` running the stub issuer and authorizer
+beside MinIO, and `make test-tiers`, the target that runs the tiers
+against the test bucket variables the environment carries and that CI
+calls with its service container.
 
 ### Binary and listeners
 
@@ -146,17 +138,22 @@ an unknown variable is never an error.
 | `ORIGO_PUBLIC_ADDR`, `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` | no | `:8080`, `:8081`, `:7946` | listen addresses; a test binds `127.0.0.1:0` |
 | `ORIGO_NODE_NAME` | no | the host name, `origod` when unknown | the identity used in gossip and placement (spec 005); the pod name in Kubernetes |
 | `ORIGO_GOSSIP_PEERS` | no | unset | a DNS name resolving to every node (spec 005); the headless Service `origod-gossip` |
+| `ORIGO_GOSSIP_SECRET` | yes, from spec 005 | none | the key of the HMAC-SHA256 every gossip datagram carries (spec 005); at least 32 bytes; the same value on every node of one installation |
 | `ORIGO_SWEEP_INTERVAL` | no | `10m` | how often the sweeper runs over every repository (spec 004); `0` disables it |
 | `ORIGO_SWEEP_MIN_AGE` | no | `1h` | how old an orphan must be before the sweeper deletes it (spec 004) |
 | `ORIGO_FAILPOINT` | no | unset | the name of an injected failure from the Failpoint table below, for the end-to-end suite; empty in every deployment |
 | `ORIGO_OIDC_ISSUERS` | spec 007 | unset | comma separated issuer URLs whose tokens are accepted |
+| `ORIGO_OIDC_INSECURE_ISSUERS` | spec 007 | unset | comma separated issuer URLs from `ORIGO_OIDC_ISSUERS` that may use `http://` on a host other than a loopback address (spec 007); set by the kind overlay for the stub issuer, never in production |
 | `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | spec 007 | unset | the consumer's authorization endpoint and the bearer Origo sends it |
 | `ORIGO_TOKEN_KEY` | spec 007 | unset | PEM-encoded ECDSA P-256 private key that signs repository-bound tokens |
-| `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | spec 008 | unset | the push event sink and the HMAC key; events are off when the URL is unset |
+| `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | spec 008 | unset | the push event sink and the HMAC key; events are off when the URL is unset; the URL without the secret is a start-up failure (spec 008) |
+| `ORIGO_REPAIR_UNHEARD` | spec 008 | `5m` | how long a node must be unheard before another node repairs the events its journals name (spec 008) |
+| `ORIGO_REPAIR_INTERVAL` | spec 008 | `10m` | how often the event repair sweep runs (spec 008) |
 | `ORIGO_STORAGE_TIMEOUT` | spec 015 | `10s` | the deadline of one object storage operation |
 | `ORIGO_STALE_MAX` | spec 015 | `5m` | how long a warm repository is served from the local copy while the read breaker is open |
 | `ORIGO_MAX_GIT_PROCS` | spec 012 | `64` | concurrent git subprocesses per node |
 | `ORIGO_EGRESS_ALLOW` | spec 016 | unset | comma separated hostnames, exact or `*.` wildcards, that server-side fetches (`import`, `verify`) may reach, matched with `latere.ai/x/pkg/hostmatch`; unset refuses every source |
+| `ORIGO_CLUSTER_CIDRS` | spec 016 | unset | comma separated CIDR ranges of the cluster's service and pod networks that a server-side fetch must never reach, added to the well-known refused ranges of spec 016; unset refuses only the well-known ranges |
 | `ORIGO_TEST_DROP_CAPABILITY` | spec 013 | unset | one git-controlled capability name the node stops advertising, for the mutation job; empty in every deployment |
 | `ORIGO_CHECK_SELFTEST` | spec 018 | unset | `1` makes `origod check` run its `conditional-create` line against an in-process store that ignores the header, so the check's own failure path is testable |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_*` | spec 011 | unset | the standard OpenTelemetry exporter variables, read by `latere.ai/x/pkg/otel`; telemetry is off without the endpoint |
@@ -170,7 +167,7 @@ node:
 | Variable | Read by | Purpose |
 |---|---|---|
 | `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the `integration` and `e2e` tiers (spec 013) | the bucket the tiers use; the tiers skip when the endpoint is unset |
-| `ORIGO_E2E_MEASURE` | `test/e2e` (spec 013) | `1` runs `TestMeasure` and the other measurement tests the specs name |
+| `ORIGO_E2E_MEASURE` | `test/e2e` (spec 013) | `1` runs `TestMeasure`, which prints the measurements spec 004's Outcome records; no threshold depends on it |
 | `ORIGO_RELEASE_DEPLOY` | `release.yml` (spec 017) | a repository variable; unset skips the deploy and smoke step, so a tag on a fork publishes artifacts only |
 
 Variables another spec's table defines, listed here so the reference is
@@ -179,6 +176,8 @@ one page:
 | Owner | Name | Purpose |
 |---|---|---|
 | spec 004 | `ORIGO_HOOK_DIR` | set by the node on `git receive-pack` only: the directory of the two FIFOs the pre-receive hook uses |
+| spec 014 | `ORIGO_MIGRATE_URL` | the Origo the `origod migrate` subcommand drives |
+| spec 014 | `ORIGO_MIGRATE_TOKEN_ENV` | the name of the variable holding the bearer `origod migrate` presents to Origo |
 | spec 014 | `ORIGO_MIGRATE_PARALLEL` | repositories `origod migrate` drives at once |
 
 ### Failpoints
@@ -205,11 +204,9 @@ the tiers that need MinIO: the store suite (`integration` tag) and the
 end-to-end suite (`e2e` tag). Fuzz tests cover every parser that reads
 bytes from a client: pkt-line, the receive-pack request, the entry
 header, the reference transaction, and the index object. Every fuzz
-function runs as a seed-corpus test in the suite on every push, and
-`make fuzz` runs every fuzz function in the module for 40 seconds each
-(`go test -run=^$ -fuzz=<name> -fuzztime=40s`, one package at a time);
-`verify.yml` calls it weekly from a `schedule` trigger. A spec that adds
-a fuzz function names it in its criteria with those two runs.
+function runs as a seed-corpus test in the suite on every push; the 40
+second run of every fuzz function, `make fuzz`, and its weekly schedule
+are spec 013's.
 
 ### Release
 
@@ -253,10 +250,6 @@ origod runs git as a subprocess.
   `TestReadyzFailsWhenTheDiskIsNotWritable`, `TestReadyzReportsDrainingDuringShutdown`).
 - Coverage of `internal/config` is 100% (`cover` gate, checked on every
   push).
-- `make fuzz` runs every fuzz function in the module for 40 seconds and
-  the weekly schedule in `verify.yml` calls it (proposed: `Makefile`, the
-  `fuzz` target listing the functions from `go test -list '^Fuzz'`;
-  `verify.yml`, the `fuzz` job on `schedule`).
 
 ## Outcome
 
@@ -293,6 +286,11 @@ Divergences from the first draft:
   the gate.
 - The integration tiers are not run by CI: the shared `lateregate.yml`
   has no services step. Spec 013 adds the job.
+- Three targets the first draft assigned to this spec after it was
+  complete are spec 013's, which lists them in its affects and Current
+  state: `make fuzz` with its weekly schedule, `make test-tiers`, and
+  the form of `make dev` that runs the stub issuer and authorizer. This
+  spec keeps the variable table only.
 - `deploy/base` has no HorizontalPodAutoscaler and no PrometheusRule yet;
   they land with specs 005 and 011. The PodDisruptionBudget keeps
   `minAvailable: 1`.
