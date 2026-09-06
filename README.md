@@ -7,9 +7,10 @@ local disk only as a cache. Nodes are stateless and carry no routing table,
 pushes are linearized without a consensus cluster, and an idle repository
 costs nothing.
 
-Origo is built by [Latere](https://latere.ai) for its own platform and is
-designed to be run by anyone with a Kubernetes cluster and an S3 compatible
-bucket.
+Origo is built by [Latere](https://latere.ai) for its own platform, where
+it serves `git.latere.ai`, and is designed to be run by anyone with a
+Kubernetes cluster and an S3 compatible bucket. Origo is the component's
+name; the hostname is the operator's.
 
 ## Status
 

@@ -67,7 +67,7 @@ Readiness requires object storage reachable and the local disk writable.
 | `ORIGO_S3_ENDPOINT`, `ORIGO_S3_REGION`, `ORIGO_S3_BUCKET`, `ORIGO_S3_KEY`, `ORIGO_S3_SECRET` | yes | the bucket; prefix `origo/` fixed; path-style when `ORIGO_S3_PATH_STYLE=1` |
 | `ORIGO_DATA_DIR` | no | `/var/lib/origo` default; must be a local disk, not a network file system |
 | `ORIGO_CACHE_BYTES` | no | eviction ceiling for the repository cache, default 80% of the disk |
-| `ORIGO_PUBLIC_URL` | yes | `https://origo.example.com`, used in clone URLs and event payloads |
+| `ORIGO_PUBLIC_URL` | yes | `https://git.example.com`, used in clone URLs and event payloads |
 | `ORIGO_OIDC_ISSUERS` | yes | comma separated issuer URLs whose tokens are accepted (spec 007) |
 | `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | yes | the consumer's authorization endpoint (spec 007) |
 | `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | no | push event sink and HMAC key (spec 008) |
