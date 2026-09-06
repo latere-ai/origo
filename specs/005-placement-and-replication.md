@@ -51,8 +51,8 @@ hash to it.
 
 Membership is by heartbeat. Every 10 seconds a node sends one datagram
 in the gossip format below with an empty `repo` and `seq` 0 to every
-address `ORIGO_GOSSIP_PEERS` resolves to, the resolution refreshed every
-10 seconds. The live node set is the names heard, by heartbeat or by an
+address `ORIGO_GOSSIP_PEERS` resolves to, on the port of
+`ORIGO_GOSSIP_ADDR`, the resolution refreshed every 10 seconds. The live node set is the names heard, by heartbeat or by an
 announcement, in the last 60 seconds, plus the node's own name, which is
 always in the set. A node with a single-node set is preferred for
 everything. The set is what placement, the compaction primary (spec
@@ -70,7 +70,7 @@ The compaction primary of spec 006 is the first name.
 
 After every index object a node creates, it sends one datagram three
 times, 10 ms apart, to every address `ORIGO_GOSSIP_PEERS` resolves to on
-the gossip port, with no acknowledgement:
+the port of `ORIGO_GOSSIP_ADDR`, with no acknowledgement:
 
 ```json
 {"v": 1, "node": "<ORIGO_NODE_NAME>", "repo": "<id>", "seq": 1044}
