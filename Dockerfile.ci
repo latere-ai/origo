@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+#
+# Release image. It packages the binary the verify run already compiled and
+# tested at out/origod, so the bytes that passed the gate are the bytes that
+# ship. Nothing is compiled here.
+#
+# The runtime stage is the same text Dockerfile carries between the markers.
+
+# >>> shared runtime base <<<
+# origod runs git as a subprocess, so the runtime is a minimal Debian with
+# git rather than the static distroless base the Latere template uses. The
+# base is pinned by digest: a tag can be moved by its owner, which turns the
+# base into a mutable input.
+ARG RUNTIME_BASE=docker.io/library/debian:bookworm-slim@sha256:6bd27d44e6c32a66bbd72d7cb2b76a8ae3497ec2e5274a81abd1b37f6013fa1f
+# >>> end shared runtime base <<<
+
+FROM ${RUNTIME_BASE} AS runtime
+
+COPY --chown=65532:65532 out/origod /app
+
+# >>> shared runtime stage <<<
+# git is the one binary origod needs beside itself. ca-certificates lets the
+# node reach an object store over TLS. The package lists are removed so the
+# layer holds the binaries and nothing that would let a shell in the
+# container install more.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/lib/origo \
+    && chown 65532:65532 /var/lib/origo
+# 65532 matches the nonroot user of the distroless images, written
+# numerically because a Kubernetes runAsNonRoot check cannot resolve a name.
+USER 65532:65532
+WORKDIR /
+VOLUME ["/var/lib/origo"]
+EXPOSE 8080 8081 7946/udp
+ENTRYPOINT ["/app"]
+# >>> end shared runtime stage <<<

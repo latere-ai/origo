@@ -1,0 +1,46 @@
+# The local dependency stack: MinIO, with the bucket created once.
+#
+# Every image is pinned by digest as well as by tag. The tag says which
+# version a reader is running; the digest says which bytes, so a rebuild
+# months from now is the same stack. The project name namespaces the
+# containers, the network, and the volume; `make dev-up` sets it and the
+# ports from the checkout's directory name.
+
+name: ${DEV_PROJECT:-origo}
+
+services:
+  minio:
+    image: docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${DEV_S3_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${DEV_S3_SECRET:-minioadmin}
+    ports:
+      - "${DEV_S3_PORT:-9000}:9000"
+      - "${DEV_S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket and exits. `make dev-wait` waits for it to have run.
+  minio-init:
+    image: docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:37d109dddbbb2c95873f5fc81ac93f37023264770fc580a7564148892087b1b7
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing "local/$$BUCKET"
+    environment:
+      MINIO_ROOT_USER: ${DEV_S3_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${DEV_S3_SECRET:-minioadmin}
+      BUCKET: ${DEV_S3_BUCKET:-origo}
+
+volumes:
+  minio-data:

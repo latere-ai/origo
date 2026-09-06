@@ -1,7 +1,6 @@
 # The shared quality bar, read by `go tool lateregate`. The gates live in
 # latere.ai/x/ci-gate, pinned in go.mod; only repository-specific values are
-# here. While the repository holds specs only, the spec gate is the one that
-# runs; the others engage as code lands.
+# here.
 
 cover:
   trim_prefix: github.com/latere-ai/origo/
@@ -31,7 +30,11 @@ spec:
     complete: [Outcome]
 
 hermetic:
-  allow: []
+  # The suite runs with only the Go toolchain on PATH, plus /usr/bin: git is
+  # the one binary origod needs beside itself (spec 002), and the repository
+  # cache and the smart HTTP handlers are tested against the real git.
+  # /usr/bin holds git on macOS and on the Linux runners.
+  allow: [/usr/bin]
 
 tempdir:
   allow: {}
