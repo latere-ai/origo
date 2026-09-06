@@ -53,13 +53,13 @@ passing test in the tree and the Outcome records every divergence.
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | drafted |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | drafted |
 | [013](013-conformance-suite.md) | Conformance suite: the contract as executable tests | medium | drafted |
-| [014](014-repository-migration.md) | Migration of existing repositories from a prior host (cross-repo) | medium | vague |
+| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | drafted |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | drafted |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | drafted |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | drafted |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | drafted |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | drafted |
-| [020](020-server-side-git-operations.md) | Server-side git operations: commits without a clone | large | vague |
+| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | drafted |
 
 ## Dependency graph
 
@@ -98,7 +98,7 @@ flowchart LR
   subgraph M[Adoption]
     S014[014 repository migration]
   end
-  subgraph L[Later]
+  subgraph T[Tooling]
     S020[020 server-side ops]
   end
   S002 --> S001
@@ -122,7 +122,10 @@ flowchart LR
   S013 --> S003
   S013 --> S008
   S013 --> S009
-  S014 --> S013
+  S014 --> S003
+  S014 --> S007
+  S014 --> S008
+  S014 --> S019
   S014 --> S019
   S015 --> S004
   S015 --> S005
@@ -141,8 +144,10 @@ flowchart LR
   S019 --> S006
   S019 --> S007
   S019 --> S008
-  S020 --> S009
   S020 --> S004
+  S020 --> S007
+  S020 --> S008
+  S020 --> S009
 ```
 
 ## Build order
@@ -155,8 +160,8 @@ flowchart LR
 | 4 | 010, 011, 012, 013, 015 | LFS, telemetry, limits, degraded-storage behaviour, and the conformance suite gating releases | |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
 | 6 | 017, 018 | Releases an outside operator can install and upgrade from the documentation alone; the point at which the repository can go public | |
-| 7 | 014 | Existing repositories migrate from a prior host | |
-| later | 020 | Server-side git operations when a consumer needs them | |
+| 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
+| 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | |
 
 ## Open source readiness
 
@@ -204,17 +209,20 @@ name, or when a spec names something no spec defines.
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010 |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020 |
 | error code | `gone` | [019](019-repository-administration.md) | 003 |
+| error code | `invalid_change` | [020](020-server-side-git-operations.md) | - |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 012 |
+| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | - |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
-| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012 |
-| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019 |
-| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009 |
+| error code | `operation_timeout` | [020](020-server-side-git-operations.md) | - |
+| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020 |
+| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020 |
+| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 020 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019 |
-| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012 |
-| error code | `repo_importing` | [019](019-repository-administration.md) | 003 |
-| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003 |
+| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020 |
+| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014 |
+| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 010 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 012, 015, 017 |
@@ -294,7 +302,7 @@ name, or when a spec names something no spec defines.
 | event | `compacted` | [019](019-repository-administration.md) | - |
 | event | `deleted` | [019](019-repository-administration.md) | - |
 | event | `frozen` | [019](019-repository-administration.md) | - |
-| event | `imported` | [019](019-repository-administration.md) | - |
+| event | `imported` | [019](019-repository-administration.md) | 014 |
 | event | `push` | [008](008-push-events.md) | 003, 004, 019, 020 |
 | event | `renamed` | [019](019-repository-administration.md) | - |
 | event | `transferred` | [019](019-repository-administration.md) | - |
@@ -312,21 +320,21 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/commits/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/compare/{base}...{head}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/export.bundle` | [019](019-repository-administration.md) | - |
-| endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | - |
+| endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | - |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
-| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 007, 019 |
+| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 007, 014, 019 |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 003 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 019 |
-| endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
+| endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | 014 |
 | endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | - |
 | endpoint | `POST /{repo}/git-upload-pack` | [003](003-protocol-contract.md) | - |
 | endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | - |
