@@ -149,6 +149,13 @@ Divergences from this spec:
   envelope and `Origo-Contract` header of spec 003), `internal/metrics`
   (counters and histograms in the Prometheus text format, no client
   library), and `internal/gittest` (test support over the real git).
+- Moved to `latere.ai/x/pkg` once a second consumer existed: the error
+  envelope is `httpjson.Error` (the codes and the `Origo-Contract`
+  header stay in `internal/contract`), the metrics registry is
+  `pkg/metrics`, the probes on the internal listener are `pkg/health`
+  (`/livez`, `/readyz`, `/version`, `/metrics`, text bodies), and the
+  cancellable sleep and the sweep ticker are `pkg/wait`;
+  `internal/metrics` is gone.
   `internal/placement`, `compact`, `lfs`, `events`, `limits`, and
   `test/conformance` do not exist yet; they land with their specs.
 - `make/` fragments were not adopted: latere-ai/ci-gate's own Makefile is

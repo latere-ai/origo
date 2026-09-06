@@ -331,5 +331,10 @@ Divergences and details this spec did not fix:
   thousand pushes.
 - The AWS SDK was not added: the S3 client is signed by the standard
   library and checked against the vector the S3 documentation publishes.
+- The S3 client moved to `latere.ai/x/pkg/s3` with its signature vector
+  test and the fake endpoint (`pkg/s3/s3test`); `internal/wal` keeps the
+  `Store` interface, `MemStore`, and a thin adapter that maps the
+  client's sentinels to the store's. The commit backoff is a
+  `retry.Policy` from `pkg/retry` with the same 1ms to 16ms envelope.
 - The sampled connectivity check runs on every 256th write open of a
   repository.
