@@ -58,4 +58,4 @@ nodes catch up on their own.
 
 `deploy/base` carries the PrometheusRule. The metrics are listed in spec
 011; the ones to watch first are `origo_storage_breaker_state`,
-`origo_index_check_seconds`, and `origo_requests_in_flight`.
+`origo_wal_head_check_seconds`, and `origo_requests_in_flight`.
