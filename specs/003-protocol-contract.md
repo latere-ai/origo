@@ -32,6 +32,18 @@ repository lifecycle from `internal/api`, the error envelope and the
 `latere.ai/x/pkg/httpjson`. Identity is the static bearer of spec 002's
 Outcome. The Outcome below lists what is served and what is promised.
 
+Defects against the contract found by review, for the builder:
+
+- `GET /readyz` and `GET /version` on the public listener are mounted in
+  `cmd/origod/node.go` outside `contract.Middleware`, so those two
+  responses carry no `Origo-Contract` header; the table below says every
+  response of the public listener carries it.
+- `unauthenticated` is sent with no `details.reason`: `internal/auth`
+  answers every refusal alike. The reasons are the list in the table
+  below, produced by spec 007's verifier; the first draft's `scope` was
+  never produced by any path and is dropped, because a token with the
+  wrong scope is 403 `forbidden` (spec 007).
+
 ## Design
 
 ### Identity
@@ -50,7 +62,11 @@ carries the subject `dev`.
 
 A request without a valid token answers 401 `unauthenticated` with
 `WWW-Authenticate: Basic realm="origo"`, on every path including
-`info/refs`, so git prompts for credentials.
+`info/refs`, so git prompts for credentials. For every request that
+names a repository the authorizer is asked before the repository's
+metadata is read (spec 007, "Authorization before lookup"): a deny is
+403 `forbidden` whether or not the repository exists, and 404
+`repo_not_found` is answered only to a caller the authorizer allowed.
 
 ### Repository lifecycle
 
@@ -123,7 +139,9 @@ When `ORIGO_EVENTS_URL` is set, every acknowledged push sends one signed
  "at": "2026-09-06T10:00:00Z"}
 ```
 
-Delivery is at least once, so a consumer keys on `id`.
+Delivery is at least once, so a consumer keys on `id`. Spec 008 defines
+two optional fields: `kind_detail` on a push whose `updates` is empty,
+and `operation` on a push made by a server-side operation (spec 020).
 
 ### Delegation and tokens
 
@@ -148,7 +166,7 @@ specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
 | Code | Status | Message | Details |
 |---|---|---|---|
 | `invalid_request` | 400 | The request is malformed. | `reason`: the validation failure in the developer register; `field` when one field is at fault |
-| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `expired`, `issuer`, `audience`, `signature`, `scope` |
+| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `audience`, `expired`, `nbf`, `iat`, `kid`; spec 007 says which check produces each |
 | `forbidden` | 403 | You do not have permission to do this. | `action`, `subject`, `reason` from the authorizer |
 | `repo_not_found` | 404 | Repository not found. | `id`, or `owner` and `slug` |
 | `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |
