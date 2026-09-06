@@ -32,7 +32,7 @@ func runStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if _, err := s.Create(ctx, "idx/1", BytesBody([]byte("b"))); !errors.Is(err, ErrExists) {
 			t.Fatalf("second create: %v", err)
 		}
-		if got := read(t, s, "idx/1"); got != "a" {
+		if got := read(ctx, t, s, "idx/1"); got != "a" {
 			t.Fatalf("content = %q after a refused create", got)
 		}
 	})
@@ -47,7 +47,7 @@ func runStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 		if err != nil || e1 == e2 {
 			t.Fatalf("etags %q %q, %v", e1, e2, err)
 		}
-		if got := read(t, s, "hint"); got != "2" {
+		if got := read(ctx, t, s, "hint"); got != "2" {
 			t.Fatalf("content = %q", got)
 		}
 	})
@@ -171,16 +171,16 @@ func runStoreSuite(t *testing.T, newStore func(t *testing.T) Store) {
 			if total != 1 {
 				t.Fatalf("round %d: %d winners", round, total)
 			}
-			if got := read(t, s, key); got != fmt.Sprintf("writer-%d", winner) {
+			if got := read(ctx, t, s, key); got != fmt.Sprintf("writer-%d", winner) {
 				t.Fatalf("round %d: stored %q, winner %d", round, got, winner)
 			}
 		}
 	})
 }
 
-func read(t *testing.T, s Store, key string) string {
+func read(ctx context.Context, t *testing.T, s Store, key string) string {
 	t.Helper()
-	rc, _, err := s.Get(context.Background(), key, "")
+	rc, _, err := s.Get(ctx, key, "")
 	if err != nil {
 		t.Fatalf("get %s: %v", key, err)
 	}
@@ -232,7 +232,7 @@ func TestMemStoreFaultsAndHelpers(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	m.Fault = nil
-	if read(t, m, "k") != "v" {
+	if read(ctx, t, m, "k") != "v" {
 		t.Fatal("lost create not applied")
 	}
 	m.Fault = func(op, key string) error { return ErrLostResponse }
@@ -244,7 +244,7 @@ func TestMemStoreFaultsAndHelpers(t *testing.T) {
 		t.Fatalf("lost create on existing: %v", err)
 	}
 	m.Fault = nil
-	if read(t, m, "k") != "w" {
+	if read(ctx, t, m, "k") != "w" {
 		t.Fatal("lost put not applied")
 	}
 	if m.Calls["Create"] < 2 || m.Calls["Put"] < 1 {

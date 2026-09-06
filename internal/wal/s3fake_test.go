@@ -31,7 +31,6 @@ type fakeS3 struct {
 	requests []*http.Request
 	failNext int
 	failCode int
-	slow     time.Duration
 }
 
 func newFakeS3(t *testing.T, pathStyle bool) (*fakeS3, *S3) {

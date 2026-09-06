@@ -284,7 +284,7 @@ func (c *Cache) apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 			if IsCorruption(err) {
 				c.rebuilt.Inc()
 				c.evict(r)
-				return fmt.Errorf("%w: %v", ErrCorrupt, err)
+				return fmt.Errorf("%w: %w", ErrCorrupt, err)
 			}
 			return err
 		}
@@ -481,7 +481,10 @@ func (c *Cache) Advance(r *Repo, ix *wal.Index) error {
 }
 
 func (c *Cache) writeState(r *Repo, seq uint64) error {
-	data, _ := json.Marshal(state{Seq: seq})
+	data, err := json.Marshal(state{Seq: seq})
+	if err != nil {
+		return err
+	}
 	return writeAtomic(c.stateFile(r.ID), bytes.NewReader(data))
 }
 
@@ -492,7 +495,7 @@ func (c *Cache) Verify(ctx context.Context, r *Repo) error {
 		c.rebuilt.Inc()
 		c.evict(r)
 		c.logger.WarnContext(ctx, "local copy corrupt, evicted for rebuild", "repo", r.ID, "error", err)
-		return fmt.Errorf("%w: %v", ErrCorrupt, err)
+		return fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
 	return nil
 }
