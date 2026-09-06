@@ -5,13 +5,46 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/latere-ai/origo/internal/config"
 )
+
+func testEnv(t *testing.T) map[string]string {
+	t.Helper()
+	return map[string]string{
+		"ORIGO_S3_ENDPOINT":   "http://127.0.0.1:1",
+		"ORIGO_S3_REGION":     "us-east-1",
+		"ORIGO_S3_BUCKET":     "origo",
+		"ORIGO_S3_KEY":        "k",
+		"ORIGO_S3_SECRET":     "s",
+		"ORIGO_PUBLIC_URL":    "http://127.0.0.1",
+		"ORIGO_DEV_TOKEN":     "dev",
+		"ORIGO_DATA_DIR":      t.TempDir(),
+		"ORIGO_PUBLIC_ADDR":   "127.0.0.1:0",
+		"ORIGO_INTERNAL_ADDR": "127.0.0.1:0",
+		"ORIGO_GOSSIP_ADDR":   "127.0.0.1:0",
+	}
+}
+
+func getenv(m map[string]string) config.Getenv {
+	return func(k string) string { return m[k] }
+}
 
 func TestVersionFlagPrintsIdentity(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-version"}, &out, &errOut); code != 0 {
+	if code := run(context.Background(), []string{"-version"}, getenv(nil), &out, &errOut); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 	if !strings.HasPrefix(out.String(), "origod ") {
@@ -19,19 +52,247 @@ func TestVersionFlagPrintsIdentity(t *testing.T) {
 	}
 }
 
-func TestNoFlagsExplainsTheServerIsUnbuilt(t *testing.T) {
+func TestBadFlagIsAUsageError(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := run(nil, &out, &errOut); code != 1 {
+	if code := run(context.Background(), []string{"-nope"}, getenv(nil), &out, &errOut); code != 2 {
 		t.Fatalf("exit %d", code)
-	}
-	if !strings.Contains(errOut.String(), "specs/README.md") {
-		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 
-func TestBadFlagIsAUsageError(t *testing.T) {
+func TestMissingConfigurationIsOneMessage(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-nope"}, &out, &errOut); code != 2 {
+	if code := run(context.Background(), nil, getenv(nil), &out, &errOut); code != 1 {
 		t.Fatalf("exit %d", code)
+	}
+	if got := errOut.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "missing ORIGO_S3_BUCKET") || !strings.Contains(got, "missing ORIGO_DEV_TOKEN") {
+		t.Fatalf("stderr = %q", got)
+	}
+}
+
+func TestUnusableDataDirFailsStartup(t *testing.T) {
+	env := testEnv(t)
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env["ORIGO_DATA_DIR"] = filepath.Join(file, "x")
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), nil, getenv(env), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "ORIGO_DATA_DIR") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+func TestListenerCollisionFailsStartup(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	for _, key := range []string{"ORIGO_PUBLIC_ADDR", "ORIGO_INTERNAL_ADDR"} {
+		env := testEnv(t)
+		env[key] = ln.Addr().String()
+		var out, errOut bytes.Buffer
+		if code := run(context.Background(), nil, getenv(env), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "listener") {
+			t.Fatalf("%s: exit %d, stderr %q", key, code, errOut.String())
+		}
+	}
+	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udp.Close()
+	env := testEnv(t)
+	env["ORIGO_GOSSIP_ADDR"] = udp.LocalAddr().String()
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), nil, getenv(env), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "gossip listener") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+// startNode runs a node in the background and returns it with a stop
+// function that waits for run to return.
+func startNode(t *testing.T, env map[string]string) (*node, func() error) {
+	t.Helper()
+	cfg, err := config.Load(getenv(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := newNode(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.drainDelay = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- n.run(ctx) }()
+	n.addrs()
+	stop := func() error {
+		cancel()
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(10 * time.Second):
+			t.Fatal("run did not return")
+			return nil
+		}
+	}
+	return n, stop
+}
+
+func get(t *testing.T, url string) (int, map[string]any) {
+	t.Helper()
+	client := &http.Client{Transport: &http.Transport{}}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	raw, _ := io.ReadAll(resp.Body)
+	_ = json.Unmarshal(raw, &body)
+	return resp.StatusCode, body
+}
+
+func TestInternalListenerServesProbes(t *testing.T) {
+	n, stop := startNode(t, testEnv(t))
+	_, internal, gossip := n.addrs()
+	base := "http://" + internal
+	if code, body := get(t, base+"/livez"); code != 200 || body["status"] != "ok" {
+		t.Fatalf("livez: %d %v", code, body)
+	}
+	if code, body := get(t, base+"/readyz"); code != 200 || body["status"] != "ok" {
+		t.Fatalf("readyz: %d %v", code, body)
+	}
+	if code, body := get(t, base+"/version"); code != 200 || body["version"] != "dev" {
+		t.Fatalf("version: %d %v", code, body)
+	}
+	client := &http.Client{Transport: &http.Transport{}}
+	resp, err := client.Get(base + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("metrics: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	// The gossip port accepts a datagram; spec 005 gives it a meaning.
+	conn, err := net.Dial("udp", gossip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = conn.Write([]byte("seq 1"))
+	conn.Close()
+	if err := stop(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+}
+
+func TestReadyzFailsWhenTheDiskIsNotWritable(t *testing.T) {
+	env := testEnv(t)
+	n, stop := startNode(t, env)
+	defer func() { _ = stop() }()
+	_, internal, _ := n.addrs()
+	if err := os.Chmod(env["ORIGO_DATA_DIR"], 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(env["ORIGO_DATA_DIR"], 0o755) })
+	if os.Getuid() == 0 {
+		t.Skip("root writes to a read-only directory")
+	}
+	code, body := get(t, "http://"+internal+"/readyz")
+	if code != 503 || body["status"] != "fail" {
+		t.Fatalf("readyz: %d %v", code, body)
+	}
+}
+
+func TestReadyzReportsDrainingDuringShutdown(t *testing.T) {
+	n, stop := startNode(t, testEnv(t))
+	n.draining.Store(true)
+	_, internal, _ := n.addrs()
+	if code, body := get(t, "http://"+internal+"/readyz"); code != 503 || body["status"] != "draining" {
+		t.Fatalf("readyz: %d %v", code, body)
+	}
+	_ = stop()
+}
+
+func TestBackgroundLoopsStopWithTheNode(t *testing.T) {
+	env := testEnv(t)
+	cfg, err := config.Load(getenv(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := newNode(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.drainDelay = 0
+	stopped := make(chan struct{})
+	n.background = append(n.background, func(ctx context.Context) error {
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}, func(context.Context) error {
+		return os.ErrClosed
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- n.run(ctx) }()
+	n.addrs()
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("background loop still running")
+	}
+	if got := n.dataPath("x"); got != filepath.Join(cfg.DataDir, "x") {
+		t.Fatalf("dataPath = %q", got)
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe to read while the node logs to it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func TestRunStopsOnSignalContext(t *testing.T) {
+	env := testEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	var out, errOut syncBuffer
+	done := make(chan int, 1)
+	go func() { done <- run(ctx, nil, getenv(env), &out, &errOut) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), "serving") {
+		if time.Now().After(deadline) {
+			t.Fatalf("node did not start: %s %s", out.String(), errOut.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut.String())
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("run did not return")
 	}
 }
