@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/gittest/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -33,20 +33,40 @@ git. None of the endpoints below exists.
 ## Design
 
 All paths are under `/v1/repos/{id}`, action `read`, and begin with
-`Cache.Acquire(id, false)`. `{sha}`, `{base}`, and `{head}` accept a
-40-character object id or a reference name (`refs/heads/main`, `main`,
-`v1.2`, `HEAD`), resolved with `git rev-parse --verify`; an unresolvable
-one is 404 `ref_not_found` with `details.ref`. Every response carries
+`Cache.Acquire(id, false)`.
+
+### Path grammar
+
+`{sha}`, `{base}`, and `{head}` are one path segment each, so they take
+a full object id (40 or 64 hexadecimal characters) or a short name
+without a slash matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` (`main`,
+`v1.2`, `HEAD`), resolved with `git rev-parse --verify --end-of-options
+<name>` and git's own short-name rules. A full reference name, which
+has slashes (`refs/heads/feature/x`), is passed as a query parameter
+with the segment set to the placeholder `-`, which no short name can
+be: `?ref=` for `commits/{sha}`, `tree/{sha}`, `blob/{sha}`, and
+`archive/{sha}.tar.gz`, and `?base=` and `?head=` for
+`compare/-...-`. A query parameter given with a segment other than `-`
+is 400 `invalid_request` with `details.reason: "ref"`. The `commits`
+list has no segment and takes `?ref=` for both forms. An unresolvable
+name is 404 `ref_not_found` with `details.ref`.
+
+Every value that reaches a git subprocess from a request (`{sha}`,
+`?ref=`, `?base=`, `?head=`, `?path=`, `?cursor=`) is placed after
+`--end-of-options`, or after `--` for a path, and a value that starts
+with `-` is refused as 400 `invalid_request` with `details.reason:
+"option"` before any subprocess starts; a `?path=` is further checked
+by the rules of spec 020's change paths. Every response carries
 `Origo-Commit` with the resolved object id and `ETag: "<seq>"` where
-`<seq>` is the index sequence the copy holds, so `If-None-Match` answers
-304 without running git.
+`<seq>` is the index sequence the copy holds, so `If-None-Match`
+answers 304 without running git.
 
 | Method | Path | Response and bounds |
 |---|---|---|
 | GET | `/v1/repos/{id}/refs` | `?prefix=refs/heads/` (default `refs/`); `[{"name", "sha", "peeled"}]` from `git for-each-ref`, `peeled` the tag's target or null; at most 10 000 entries, `Origo-Truncated: true` past that |
-| GET | `/v1/repos/{id}/commits` | `?ref=<sha or name>` (default `HEAD`) `&path=&since=&until=&limit=&cursor=`; newest first; `limit` default 50, at most 200; `since` and `until` RFC 3339; `cursor` is the last commit's sha of the previous page and the page starts after it; `{"commits": [{"sha", "parents", "author": {"name", "email", "at"}, "committer": {…}, "message", "trailers": {…}}], "next_cursor"}` |
+| GET | `/v1/repos/{id}/commits` | `?ref=<sha or name>` (default `HEAD`) `&path=&since=&until=&limit=&cursor=`; newest first in `git rev-list` order; `limit` default 50, at most 200; `since` and `until` RFC 3339; `cursor` is the sha of the last commit of the previous page: the node walks `git rev-list --end-of-options <ref>` from the start, discards output up to and including the cursor, and returns the next `limit` commits, so a page is exact whatever the graph and `--skip` is never used; a cursor not in the walk is 400 `invalid_request` with `details.reason: "cursor"`; `{"commits": [{"sha", "parents", "author": {"name", "email", "at"}, "committer": {…}, "message", "trailers": {…}}], "next_cursor"}` |
 | GET | `/v1/repos/{id}/commits/{sha}` | the commit as above plus `"stats": {"files", "additions", "deletions"}` from `git show --numstat`; binary files count as a file with 0 lines |
-| GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=`; `text/x-diff` from `git diff -M --no-color <base> <head>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
+| GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=&base=&head=`; `text/x-diff` from `git diff -M --no-color --end-of-options <base> <head> -- <path>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
 | GET | `/v1/repos/{id}/tree/{sha}` | `?path=&recursive=0&cursor=`; `{"entries": [{"path", "mode", "type", "sha", "size"}], "next_cursor"}` from `git ls-tree -l`; 5 000 entries per page, `cursor` the last path |
 | GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honoured; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
 | GET | `/v1/repos/{id}/archive/{sha}.tar.gz` | `git archive --format=tar.gz --prefix=<slug>-<7 hex>/ <sha>` streamed; entries in git's tree order, mtime the commit time, no `.git`; reproducible for one git version |
@@ -93,9 +113,14 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
   `internal/api`, `TestCompareTruncates`).
 - The archive of a 1 GiB tree sends its first byte within 200 ms
   (proposed: `test/e2e`, `TestArchiveStreams` under `ORIGO_E2E_MEASURE=1`).
-- Paging `commits` with `limit=7` over 100 commits and `tree` with a
-  5 001 entry directory returns every item exactly once (proposed:
-  `internal/api`, `TestPagingIsExact`).
+- Paging `commits` with `limit=7` over 100 commits including a merge
+  whose parents interleave in rev-list order, and `tree` with a 5 001
+  entry directory, returns every item exactly once, and a cursor not in
+  the walk is 400 (proposed: `internal/api`, `TestPagingIsExact`).
+- A `{sha}` of `-x`, a `?ref=--output=/tmp/x`, and a `?path=-` are 400
+  `invalid_request` with no subprocess started, `tree/-?ref=refs/heads/feature/x`
+  resolves the full name, and `tree/main?ref=refs/heads/x` is 400
+  (proposed: `internal/api`, `TestPathGrammarRefusesOptions`).
 - A 60 MiB blob answers 413 `blob_too_large` without `Range` and 206
   with `Range: bytes=0-1023` (proposed: `internal/api`, `TestBlobRange`).
 - A second request with `If-None-Match` equal to the `ETag` answers 304
