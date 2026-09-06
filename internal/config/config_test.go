@@ -43,9 +43,9 @@ func TestLoadNamesEveryMissingKeyInOneMessage(t *testing.T) {
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
-	old := hostname
-	hostname = func() string { return "node-1" }
-	t.Cleanup(func() { hostname = old })
+	old := osHostname
+	osHostname = func() (string, error) { return "node-1", nil }
+	t.Cleanup(func() { osHostname = old })
 	cfg, err := Load(env(complete()))
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +132,13 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 }
 
 func TestHostnameFallsBackToTheBinaryName(t *testing.T) {
+	old := osHostname
+	t.Cleanup(func() { osHostname = old })
+	osHostname = func() (string, error) { return "", errors.New("no hostname") }
+	if h := hostname(); h != "origod" {
+		t.Fatalf("hostname = %q", h)
+	}
+	osHostname = old
 	if h := hostname(); h == "" {
 		t.Fatal("hostname is empty")
 	}

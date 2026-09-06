@@ -120,7 +120,7 @@ func startNode(t *testing.T, env map[string]string) (*node, func() error) {
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
-	n, err := newNode(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestBackgroundLoopsStopWithTheNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := newNode(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

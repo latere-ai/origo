@@ -198,9 +198,11 @@ func duration(getenv Getenv, key string, def time.Duration, problems *[]string) 
 	return d
 }
 
-// hostname is a variable so a test covers the fallback.
-var hostname = func() string {
-	h, err := os.Hostname()
+// osHostname is a variable so a test covers the fallback.
+var osHostname = os.Hostname
+
+func hostname() string {
+	h, err := osHostname()
 	if err != nil || h == "" {
 		return "origod"
 	}

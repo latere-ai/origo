@@ -159,9 +159,14 @@ func (n *node) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(body)
 }
 
 // run binds the listeners, serves until ctx ends or a listener fails, then
