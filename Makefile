@@ -9,7 +9,7 @@ GO ?= go
 # in go.mod and configured in .lateregate.yaml, so this target is a name for
 # `go tool lateregate` and nothing else. One gate at a time: `go tool
 # lateregate cover`. The plan: `go tool lateregate list`.
-check:
+check: specindex
 	@$(GO) tool lateregate
 
 .DEFAULT_GOAL := check
@@ -117,3 +117,9 @@ test-integration:
 clean:
 	-@$(DEV_COMPOSE_ENV) $(COMPOSE) down --volumes --remove-orphans 2>/dev/null
 	rm -rf $(OUT_DIR)
+
+# The cross-reference table at the end of specs/README.md is generated from
+# the specs; this fails when a spec and the table disagree.
+specindex:
+	cd tools/specindex && go test ./...
+.PHONY: specindex
