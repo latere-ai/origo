@@ -11,7 +11,7 @@ depends_on:
 affects: [internal/api/, internal/wal/, internal/repo/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -77,7 +77,7 @@ purged id is 409 `repo_exists`.
 Storage per repository is bounded by compaction: after any compaction
 the log holds the packs plus at most 64 entries, and unreachable objects
 are dropped by `git repack` on the primary. Deleted repositories are
-purged after the hold. LFS objects with no `verified` marker (spec 010)
+purged after the hold. LFS objects with no `lfs/verified/<oid>` marker (spec 010)
 are deleted 7 days after upload. A weekly sweep lists the bucket prefix,
 reports objects no index, marker, or metadata names and older than a day
 as `origo_orphan_objects`, deletes them after 7 days, and reports the

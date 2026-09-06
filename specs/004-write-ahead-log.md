@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -353,7 +353,8 @@ Divergences from the first draft, all kept and now in the Design:
 - The S3 client is `latere.ai/x/pkg/s3`, signed by the standard library
   and checked against the published signature vector; `internal/wal`
   keeps the `Store` interface, `MemStore`, and a thin adapter mapping the
-  client's sentinels (`ErrNotFound`, `ErrExists`, `ErrNotModified`). The
+  client's sentinels to the Store's (`ErrNotFound`, `ErrPreconditionFailed`
+  to `ErrExists`, `ErrNotModified`). The
   client sends `If-None-Match` only, asserted by the fake endpoint.
 - The commit backoff is a `retry.Policy` from `latere.ai/x/pkg/retry`.
 - The sampled connectivity check runs on every 256th write open.

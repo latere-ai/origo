@@ -131,10 +131,14 @@ drive the migration from its own code.
 
 ### Events
 
-`imported` (spec 019) after the import; `verified` with `{"equal",
-"refs", "objects"}` after each verification; both on the push event
-channel of spec 008, so the prior host can advance its own record
-without polling.
+`imported` (spec 019) after the import and `verified` after each
+verification, both on the push event channel of spec 008 with the shared
+fields of spec 019, so the prior host can advance its own record without
+polling.
+
+| Event | Extra fields |
+|---|---|
+| `verified` | `equal`, `refs`, `objects` as in the `verify` response |
 
 ### Worked example: the Latere data plane
 

@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -103,8 +103,9 @@ Every variable is read once at start-up by `internal/config.Load`, which
 collects every problem and fails with one message
 `configuration: missing ORIGO_A; missing ORIGO_B; ...` sorted by name.
 `Resolve` then creates `ORIGO_DATA_DIR` and derives `ORIGO_CACHE_BYTES`.
-Variables a later spec reads are listed here with that spec; they are
-read today so a deployment that sets them is not refused.
+Variables a later spec reads are listed here with that spec; a
+deployment that sets one before its spec lands is not refused, because
+an unknown variable is never an error.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -211,8 +212,9 @@ Divergences from the first draft:
   `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR`, `ORIGO_SWEEP_INTERVAL`,
   `ORIGO_SWEEP_MIN_AGE`, `ORIGO_FAILPOINT`, `ORIGO_DEV_TOKEN`.
   `ORIGO_CACHE_BYTES` is read and resolved; eviction is spec 005.
-  `ORIGO_STORAGE_TIMEOUT`, `ORIGO_STALE_MAX`, `ORIGO_MAX_GIT_PROCS`, and
-  `ORIGO_TOKEN_KEY` are in the table for their specs and are not read yet.
+  `ORIGO_STORAGE_TIMEOUT`, `ORIGO_STALE_MAX`, `ORIGO_MAX_GIT_PROCS`,
+  `ORIGO_TOKEN_KEY`, `ORIGO_S3_PUBLIC_ENDPOINT`, and the `OTEL_*` variables
+  are in the table for their specs and are not read yet.
 - `/readyz` and `/version` are also served on the public listener;
   `/livez` and `/metrics` stay internal.
 - The runtime image is Debian slim with git, not distroless.

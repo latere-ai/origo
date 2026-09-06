@@ -40,7 +40,7 @@ passing test in the tree and the Outcome records every divergence.
 
 | # | Spec | Effort | Status |
 |---|---|---|---|
-| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | drafted |
+| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | validated |
 | [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | complete |
 | [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | in-progress |
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
@@ -50,7 +50,7 @@ passing test in the tree and the Outcome records every divergence.
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | drafted |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | drafted |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | drafted |
-| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | drafted |
+| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | drafted |
 | [013](013-conformance-suite.md) | Conformance suite: the contract as executable tests | medium | drafted |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | drafted |
@@ -211,11 +211,11 @@ name, or when a spec names something no spec defines.
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020 |
 | error code | `gone` | [019](019-repository-administration.md) | 003 |
-| error code | `invalid_change` | [020](020-server-side-git-operations.md) | - |
+| error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003 |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 012, 014 |
-| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | - |
+| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003 |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
-| error code | `operation_timeout` | [020](020-server-side-git-operations.md) | - |
+| error code | `operation_timeout` | [020](020-server-side-git-operations.md) | 003 |
 | error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020 |
 | error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020 |
 | error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 020 |
@@ -309,11 +309,12 @@ name, or when a spec names something no spec defines.
 | event | `transferred` | [019](019-repository-administration.md) | - |
 | event | `undeleted` | [019](019-repository-administration.md) | - |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
+| event | `verified` | [014](014-repository-migration.md) | - |
 | endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 016 |
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011 |
-| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 017 |
+| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 007, 016, 017 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 007, 009, 016, 019 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | - |
@@ -326,7 +327,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | - |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
-| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 017 |
+| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 007, 016, 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 007, 014, 019 |

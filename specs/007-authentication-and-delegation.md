@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -104,7 +104,7 @@ is a fresh code, never fail-open:
 | Method | Path | Behaviour |
 |---|---|---|
 | POST | `/v1/repos/{id}/tokens` | action `admin`; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
-| GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; the one unauthenticated path of the public listener |
+| GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; unauthenticated like `GET /readyz` and `GET /version` (spec 002), and the only unauthenticated path that is part of the contract |
 
 The token is an ES256 JWT signed with `ORIGO_TOKEN_KEY`, a PEM-encoded
 ECDSA P-256 private key; `kid` is the first 16 hex characters of the
@@ -146,6 +146,6 @@ HTTPS.
   its `exp` with a fake clock (proposed: `internal/auth`,
   `TestRepositoryBoundTokenScope`).
 - A start-up with `ORIGO_DEV_TOKEN` set fails with the one message
-  (`internal/config`, `TestDevTokenIsRefused`).
+  (proposed: `internal/config`, `TestDevTokenIsRefused`).
 - Fuzzing the token parser with random bytes and mutated valid tokens
   finds no panic in 40 seconds (proposed: `internal/auth`, `FuzzParseToken`).

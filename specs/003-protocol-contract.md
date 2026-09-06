@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/contract/, internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -142,7 +142,8 @@ developer fields named below, present only when there is one. Git
 protocol errors use the sideband as `<code>: <message>`. Codes other
 specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
 `repository_unavailable` (015), `gone`, `repo_frozen`, `repo_importing`,
-`repo_not_empty` (019).
+`repo_not_empty` (019), `merge_conflict`, `invalid_change`,
+`operation_timeout` (020).
 
 | Code | Status | Message | Details |
 |---|---|---|---|
@@ -178,7 +179,7 @@ header `Origo-Contract: <n>` from the next major version on (spec 017).
 - A consumer's integration tests written against the stub pass unchanged
   against a live node (spec 013, the stub criterion).
 - Every code in the table above and in the tables of specs 007, 009,
-  015, and 019 has exactly one `message`, asserted by a test over
+  015, 019, and 020 has exactly one `message`, asserted by a test over
   `internal/contract` that lists the codes and their sentences and by the
   conformance suite comparing responses to it (proposed:
   `internal/contract`, `TestEveryCodeHasOneSentence`).

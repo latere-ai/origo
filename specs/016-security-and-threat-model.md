@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -28,8 +28,9 @@ and the pod.
 
 Phase 1 verifies the static bearer of spec 002 in constant time, runs
 every git subprocess through `internal/repo.Git` with the environment
-below, `core.protectNTFS` and `receive.fsckObjects` on, a 5 minute
-deadline, and a process group that is killed whole. The pod runs with
+below, `core.protectNTFS` and `receive.fsckObjects` on, and a 5 minute
+deadline; the smart HTTP services run in their own process group that is
+killed whole, the other subprocesses under the context's kill. The pod runs with
 the security context below (`deploy/base/deployment.yaml`). `SECURITY.md`
 exists at the root with the disclosure process. The gate runs `vuln` on
 every push. Not yet: `transfer.fsckObjects`, `core.protectHFS`, a bill
@@ -115,8 +116,9 @@ only writable mounts, CPU request 250m, memory request 256Mi and limit
 
 TLS terminates at the ingress; the public listener may be plain HTTP
 inside the cluster only. Bearer tokens are required on every request
-including `info/refs`; the one unauthenticated path is
-`GET /.well-known/jwks.json` (spec 007). There is no anonymous read in
+including `info/refs`; the unauthenticated paths are
+`GET /.well-known/jwks.json` (spec 007) and the probes `GET /readyz` and
+`GET /version` (spec 002), which serve no repository state. There is no anonymous read in
 v1; an operator who wants public repositories does so through the
 authorizer answering allow for an anonymous subject, which is not in
 this spec.
@@ -152,8 +154,8 @@ Audit export beyond the log itself.
   (proposed: `internal/repo`, `TestSubprocessEnvironment`, running `env`
   through `Git.Command`).
 - The pod runs with the documented security context in the kind stack,
-  and a test overlay that relaxes `readOnlyRootFilesystem` is refused by
-  Pod Security admission at `restricted` (proposed: `test/e2e`,
+  and a test overlay that sets `allowPrivilegeEscalation: true` is refused
+  by Pod Security admission at `restricted` (proposed: `test/e2e`,
   `TestPodSecurityContext` on the stack of spec 013).
 - `SECURITY.md` exists (in the tree) and the release carries a bill of
   materials and provenance (spec 017's artifact criterion).

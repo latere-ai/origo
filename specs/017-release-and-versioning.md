@@ -9,7 +9,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, CHANGELOG.md, tools/smoke/, docs/upgrades/, internal/wal/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -33,9 +33,10 @@ the smoke evidence and the `CHANGELOG.md` section. `CHANGELOG.md` has an
 for Origo. `internal/wal` writes `v: 1` in every header and index and
 refuses any other version. `docs/upgrades/` is empty. There is no
 compatibility statement, no binary artifact, no signature, no bill of
-materials. Known defect the first tag will hit: `tools/smoke/release.sh`
-greps `GET /readyz` for `"status":"ok"` while `pkg/health` answers the
-text `ok`; the smoke must check the status code alone.
+materials. Known defect the first tag will hit: after `GET /readyz` answers 200,
+`tools/smoke/release.sh` runs `grep -qx "ok"` with no file, which reads
+standard input and exits 1 under `set -e` when nothing is piped in; the
+smoke must grep the saved body or check the status code alone.
 
 ## Design
 

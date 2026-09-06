@@ -53,7 +53,7 @@ than clobbering:
 | Field | Meaning |
 |---|---|
 | `branch` | `refs/heads/<name>` or a short name; must exist except for `commits` with `create_branch: true` |
-| `expected_head` | the commit the caller believes the branch points at; `null` for a new branch; mismatch is 409 `non_fast_forward` with `details.head` |
+| `expected_head` | the commit the caller believes the branch points at; `null` for a new branch; mismatch is 409 `non_fast_forward` with the details of spec 003: `ref`, `expected`, `actual` |
 | `author` | `{"name", "email"}`; the committer is always Origo with the effective subject's identity in the message trailer `Origo-Subject:` and the actor in `Origo-Actor:` (spec 007) |
 | `message` | the commit message, 1 to 64 KiB |
 | `dry_run` | `true` computes the result and returns it without committing |
@@ -97,8 +97,10 @@ commit like any two pushes.
 
 ### Errors
 
-`non_fast_forward` (spec 003) is answered with `details.head` and
-`details.expected_head` when the branch moved since the caller read it.
+`non_fast_forward` (spec 003) is answered with `details.ref`,
+`details.expected` (the caller's `expected_head`), and `details.actual`
+(the branch's current head) when the branch moved since the caller read
+it.
 Codes this spec defines:
 
 | Code | Status | Message | Details |

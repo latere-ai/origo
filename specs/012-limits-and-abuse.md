@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -44,7 +44,7 @@ not exist.
 | requests per subject | 600 per minute, a token bucket per effective subject per node, burst 600 | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
 | concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot | 429 `rate_limited`, `details.limit: "subprocesses"` |
 | subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, `index-pack`, and repack; 30 seconds for a read API operation (spec 009) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 503 `storage_unavailable` on the API, git's own error on the sideband |
-| JSON body | 64 KiB | every `/v1/` route | 400 `invalid_request` |
+| JSON body | 64 KiB | every `/v1/` route except the operation routes of spec 020, which carry their own 64 MiB limit | 400 `invalid_request` |
 | entry header, transaction, index object | 4 KiB, 64 MiB, 64 MiB | the parsers of spec 004 | the entry or index is refused as corrupt (spec 015) |
 | object storage retries | 3 attempts from 50 ms, capped at 2 s, under `ORIGO_STORAGE_TIMEOUT` per attempt (spec 015) | `pkg/s3` | the store's error |
 
