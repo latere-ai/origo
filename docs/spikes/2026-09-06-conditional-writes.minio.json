@@ -1,9 +1,9 @@
 {
-  "endpoint": "http://127.0.0.1:49992",
+  "endpoint": "http://127.0.0.1:54192",
   "bucket": "origo-spike",
-  "prefix": "origo-spike/409b29d896f5e884/",
+  "prefix": "origo-spike/26f6a3fc7193e91c/",
   "server_header": "MinIO",
-  "started": "2026-09-06T13:58:01.298438Z",
+  "started": "2026-09-06T14:31:52.346335Z",
   "checks": [
     {
       "name": "PUT If-None-Match:* on absent key",
@@ -20,18 +20,20 @@
       "note": "content unchanged: true"
     },
     {
-      "name": "PUT If-Match:\u003ccurrent\u003e ",
+      "name": "PUT If-Match:\u003ccurrent\u003e",
       "expect": "200 + new ETag, applied",
       "got": "200",
       "pass": true,
-      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e \"e2eb411a4df5a1513ab0bf6b89ad6b1d\", GET agrees: true"
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e \"e2eb411a4df5a1513ab0bf6b89ad6b1d\", GET agrees: true",
+      "optional": true
     },
     {
       "name": "PUT If-Match:\u003cstale\u003e",
       "expect": "412, content unchanged",
       "got": "412",
       "pass": true,
-      "note": "content unchanged: true"
+      "note": "content unchanged: true",
+      "optional": true
     },
     {
       "name": "GET If-None-Match:\u003ccurrent\u003e",
@@ -46,6 +48,19 @@
       "pass": true
     },
     {
+      "name": "HEAD absent key",
+      "expect": "404",
+      "got": "404",
+      "pass": true
+    },
+    {
+      "name": "HEAD existing key",
+      "expect": "200 + ETag",
+      "got": "200",
+      "pass": true,
+      "note": "etag agrees with GET: true"
+    },
+    {
       "name": "PUT If-Match:\u003cany\u003e on absent key",
       "expect": "412 or 404, nothing created",
       "got": "404",
@@ -53,11 +68,19 @@
       "note": "informational"
     },
     {
-      "name": "concurrent CAS race",
+      "name": "concurrent create race (If-None-Match:*)",
       "expect": "exactly 1 applied per round, rest 412",
       "got": "20 applied / 20 rounds",
       "pass": true,
       "note": "20 rounds x 16 writers: 20 x 200, 300 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other"
+    },
+    {
+      "name": "concurrent CAS race (If-Match)",
+      "expect": "exactly 1 applied per round, rest 412",
+      "got": "20 applied / 20 rounds",
+      "pass": true,
+      "note": "20 rounds x 16 writers: 20 x 200, 300 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other",
+      "optional": true
     },
     {
       "name": "CopyObject If-None-Match:* on existing dst",
@@ -88,52 +111,74 @@
       "expect": "informational",
       "got": "enabled, 2 versions listed",
       "pass": true,
-      "note": "PUT version ids \"528b54b2-1729-4d94-b275-3399c9b27a01\", \"e527c927-f53f-4277-9a49-8072d1d56d12\"; ListObjectVersions: e527c927-f53f-4277-9a49-8072d1d56d12 latest=true, 528b54b2-1729-4d94-b275-3399c9b27a01 latest=false"
+      "note": "PUT version ids \"f77faaa4-4615-4ce1-8e41-5c2569e526c6\", \"083c5ee2-688c-45c4-b621-7fd94afa67ef\"; ListObjectVersions: 083c5ee2-688c-45c4-b621-7fd94afa67ef latest=true, f77faaa4-4615-4ce1-8e41-5c2569e526c6 latest=false"
     }
   ],
   "latencies": [
     {
       "name": "GET If-None-Match -\u003e 304",
       "n": 200,
-      "min_ms": 1.087709,
-      "p50_ms": 1.499125,
-      "p95_ms": 3.107125,
-      "p99_ms": 4.584959,
-      "max_ms": 7.011125,
-      "mean_ms": 1.730328,
+      "min_ms": 0.5085,
+      "p50_ms": 1.692417,
+      "p95_ms": 10.559833,
+      "p99_ms": 16.833584,
+      "max_ms": 56.295,
+      "mean_ms": 3.332947,
       "failures": 0
     },
     {
       "name": "GET unconditional -\u003e 200",
       "n": 200,
-      "min_ms": 1.308875,
-      "p50_ms": 1.914375,
-      "p95_ms": 3.873209,
-      "p99_ms": 5.887958,
-      "max_ms": 7.333875,
-      "mean_ms": 2.213387,
+      "min_ms": 0.668541,
+      "p50_ms": 2.176667,
+      "p95_ms": 13.622958,
+      "p99_ms": 22.178083,
+      "max_ms": 34.665375,
+      "mean_ms": 3.822045,
+      "failures": 0
+    },
+    {
+      "name": "HEAD missing key -\u003e 404",
+      "n": 200,
+      "min_ms": 0.513958,
+      "p50_ms": 1.180334,
+      "p95_ms": 4.265291,
+      "p99_ms": 6.753125,
+      "max_ms": 8.752541,
+      "mean_ms": 1.592997,
+      "failures": 0
+    },
+    {
+      "name": "HEAD existing key -\u003e 200",
+      "n": 200,
+      "min_ms": 0.419917,
+      "p50_ms": 0.948792,
+      "p95_ms": 7.261583,
+      "p99_ms": 18.725917,
+      "max_ms": 24.956917,
+      "mean_ms": 1.828343,
       "failures": 0
     },
     {
       "name": "PUT If-Match -\u003e 200 (CAS)",
       "n": 200,
-      "min_ms": 4.655375,
-      "p50_ms": 7.400792,
-      "p95_ms": 17.131084,
-      "p99_ms": 27.420333,
-      "max_ms": 35.445917,
-      "mean_ms": 8.781233,
+      "min_ms": 2.519416,
+      "p50_ms": 7.978375,
+      "p95_ms": 52.578709,
+      "p99_ms": 85.662625,
+      "max_ms": 281.261,
+      "mean_ms": 15.872865,
       "failures": 0
     },
     {
       "name": "PUT unconditional -\u003e 200",
       "n": 200,
-      "min_ms": 4.100083,
-      "p50_ms": 6.348625,
-      "p95_ms": 12.562542,
-      "p99_ms": 19.693417,
-      "max_ms": 29.306125,
-      "mean_ms": 7.197066,
+      "min_ms": 2.960083,
+      "p50_ms": 6.32125,
+      "p95_ms": 32.86625,
+      "p99_ms": 58.865791,
+      "max_ms": 93.957584,
+      "mean_ms": 10.311047,
       "failures": 0
     }
   ]

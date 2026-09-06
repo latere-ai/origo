@@ -1,0 +1,114 @@
+{
+  "endpoint": "https://fra1.digitaloceanspaces.com",
+  "bucket": "latere-storage",
+  "prefix": "origo-spike/2f900c8e7cfc0f89/",
+  "server_header": "",
+  "started": "2026-09-06T14:22:38.803393Z",
+  "checks": [
+    {
+      "name": "PUT If-None-Match:* on absent key",
+      "expect": "200 + ETag",
+      "got": "200",
+      "pass": true,
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\""
+    },
+    {
+      "name": "PUT If-None-Match:* on existing key",
+      "expect": "412, content unchanged",
+      "got": "412",
+      "pass": true,
+      "note": "content unchanged: true"
+    },
+    {
+      "name": "PUT If-Match:\u003ccurrent\u003e ",
+      "expect": "200 + new ETag, applied",
+      "got": "412",
+      "pass": false,
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e , GET agrees: false"
+    },
+    {
+      "name": "concurrent CAS race",
+      "expect": "exactly 1 applied per round, rest 412",
+      "got": "0 applied / 20 rounds",
+      "pass": false,
+      "note": "20 rounds x 16 writers: 0 x 200, 320 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other; round 0: no writer got 200 and the stored object is writer -1's; round 1: no writer got 200 and the stored object is writer -1's; round 2: no writer got 200 and the stored object is writer -1's; round 3: no writer got 200 and the stored object is writer -1's; round 4: no writer got 200 and the stored object is writer -1's; round 5: no writer got 200 and the stored object is writer -1's; round 6: no writer got 200 and the stored object is writer -1's; round 7: no writer got 200 and the stored object is writer -1's; round 8: no writer got 200 and the stored object is writer -1's; round 9: no writer got 200 and the stored object is writer -1's; round 10: no writer got 200 and the stored object is writer -1's; round 11: no writer got 200 and the stored object is writer -1's; round 12: no writer got 200 and the stored object is writer -1's; round 13: no writer got 200 and the stored object is writer -1's; round 14: no writer got 200 and the stored object is writer -1's; round 15: no writer got 200 and the stored object is writer -1's; round 16: no writer got 200 and the stored object is writer -1's; round 17: no writer got 200 and the stored object is writer -1's; round 18: no writer got 200 and the stored object is writer -1's; round 19: no writer got 200 and the stored object is writer -1's"
+    },
+    {
+      "name": "CopyObject If-None-Match:* on existing dst",
+      "expect": "412, dst unchanged",
+      "got": "200",
+      "pass": false,
+      "note": "dst unchanged: false",
+      "fallback": true
+    },
+    {
+      "name": "CopyObject If-Match:\u003cstale\u003e on dst",
+      "expect": "412, dst unchanged",
+      "got": "200",
+      "pass": false,
+      "note": "dst unchanged: false",
+      "fallback": true
+    },
+    {
+      "name": "CopyObject If-Match:\u003ccurrent\u003e on dst",
+      "expect": "200, dst replaced",
+      "got": "200",
+      "pass": false,
+      "note": "etag \"fbf726df327298902d86c6a5fc0d89ad\" -\u003e 0d397da4c3b89f02477084e65fd7708e",
+      "fallback": true
+    },
+    {
+      "name": "bucket versioning",
+      "expect": "informational",
+      "got": "off",
+      "pass": true,
+      "note": "not enabled; the run does not change a bucket it did not create"
+    }
+  ],
+  "latencies": [
+    {
+      "name": "GET If-None-Match -\u003e 304",
+      "n": 200,
+      "min_ms": 19.9275,
+      "p50_ms": 22.517833,
+      "p95_ms": 95.160375,
+      "p99_ms": 111.444208,
+      "max_ms": 112.495083,
+      "mean_ms": 27.712668,
+      "failures": 0
+    },
+    {
+      "name": "GET unconditional -\u003e 200",
+      "n": 200,
+      "min_ms": 20.566542,
+      "p50_ms": 24.858,
+      "p95_ms": 94.965875,
+      "p99_ms": 107.16125,
+      "max_ms": 114.210709,
+      "mean_ms": 29.85147,
+      "failures": 0
+    },
+    {
+      "name": "PUT If-Match -\u003e 200 (CAS)",
+      "n": 0,
+      "min_ms": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0,
+      "mean_ms": 0,
+      "failures": 200
+    },
+    {
+      "name": "PUT unconditional -\u003e 200",
+      "n": 200,
+      "min_ms": 25.184375,
+      "p50_ms": 35.1675,
+      "p95_ms": 109.08425,
+      "p99_ms": 130.00175,
+      "max_ms": 134.74275,
+      "mean_ms": 43.171437,
+      "failures": 0
+    }
+  ]
+}
