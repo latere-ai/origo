@@ -3,9 +3,6 @@
 
 //go:build e2e
 
-// Package e2e drives a built origod binary against MinIO with the real
-// git client. `make test-integration` runs it; it skips without
-// ORIGO_TEST_S3_ENDPOINT.
 package e2e
 
 import (
