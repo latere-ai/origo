@@ -34,7 +34,10 @@ commit and the currency check (`log.go`), repository metadata and names
 local cache (`cache.go`) and the git subprocess wrapper (`git.go`).
 `internal/httpgit` captures a push into an entry through a pre-receive
 hook (`hook.go`) and commits it before git's own update. `cmd/origod`
-runs the sweeper loop. The spike in
+runs the sweeper loop. The hook in the tree writes the transaction
+only: the `quarantine` line of the hook protocol below and the step that
+reads the quarantined objects with `GIT_ALTERNATE_OBJECT_DIRECTORIES`
+are not built and land with spec 008, their only consumer. The spike in
 [docs/spikes/2026-09-06-conditional-writes.md](../docs/spikes/2026-09-06-conditional-writes.md)
 is the evidence for the commit primitive: `PUT If-None-Match: *` is
 honoured by MinIO and DigitalOcean Spaces and documented by AWS, `PUT
@@ -252,7 +255,9 @@ rebuilds from packs, which is step 2 of materialization.
 ### Deletion
 
 `DELETE /v1/repos/{id}` commits a `delete` entry whose index object sets
-`deleted_at`; nodes evict the local copy at once and answer 404. The
+`deleted_at`; the node that served the delete evicts its local copy at
+once, every other node evicts on its next currency check, and every node
+answers 404 from then on. The
 sweeper purges the prefix after the hold unless a later index object
 cleared `deleted_at` (`undelete` commits a `push` entry with an empty
 transaction).
