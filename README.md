@@ -14,8 +14,41 @@ name; the hostname is the operator's.
 
 ## Status
 
-Design stage. The spec deck under [`specs/`](specs/README.md) describes the
-whole system and is the build plan. No code has shipped yet.
+Phase 1 is being built: one node that serves clone, fetch, and push with
+the log as the source of truth (specs 002, 003, 004). The spec deck under
+[`specs/`](specs/README.md) describes the whole system and is the build
+plan. What runs today: the `origod` binary with its typed configuration,
+the three listeners with `/livez`, `/readyz`, `/version`, and `/metrics`,
+the quality gate, the container images, and the release pipeline. The
+write-ahead log and the smart HTTP surface land next.
+
+Authentication in phase 1 is a single static bearer read from
+`ORIGO_DEV_TOKEN`; the public listener accepts it and refuses everything
+else. Spec 007 replaces it with OIDC and the consumer's authorizer.
+
+## Run it
+
+Requirements: Go 1.27, git, and a container engine for MinIO.
+
+```sh
+make            # the whole quality gate
+make dev        # MinIO in a container, then origod in the foreground
+```
+
+`make dev` prints the ports it chose. The node reads its configuration
+from the environment; spec 002 lists every variable. The required ones:
+
+| Variable | Value |
+|---|---|
+| `ORIGO_S3_ENDPOINT`, `ORIGO_S3_REGION`, `ORIGO_S3_BUCKET`, `ORIGO_S3_KEY`, `ORIGO_S3_SECRET` | the bucket; `ORIGO_S3_PATH_STYLE=1` for MinIO |
+| `ORIGO_PUBLIC_URL` | the origin clients see, for example `https://git.example.com` |
+| `ORIGO_DEV_TOKEN` | the phase 1 bearer |
+
+A start with anything missing fails with one message that names every
+missing variable. `make test-integration` runs the tiers that need MinIO
+beside them. Kubernetes manifests are under [`deploy/`](deploy/); apply
+[`deploy/bootstrap/`](deploy/bootstrap/README.md) once by hand, and a
+`v*` tag releases through `deploy/prod/`.
 
 ## What it does
 
@@ -45,9 +78,10 @@ whole system and is the build plan. No code has shipped yet.
 | Path | Purpose |
 |---|---|
 | `specs/` | Design specs and the build plan. Read [`specs/README.md`](specs/README.md) first. |
-| `cmd/origod` | The server binary (planned) |
-| `deploy/` | Kubernetes manifests (planned) |
-| `test/e2e/` | Conformance suite for the protocol contract (planned) |
+| `cmd/origod` | The server binary: configuration, listeners, run group |
+| `internal/` | The packages behind it, one per spec |
+| `deploy/` | Kubernetes manifests: `base/`, the `prod/` overlay, and `bootstrap/` |
+| `test/e2e/` | End-to-end suite against MinIO and the real git (planned) |
 
 ## Acknowledgements
 
