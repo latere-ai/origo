@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
-affects: [internal/api/, internal/repo/]
+affects: [internal/api/, internal/repo/, internal/gittest/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-06
@@ -16,46 +16,87 @@ author: changkun
 
 ## Overview
 
-A platform shows a project's history, the diff between two versions, and a
-file at a commit without cloning anything. A build wants the tree at one
-commit as a tarball. This spec is the JSON and tarball surface over a
+A platform shows a project's history, the diff between two versions, and
+a file at a commit without cloning anything. A build wants the tree at one
+commit as an archive. This spec is the JSON and archive surface over a
 materialized repository, every operation served from the local copy after
-the consistency check of spec 005.
+the currency check of spec 004.
 
 ## Current state
 
-Spec 003 names the endpoints. `git` provides every operation; the work is
-bounding and shaping them.
+Spec 003 names the endpoints and points here. `internal/api` serves the
+lifecycle only; `internal/repo.Git` runs git with a hermetic environment
+and a deadline, and `Cache.Acquire(id, false)` gives a handler a current
+copy under a read lock. `internal/gittest` builds fixtures with the real
+git. None of the endpoints below exists.
 
 ## Design
 
-All paths under `/v1/repos/{id}`, action `read`.
+All paths are under `/v1/repos/{id}`, action `read`, and begin with
+`Cache.Acquire(id, false)`. `{sha}`, `{base}`, and `{head}` accept a
+40-character object id or a reference name (`refs/heads/main`, `main`,
+`v1.2`, `HEAD`), resolved with `git rev-parse --verify`; an unresolvable
+one is 404 `ref_not_found` with `details.ref`. Every response carries
+`Origo-Commit` with the resolved object id and `ETag: "<seq>"` where
+`<seq>` is the index sequence the copy holds, so `If-None-Match` answers
+304 without running git.
 
-| Method | Path | Result and bounds |
+| Method | Path | Response and bounds |
 |---|---|---|
-| GET | `refs?prefix=refs/heads/` | `[{"name", "sha", "peeled"}]`, 10 000 max |
-| GET | `commits?ref=<ref\|sha>&path=&since=&until=&limit=&cursor=` | log newest first, `limit` ≤ 200, cursor is the last sha; each `{sha, parents, author, committer, message, trailers}` |
-| GET | `commits/{sha}` | the commit plus `stats: {files, additions, deletions}` |
-| GET | `compare/{base}...{head}?path=` | unified diff as `text/x-diff`, 1 MiB cap with `Origo-Truncated: true`, binary files listed not shown, rename detection on |
-| GET | `tree/{sha}?path=&recursive=0` | `[{"path", "mode", "type", "sha", "size"}]`, 5 000 entries per page with cursor |
-| GET | `blob/{sha}` | raw bytes, `Content-Type` sniffed, 50 MiB cap, `Range` supported |
-| GET | `archive/{sha}.tar.zst` | `git archive` piped through zstd level 3, streamed, entries in git's order, mtime fixed to the commit time so the digest is reproducible, no `.git`, `Origo-Commit` header with the resolved sha |
+| GET | `/v1/repos/{id}/refs` | `?prefix=refs/heads/` (default `refs/`); `[{"name", "sha", "peeled"}]` from `git for-each-ref`, `peeled` the tag's target or null; at most 10 000 entries, `Origo-Truncated: true` past that |
+| GET | `/v1/repos/{id}/commits` | `?ref=<sha or name>` (default `HEAD`) `&path=&since=&until=&limit=&cursor=`; newest first; `limit` default 50, at most 200; `since` and `until` RFC 3339; `cursor` is the last commit's sha of the previous page and the page starts after it; `{"commits": [{"sha", "parents", "author": {"name", "email", "at"}, "committer": {…}, "message", "trailers": {…}}], "next_cursor"}` |
+| GET | `/v1/repos/{id}/commits/{sha}` | the commit as above plus `"stats": {"files", "additions", "deletions"}` from `git show --numstat`; binary files count as a file with 0 lines |
+| GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=`; `text/x-diff` from `git diff -M --no-color <base> <head>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
+| GET | `/v1/repos/{id}/tree/{sha}` | `?path=&recursive=0&cursor=`; `{"entries": [{"path", "mode", "type", "sha", "size"}], "next_cursor"}` from `git ls-tree -l`; 5 000 entries per page, `cursor` the last path |
+| GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honoured; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
+| GET | `/v1/repos/{id}/archive/{sha}.tar.gz` | `git archive --format=tar.gz --prefix=<slug>-<7 hex>/ <sha>` streamed; entries in git's tree order, mtime the commit time, no `.git`; reproducible for one git version |
 
-Every operation runs a git subprocess with a 30 second budget, `--no-pager`,
-and `GIT_DIR` set; concurrency is bounded at 32 per node with 429
-`rate_limited` beyond. `sha` may be any reachable object or a ref name;
-an unknown one is 404 `ref_not_found`. Responses carry `ETag` from the
-index ETag plus the request so a consumer's cache revalidates cheaply.
+The first draft named `.tar.zst`; zstd is not in the standard library
+and spec 001 forbids a dependency beyond `latere.ai/x/pkg`, so the
+format is git's own `tar.gz`.
+
+| Header | Meaning |
+|---|---|
+| `Origo-Commit` | the object id `{sha}` resolved to, on every read response |
+| `Origo-Truncated` | `true` when `refs` hit its cap or `compare` was cut at 1 MiB |
+
+| Code | Status | Message | Details |
+|---|---|---|---|
+| `blob_too_large` | 413 | This file is larger than 50 MiB. Request it in ranges of at most 50 MiB. | `size`, `max` |
+
+`GET /v1/repos/{id}` gains `pushed_at`, the `at` of the newest entry
+named by the index, null for a repository with no push.
+
+Every operation runs one git subprocess with a 30 second deadline,
+`--no-pager`, and the environment of spec 016, under the per-node
+subprocess cap `ORIGO_MAX_GIT_PROCS` (spec 012), beyond which the answer
+is 429 `rate_limited`.
 
 The archive is what a build system should fetch for a single commit: one
 request, no negotiation, reproducible bytes.
 
+## Not in this spec
+
+Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
+
 ## Acceptance criteria
 
-- Every endpoint has a golden test against a fixture repository with
-  merges, renames, binaries, and a 60 MiB blob; the archive's sha256 is
-  stable across two nodes.
-- `compare` over a 5 MiB change returns 1 MiB with the truncation header
-  in under one second.
-- The archive of a 1 GiB tree streams with first bytes in under 200 ms.
-- Paging on `commits` and `tree` returns every item exactly once.
+- Every endpoint has a golden test against a fixture with merges,
+  renames, a binary file, and a 60 MiB blob built by `internal/gittest`,
+  comparing the body to a checked-in expectation (proposed:
+  `internal/api`, `TestReadEndpointsGolden`).
+- The archive of the fixture at one commit has the same SHA-256 on two
+  nodes and after a rebuild from the log (proposed: `internal/api`,
+  `TestArchiveIsReproducible`).
+- `compare` over a 5 MiB change returns at most 1 MiB, cut at a file
+  boundary, with `Origo-Truncated: true`, in under one second (proposed:
+  `internal/api`, `TestCompareTruncates`).
+- The archive of a 1 GiB tree sends its first byte within 200 ms
+  (proposed: `test/e2e`, `TestArchiveStreams` under `ORIGO_E2E_MEASURE=1`).
+- Paging `commits` with `limit=7` over 100 commits and `tree` with a
+  5 001 entry directory returns every item exactly once (proposed:
+  `internal/api`, `TestPagingIsExact`).
+- A 60 MiB blob answers 413 `blob_too_large` without `Range` and 206
+  with `Range: bytes=0-1023` (proposed: `internal/api`, `TestBlobRange`).
+- A second request with `If-None-Match` equal to the `ETag` answers 304
+  and runs no git subprocess (proposed: `internal/api`, `TestETagRevalidates`).
