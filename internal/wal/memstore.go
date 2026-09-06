@@ -53,6 +53,14 @@ func NewMemStore() *MemStore {
 	return &MemStore{objects: map[string]memObject{}, now: time.Now, Calls: map[string]int{}}
 }
 
+// SetFault installs or clears the fault function under the lock, so a
+// test changes it while a server goroutine is using the store.
+func (m *MemStore) SetFault(f func(op, key string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Fault = f
+}
+
 // SetClock replaces the clock that stamps LastModified.
 func (m *MemStore) SetClock(now func() time.Time) {
 	m.mu.Lock()

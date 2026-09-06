@@ -282,6 +282,8 @@ type Entry struct {
 	// Deleted marks the repository deleted (KindDelete) or, when false on
 	// a KindPush entry, clears an earlier deletion.
 	Deleted bool
+	// PushOptions are recorded in the header for spec 008.
+	PushOptions []string
 }
 
 // ConflictError reports a reference that moved under a writer.
@@ -413,7 +415,7 @@ func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) 
 	}
 	h := Header{
 		V: Version, Kind: e.Kind, Seq: seq, At: l.now().UTC(), Subject: e.Subject, Actor: e.Actor,
-		PackBytes: e.Pack.Size, PackSHA256: e.Pack.SHA256,
+		PackBytes: e.Pack.Size, PackSHA256: e.Pack.SHA256, PushOptions: e.PushOptions,
 	}
 	if e.Pack.Size == 0 {
 		h.PackSHA256 = ""

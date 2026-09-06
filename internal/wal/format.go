@@ -51,6 +51,9 @@ type Header struct {
 	Actor      string    `json:"actor"`
 	PackBytes  int64     `json:"pack_bytes"`
 	PackSHA256 string    `json:"pack_sha256"`
+	// PushOptions are the options the client sent with a push, such as
+	// origo.event=off, recorded for spec 008 to read.
+	PushOptions []string `json:"push_options,omitempty"`
 }
 
 // RefUpdate is one line of a reference transaction. Old and New are

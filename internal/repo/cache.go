@@ -139,6 +139,9 @@ func New(o Options) (*Cache, error) {
 // SpoolDir is where request bodies larger than memory are spooled.
 func (c *Cache) SpoolDir() string { return filepath.Join(c.dir, "spool") }
 
+// Dir is the data directory.
+func (c *Cache) Dir() string { return c.dir }
+
 // repoDir is the bare repository of id.
 func (c *Cache) repoDir(id string) string { return filepath.Join(c.dir, "repos", id+".git") }
 
@@ -254,13 +257,15 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) error {
 		r.Index = newest
 		return ErrDeleted
 	}
-	return c.apply(ctx, r, newest)
+	return c.Apply(ctx, r, newest)
 }
 
-// apply brings the local copy to ix: packs first, then every entry above
+// Apply brings the local copy to ix: packs first, then every entry above
 // the local sequence, then the reference map reconciled to the index so
-// the result equals the index whatever the copy held before.
-func (c *Cache) apply(ctx context.Context, r *Repo, ix *wal.Index) error {
+// the result equals the index whatever the copy held before. The caller
+// holds the write lock; a push handler calls it with the index another
+// writer committed while the push was in flight.
+func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 	start := time.Now()
 	fresh := !r.Local
 	if fresh {

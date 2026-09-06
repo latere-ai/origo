@@ -58,8 +58,12 @@ func TestParseHeader(t *testing.T) {
 	}
 	first := bytes.SplitN(line, []byte("\n"), 2)[0]
 	got, err := ParseHeader(first)
-	if err != nil || got != h {
+	if err != nil || got.Seq != h.Seq || got.PackSHA256 != h.PackSHA256 {
 		t.Fatalf("round trip: %+v, %v", got, err)
+	}
+	withOptions, _ := EncodeEntryHead(Header{V: 1, Kind: KindPush, Seq: 1, At: h.At, PushOptions: []string{"origo.event=off"}}, nil)
+	if got, err := ParseHeader(bytes.SplitN(withOptions, []byte("\n"), 2)[0]); err != nil || len(got.PushOptions) != 1 {
+		t.Fatalf("push options: %+v, %v", got, err)
 	}
 	mutate := func(f func(*Header)) []byte {
 		h := validHeader()
@@ -199,7 +203,7 @@ func TestReadEntryHead(t *testing.T) {
 	head, _ := EncodeEntryHead(h, refs)
 	body := append(head, []byte("PACKDATA")...)
 	gotH, gotRefs, pack, err := ReadEntryHead(bytes.NewReader(body))
-	if err != nil || gotH != h || len(gotRefs) != 1 {
+	if err != nil || gotH.Seq != h.Seq || len(gotRefs) != 1 {
 		t.Fatalf("head: %+v %+v %v", gotH, gotRefs, err)
 	}
 	rest, _ := io.ReadAll(pack)
