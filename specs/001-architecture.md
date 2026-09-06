@@ -173,7 +173,7 @@ on gossip arriving.
    caller's identity as input.
 7. Everything Origo depends on is an S3 endpoint, an OIDC issuer, and a
    disk. No database, no custom resource, no cloud SDK: the module's
-   dependencies are the standard library and `latere.ai/x/pkg`.
+   direct dependencies are the standard library and `latere.ai/x/pkg`.
 
 ## Not in this spec
 
