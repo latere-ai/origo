@@ -4,12 +4,15 @@ status: drafted
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
+  - specs/005-placement-and-replication.md
   - specs/007-authentication-and-delegation.md
+  - specs/011-observability.md
+  - specs/013-conformance-suite.md
   - specs/017-release-and-versioning.md
 affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -46,7 +49,7 @@ planned.
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS; the operator registers one client for people and one for each service that will act on behalf of users |
-| authorizer | an HTTP endpoint the operator runs (spec 007); a reference authorizer that allows everything for a fixed list of subjects ships in `deploy/examples/authorizer/` for a first installation |
+| authorizer | an HTTP endpoint the operator runs (spec 007); for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
 
 ### Manifests
@@ -60,10 +63,12 @@ Latere values move out of the base into `deploy/prod`. An operator
 writes an overlay with their hostname, ingress class, storage class or
 local-volume choice, replica bounds, and the Secret with their bucket
 and issuer values, and applies it with `kubectl apply -k`.
-`deploy/examples/` carries three overlays tested in CI: `kind` (MinIO
-in-cluster, the stub issuer and authorizer of spec 013),
-`digitalocean`, and `aws`. Helm is not offered; a kustomize overlay is a
-directory an operator can read.
+`deploy/examples/` carries three overlays: `kind` (MinIO in-cluster,
+the stubs of spec 013, owned by that spec and applied in CI on every
+push), `digitalocean`, and `aws`. The two cloud overlays are validated
+by `kustomize build` in CI only; nothing applies them there, because
+CI has no cloud account, and the install document says so. Helm is not
+offered; a kustomize overlay is a directory an operator can read.
 
 ### The check
 
@@ -74,12 +79,16 @@ exiting 1 on any failure:
 | Line | What passes |
 |---|---|
 | `bucket` | a listing under the prefix answers |
-| `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards |
+| `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards. With `ORIGO_CHECK_SELFTEST=1` (spec 002) the check runs against an in-process HTTP server inside `origod check` that accepts every `PUT` and ignores the header, so the line must read `fail conditional-create: second create answered 200`; that is how the check's own detection is tested, since `pkg/s3/s3test` always honours the header |
 | `issuer` | each issuer's discovery document and JWKS are fetched |
-| `authorizer` | a `POST` with `action: "read"` for a fixed probe repository id answers 200 with `allow` present |
-| `events` | when `ORIGO_EVENTS_URL` is set, a `POST` with `Origo-Event: check` answers any status under 500 |
+| `authorizer` | a `POST` with `action: "read"`, an empty subject, and the probe repository id `00000000-0000-0000-0000-000000000001` answers 200 with `allow: false`; an authorizer must deny that id, so an allow is `fail authorizer: probe id allowed`, and the stub of spec 013 denies it |
+| `events` | when `ORIGO_EVENTS_URL` is set, a signed `ping` event (below) answers any status under 500 |
 | `disk` | a file is created and removed under `ORIGO_DATA_DIR` and the file system holds at least `ORIGO_CACHE_BYTES` |
-| `git` | `git --version` runs and reports 2.39 or newer |
+| `git` | `git --version` runs and reports 2.40 or newer, the floor spec 020's merge family needs |
+
+| Event | Payload |
+|---|---|
+| `ping` | `{"id", "kind": "ping", "at"}`, sent by `origod check` with the headers of spec 008 (`Origo-Event: ping`, `Origo-Signature` over the body, `Origo-Delivery` equal to `id`); a sink treats it as a delivery to acknowledge and nothing else |
 
 It runs as an init container in the Deployment so a misconfigured pod
 never reports ready, and the install document tells the operator to run
@@ -109,13 +118,18 @@ binary artifact of spec 017.
 
 - The `kind` example overlay installs in the CI stack from the release
   artifacts alone and `TestContract` passes against it (spec 013's
-  stack; proposed: `.github/workflows/verify.yml`, the `install` job).
-- `origod check` prints a `fail` line naming the requirement for each of:
-  an unreachable bucket, a bucket that ignores conditional create (the
-  `pkg/s3` fake with the option off), an unreachable issuer, an
-  authorizer answering 500, an unwritable data directory, a missing git
-  binary, and exits 1; with everything in place it prints seven `ok`
-  lines and exits 0 (proposed: `cmd/origod`, `TestCheckReportsEachRequirement`).
+  stack; proposed: `.github/workflows/verify.yml`, the `install` job),
+  and `kustomize build` succeeds on `deploy/examples/digitalocean` and
+  `deploy/examples/aws` (proposed: `verify.yml`, the `overlays` job).
+- `origod check` prints a `fail` line naming the requirement for each
+  of: an unreachable bucket, a store that ignores conditional create
+  (`ORIGO_CHECK_SELFTEST=1`), an unreachable issuer, an authorizer
+  answering 500 and one that allows the probe id, a sink answering 500
+  to the `ping`, an unwritable data directory, a missing git binary,
+  and a git older than 2.40 (a stub `git` on `PATH`), and exits 1; with
+  everything in place against `pkg/s3/s3test` and the stubs of spec 013
+  it prints seven `ok` lines and exits 0 (proposed: `cmd/origod`,
+  `TestCheckReportsEachRequirement`).
 - `make docs` regenerates `docs/configuration.md` byte-identical in the
   verify workflow (proposed: `internal/config`, `TestConfigurationDocIsCurrent`).
 - A maintainer following `docs/install.md` on a fresh kind cluster
