@@ -105,10 +105,36 @@ func (h *hookChannel) readUpdates() ([]wal.RefUpdate, bool, error) {
 }
 
 // release opens the updates FIFO for writing and closes it, so a
-// reader blocked in readUpdates sees end of file.
-func (h *hookChannel) release() {
-	if f, err := os.OpenFile(h.updates, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
-		_ = f.Close()
+// reader blocked in readUpdates sees end of file. It reports whether a
+// reader had the FIFO open: a non-blocking open for writing fails with
+// ENXIO when none does.
+func (h *hookChannel) release() bool {
+	f, err := os.OpenFile(h.updates, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
+
+// drain ends a readUpdates that will never see the hook, because git
+// exited before running it. The reader's own open blocks until a writer
+// appears, so one release is not enough: a release before the reader
+// has opened the FIFO finds no reader, and the reader then waits for a
+// writer that never comes. release is repeated until it finds the
+// reader or done reports the reader finished on its own.
+func (h *hookChannel) drain(done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		if h.release() {
+			<-done
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
