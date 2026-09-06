@@ -158,10 +158,21 @@ func get(t *testing.T, url string) (int, map[string]any) {
 
 func TestInternalListenerServesProbes(t *testing.T) {
 	n, stop := startNode(t, testEnv(t))
-	_, internal, gossip := n.addrs()
+	public, internal, gossip := n.addrs()
 	base := "http://" + internal
 	if code, body := get(t, base+"/livez"); code != 200 || body["status"] != "ok" {
 		t.Fatalf("livez: %d %v", code, body)
+	}
+	// The public listener serves the two probes the release smoke reads,
+	// and nothing else yet.
+	if code, body := get(t, "http://"+public+"/readyz"); code != 200 || body["status"] != "ok" {
+		t.Fatalf("public readyz: %d %v", code, body)
+	}
+	if code, body := get(t, "http://"+public+"/version"); code != 200 || body["version"] != "dev" {
+		t.Fatalf("public version: %d %v", code, body)
+	}
+	if code, _ := get(t, "http://"+public+"/livez"); code != 404 {
+		t.Fatalf("public livez: %d", code)
 	}
 	if code, body := get(t, base+"/readyz"); code != 200 || body["status"] != "ok" {
 		t.Fatalf("readyz: %d %v", code, body)

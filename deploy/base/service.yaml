@@ -1,0 +1,29 @@
+# The public surface behind the ingress, and a headless Service whose DNS
+# name resolves to every node for gossip (spec 005).
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: origod
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod-gossip
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: origod
+  ports:
+    - name: gossip
+      port: 7946
+      targetPort: gossip
+      protocol: UDP

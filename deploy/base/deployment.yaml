@@ -1,0 +1,123 @@
+# The workload and its main container both carry the service name. The
+# release pipeline sets the image by that name, so no target needs a
+# mapping between a manifest and a registry reference.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: origod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: origod
+    spec:
+      serviceAccountName: origod
+      automountServiceAccountToken: false
+      # The drain delay plus the grace period of the node's shutdown, plus
+      # a margin: a push in flight finishes before the pod is killed.
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: origod
+          # The release pipeline replaces this with the tag it built. The
+          # placeholder never resolves, so a target that was never released
+          # fails to pull instead of running an unknown build.
+          image: ghcr.io/latere-ai/origod:unreleased
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: internal
+              containerPort: 8081
+              protocol: TCP
+            - name: gossip
+              containerPort: 7946
+              protocol: UDP
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.latere.ai
+            - name: ORIGO_DATA_DIR
+              value: /var/lib/origo
+            - name: ORIGO_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ORIGO_GOSSIP_PEERS
+              value: origod-gossip
+          # The bucket and the phase 1 bearer come from secrets the
+          # bootstrap step creates once; see deploy/bootstrap/README.md.
+          envFrom:
+            - secretRef:
+                name: origod-s3
+            - secretRef:
+                name: origod-dev-token
+          # Liveness touches no dependency. Readiness reports object storage
+          # and the disk, so a replica leaves the endpoint list when either
+          # goes away.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: internal
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: internal
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: internal
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 45
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          # The root filesystem is read only. The repository cache is a
+          # per-pod ephemeral volume: a node holds no state a request cannot
+          # rebuild from the log (spec 001, invariant 3). git and the pack
+          # spool need a temporary directory.
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/origo
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: tmp
+          emptyDir: {}

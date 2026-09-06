@@ -1,0 +1,11 @@
+# A voluntary disruption, such as a node drain, may never take the last
+# ready replica.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: origod
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: origod

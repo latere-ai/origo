@@ -1,0 +1,30 @@
+# git.latere.ai is Latere's hostname; an operator sets their own here and in
+# ORIGO_PUBLIC_URL. A push body is a packfile of any size and a clone can
+# take minutes, so the body limit is off and the read timeout is long.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: origod
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - git.latere.ai
+      secretName: origod-tls
+  rules:
+    - host: git.latere.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http

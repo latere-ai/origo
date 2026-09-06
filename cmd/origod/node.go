@@ -19,7 +19,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/version"
+	versionpkg "github.com/latere-ai/origo/internal/version"
 )
 
 // Shutdown budgets. The drain delay lets a load balancer see the replica
@@ -102,13 +102,27 @@ func (n *node) internalHandler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /readyz", n.handleReady)
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{
-			"version": version.Version, "commit": version.Commit, "date": version.Date,
-		})
-	})
+	mux.HandleFunc("GET /version", handleVersion)
 	mux.Handle("GET /metrics", n.reg.Handler())
 	return mux
+}
+
+// publicHandler serves the application surface with /readyz and /version
+// in front of it. The two probes are public as well as internal so the
+// release smoke reaches them through the ingress; /livez and /metrics stay
+// internal.
+func (n *node) publicHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /readyz", n.handleReady)
+	mux.HandleFunc("GET /version", handleVersion)
+	mux.Handle("/", n.public)
+	return mux
+}
+
+func handleVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version": versionpkg.Version, "commit": versionpkg.Commit, "date": versionpkg.Date,
+	})
 }
 
 type checkResult struct {
@@ -174,7 +188,7 @@ func (n *node) run(ctx context.Context) error {
 	n.publicAddr, n.internalAddr, n.gossipAddr = publicLn.Addr().String(), internalLn.Addr().String(), gossip.LocalAddr().String()
 	n.mu.Unlock()
 
-	publicSrv := &http.Server{Handler: n.public, ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
+	publicSrv := &http.Server{Handler: n.publicHandler(), ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
 	internalSrv := &http.Server{Handler: n.internalHandler(), ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
 
 	failed := make(chan error, 2)
@@ -192,7 +206,7 @@ func (n *node) run(ctx context.Context) error {
 		})
 	}
 
-	n.logger.InfoContext(ctx, "serving", "public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "version", version.String())
+	n.logger.InfoContext(ctx, "serving", "public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "version", versionpkg.String())
 	close(n.started)
 
 	var runErr error

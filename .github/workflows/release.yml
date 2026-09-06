@@ -1,0 +1,30 @@
+# A vX.Y.Z tag builds the binary, packages it with Dockerfile.ci, pushes
+# ghcr.io/latere-ai/origod, applies deploy/prod, waits for the rollout,
+# smokes the live service, and publishes the GitHub release with the
+# evidence. The pipeline lives in latere-ai/ci; this file names the inputs.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# The pipeline pushes the image and creates the release. A reusable workflow
+# cannot exceed the caller's token permissions, and the org defaults to
+# read-only, so the calling job grants write here.
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+jobs:
+  release:
+    uses: latere-ai/ci/.github/workflows/service-release.yml@v1
+    with:
+      service: origod
+      image: ghcr.io/latere-ai/origod
+      namespace: origo
+      url: https://git.latere.ai
+      title: Origo
+      has_frontend: false
+      main_package: ./cmd/origod
+    secrets: inherit

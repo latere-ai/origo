@@ -1,0 +1,6 @@
+# Created once by hand and never part of a release: creating a namespace
+# needs a broader grant than the rollout identity holds.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: origo
