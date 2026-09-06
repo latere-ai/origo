@@ -1,9 +1,9 @@
 {
   "endpoint": "https://fra1.digitaloceanspaces.com",
   "bucket": "latere-storage",
-  "prefix": "origo-spike/2f900c8e7cfc0f89/",
+  "prefix": "origo-spike/71b6b35776d30ba0/",
   "server_header": "",
-  "started": "2026-09-06T14:22:38.803393Z",
+  "started": "2026-09-06T14:37:03.194411Z",
   "checks": [
     {
       "name": "PUT If-None-Match:* on absent key",
@@ -20,18 +20,67 @@
       "note": "content unchanged: true"
     },
     {
-      "name": "PUT If-Match:\u003ccurrent\u003e ",
+      "name": "PUT If-Match:\u003ccurrent\u003e",
       "expect": "200 + new ETag, applied",
       "got": "412",
       "pass": false,
-      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e , GET agrees: false"
+      "note": "etag \"a5703e512ba43e337dd3ab1c88878f4b\" -\u003e , GET agrees: false",
+      "optional": true
     },
     {
-      "name": "concurrent CAS race",
+      "name": "PUT If-Match:\u003cstale\u003e",
+      "expect": "412, content unchanged",
+      "got": "412",
+      "pass": true,
+      "note": "content unchanged: true",
+      "optional": true
+    },
+    {
+      "name": "GET If-None-Match:\u003ccurrent\u003e",
+      "expect": "304",
+      "got": "304",
+      "pass": true
+    },
+    {
+      "name": "GET If-None-Match:\u003cstale\u003e",
+      "expect": "200 + body",
+      "got": "200",
+      "pass": true
+    },
+    {
+      "name": "HEAD absent key",
+      "expect": "404",
+      "got": "404",
+      "pass": true
+    },
+    {
+      "name": "HEAD existing key",
+      "expect": "200 + ETag",
+      "got": "200",
+      "pass": true,
+      "note": "etag agrees with GET: true"
+    },
+    {
+      "name": "PUT If-Match:\u003cany\u003e on absent key",
+      "expect": "412 or 404, nothing created",
+      "got": "412",
+      "pass": true,
+      "note": "informational"
+    },
+    {
+      "name": "concurrent create race (If-None-Match:*)",
+      "expect": "exactly 1 applied per round, rest 412",
+      "got": "20 applied / 20 rounds",
+      "pass": true,
+      "note": "20 rounds x 16 writers: 20 x 200, 300 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other"
+    },
+    {
+      "name": "concurrent CAS race (If-Match)",
       "expect": "exactly 1 applied per round, rest 412",
       "got": "0 applied / 20 rounds",
       "pass": false,
-      "note": "20 rounds x 16 writers: 0 x 200, 320 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other; round 0: no writer got 200 and the stored object is writer -1's; round 1: no writer got 200 and the stored object is writer -1's; round 2: no writer got 200 and the stored object is writer -1's; round 3: no writer got 200 and the stored object is writer -1's; round 4: no writer got 200 and the stored object is writer -1's; round 5: no writer got 200 and the stored object is writer -1's; round 6: no writer got 200 and the stored object is writer -1's; round 7: no writer got 200 and the stored object is writer -1's; round 8: no writer got 200 and the stored object is writer -1's; round 9: no writer got 200 and the stored object is writer -1's; round 10: no writer got 200 and the stored object is writer -1's; round 11: no writer got 200 and the stored object is writer -1's; round 12: no writer got 200 and the stored object is writer -1's; round 13: no writer got 200 and the stored object is writer -1's; round 14: no writer got 200 and the stored object is writer -1's; round 15: no writer got 200 and the stored object is writer -1's; round 16: no writer got 200 and the stored object is writer -1's; round 17: no writer got 200 and the stored object is writer -1's; round 18: no writer got 200 and the stored object is writer -1's; round 19: no writer got 200 and the stored object is writer -1's"
+      "note": "20 rounds x 16 writers: 0 x 200, 320 x 412, 0 transport errors of which 0 were applied without an acknowledgement, 0 other; round 0: no writer got 200 and the stored object is writer -1's; round 1: no writer got 200 and the stored object is writer -1's; round 2: no writer got 200 and the stored object is writer -1's; round 3: no writer got 200 and the stored object is writer -1's; round 4: no writer got 200 and the stored object is writer -1's; round 5: no writer got 200 and the stored object is writer -1's; round 6: no writer got 200 and the stored object is writer -1's; round 7: no writer got 200 and the stored object is writer -1's; round 8: no writer got 200 and the stored object is writer -1's; round 9: no writer got 200 and the stored object is writer -1's; round 10: no writer got 200 and the stored object is writer -1's; round 11: no writer got 200 and the stored object is writer -1's; round 12: no writer got 200 and the stored object is writer -1's; round 13: no writer got 200 and the stored object is writer -1's; round 14: no writer got 200 and the stored object is writer -1's; round 15: no writer got 200 and the stored object is writer -1's; round 16: no writer got 200 and the stored object is writer -1's; round 17: no writer got 200 and the stored object is writer -1's; round 18: no writer got 200 and the stored object is writer -1's; round 19: no writer got 200 and the stored object is writer -1's",
+      "optional": true
     },
     {
       "name": "CopyObject If-None-Match:* on existing dst",
@@ -53,7 +102,7 @@
       "name": "CopyObject If-Match:\u003ccurrent\u003e on dst",
       "expect": "200, dst replaced",
       "got": "200",
-      "pass": false,
+      "pass": true,
       "note": "etag \"fbf726df327298902d86c6a5fc0d89ad\" -\u003e 0d397da4c3b89f02477084e65fd7708e",
       "fallback": true
     },
@@ -69,23 +118,45 @@
     {
       "name": "GET If-None-Match -\u003e 304",
       "n": 200,
-      "min_ms": 19.9275,
-      "p50_ms": 22.517833,
-      "p95_ms": 95.160375,
-      "p99_ms": 111.444208,
-      "max_ms": 112.495083,
-      "mean_ms": 27.712668,
+      "min_ms": 21.53725,
+      "p50_ms": 23.471667,
+      "p95_ms": 28.812,
+      "p99_ms": 33.729875,
+      "max_ms": 67.154583,
+      "mean_ms": 24.27404,
       "failures": 0
     },
     {
       "name": "GET unconditional -\u003e 200",
       "n": 200,
-      "min_ms": 20.566542,
-      "p50_ms": 24.858,
-      "p95_ms": 94.965875,
-      "p99_ms": 107.16125,
-      "max_ms": 114.210709,
-      "mean_ms": 29.85147,
+      "min_ms": 23.662708,
+      "p50_ms": 25.92325,
+      "p95_ms": 31.9815,
+      "p99_ms": 42.490125,
+      "max_ms": 44.832041,
+      "mean_ms": 26.86351,
+      "failures": 0
+    },
+    {
+      "name": "HEAD missing key -\u003e 404",
+      "n": 200,
+      "min_ms": 20.769458,
+      "p50_ms": 23.1765,
+      "p95_ms": 28.219458,
+      "p99_ms": 37.441041,
+      "max_ms": 39.480083,
+      "mean_ms": 23.864781,
+      "failures": 0
+    },
+    {
+      "name": "HEAD existing key -\u003e 200",
+      "n": 200,
+      "min_ms": 21.159875,
+      "p50_ms": 23.43525,
+      "p95_ms": 29.025792,
+      "p99_ms": 34.66925,
+      "max_ms": 37.940583,
+      "mean_ms": 24.06874,
       "failures": 0
     },
     {
@@ -102,12 +173,12 @@
     {
       "name": "PUT unconditional -\u003e 200",
       "n": 200,
-      "min_ms": 25.184375,
-      "p50_ms": 35.1675,
-      "p95_ms": 109.08425,
-      "p99_ms": 130.00175,
-      "max_ms": 134.74275,
-      "mean_ms": 43.171437,
+      "min_ms": 23.569625,
+      "p50_ms": 32.801417,
+      "p95_ms": 44.082,
+      "p99_ms": 47.741,
+      "max_ms": 56.331167,
+      "mean_ms": 33.980119,
       "failures": 0
     }
   ]

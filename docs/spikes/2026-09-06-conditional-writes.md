@@ -84,39 +84,48 @@ its own entry.
 
 ### DigitalOcean Spaces (fra1, bucket `latere-storage`)
 
-Run on 2026-09-06 with cluster credentials against the production bucket
-under `origo-spike/2f900c8e7cfc0f89/`, deleted at the end. The build that
-ran predates the create race and the `HEAD` rows; those are pending a
-rerun and the table says so. That build also stopped its single-shot
-checks after the `If-Match` failure, so the 304 evidence is the timed
-row: 200 of 200 conditional `GET`s answered 304.
+Run on 2026-09-06 with the current build and cluster credentials against
+the production bucket under `origo-spike/71b6b35776d30ba0/`, deleted at
+the end. An earlier run of the previous build (prefix
+`origo-spike/2f900c8e7cfc0f89/`) found the same `If-Match` behaviour; the
+recorded report is the later run.
 
 | Primitive | Expected | Got | Result |
 |---|---|---|---|
 | `PUT If-None-Match: *` on absent key | 200 + ETag | 200 | pass |
 | `PUT If-None-Match: *` on existing key | 412, untouched | 412, untouched | pass |
-| Create race | 1 applied per round | pending rerun | |
-| `HEAD` absent / existing key | 404 / 200 | pending rerun | |
-| `GET If-None-Match: <current>` | 304 | 304, 200 of 200 samples | pass |
+| Create race, 20 rounds x 16 writers | 1 applied per round | 20 x 200, 300 x 412, 0 transport errors | pass |
+| `HEAD` absent key | 404 | 404 | pass |
+| `HEAD` existing key | 200 + ETag | 200, ETag equals GET's | pass |
+| `GET If-None-Match: <current>` | 304 | 304 | pass |
+| `GET If-None-Match: <stale>` | 200 + body | 200 | pass |
 | `PUT If-Match: <current>` | 200 + new ETag, applied | 412, not applied | absent |
+| `PUT If-Match: <stale>` | 412, untouched | 412, untouched | pass, vacuous |
 | `PUT If-Match` timed, 200 samples | 200 | 412 on every sample | absent |
 | CAS race, 20 rounds x 16 writers | 1 applied per round | 0 x 200, 320 x 412 | absent |
+| `PUT If-Match: <any>` on absent key | informational | 412, nothing created | recorded |
 | `CopyObject If-None-Match: *` on existing destination | 412 | 200, destination overwritten | not honoured |
 | `CopyObject If-Match: <stale>` on destination | 412 | 200, destination overwritten | not honoured |
 | Bucket versioning | informational | off | recorded |
 
 Spaces answers 412 to every `PUT If-Match`, including one that carries
-the ETag it returned a moment earlier. It also returns the `CopyObject`
-result's ETag without quotes; the tool now compares ETags without them.
+the ETag it returned a moment earlier, so the stale row passes for the
+wrong reason. It returns the `CopyObject` result's ETag without quotes;
+the tool compares ETags without them.
 
 Latency, 200 samples, 8 KiB body, from a laptop to fra1:
 
 | Operation | min ms | p50 ms | p95 ms | p99 ms | max ms | mean ms |
 |---|---|---|---|---|---|---|
-| `GET If-None-Match` -> 304 | 19.93 | 22.52 | 95.16 | 111.44 | 112.50 | 27.71 |
-| `GET` unconditional -> 200 | 20.57 | 24.86 | 94.97 | 107.16 | 114.21 | 29.85 |
+| `GET If-None-Match` -> 304 | 21.54 | 23.47 | 28.81 | 33.73 | 67.15 | 24.27 |
+| `GET` unconditional -> 200 | 23.66 | 25.92 | 31.98 | 42.49 | 44.83 | 26.86 |
+| `HEAD` missing key -> 404 | 20.77 | 23.18 | 28.22 | 37.44 | 39.48 | 23.86 |
+| `HEAD` existing key -> 200 | 21.16 | 23.44 | 29.03 | 34.67 | 37.94 | 24.07 |
 | `PUT If-Match` -> 200 (CAS) | no sample succeeded | | | | | |
-| `PUT` unconditional -> 200 | 25.18 | 35.17 | 109.08 | 130.00 | 134.74 | 43.17 |
+| `PUT` unconditional -> 200 | 23.57 | 32.80 | 44.08 | 47.74 | 56.33 | 33.98 |
+
+A `HEAD` 404, the currency check, costs one round trip: 23 ms p50 from a
+laptop, and the same as a 304. A commit is one unconditional-priced `PUT`.
 
 ### AWS S3
 
@@ -144,5 +153,8 @@ fallbacks are not substitutes on either store: `CopyObject` accepts the
 destination condition and ignores it, and versioning orders writes
 without refusing the loser.
 
-Remaining to verify: the create race and the `HEAD` rows on Spaces with
-the current build, and any run on AWS S3.
+The redesigned commit and currency check are verified on both providers:
+the create race gave exactly one winner per round on MinIO and on Spaces,
+and `HEAD` answered 404 for an absent key and 200 with the agreeing ETag
+for a present one on both. Remaining: a run on AWS S3 when credentials
+exist.

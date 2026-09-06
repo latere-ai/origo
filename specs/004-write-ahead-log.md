@@ -37,9 +37,12 @@ got a 200. `CopyObject` conditions are ignored on both, and versioning
 orders writes without refusing the loser. Decision: the index is not a
 mutable object updated by `If-Match`. It is a sequence of immutable
 objects `index/<seq>`, and a writer commits by creating the next one with
-`If-None-Match: *`, which MinIO, Spaces, and AWS S3 all honour. The first
-draft's compare-and-swap on an ETag is kept in the decision record and
-used nowhere.
+`If-None-Match: *`, which MinIO, Spaces, and AWS S3 all honour. The
+probe's create race (20 rounds x 16 writers, exactly one 200 per round)
+and the `HEAD` checks (404 on an absent key, 200 with the agreeing ETag on
+a present one) were verified on MinIO and on Spaces with the current
+build. The first draft's compare-and-swap on an ETag is kept in the
+decision record and used nowhere.
 
 ## Decision record
 
