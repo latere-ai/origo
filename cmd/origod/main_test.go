@@ -177,8 +177,42 @@ func TestInternalListenerServesProbes(t *testing.T) {
 	if code, body := get(t, "http://"+public+"/version"); code != 200 || body["version"] != "dev" {
 		t.Fatalf("public version: %d %v", code, body)
 	}
-	if code, _ := get(t, "http://"+public+"/livez"); code != 404 {
-		t.Fatalf("public livez: %d", code)
+	if code, _ := get(t, "http://"+public+"/livez"); code != 401 {
+		t.Fatalf("public livez without a token: %d", code)
+	}
+	// The application surface refuses without the bearer and answers
+	// with it, contract version stamped.
+	app := &http.Client{Transport: &http.Transport{}}
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://"+public+"/v1/repos", strings.NewReader(`{"id":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","owner":"acme","slug":"app"}`))
+	resp, err := app.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 || resp.Header.Get("WWW-Authenticate") == "" || resp.Header.Get("Origo-Contract") != "1" {
+		t.Fatalf("without token: %d %v", resp.StatusCode, resp.Header)
+	}
+	req, _ = http.NewRequestWithContext(context.Background(), "POST", "http://"+public+"/v1/repos", strings.NewReader(`{"id":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","owner":"acme","slug":"app"}`))
+	req.Header.Set("Authorization", "Bearer dev")
+	resp, err = app.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 503 {
+		// The fake bucket answers every request with an empty listing,
+		// so the create's read-back fails: the route is reached.
+		t.Fatalf("with token: %d", resp.StatusCode)
+	}
+	req, _ = http.NewRequestWithContext(context.Background(), "GET", "http://"+public+"/nope", nil)
+	req.SetBasicAuth("x", "dev")
+	resp, err = app.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Fatalf("unknown route: %d", resp.StatusCode)
 	}
 	if code, body := get(t, base+"/readyz"); code != 200 || body["status"] != "ok" {
 		t.Fatalf("readyz: %d %v", code, body)
@@ -187,7 +221,7 @@ func TestInternalListenerServesProbes(t *testing.T) {
 		t.Fatalf("version: %d %v", code, body)
 	}
 	client := &http.Client{Transport: &http.Transport{}}
-	resp, err := client.Get(base + "/metrics")
+	resp, err = client.Get(base + "/metrics")
 	if err != nil {
 		t.Fatal(err)
 	}

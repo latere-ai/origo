@@ -16,7 +16,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/latere-ai/origo/internal/api"
+	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
+	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
@@ -106,7 +110,20 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		readyCheck{name: "disk", fn: n.diskWritable},
 	)
 	n.background = append(n.background, n.sweep)
-	n.public = http.NotFoundHandler()
+
+	// The application surface: smart HTTP and the repository API behind
+	// the phase 1 bearer, every response stamped with the contract
+	// version.
+	app := http.NewServeMux()
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg}).Register(app)
+	api.New(n.cache, logger).Register(app)
+	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		contract.WriteError(w, http.StatusNotFound, contract.CodeRepoNotFound, "no such route")
+	})
+	guard := &auth.StaticBearer{Token: cfg.DevToken, Deny: func(w http.ResponseWriter, _ *http.Request, code, message string) {
+		contract.WriteError(w, http.StatusUnauthorized, code, message)
+	}}
+	n.public = contract.Middleware(guard.Middleware(app))
 	return n, nil
 }
 
