@@ -12,14 +12,15 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/metrics"
+	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
+	"github.com/latere-ai/origo/internal/wal"
 )
 
 // Shutdown budgets. The drain delay lets a load balancer see the replica
@@ -51,6 +52,13 @@ type node struct {
 	cfg    *config.Config
 	logger *slog.Logger
 	reg    *metrics.Registry
+	log    *wal.Log
+	cache  *repo.Cache
+
+	// exit ends the process at an injected failpoint. os.Exit outside
+	// tests: the end-to-end suite kills a node between the entry write
+	// and the index commit this way.
+	exit func(int)
 
 	public     http.Handler
 	checks     []readyCheck
@@ -73,12 +81,78 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		cfg:        cfg,
 		logger:     logger,
 		reg:        metrics.New(),
+		exit:       os.Exit,
 		drainDelay: defaultDrainDelay,
 		started:    make(chan struct{}),
 	}
-	n.checks = append(n.checks, readyCheck{name: "disk", fn: n.diskWritable})
+	store, err := wal.NewS3(wal.S3Options{
+		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
+		Client: &http.Client{Transport: storageTransport()},
+	})
+	if err != nil {
+		return nil, err
+	}
+	n.log = wal.New(wal.Options{
+		Store: store, Prefix: config.Prefix, Metrics: n.reg, Logger: logger,
+		Failpoint: n.failpoint,
+	})
+	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.reg})
+	if err != nil {
+		return nil, err
+	}
+	n.checks = append(n.checks,
+		readyCheck{name: "storage", fn: n.log.Ping},
+		readyCheck{name: "disk", fn: n.diskWritable},
+	)
+	n.background = append(n.background, n.sweep)
 	n.public = http.NotFoundHandler()
 	return n, nil
+}
+
+// storageTransport is the transport every request to object storage
+// goes through: pooled connections with a header deadline, and no
+// proxy from the environment on a path that carries credentials.
+func storageTransport() *http.Transport {
+	return &http.Transport{
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   64,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+	}
+}
+
+// failpoint ends the process when the configured failpoint is reached.
+// ORIGO_FAILPOINT is empty in every deployment.
+func (n *node) failpoint(name string) error {
+	if n.cfg.Failpoint != "" && name == n.cfg.Failpoint {
+		n.logger.Error("failpoint reached, exiting", "failpoint", name)
+		n.exit(3)
+		return fmt.Errorf("failpoint %s", name)
+	}
+	return nil
+}
+
+// sweep runs the sweeper on every repository at the configured interval
+// until ctx ends.
+func (n *node) sweep(ctx context.Context) error {
+	if n.cfg.SweepInterval <= 0 {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	t := time.NewTicker(n.cfg.SweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+			if err := n.log.SweepAll(ctx, n.cfg.SweepMinAge); err != nil && ctx.Err() == nil {
+				n.logger.WarnContext(ctx, "sweep", "error", err)
+			}
+		}
+	}
 }
 
 // diskWritable proves the data directory accepts a write. A read-only
@@ -274,6 +348,3 @@ func (n *node) addrs() (public, internal, gossip string) {
 	defer n.mu.Unlock()
 	return n.publicAddr, n.internalAddr, n.gossipAddr
 }
-
-// dataPath joins a relative path onto the data directory.
-func (n *node) dataPath(rel string) string { return filepath.Join(n.cfg.DataDir, rel) }

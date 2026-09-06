@@ -7,14 +7,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -157,7 +160,10 @@ func get(t *testing.T, url string) (int, map[string]any) {
 }
 
 func TestInternalListenerServesProbes(t *testing.T) {
-	n, stop := startNode(t, testEnv(t))
+	env := testEnv(t)
+	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
+	env["ORIGO_S3_PATH_STYLE"] = "1"
+	n, stop := startNode(t, env)
 	public, internal, gossip := n.addrs()
 	base := "http://" + internal
 	if code, body := get(t, base+"/livez"); code != 200 || body["status"] != "ok" {
@@ -203,6 +209,8 @@ func TestInternalListenerServesProbes(t *testing.T) {
 
 func TestReadyzFailsWhenTheDiskIsNotWritable(t *testing.T) {
 	env := testEnv(t)
+	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
+	env["ORIGO_S3_PATH_STYLE"] = "1"
 	n, stop := startNode(t, env)
 	defer func() { _ = stop() }()
 	_, internal, _ := n.addrs()
@@ -261,8 +269,93 @@ func TestBackgroundLoopsStopWithTheNode(t *testing.T) {
 	default:
 		t.Fatal("background loop still running")
 	}
-	if got := n.dataPath("x"); got != filepath.Join(cfg.DataDir, "x") {
-		t.Fatalf("dataPath = %q", got)
+}
+
+// fakeBucket answers the one request the readiness check and the
+// sweeper make: a listing, as empty XML. It counts them.
+func fakeBucket(t *testing.T) (string, *atomic.Int64) {
+	t.Helper()
+	var lists atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("list-type") == "2" {
+			lists.Add(1)
+		}
+		_, _ = w.Write([]byte(`<ListBucketResult></ListBucketResult>`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, &lists
+}
+
+func TestReadyzReportsStorage(t *testing.T) {
+	env := testEnv(t)
+	n, stop := startNode(t, env)
+	_, internal, _ := n.addrs()
+	code, body := get(t, "http://"+internal+"/readyz")
+	if code != 503 || body["status"] != "fail" {
+		t.Fatalf("unreachable storage: %d %v", code, body)
+	}
+	_ = stop()
+
+	url, lists := fakeBucket(t)
+	env["ORIGO_S3_ENDPOINT"] = url
+	env["ORIGO_S3_PATH_STYLE"] = "1"
+	env["ORIGO_SWEEP_INTERVAL"] = "10ms"
+	n, stop = startNode(t, env)
+	_, internal, _ = n.addrs()
+	if code, body := get(t, "http://"+internal+"/readyz"); code != 200 || body["status"] != "ok" {
+		t.Fatalf("reachable storage: %d %v", code, body)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for lists.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() < 3 {
+		t.Fatalf("the sweeper listed %d times", lists.Load())
+	}
+}
+
+func TestFailpointExitsTheProcess(t *testing.T) {
+	env := testEnv(t)
+	env["ORIGO_FAILPOINT"] = "commit.before-index"
+	cfg, err := config.Load(getenv(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exited := 0
+	n.exit = func(code int) { exited = code }
+	if err := n.failpoint("other"); err != nil || exited != 0 {
+		t.Fatalf("unrelated failpoint: %v, exit %d", err, exited)
+	}
+	if err := n.failpoint("commit.before-index"); err == nil || exited != 3 {
+		t.Fatalf("configured failpoint: %v, exit %d", err, exited)
+	}
+	// Without an interval the sweeper only waits.
+	cfg.SweepInterval = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := n.sweep(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("sweep: %v", err)
+	}
+}
+
+func TestBadStorageOptionsFailStartup(t *testing.T) {
+	env := testEnv(t)
+	env["ORIGO_S3_ENDPOINT"] = "minio:9000"
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), nil, getenv(env), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "endpoint") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	env = testEnv(t)
+	t.Setenv("PATH", t.TempDir())
+	if code := run(context.Background(), nil, getenv(env), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "git") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 }
 
