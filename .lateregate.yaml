@@ -4,12 +4,10 @@
 # runs; the others engage as code lands.
 
 cover:
-  threshold: 90.0
   trim_prefix: github.com/latere-ai/origo/
   exempt: {}
 
 spec:
-  dir: specs
   status:
     - vague
     - drafted
@@ -21,7 +19,6 @@ spec:
     - stale
     - superseded
   require: [title, status, track, depends_on, affects, effort, created, updated, author]
-  index: specs/README.md
   wikilinks: true
   numbered: true
   started: [dispatched, in-progress, testing, complete]
