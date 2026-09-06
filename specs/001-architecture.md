@@ -189,8 +189,8 @@ a consumer concern; a one-time import is spec 019.
 | 002, 003, 004 | one node that is correct: scaffold, contract, log |
 | 005, 006, 007 | many nodes with identity: placement, compaction, authentication |
 | 008, 009, 010 | what platforms need beyond git's protocol: events, the read API, LFS |
-| 011, 012, 013, 015 | proof and hardening: telemetry, limits, conformance, degraded storage |
-| 016, 017, 018, 019 | the open source bar: threat model, releases, installation, administration |
+| 011, 012, 013, 015 | proof and hardening: telemetry, limits, the test stubs and the kind overlay, degraded storage |
+| 016, 017, 018, 019, 021 | the open source bar: threat model, releases, installation, administration, the conformance suite |
 | 014, 020 | adoption and later: migration of existing repositories, server-side operations |
 
 ## Acceptance criteria
