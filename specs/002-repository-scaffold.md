@@ -183,8 +183,8 @@ one page:
 
 ### Failpoints
 
-`ORIGO_FAILPOINT` names one point at which the node exits at once, so
-the end-to-end suite can kill a node between two writes. Every name the
+`ORIGO_FAILPOINT` names one point at which the node exits at once with
+status 3, so the end-to-end suite can kill a node between two writes. Every name the
 deck uses is here; the owning spec says what the suite asserts.
 
 | Failpoint | Reached | Spec |
