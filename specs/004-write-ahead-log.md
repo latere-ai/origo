@@ -1,6 +1,6 @@
 ---
 title: "Write-ahead log: entries, immutable index, create-if-absent commit, materialization"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md

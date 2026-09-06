@@ -32,9 +32,9 @@ stateDiagram-v2
 | # | Spec | Effort | Status |
 |---|---|---|---|
 | [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | drafted |
-| [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | drafted |
-| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | drafted |
-| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | drafted |
+| [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | validated |
+| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | validated |
+| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | validated |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | drafted |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | drafted |
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | drafted |
