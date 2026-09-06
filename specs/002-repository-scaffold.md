@@ -1,6 +1,6 @@
 ---
 title: "Repository scaffold: module, binary, configuration, quality gate, release"
-status: validated
+status: in-progress
 track: infra
 depends_on:
   - specs/001-architecture.md
