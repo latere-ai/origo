@@ -95,6 +95,7 @@ beside them. Kubernetes manifests are under [`deploy/`](deploy/); apply
 | `internal/` | The packages behind it, one per spec |
 | `deploy/` | Kubernetes manifests: `base/`, the `prod/` overlay, and `bootstrap/` |
 | `test/e2e/` | End-to-end suite: origod as a process, MinIO, the real git (`make test-integration`) |
+| `CONTRIBUTING.md` | The bar, the spec workflow, when a package belongs in `latere.ai/x/pkg`, and the writing registers |
 
 ## Acknowledgements
 
