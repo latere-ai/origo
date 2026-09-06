@@ -81,9 +81,9 @@ surface. Bodies are JSON, at most 64 KiB, unknown fields refused.
 | Method | Path | Request | Response |
 |---|---|---|---|
 | POST | `/v1/repos` | `{"id", "owner", "slug", "default_branch"}`; `default_branch` defaults to `main` and must be a valid branch name | 201 with the representation; 409 `repo_exists` on a duplicate id or a taken `owner/slug`; 400 `invalid_request` |
-| GET | `/v1/repos/{id}` | | 200 `{"id", "owner", "slug", "default_branch", "size_bytes", "head", "updated_at"}`; 404 `repo_not_found` for an unknown, malformed, or deleted id |
+| GET | `/v1/repos/{id}` | | 200 `{"id", "owner", "slug", "default_branch", "size_bytes", "head", "updated_at"}`; 404 `repo_not_found` for an unknown, malformed, or deleted id; 410 `gone` for a purged id (spec 019) |
 | PATCH | `/v1/repos/{id}` | any subset of `{"owner", "slug", "default_branch"}` | 200 with the representation; a rename takes effect at once and the old URL answers 404; `default_branch` moves `HEAD` through the log; 409 `repo_exists` when the name is taken |
-| DELETE | `/v1/repos/{id}` | | 202 `{"id", "deleted_at", "purge_after"}`; every other endpoint answers 404 from then on; objects are purged after the 7 day hold; repeated on a deleted repository, 202 with the original times |
+| DELETE | `/v1/repos/{id}` | | 202 `{"id", "deleted_at", "purge_after"}`; every other endpoint answers 404 from then on and 410 `gone` once the objects are purged after the 7 day hold (spec 019); repeated on a deleted repository, 202 with the original times |
 | POST | `/v1/repos/{id}/undelete` | | 200 with the representation within the hold; 410 `gone` after the purge (spec 019) |
 
 `size_bytes` is the sum of the pack bytes in the log since creation;
