@@ -25,3 +25,12 @@ committed: the commit log already holds that.
   metadata, and the sweeper, over an S3 client signed by the standard
   library. Repositories materialize from the log into `ORIGO_DATA_DIR`
   and are rebuilt when corrupt.
+- Smart HTTP (spec 003): clone, fetch, and push in both URL forms, with
+  partial and shallow clones, protocol v2, atomic pushes, push options,
+  and per-reference results. A push is acknowledged only after its entry
+  and index object are durable.
+- The repository lifecycle under `/v1/repos`: create, read, rename,
+  default branch, delete with a 7 day hold, undelete.
+- `make test-integration` runs the store suite against MinIO and the
+  end-to-end suite: push, wipe the disk, clone; two nodes pushing
+  different branches at once; a node killed mid-push.

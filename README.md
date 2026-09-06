@@ -17,12 +17,14 @@ name; the hostname is the operator's.
 Phase 1 is being built: one node that serves clone, fetch, and push with
 the log as the source of truth (specs 002, 003, 004). The spec deck under
 [`specs/`](specs/README.md) describes the whole system and is the build
-plan. What runs today: the `origod` binary with its typed configuration,
-the three listeners with `/livez`, `/readyz`, `/version`, and `/metrics`,
-the write-ahead log with its create-if-absent commit, the repository
-cache that materializes from the log, the sweeper, the quality gate, the
-container images, and the release pipeline. The smart HTTP surface lands
-next.
+plan. What runs today: `git clone`, `fetch`, and `push` over smart HTTP
+against a repository that lives in the bucket, the repository lifecycle
+under `/v1/repos`, the write-ahead log with its create-if-absent commit,
+the repository cache that materializes from the log and is rebuilt when
+corrupt, the sweeper, the three listeners with `/livez`, `/readyz`,
+`/version`, and `/metrics`, the quality gate, the container images, and
+the release pipeline. Phase 2 adds identity and delegation (spec 007)
+and many nodes with gossip (spec 005).
 
 Authentication in phase 1 is a single static bearer read from
 `ORIGO_DEV_TOKEN`; the public listener accepts it and refuses everything
@@ -37,8 +39,17 @@ make            # the whole quality gate
 make dev        # MinIO in a container, then origod in the foreground
 ```
 
-`make dev` prints the ports it chose. The node reads its configuration
-from the environment; spec 002 lists every variable. The required ones:
+`make dev` prints the ports it chose. Then, with the token it prints:
+
+```sh
+curl -X POST -H "Authorization: Bearer dev-token" http://localhost:$PORT/v1/repos \
+  -d '{"id":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","owner":"acme","slug":"app"}'
+git clone http://x:dev-token@localhost:$PORT/acme/app.git
+```
+
+The id form `/r/<id>.git` always works and is what a consumer stores.
+The node reads its configuration from the environment; spec 002 lists
+every variable. The required ones:
 
 | Variable | Value |
 |---|---|
@@ -83,7 +94,7 @@ beside them. Kubernetes manifests are under [`deploy/`](deploy/); apply
 | `cmd/origod` | The server binary: configuration, listeners, run group |
 | `internal/` | The packages behind it, one per spec |
 | `deploy/` | Kubernetes manifests: `base/`, the `prod/` overlay, and `bootstrap/` |
-| `test/e2e/` | End-to-end suite against MinIO and the real git (planned) |
+| `test/e2e/` | End-to-end suite: origod as a process, MinIO, the real git (`make test-integration`) |
 
 ## Acknowledgements
 

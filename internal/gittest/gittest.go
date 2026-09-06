@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -123,8 +124,12 @@ func (s *Source) Pack(want string, have ...string) []byte {
 	return out
 }
 
-// RevList returns `rev-list --all` of a repository, sorted by git.
+// RevList returns the commits reachable from any reference, one id per
+// line in lexical order, so two repositories with the same history
+// compare equal whatever their reference names.
 func RevList(t testing.TB, dir string) string {
 	t.Helper()
-	return Run(t, dir, nil, "rev-list", "--all")
+	ids := strings.Split(Run(t, dir, nil, "rev-list", "--all"), "\n")
+	sort.Strings(ids)
+	return strings.Join(ids, "\n")
 }

@@ -5,6 +5,7 @@ package gittest
 
 import (
 	"bytes"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -21,7 +22,9 @@ func TestSourceBuildsHistoryAndPacks(t *testing.T) {
 	if !bytes.HasPrefix(full, []byte("PACK")) || !bytes.HasPrefix(thin, []byte("PACK")) || len(thin) >= len(full) {
 		t.Fatalf("packs: full %d thin %d", len(full), len(thin))
 	}
-	if got := RevList(t, src.Dir); got != c2+"\n"+c1 {
+	want := []string{c1, c2}
+	sort.Strings(want)
+	if got := RevList(t, src.Dir); got != strings.Join(want, "\n") {
 		t.Fatalf("rev-list = %q", got)
 	}
 	if _, err := Try(src.Dir, nil, "rev-parse", "--verify", "nope"); err == nil || !strings.Contains(err.Error(), "fatal") {
