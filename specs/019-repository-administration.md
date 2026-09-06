@@ -80,10 +80,15 @@ and `git fsck --connectivity-only`, uploads every pack under
 `objects/pack/` as `packs/<hash>.pack` and `.idx` the way compaction
 does (spec 006, step 4), and commits one entry through `Log.Commit` in
 the shape of a compaction: kind `compact`, no pack in the entry,
-`Packs` = the uploaded packs, `CompactedThrough` = its own sequence,
-and a full reference transaction creating every reference from zeros,
-`HEAD` included. The index object after it lists the packs and one
-entry, and any node materializes it by step 2 of spec 004. There is no
+`Packs` = the uploaded packs, `CompactedThrough` = the sequence before
+its own (the index format of spec 004 lists entries in
+`(compacted_through, seq]`, so an entry cannot fold itself), and a full
+reference transaction creating every reference from zeros; `HEAD` is in
+the transaction with `old` the symbolic value `index/0` holds and `new`
+the source's, and is omitted when the two are equal, because a
+transaction never names a reference that does not change. The index
+object after it lists the packs and one entry, and any node materializes
+it by step 2 of spec 004. There is no
 batching and no ordering to get right: the mirror is the state, and
 the history arrives as packs. The whole run is bounded by 30 minutes
 and by `quota_bytes` over the pack bytes; over either, nothing is
