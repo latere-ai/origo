@@ -212,7 +212,7 @@ name, or when a spec names something no spec defines.
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020 |
 | error code | `gone` | [019](019-repository-administration.md) | 003 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | - |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 012 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 012, 014 |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | - |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
 | error code | `operation_timeout` | [020](020-server-side-git-operations.md) | - |
@@ -324,6 +324,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | - |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
+| endpoint | `GET /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
@@ -346,6 +347,7 @@ name, or when a spec names something no spec defines.
 | header | `Origo-Event` | [008](008-push-events.md) | - |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 006 |
 | header | `Origo-Signature` | [008](008-push-events.md) | - |
+| header | `Origo-Source-Token` | [014](014-repository-migration.md) | - |
 | header | `Origo-Stale` | [015](015-degraded-storage.md) | 011 |
 | header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | - |
 <!-- specindex:end -->

@@ -74,7 +74,7 @@ stateDiagram-v2
 |---|---|---|
 | registered | `POST /v1/repos` with the prior host's id for the repository, so the id never changes across the migration (spec 003) | records the Origo repository id on its own record |
 | importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: 256 MiB batches, 30 minute budget, `transfer.fsckObjects`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
-| verifying | `GET /v1/repos/{id}/verify?source=<url>` (below) compares the two sides | none |
+| verifying | `verify` (below) compares the two sides | none |
 | mirrored | serves reads; writes are allowed but the prior host has not yet sent any | keeps serving both |
 | cut_over | `POST /v1/repos/{id}/unfreeze` if frozen; from now on the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; its mounts clone from Origo |
 
@@ -86,8 +86,15 @@ second is the default because it keeps the failed attempt for inspection.
 
 ### Verification
 
-`GET /v1/repos/{id}/verify?source=<https URL>` (action `admin`, the
-source bearer in `Origo-Source-Token`): the node runs `git ls-remote`
+| Method | Path | Behaviour |
+|---|---|---|
+| GET | `/v1/repos/{id}/verify` | `?source=<https URL>`, action `admin`, the source bearer in the header below; compares the source and Origo's copy and answers the document below; read-only on both sides; 400 `invalid_request` for a non-HTTPS source |
+
+| Header | Value |
+|---|---|
+| `Origo-Source-Token` | the bearer Origo presents to the source for `verify` and `import`; never logged |
+
+The node runs `git ls-remote`
 against the source and against its own copy and compares every reference
 by name and hash, then `git rev-list --all --count` and the set of
 reachable object ids on both sides for repositories under 10 000
@@ -107,12 +114,16 @@ of spec 009, and idempotent.
 
 The operator drives many repositories with `origod migrate`, a
 subcommand of the binary that reads a manifest of `{id, owner, slug,
-source, token_env}` lines, runs the phases above with a concurrency of
-`ORIGO_MIGRATE_PARALLEL` (default 4), writes a report line per repository
+source, token_env}` lines, runs the phases above concurrently, writes a
+report line per repository
 as it finishes, and exits non-zero when any repository is `failed`. It
 resumes: a repository already `mirrored` or `cut_over` is skipped by
 reading Origo's state. Tokens come from the environment variables the
-manifest names, never from the manifest itself. The command is the
+manifest names, never from the manifest itself.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `ORIGO_MIGRATE_PARALLEL` | no | `4` | repositories `origod migrate` drives at once | The command is the
 documented way to migrate; the endpoints exist so a prior host can also
 drive the migration from its own code.
 
