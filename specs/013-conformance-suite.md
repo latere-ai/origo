@@ -45,6 +45,14 @@ attached to the release.
 A consumer keeps a stub of the contract for its own tests; the suite is
 what keeps that stub honest.
 
+The MinIO-backed store suite and the end-to-end suite run in CI on every
+push, not only under `make test-integration`: the verify workflow gains a
+job that starts MinIO as a service container and runs the `integration`
+tag, and the shared pipeline in `latere-ai/ci` gains an optional
+`services` input so any Latere service with a storage or database tier
+can do the same. Until that input exists the job is a plain step in
+Origo's own workflow.
+
 ## Acceptance criteria
 
 - The suite passes against the kind stack and against the live service

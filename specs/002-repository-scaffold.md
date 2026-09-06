@@ -43,7 +43,8 @@ internal/api/           JSON API: repositories, refs, log, diff, tree, blob, arc
 internal/lfs/           batch API and presigned transfer (spec 010)
 internal/events/        push events (spec 008)
 internal/limits/        quotas and rate limits (spec 012)
-deploy/base|prod|bootstrap/  manifests
+deploy/base|prod|bootstrap/  manifests: Deployment with a local cache volume, Service, Ingress,
+                        HorizontalPodAutoscaler and PodDisruptionBudget (spec 005), PrometheusRule (spec 011)
 test/e2e/               conformance suite (spec 013)
 test/conformance/       the suite as an importable package for consumers' stubs
 Makefile, make/         the gate: go tool lateregate from .lateregate.yaml
@@ -74,6 +75,7 @@ Readiness requires object storage reachable and the local disk writable.
 | `ORIGO_NODE_NAME` | no | pod name by default; the identity used in gossip and placement |
 | `ORIGO_GOSSIP_PEERS` | no | a DNS name that resolves to all nodes; the headless Service in Kubernetes |
 | `OTEL_*` | no | standard exporter configuration |
+| `ORIGO_STORAGE_TIMEOUT` | no | per object operation, default 10 seconds; the circuit breaker of spec 015 opens on repeated timeouts |
 
 ### Quality bar
 

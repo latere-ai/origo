@@ -38,7 +38,11 @@ vocabularies so a hostile client cannot grow cardinality.
 | `origo_gossip_packets_total` | counter | `direction` |
 | `origo_events_delivered_total`, `origo_events_dead_total` | counter | |
 | `origo_authorizer_seconds` | histogram | `result` |
-| `origo_storage_ops_total`, `origo_storage_seconds` | counter, histogram | `op` (`get`, `put`, `cas`, `delete`, `list`), `result` |
+| `origo_storage_ops_total`, `origo_storage_seconds` | counter, histogram | `op` (`get`, `put`, `create`, `head`, `delete`, `list`), `result` |
+| `origo_storage_breaker_state` | gauge | `class` (`read`, `write`); 0 closed, 1 open, 2 half-open (spec 015) |
+| `origo_stale_responses_total` | counter | (spec 015) |
+| `origo_log_integrity_errors_total` | counter | (spec 015) |
+| `origo_requests_in_flight` | gauge | the autoscaler's signal (spec 005) |
 
 No label ever carries a repository id, owner, slug, subject, or ref.
 
@@ -64,6 +68,11 @@ are also audit records in the log itself (spec 004).
 | dead events | any increase in `origo_events_dead_total` |
 | slow index checks | p99 `origo_index_check_seconds` over 50 ms for 10 minutes |
 | cache thrash | `origo_evictions_total{reason="pressure"}` over 100 per minute |
+| storage breaker open | `origo_storage_breaker_state` at 1 for 1 minute |
+| stale serving | any increase in `origo_stale_responses_total` |
+| log integrity | any increase in `origo_log_integrity_errors_total` |
+| slow materialization | p99 `origo_materialization_seconds` over 60 for 10 minutes |
+| replicas pinned at maximum | HPA at its maximum for 15 minutes |
 
 ## Acceptance criteria
 

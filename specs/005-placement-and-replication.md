@@ -73,6 +73,53 @@ starts cold and warms as requests arrive; a deploy therefore costs one
 materialization per repository per replaced node, bounded by the pack
 download rate, and never blocks writes.
 
+### Scaling
+
+Nodes are interchangeable, so scaling is a replica count and nothing
+else. What scales and what does not:
+
+| Load | Scales with replicas | Bound |
+|---|---|---|
+| reads: clone, fetch, the read API, archive | linearly; every node serves any repository after one materialization | the bucket's request rate and each node's disk |
+| pushes to different repositories | linearly; commits to different repositories never contend | same |
+| pushes to one repository | does not scale; every push to a repository serializes on its create-if-absent commit, whichever node receives it | one repository sustains on the order of ten pushes per second against object storage (phase 1 measured 9.7 per second on MinIO in a laptop VM, spec 004 Outcome); a busier repository needs batching of concurrent pushes into one commit, which is a later spec, not more nodes |
+
+The autoscaler is a HorizontalPodAutoscaler on two signals, whichever is
+higher: CPU at 70% of the request, and `origo_requests_in_flight` per pod
+at 64. Minimum replicas 2, maximum 32, scale-up stabilization 30 seconds,
+scale-down stabilization 10 minutes so a burst of clones does not churn
+the cache. A PodDisruptionBudget keeps at least 2 available, pod
+anti-affinity spreads replicas across nodes, and the Deployment's rolling
+update runs `maxSurge: 1, maxUnavailable: 0`. Scale-down drains as above:
+the node stops accepting connections, finishes in-flight pushes (a push
+is never abandoned after its entry is written; the commit completes or
+the sweeper removes the orphan), and its cache is deleted. Placement
+adjusts by itself because rendezvous hashing has no table to update; a
+scale event moves the repositories that hashed to the changed node and
+nothing else.
+
+### Disk
+
+Each pod has one local volume for the cache: an ephemeral local volume
+from the node's fast disk where the platform offers one, else a generic
+ephemeral volume on the default storage class, sized by
+`ORIGO_CACHE_BYTES` plus 20% headroom. Never a network file system: git
+on a network mount is the one configuration that makes every operation
+slow. The eviction ceiling defaults to 80% of the volume. A pod whose
+volume is lost restarts cold and is correct; it is only slower until warm.
+
+### Materialization budget
+
+Phase 1 applied entries one at a time with two git subprocesses each and
+measured 70 seconds for 1 000 entries. The budget is one second per 100
+entries on a warm bucket connection, reached by: prefetching entries with
+4 concurrent downloads while applying, indexing packs with one
+`git index-pack` per entry but applying references once with a single
+`update-ref --stdin` at the end, and relying on compaction (spec 006) to
+keep the entry count under 64 for any repository that is fetched at all.
+A materialization that exceeds 60 seconds is reported on
+`origo_materialization_seconds` and the alert of spec 011.
+
 ## Acceptance criteria
 
 - With 3 nodes and `replicas = 1`, 95% of reads for a repository hit the
@@ -84,3 +131,9 @@ download rate, and never blocks writes.
   again with identical history.
 - Removing a node from the set during a load test causes no failed
   requests, only warm-up latency on its former repositories.
+- Under a synthetic read load, adding replicas from 2 to 8 raises served
+  clones per second at least 3x with no push regression; the HPA scales
+  up within 60 seconds of the in-flight threshold and down after the
+  stabilization window; a drain during 100 concurrent pushes loses none.
+- Materializing 1 000 entries from an empty disk finishes under 10
+  seconds against MinIO on the CI runner.

@@ -45,6 +45,7 @@ stateDiagram-v2
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | drafted |
 | [013](013-conformance-suite.md) | Conformance suite: the contract as executable tests | medium | drafted |
 | [014](014-drive-migration.md) | Migration of Drive's hosted repositories (cross-repo) | medium | vague |
+| [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | drafted |
 
 ## Dependency graph
 
@@ -72,6 +73,7 @@ flowchart LR
     S011[011 observability]
     S012[012 limits]
     S013[013 conformance]
+    S015[015 degraded storage]
   end
   subgraph M[Adoption]
     S014[014 drive migration]
@@ -97,6 +99,9 @@ flowchart LR
   S013 --> S008
   S013 --> S009
   S014 --> S013
+  S015 --> S004
+  S015 --> S005
+  S015 --> S011
 ```
 
 ## Build order
@@ -106,7 +111,7 @@ flowchart LR
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth |
 | 2 | 007, 005 | Authenticated, delegated access; many nodes, consistent reads |
 | 3 | 008, 009, 006 | Push events, the read API and archive, compaction under load |
-| 4 | 010, 011, 012, 013 | LFS, telemetry, limits, and the conformance suite gating releases |
+| 4 | 010, 011, 012, 013, 015 | LFS, telemetry, limits, degraded-storage behaviour, and the conformance suite gating releases |
 | 5 | 014 | Existing repositories migrate from Drive |
 
 ## Conventions
