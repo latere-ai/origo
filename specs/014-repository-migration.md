@@ -123,7 +123,9 @@ manifest names, never from the manifest itself.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `ORIGO_MIGRATE_PARALLEL` | no | `4` | repositories `origod migrate` drives at once | The command is the
+| `ORIGO_MIGRATE_PARALLEL` | no | `4` | repositories `origod migrate` drives at once |
+
+The command is the
 documented way to migrate; the endpoints exist so a prior host can also
 drive the migration from its own code.
 

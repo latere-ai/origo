@@ -241,6 +241,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_HOOK_DIR` | [004](004-write-ahead-log.md) | 016 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 009, 012 |
+| variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | - |
 | variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005 |
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
