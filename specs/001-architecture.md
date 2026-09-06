@@ -1,12 +1,12 @@
 ---
 title: "Architecture: components, storage model, flows, and invariants"
-status: drafted
+status: validated
 track: infra
 depends_on: []
 affects: [cmd/origod/, internal/, deploy/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 author: changkun
 ---
 
@@ -198,8 +198,8 @@ a consumer concern; a one-time import is spec 019.
 - A node with an empty disk serves a clone of a repository that exists
   only in object storage, and `git rev-list --all` of the clone equals
   that of the pushed history (`test/e2e`, `TestPushThenCloneFromAnEmptyDisk`).
-- Two nodes accept concurrent pushes to two branches of one repository;
-  both land, the newest index object lists both references, exactly the
+- After one push of a base commit, two nodes accept concurrent pushes to
+  two branches of one repository; both land, the newest index object lists both references, exactly the
   index objects `000000000000` to `000000000003` exist, and neither client
   sees a failure (`test/e2e`, `TestConcurrentPushesToDifferentBranchesOnTwoNodes`).
 - Killing a node between the entry write and the index create leaves no
