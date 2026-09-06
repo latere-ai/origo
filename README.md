@@ -14,54 +14,14 @@ name; the hostname is the operator's.
 
 ## Status
 
-Phase 1 is being built: one node that serves clone, fetch, and push with
-the log as the source of truth (specs 002, 003, 004). The spec deck under
-[`specs/`](specs/README.md) describes the whole system and is the build
-plan. What runs today: `git clone`, `fetch`, and `push` over smart HTTP
-against a repository that lives in the bucket, the repository lifecycle
-under `/v1/repos`, the write-ahead log with its create-if-absent commit,
-the repository cache that materializes from the log and is rebuilt when
-corrupt, the sweeper, the three listeners with `/livez`, `/readyz`,
-`/version`, and `/metrics`, the quality gate, the container images, and
-the release pipeline. Phase 2 adds identity and delegation (spec 007)
-and many nodes with gossip (spec 005).
-
-Authentication in phase 1 is a single static bearer read from
-`ORIGO_DEV_TOKEN`; the public listener accepts it and refuses everything
-else. Spec 007 replaces it with OIDC and the consumer's authorizer.
-
-## Run it
-
-Requirements: Go 1.27, git, and a container engine for MinIO.
-
-```sh
-make            # the whole quality gate
-make dev        # MinIO in a container, then origod in the foreground
-```
-
-`make dev` prints the ports it chose. Then, with the token it prints:
-
-```sh
-curl -X POST -H "Authorization: Bearer dev-token" http://localhost:$PORT/v1/repos \
-  -d '{"id":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","owner":"acme","slug":"app"}'
-git clone http://x:dev-token@localhost:$PORT/acme/app.git
-```
-
-The id form `/r/<id>.git` always works and is what a consumer stores.
-The node reads its configuration from the environment; spec 002 lists
-every variable. The required ones:
-
-| Variable | Value |
-|---|---|
-| `ORIGO_S3_ENDPOINT`, `ORIGO_S3_REGION`, `ORIGO_S3_BUCKET`, `ORIGO_S3_KEY`, `ORIGO_S3_SECRET` | the bucket; `ORIGO_S3_PATH_STYLE=1` for MinIO |
-| `ORIGO_PUBLIC_URL` | the origin clients see, for example `https://git.example.com` |
-| `ORIGO_DEV_TOKEN` | the phase 1 bearer |
-
-A start with anything missing fails with one message that names every
-missing variable. `make test-integration` runs the tiers that need MinIO
-beside them. Kubernetes manifests are under [`deploy/`](deploy/); apply
-[`deploy/bootstrap/`](deploy/bootstrap/README.md) once by hand, and a
-`v*` tag releases through `deploy/prod/`.
+Phase 1 runs: one node serves `git clone`, `fetch`, and `push` over smart
+HTTP against a repository that lives only in the bucket, with every push
+durable before it is acknowledged, verified on MinIO and on DigitalOcean
+Spaces. The spec deck under [`specs/`](specs/README.md) describes the
+whole system and is the build plan; its index says what is built, what
+is next, and what has to be true before the repository goes public.
+Operators start at [`docs/operations.md`](docs/operations.md) today and at
+`docs/install.md` once spec 018 lands.
 
 ## What it does
 

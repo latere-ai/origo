@@ -46,6 +46,11 @@ stateDiagram-v2
 | [013](013-conformance-suite.md) | Conformance suite: the contract as executable tests | medium | drafted |
 | [014](014-drive-migration.md) | Migration of Drive's hosted repositories (cross-repo) | medium | vague |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | drafted |
+| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | drafted |
+| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | drafted |
+| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | drafted |
+| [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | drafted |
+| [020](020-server-side-git-operations.md) | Server-side git operations: commits without a clone | large | vague |
 
 ## Dependency graph
 
@@ -75,8 +80,17 @@ flowchart LR
     S013[013 conformance]
     S015[015 degraded storage]
   end
+  subgraph O[Open source readiness]
+    S016[016 security]
+    S017[017 release]
+    S018[018 installation]
+    S019[019 administration]
+  end
   subgraph M[Adoption]
     S014[014 drive migration]
+  end
+  subgraph L[Later]
+    S020[020 server-side ops]
   end
   S002 --> S001
   S003 --> S001
@@ -102,6 +116,21 @@ flowchart LR
   S015 --> S004
   S015 --> S005
   S015 --> S011
+  S016 --> S001
+  S016 --> S007
+  S016 --> S012
+  S017 --> S002
+  S017 --> S003
+  S017 --> S013
+  S018 --> S002
+  S018 --> S007
+  S018 --> S017
+  S019 --> S003
+  S019 --> S004
+  S019 --> S006
+  S019 --> S007
+  S020 --> S009
+  S020 --> S004
 ```
 
 ## Build order
@@ -112,7 +141,20 @@ flowchart LR
 | 2 | 007, 005 | Authenticated, delegated access; many nodes, consistent reads |
 | 3 | 008, 009, 006 | Push events, the read API and archive, compaction under load |
 | 4 | 010, 011, 012, 013, 015 | LFS, telemetry, limits, degraded-storage behaviour, and the conformance suite gating releases |
-| 5 | 014 | Existing repositories migrate from Drive |
+| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs |
+| 6 | 017, 018 | Releases an outside operator can install and upgrade from the documentation alone; the point at which the repository can go public |
+| 7 | 014 | Existing repositories migrate from Drive |
+| later | 020 | Server-side git operations when a consumer needs them |
+
+## Open source readiness
+
+The repository goes public when phase 6 is complete: every spec through
+018 at `complete`, the conformance suite green against the release
+artifacts in the `kind` example overlay, `docs/install.md` walked once by
+a maintainer on a fresh cluster, `SECURITY.md` in place, and no Latere
+hostname or value anywhere but as a default or an example. Until then the
+repository is private and the deck is written as if it were already
+public.
 
 ## Conventions
 
