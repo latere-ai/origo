@@ -157,7 +157,7 @@ limit and one 11 MiB file by the file limit.
 | operations per repository per minute | 60, a token bucket per repository per node like spec 012's per-subject one | 429 `rate_limited` with `Retry-After`, `details.limit: "repository"`, `details.retry_after`, counted on `origo_rate_limited_total{limit="repository"}` |
 
 `git merge-tree --write-tree` with conflict output as data needs git
-2.40, which raises the floor spec 018's check enforces from 2.39 to
+2.40, which is why the `git` line of `origod check` (spec 018) requires
 2.40.
 
 ## Not in this spec
