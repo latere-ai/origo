@@ -3,16 +3,18 @@
 
 // Command specindex builds the cross-reference table at the end of
 // specs/README.md: every error code, configuration variable, metric,
-// event kind, endpoint, and header the deck defines, which spec owns it,
-// and which other specs name it. It is its own module, like tools/spike,
-// so it stays out of the service's build.
+// event kind, failpoint, endpoint, and header the deck defines, which
+// spec owns it, and which other specs name it. It is its own module,
+// like tools/spike, so it stays out of the service's build.
 //
 // A name is defined by a table whose first header cell is Code, Variable,
-// Metric, Event, or Header, or whose first two are Method and Path; the
-// backticked tokens of the first cell (or METHOD plus the path) are the
-// names. Every other backticked token that looks like a name is a
-// mention. One spec owns each name; a second definition, or a mention of
-// a name no spec defines, is a finding, and the test in this directory
+// Metric, Event, Failpoint, or Header, or whose first two are Method and
+// Path; the backticked tokens of the first cell (or METHOD plus the path)
+// are the names. Every other backticked token that looks like a name is
+// a mention, and a token that carries a header or a variable with its
+// value (Origo-Event: push, ORIGO_FAILPOINT=commit.before-index) mentions
+// both sides. One spec owns each name; a second definition, or a mention
+// of a name no spec defines, is a finding, and the test in this directory
 // fails on findings and on a README table that differs from the specs.
 //
 //	go run . -write          # rewrite the table in specs/README.md

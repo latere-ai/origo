@@ -31,8 +31,10 @@ func TestDefinitionsMentionsAndFindings(t *testing.T) {
 			"| Header | Meaning |\n|---|---|\n| `Origo-Contract` | version |\n\n" +
 			"| Metric | Type |\n|---|---|\n| `origo_pushes_total` | counter |\n\n" +
 			"| Event | Payload |\n|---|---|\n| `push` | the push |\n\n" +
+			"| Failpoint | Reached |\n|---|---|\n| `commit.before-index` | before the index create |\n\n" +
 			"A cell with a pipe: `\"push\"\\|\"compact\"` is not a table kind.\n",
 		"002-b.md": front + "Uses `ORIGO_S3_BUCKET`, `origo_pushes_total{result=\"ok\"}`, `Origo-Contract`, `POST /v1/repos`, `repo_not_found`, and the `push` event.\n" +
+			"In one pair: `Origo-Event: push`, `ORIGO_FAILPOINT=commit.before-index`, and `Origo-Contract: 1`.\n" +
 			"```\n`ORIGO_IN_A_FENCE` is not a mention\n```\n" +
 			"Names nothing defines: `ORIGO_NOWHERE`, `origo_nowhere_total`, `Origo-Nowhere`, `GET /nowhere`.\n" +
 			"| Code | Status | Message |\n|---|---|---|\n| `repo_not_found` | 404 | duplicate |\n",
@@ -45,13 +47,13 @@ func TestDefinitionsMentionsAndFindings(t *testing.T) {
 	want := map[string]string{
 		"error code\x00repo_not_found": "001", "variable\x00ORIGO_S3_BUCKET": "001", "variable\x00ORIGO_S3_KEY": "001",
 		"endpoint\x00POST /v1/repos": "001", "endpoint\x00GET /v1/repos/{id}": "001", "header\x00Origo-Contract": "001",
-		"metric\x00origo_pushes_total": "001", "event\x00push": "001",
+		"metric\x00origo_pushes_total": "001", "event\x00push": "001", "failpoint\x00commit.before-index": "001",
 	}
 	got := map[string]string{}
 	for _, n := range idx.Names {
 		got[string(n.Kind)+"\x00"+n.Name] = n.Owner
 		switch n.Name {
-		case "ORIGO_S3_BUCKET", "origo_pushes_total", "Origo-Contract", "POST /v1/repos", "repo_not_found", "push":
+		case "ORIGO_S3_BUCKET", "origo_pushes_total", "Origo-Contract", "POST /v1/repos", "repo_not_found", "push", "commit.before-index", "ORIGO_FAILPOINT":
 			if strings.Join(n.Also, ",") != "002" {
 				t.Errorf("%s: also %v, want 002", n.Name, n.Also)
 			}
@@ -71,8 +73,10 @@ func TestDefinitionsMentionsAndFindings(t *testing.T) {
 	}
 	wantFindings := []string{
 		`002-b.md: endpoint "GET /nowhere" is named but no spec defines it`,
+		`002-b.md: header "Origo-Event" is named but no spec defines it`,
 		`002-b.md: header "Origo-Nowhere" is named but no spec defines it`,
 		`002-b.md: metric "origo_nowhere_total" is named but no spec defines it`,
+		`002-b.md: variable "ORIGO_FAILPOINT" is named but no spec defines it`,
 		`002-b.md: variable "ORIGO_NOWHERE" is named but no spec defines it`,
 		`error code "repo_not_found" is defined by 001 and by 002`,
 	}
