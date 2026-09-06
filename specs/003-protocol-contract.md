@@ -130,3 +130,50 @@ and the previous number stays served for twelve months.
 - An unknown capability, endpoint, or field is not relied upon by any
   consumer in the organization, checked by grepping consumers for
   `/v1/repos` paths and comparing to this document.
+
+## Outcome
+
+Phase 1 shipped, on 2026-09-06, the part of the contract one node can
+serve without identity: smart HTTP in both URL forms and the repository
+lifecycle. Everything else in this document is promised, not yet served.
+
+Served:
+
+- `GET .../info/refs?service=`, `POST .../git-upload-pack`,
+  `POST .../git-receive-pack` at `/r/<id>.git` and `/<owner>/<slug>.git`,
+  protocol v2 advertised and v0 accepted. Capabilities verified with the
+  real git client: `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`,
+  `filter` (`blob:none`), `shallow`, `deepen-since`, `deepen-not`,
+  `atomic`, `push-options` (recorded in the entry header; `origo.event=off`
+  is read by spec 008), `report-status-v2`.
+- A push is acknowledged only after its entry and index object are
+  durable; a push over a reference another writer moved gets git's
+  rejection with the `non_fast_forward` code in the sideband.
+- `POST /v1/repos` (201, `repo_exists` on a duplicate id or a taken
+  name), `GET`, `PATCH` (rename takes effect at once and the old URL
+  answers 404; `default_branch` moves HEAD through the log), `DELETE`
+  (202, 7 day hold), `POST .../undelete`.
+- The error envelope with the codes named here and the
+  `Origo-Contract: 1` header on every response.
+
+Not yet served (phase 2 and later): OIDC identity, the authorizer,
+delegation and `act`, `POST .../tokens`, the read operations of spec 009,
+push events of spec 008, and the conformance suite of spec 013, which is
+what this spec's acceptance criteria require. In phase 1 every request
+carries the one static bearer of `ORIGO_DEV_TOKEN` (spec 002, Outcome).
+
+Divergences:
+
+- `owner` and `slug` are restricted to `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`
+  and the owners `r` and `v1` are reserved, because both appear as path
+  segments of the public surface.
+- `updated_at` in the repository representation is the metadata's update
+  time (creation or rename), not the last push: the index objects carry
+  no timestamp. Spec 009 decides whether that field moves with a push.
+- The name is stored beside the log as `origo/names/<owner>/<slug>`,
+  created by create-if-absent so a taken name is refused by the store.
+  Spec 004's object table did not list it.
+- The status codes for the lifecycle errors: 400 `invalid_request` for a
+  malformed body, 404 `repo_not_found`, 409 `repo_exists`, 503
+  `storage_unavailable`. `invalid_request` is an addition to the code
+  list.

@@ -242,3 +242,94 @@ unless a later index object cleared `deleted_at` (`undelete`).
   the log and serves the same history.
 - Fuzz tests on the entry header, the reference transaction, and the
   index parser find no panic in 10 minutes.
+
+## Outcome
+
+Phase 1 shipped the log on 2026-09-06 in `internal/wal` (entries, index
+objects, the create-if-absent commit, the currency check, metadata, the
+sweeper, the S3 store) and `internal/repo` (materialization into a bare
+repository under `ORIGO_DATA_DIR`, catch-up, reconciliation of the
+reference map to the index, corruption rebuild). The receive path of
+`internal/httpgit` captures the pack and the transaction into an entry
+and commits the index object before git's own update.
+
+Acceptance:
+
+- A push produces one entry and one index object; the end-to-end suite
+  kills the node between the two at the `commit.before-index` failpoint,
+  the client sees a failure, nothing is visible, the sweeper removes the
+  orphan, and a retry lands. Verified on MinIO.
+- 16 writers over 20 rounds: exactly one index object per sequence, every
+  writer's every push lands, verified on the in-process store
+  (`TestSixteenWritersTwentyRoundsOneWinnerPerSequence`) and the create
+  race itself on MinIO (`TestS3Suite`). Two nodes pushing different
+  branches at once land both (`TestConcurrentPushesToDifferentBranchesOnTwoNodes`).
+- The currency check: a holder of `index/<n>` whose `HEAD index/<n+1>`
+  answers 404 serves `index/<n>`; after another node commits `n+1` the
+  next check answers 200 and the node serves `index/<n+1>` (repo cache
+  tests and the httpgit two-node tests).
+- A deliberately corrupted pack is detected by the sampled connectivity
+  check or by the failing apply, the copy is evicted, and the next open
+  rebuilds it from the log (`TestCorruptCopyIsRebuiltFromTheLog`).
+- Fuzz tests on the entry header, the reference transaction, the index
+  parser, and pkt-line framing: 40 seconds each without a finding on the
+  three parsers; the 10 minute run is a CI budget question left open.
+- 100 concurrent pushes from 8 clients, 10 000 entries with 3 packs, and
+  the Spaces conformance run are not yet exercised: the first two wait
+  for the conformance suite of spec 013 and compaction of spec 006, the
+  third for a Spaces run with credentials. The design is the one the
+  spike verified on both providers; the S3 client sends `If-None-Match`
+  only, asserted by the fake endpoint in the unit tests.
+
+Measurements, one node on this machine (Apple silicon laptop) against
+MinIO in a podman virtual machine, so a floor for the client path rather
+than a production figure:
+
+| Measurement | Value |
+|---|---|
+| Pushes sustained for 60 s, 4 clients, 1 KiB commits, one node | 9.7 pushes/s (582 in 60 s) |
+| Push latency seen by the client | p50 335 ms, p99 849 ms, including the git client process and the pack upload |
+| `HEAD` currency check, 404 (current) | p50 0.36 ms, p99 2.28 ms (500 samples) |
+| `HEAD` currency check, 200 (a newer index exists) | p50 0.42 ms, p99 3.93 ms (500 samples) |
+| Materialize 1000 entries onto an empty disk (first `ls-remote`) | 70.7 s, one `GET`, one `index-pack`, and one `update-ref` per entry |
+| Full clone after that | 0.69 s |
+| Writing the 1000 entries through the log | 98 s, dominated by `pack-objects` in the test client |
+
+Materialization is bound by two git subprocesses per entry, about 35 ms
+each here. The reference map is reconciled once at the end, so the
+per-entry `update-ref` can be dropped from a bulk apply, and entries
+could be fetched ahead of `index-pack`; both are phase 2 work, and
+compaction (spec 006) is what removes the entry count from the path.
+
+Divergences and details this spec did not fix:
+
+- `index/000000000000` is created with the repository: it holds the
+  reference map with `HEAD` on the default branch and names no entry, so
+  a writer always holds an index object and the chain has no special
+  first case.
+- `HEAD` is a symbolic reference in the map (`ref: refs/heads/main`) and
+  a transaction on `HEAD` carries symbolic values; `PATCH
+  /v1/repos/{id}` moves the default branch that way.
+- The header carries `push_options` when the client sent any, for spec
+  008 to read.
+- Repository metadata lives in `meta` beside the log and the
+  owner/slug name in `origo/names/<owner>/<slug>`, both created by
+  create-if-absent (spec 003, Outcome).
+- Materialization reconciles the whole reference map to the index after
+  applying entries, so a copy converges whatever it held; reference
+  values are set, not compared.
+- The multi-part entry for pushes above 2 GiB (`part`) is not
+  implemented: a push is one entry, and the size limits of the table are
+  not enforced yet (spec 012).
+- A push whose commit is refused by the store leaves its entry as an
+  orphan; the sweeper deletes it after `ORIGO_SWEEP_MIN_AGE` (one hour
+  by default). Lost rounds of the commit are replayed after a jittered
+  pause of at most 16 ms, bounded at 4096 rounds, which no live
+  repository reaches.
+- Without compaction (spec 006) the `entries` list of an index object
+  grows by one row per push; the 1 MiB ceiling holds for roughly ten
+  thousand pushes.
+- The AWS SDK was not added: the S3 client is signed by the standard
+  library and checked against the vector the S3 documentation publishes.
+- The sampled connectivity check runs on every 256th write open of a
+  repository.

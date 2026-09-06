@@ -101,3 +101,59 @@ pushes to `main` run verify only. Both callers are thin files under
   names every missing key.
 - Coverage of `internal/config` is 100%.
 - A tag on a fork builds and publishes the image.
+
+## Outcome
+
+Phase 1 shipped the scaffold on 2026-09-06. What runs: `cmd/origod`
+with typed configuration from `internal/config` (100% covered, one
+start-up message names every missing key), the public listener on
+`:8080`, the internal listener on `:8081` with `/livez`, `/readyz`,
+`/version`, and `/metrics`, and the gossip UDP port `:7946` that reads
+and discards datagrams until spec 005 gives them a meaning. Readiness
+reports object storage (one listing) and the disk. The Makefile is the
+gate binary's entry point plus `build`, `fmt`, `hooks`, `dev`,
+`test-integration`, and `clean`; `docker-compose.yml`, `Dockerfile`, and
+`Dockerfile.ci` follow the Latere service template; `deploy/base`,
+`deploy/prod`, and `deploy/bootstrap` carry the manifests; a `v*` tag
+runs the shared release pipeline and `tools/smoke/release.sh` checks
+`/readyz` and `/version`. No tag was cut.
+
+Acceptance: `make` passes on the checkout; `origod` starts against
+MinIO with an empty disk and serves `/readyz` 200; without the bucket
+variables it refuses with one message naming every missing key;
+`internal/config` is at 100%. "A tag on a fork builds and publishes the
+image" is unverified: no tag was cut in phase 1.
+
+Divergences from this spec:
+
+- Authentication is a phase 1 stand-in: the public listener accepts one
+  static bearer from `ORIGO_DEV_TOKEN` (as a Bearer header or as git's
+  basic auth password) and refuses everything else. `ORIGO_DEV_TOKEN` is
+  required until spec 007 lands; `ORIGO_OIDC_ISSUERS`,
+  `ORIGO_AUTHORIZER_URL`, and `ORIGO_AUTHORIZER_TOKEN` are read but
+  optional. The code is marked in `internal/auth`.
+- Variables added beyond the table: `ORIGO_PUBLIC_ADDR`,
+  `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` (the spec's ports as
+  defaults, so a test binds an ephemeral port), `ORIGO_SWEEP_INTERVAL`
+  and `ORIGO_SWEEP_MIN_AGE` (spec 004's values as defaults), and
+  `ORIGO_FAILPOINT` (empty in every deployment; the end-to-end suite
+  kills a node with it). `ORIGO_CACHE_BYTES` is read and resolved but
+  eviction is spec 005.
+- `/readyz` and `/version` are also served on the public listener so
+  the release smoke reaches them through the ingress; `/livez` and
+  `/metrics` stay internal.
+- The runtime image is Debian slim with git, not the static distroless
+  base of the template: origod runs git as a subprocess. The hermetic
+  allow list admits `/usr/bin` for the same reason.
+- Layout additions beyond the table: `internal/contract` (the error
+  envelope and `Origo-Contract` header of spec 003), `internal/metrics`
+  (counters and histograms in the Prometheus text format, no client
+  library), and `internal/gittest` (test support over the real git).
+  `internal/placement`, `compact`, `lfs`, `events`, `limits`, and
+  `test/conformance` do not exist yet; they land with their specs.
+- `make/` fragments were not adopted: latere-ai/ci-gate's own Makefile is
+  the reference shape, and every gate-named target lives in the gate.
+- The integration tiers (`make test-integration`: the store suite on
+  MinIO and the end-to-end suite) are not run by CI: latere-ai/ci's
+  `lateregate.yml` has no services step. CI runs the unit tiers, which
+  cover every package at 90% or more on an in-process store.
