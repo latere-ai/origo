@@ -46,6 +46,23 @@ both, and versioning refuses no write. `pkg/s3` has no `If-Match` and its
 fake answers 412 to one, so a compare-and-swap cannot enter the design
 unnoticed. The Outcome lists what is verified and what is not.
 
+Defects against the Design found by review, for the builder:
+
+- `repo.Cache.Apply` fetches the packs the index lists only when the
+  copy is fresh or its sequence is below `compacted_through`; the
+  Materialization section says every listed pack missing under
+  `objects/pack/` is fetched whatever the copy holds, because a copy
+  that lost a pack file, or one that followed a compaction whose
+  `compacted_through` its sequence already passed, is otherwise served
+  from an incomplete object store.
+- `repo.Cache.fetchPack` writes a fetched pack as `<hash>.pack` and
+  `<hash>.idx`, the log key's base name; git reads only files named
+  `pack-<hash>.pack` under `objects/pack/`, so a fetched pack is on disk
+  and invisible. The mapping in the Objects table is the rule:
+  `packs/<hash>.pack` in the log is `pack-<hash>.pack` on disk.
+  `TestCompactionPacksAreFetched` accepts either file name, which is
+  why it passes.
+
 ## Decision record
 
 | Option | Shape | Why not |
@@ -69,7 +86,7 @@ keys sort in sequence order under a listing, and the largest sequence
 | `wal/<seq>.<nonce>.entry` | one push, compaction, or delete: header, reference transaction, pack; immutable; `<nonce>` 16 hex characters |
 | `index/<seq>` | the state after entry `seq`; immutable; created once by `If-None-Match: *`; `index/000000000000` is created with the repository, names no entry, and holds `HEAD` on the default branch |
 | `index/latest` | `{"seq": n}`, a hint written unconditionally after each commit; may lag or go backwards; never leads correctness |
-| `packs/<hash>.pack`, `packs/<hash>.idx` | packs produced by compaction (spec 006), `<hash>` 40 to 64 hex characters: git's own pack checksum without the `pack-` prefix |
+| `packs/<hash>.pack`, `packs/<hash>.idx` | packs produced by compaction (spec 006) or an import (spec 019), `<hash>` 40 to 64 hex characters: git's own pack checksum, the one git puts in the file name. The mapping between the log and a local copy is fixed here and referenced by every spec that moves a pack: the log key `packs/<hash>.pack` is the file `objects/pack/pack-<hash>.pack` on disk, and `packs/<hash>.idx` is `pack-<hash>.idx`; a pack is uploaded under the hash of its file name and written back under the name git gave it, so a pack keeps one name everywhere |
 
 The name `origo/names/<owner>/<slug>` holds the id and is created by
 `If-None-Match: *`, so two repositories cannot take one name and a rename
@@ -182,10 +199,13 @@ lock, applies, and downgrades. `Apply` does, in order:
 
 1. If there is no local copy: `git init --bare` under
    `<ORIGO_DATA_DIR>/repos/<id>.git` with the configuration below.
-2. If there is no local copy or the local sequence is below
-   `compacted_through`: `GET` every pack in `packs` not present locally
-   into `objects/pack/` as `<hash>.idx` then `<hash>.pack`, written
-   atomically.
+2. `GET` every pack in `packs` whose file is missing under
+   `objects/pack/`, whatever the copy holds and whether or not its
+   sequence is below `compacted_through`, into `objects/pack/` as
+   `pack-<hash>.idx` then `pack-<hash>.pack` by the mapping of the
+   Objects table, each written atomically. A pack already on disk under
+   that name is never fetched again, so the step costs one `stat` per
+   listed pack on a current copy.
 3. For each listed entry above the local sequence: `GET` the entry,
    check `seq` and `kind` against the index row, spool the pack, verify
    its length and `pack_sha256`, run `git index-pack --stdin --fix-thin
@@ -311,7 +331,7 @@ the size limits (spec 012).
   `internal/wal` and `FuzzReadPkt` and `FuzzParseReceive` in
   `internal/httpgit` find no panic: each runs as a seed-corpus test in
   the suite on every push and for 40 seconds under `make fuzz` (spec
-  002) on the weekly schedule.
+  013) on the weekly schedule.
 - 100 concurrent pushes to distinct branches from 8 clients all land and
   the newest index lists 100 entries in sequence order (proposed:
   `test/e2e`, `TestHundredConcurrentPushesFromEightClients`, after spec
@@ -322,13 +342,19 @@ the size limits (spec 012).
   packs).
 - The create race, `HEAD` 404, and `GET` 304 rows of the probe pass on
   DigitalOcean Spaces with the current build (`tools/spike/condwrite`,
-  recorded in the spike; the conformance run against Spaces is spec 013).
+  recorded in the spike; the conformance run against Spaces is spec 021).
 
 ## Outcome
 
 Phase 1 shipped the log on 2026-09-06 as the Current state describes.
 The first seven criteria have passing tests in the tree; the last three
-wait for specs 006 and 013, which is why the spec stays at testing.
+wait for specs 006, 013, and 021, which is why the spec stays at
+testing. The two defects the Current state records are fixed under this
+spec before it moves on: `TestCompactionPacksAreFetched` gains the
+assertion that the fetched files are named `pack-<hash>.pack` and that
+`git verify-pack` reads them, and a new `TestPacksAreFetchedForACurrentCopy`
+removes a pack file from a current copy and asserts the next apply
+restores it.
 
 Measurements, one node on an Apple silicon laptop against MinIO in a
 podman virtual machine (`test/e2e`, `TestMeasure` with
@@ -369,7 +395,7 @@ Divergences from the first draft, all kept and now in the Design:
   client sends `If-None-Match` only, asserted by the fake endpoint.
 - The commit backoff is a `retry.Policy` from `latere.ai/x/pkg/retry`.
 - The five fuzz functions run as seed-corpus tests in the suite; no gate
-  runs them for 40 seconds. The 40 second run is `make fuzz` of spec 002
+  runs them for 40 seconds. The 40 second run is `make fuzz` of spec 013
   with its weekly schedule, a builder item there.
 - The sampled connectivity check runs on every 256th write open.
 - Without compaction the `entries` list grows by one row per push; the
