@@ -67,6 +67,16 @@ Defects against the Design found by review, for the builder:
   defines it, `ParseIndex` accepts its absence, and `nextIndex` sets it
   as the section says, so `GET /v1/repos/{id}` (spec 009) and `stats`
   (spec 019) read one field instead of the newest entry's header.
+- `size_bytes` accumulates monotonically: `Log.nextIndex` does
+  `next.SizeBytes += e.Pack.Size` for every kind, a `compact` entry
+  included, so the figure never falls after a compaction and counts
+  bytes the sweeper has deleted. The Index object section below
+  defines it as what the log holds; `nextIndex` sets it on a `compact`
+  entry to the bytes of the packs the entry lists, which the writer
+  passes as `Entry.PacksBytes`, and adds `pack_bytes` on every other
+  kind. Spec 012's quota and spec 019's `stats` read the defined
+  figure, and spec 019's `TestClusterGcBoundsStorage` passes only with
+  it.
 
 Not a defect, for the reader: `origo_push_duration_seconds{phase}` of
 spec 011's table is attributed to the receive path this spec built,
@@ -137,8 +147,16 @@ before the list grows past it):
 
 `entries` lists every entry after `compacted_through` up to and
 including `seq`, in order, with the object's own entry last; earlier
-history is represented by `packs`. `size_bytes` is the sum of
-`pack_bytes` over every entry since creation. `deleted_at` is set by a
+history is represented by `packs`. `size_bytes` is what the log holds
+for the repository: the bytes of the `.pack` objects `packs` lists plus
+the sum of `pack_bytes` over `entries`. A `compact` commit sets it to
+the bytes of the packs it lists, which the writer of the entry knows
+because it uploaded them (spec 006, step 4; spec 019's import) and
+passes as `Entry.PacksBytes`; a `push` commit adds its own
+`pack_bytes`; a `delete` commit and an empty `push` add 0. So the figure
+falls at each compaction to what a fresh materialization downloads,
+and spec 012's quota, spec 019's `stats`, and `GET /v1/repos/{id}`
+(spec 003) all serve one number. `deleted_at` is set by a
 `delete` entry and cleared by the next `push` entry (undelete).
 `pushed_at` is the `at` of the newest `push` entry: a `push` commit
 sets it to its own entry's `at`, every other commit copies it forward,
@@ -353,18 +371,25 @@ the size limits (spec 012).
 - 100 concurrent pushes to distinct branches from 8 clients all land and
   the newest index lists 100 entries in sequence order (proposed:
   `test/e2e`, `TestE2EHundredConcurrentPushesFromEightClients`, a test
-  of the one-node run once spec 013 gives the tier its job).
+  of the one-node run; deferred to spec 013, which owns the job that
+  runs the tier).
 - A repository of 10 000 entries and 3 packs materializes onto an empty
   disk and `git fsck` passes; the entries are written by the harness
   through `Log.Commit`, not by `git push`, and the packs by a compaction
   (spec 006) (proposed: `test/e2e`,
   `TestSlowMaterializeTenThousandEntries`, in the `e2e-slow` job of spec
-  013 under that job's 30 minute budget).
+  013 under that job's 30 minute budget; deferred to spec 006, which
+  owns the packs, and spec 013, which owns the job).
 - The create race, `HEAD` 404, and `GET` 304 rows of the probe pass on
   DigitalOcean Spaces with the current build (`tools/spike/condwrite`,
   recorded in the spike): a release checklist item of spec 017, run by
-  a maintainer before a tag, not a CI test; the conformance run against
-  Spaces is spec 021.
+  a maintainer before a tag, not a CI test; deferred to spec 017, which
+  owns the checklist; the conformance run against Spaces is spec 021.
+
+The three deferred criteria each name the spec that owns them, and this
+spec stays at `testing` until those land; the dispatch rule of
+`specs/README.md` (every dependency at `testing` or later) is what lets
+the specs that build on this one start meanwhile.
 
 ## Outcome
 
@@ -374,8 +399,11 @@ ninth wait for the jobs of spec 013 and the packs of spec 006, which is
 why the spec stays at testing, and the tenth is a release checklist
 item of spec 017. Spec 013 renames the end-to-end tests with the
 `TestE2E` prefix its job regex selects; the names above are the renamed
-ones. The three defects the Current state records are fixed under this
-spec before it moves on: `TestCompactionPacksAreFetched` gains the
+ones. The four defects the Current state records are fixed under this
+spec before it moves on: `TestCommitWritesOneEntryAndOneIndex` gains
+the assertion that a `compact` entry sets `size_bytes` to
+`Entry.PacksBytes` and a following push adds its `pack_bytes` to that,
+`TestCompactionPacksAreFetched` gains the
 assertion that the fetched files are named `pack-<hash>.pack` and that
 `git verify-pack` reads them, a new `TestPacksAreFetchedForACurrentCopy`
 removes a pack file from a current copy and asserts the next apply
