@@ -53,10 +53,11 @@ than clobbering:
 | Field | Meaning |
 |---|---|
 | `branch` | `refs/heads/<name>` or a short name; must exist except for `commits` with `create_branch: true` |
-| `expected_head` | the commit the caller believes the branch points at; `null` for a new branch; mismatch is 409 `non_fast_forward` with the details of spec 003: `ref`, `expected`, `actual` |
+| `create_branch`, `from` | `commits` only: `create_branch: true` creates `branch`, which must not exist (409 `non_fast_forward` with `details.expected: null` and `details.actual` the existing head when it does), and requires `from`, a commit sha or a branch name in the repository whose tree the new branch's first commit starts from and whose commit is its parent; `from` without `create_branch` and `create_branch` without `from` are 400 `invalid_request` with `details.field`; a repository with no commit takes `from: null` and the first commit has no parent |
+| `expected_head` | the commit the caller believes the branch points at; `null` with `create_branch: true` and refused otherwise; mismatch is 409 `non_fast_forward` with the details of spec 003: `ref`, `expected`, `actual` |
 | `author` | required: `{"name", "email"}`, both non-empty, `email` with one `@`; a missing or empty field is 400 `invalid_request` with `details.field: "author"`; the committer is always `Origo <origo@<host of ORIGO_PUBLIC_URL>>` with the effective subject's identity in the message trailer `Origo-Subject:` and the actor in `Origo-Actor:` (spec 007) |
 | `message` | the commit message, 1 to 64 KiB |
-| `dry_run` | `true` computes the result and returns it without committing |
+| `dry_run` | `true` computes the result and returns it without committing; the objects it writes go into a temporary object directory under `<ORIGO_DATA_DIR>/spool/`, set as `GIT_OBJECT_DIRECTORY` with the repository's `objects/` in `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and the directory is removed after the response, so a dry run never writes into the repository's objects and a loop of dry runs leaves nothing for compaction to clear |
 
 Response 201 `{"commit": "<sha>", "branch", "entry_seq", "tree": "<sha>"}`;
 for `dry_run`, 200 with the same fields and `"committed": false`. One
@@ -77,17 +78,11 @@ runs user code: no hooks, no filters, no smudge, no submodule fetch.
 
 ### Paths
 
-A change's `path` is accepted when every rule holds, and otherwise
-the request is 400 `invalid_change` with `details.index` and
-`details.reason: "path"`: at most 4 096 bytes; no leading slash; no
-empty component (no `//`, no trailing slash); no component `.` or
-`..`; no NUL byte; no component that names the git directory,
-case-insensitively, in any of the forms git's `core.protectNTFS` and
-`core.protectHFS` refuse (`.git`, `.git` followed by dots or spaces,
-`git~1` and the other 8.3 short names, and the HFS forms with ignorable
-code points); and a `120000` change's content is a relative target
-under the same rules. The rules are one function, `ValidChangePath`,
-which `FuzzChangePath` covers and spec 009's `?path=` also uses.
+A change's `path` is checked by the path rules of spec 009
+(`internal/api.ValidPath`, the one function both specs use); a path
+they refuse, or an empty one, is 400 `invalid_change` with
+`details.index` and `details.reason: "path"`. A `120000` change's
+content is a relative target checked by the same rules.
 
 ### Mechanics
 
@@ -102,8 +97,10 @@ which produces a tree without a worktree and reports conflicts as
 data. Every argument that came from the request follows
 `--end-of-options` and a value starting with `-` is refused (spec 009).
 The new objects are written into the copy's object store by those
-commands; they are unreachable until the reference moves, so a failure
-leaves nothing a reader can see.
+commands (into the temporary object directory for a dry run); they
+are unreachable until the reference moves, so a failure leaves nothing
+a reader can see. With `create_branch`, the temporary index is read
+from `from` and `from` is the parent.
 
 Then, without a synthesized `receive-pack`: `git pack-objects --revs
 --end-of-options` over `<expected_head>..<new>` writes the entry's
@@ -180,6 +177,13 @@ consumer's.
   `expected_head` is 409 `non_fast_forward`, and a request without
   `author` is 400 (proposed: `internal/api`,
   `TestCommitsWritesOneEntryAndRefusesStaleHead`).
+- `commits` with `create_branch: true` and `from: main` creates the
+  branch with `main`'s head as the parent, the same request on an
+  existing branch is 409, one without `from` is 400 naming the field,
+  and a `dry_run` of it answers 200 with `committed: false`, leaves
+  `objects/` of the repository unchanged, and leaves no directory under
+  `spool/` (proposed: `internal/api`,
+  `TestCreateBranchFromAndDryRunWritesNothing`).
 - `merge` with `fast_forward_if_possible` fast-forwards when it can and
   creates a two-parent commit when it cannot; a conflicting merge is 409
   `merge_conflict` naming the paths and leaves the branch unchanged
@@ -193,18 +197,17 @@ consumer's.
   the documented code and reason; the 61st operation on a repository
   in one minute is 429 with `details.limit: "repository"` (proposed:
   `internal/api`, `TestServerSideOperationsHonourLimits`).
-- Every path in a table of accepted and refused paths (`a/b`, `.git/x`,
-  `a/.GIT/x`, `git~1/x`, `a//b`, `/a`, `a/../b`, a 4 097 byte path, a
-  path with a NUL) is classified as the rules say and no refused path
-  reaches a subprocess (proposed: `internal/api`, `TestChangePathRules`).
+- A change whose `path` the rules of spec 009 refuse, and one whose
+  path is empty, is 400 `invalid_change` with `details.index` and
+  `details.reason: "path"` and no subprocess starts (proposed:
+  `internal/api`, `TestChangePathsUseTheReadRules`; the table of
+  accepted and refused paths and `FuzzValidPath` are spec 009's).
 - Twenty concurrent `commits` requests on one branch with the same
   `expected_head` produce exactly one commit and nineteen
   `non_fast_forward` answers (proposed: `internal/api`,
   `TestConcurrentCommitsSerializeOnExpectedHead`).
-- `FuzzChangePath` and `FuzzOperationBody` in `internal/api` find no
-  panic and no path the validator accepts that `git update-index`
-  refuses: each runs as a seed-corpus test in the suite on every push
-  and for 40 seconds under `make fuzz` (spec 002) on the weekly
-  schedule (proposed: `internal/api`, `FuzzChangePath`,
-  `FuzzOperationBody`).
-- The conformance suite (spec 013) gains one case per operation.
+- `FuzzOperationBody` in `internal/api` finds no panic over random and
+  mutated request bodies: it runs as a seed-corpus test in the suite
+  on every push and for 40 seconds under `make fuzz` (spec 013) on the
+  weekly schedule (proposed: `internal/api`, `FuzzOperationBody`).
+- The conformance suite (spec 021) gains one case per operation.
