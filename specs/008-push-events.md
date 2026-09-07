@@ -139,8 +139,9 @@ does two things over `origo/events/`:
    `push` entry with a sequence above the cursor and an `at` older than
    1 minute that has no event object, reads the entry head and writes
    the event from it: `updates` from the transaction, `pusher` from the
-   header, `forced` false, `kind_detail` and `operation` from the
-   header, and `id` from `repo` and `seq` as the payload table says,
+   header, `forced` false, `operation` from the header, `kind_detail`
+   from the transaction as the payload table says, and `id` from
+   `repo` and `seq` as the payload table says,
    so a consumer that received the original before the node died and
    the repair after it sees one id. This covers a node that died
    between the index create and the enqueue; an entry whose header
