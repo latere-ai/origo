@@ -62,6 +62,11 @@ Defects against the Design found by review, for the builder:
   `packs/<hash>.pack` in the log is `pack-<hash>.pack` on disk.
   `TestCompactionPacksAreFetched` accepts either file name, which is
   why it passes.
+- The index object carries no `pushed_at`: `wal.Index` has no such
+  field and `Log.nextIndex` sets none. The Index object section below
+  defines it, `ParseIndex` accepts its absence, and `nextIndex` sets it
+  as the section says, so `GET /v1/repos/{id}` (spec 009) and `stats`
+  (spec 019) read one field instead of the newest entry's header.
 
 ## Decision record
 
@@ -120,14 +125,21 @@ before the list grows past it):
  "refs": {"refs/heads/main": "<sha>", "HEAD": "ref: refs/heads/main"},
  "entries": [{"seq": 1040, "key": "wal/000000001040.….entry", "kind": "push", "pack_sha256": "…"}, …],
  "packs": ["packs/<hash>.pack"], "compacted_through": 1039,
- "size_bytes": 123456789, "deleted_at": null}
+ "size_bytes": 123456789, "deleted_at": null,
+ "pushed_at": "2026-09-06T10:00:00Z"}
 ```
 
 `entries` lists every entry after `compacted_through` up to and
 including `seq`, in order, with the object's own entry last; earlier
 history is represented by `packs`. `size_bytes` is the sum of
 `pack_bytes` over every entry since creation. `deleted_at` is set by a
-`delete` entry and cleared by the next `push` entry (undelete). Each
+`delete` entry and cleared by the next `push` entry (undelete).
+`pushed_at` is the `at` of the newest `push` entry: a `push` commit
+sets it to its own entry's `at`, every other commit copies it forward,
+and `index/000000000000` holds null. An index object written before
+the field existed has none; a reader treats a missing `pushed_at` as
+the object's own entry's `at` when the object names an entry and as
+null when it does not, so the value never needs a second read. Each
 index object carries the whole reference map, so a reader needs exactly
 one of them. The parser refuses an unknown field, a version other than
 1, an entry list out of order or outside `(compacted_through, seq]`, a
@@ -193,7 +205,7 @@ never depends on gossip arriving.
 
 ### Materialization
 
-`internal/repo.Cache.Acquire(id, write)` runs the currency check on
+`internal/repo.Cache.Acquire(ctx, id, write)` runs the currency check on
 every open and, when the copy is behind, upgrades a reader to the write
 lock, applies, and downgrades. `Apply` does, in order:
 
@@ -307,7 +319,7 @@ the size limits (spec 012).
   `ORIGO_SWEEP_MIN_AGE` plus one interval, and a retry that lands at the
   same sequence under a fresh nonce (`internal/wal`,
   `TestCommitWritesOneEntryAndOneIndex`, `TestCommitFailpointAndWriteFailures`;
-  `test/e2e`, `TestKillMidPush`).
+  `test/e2e`, `TestE2EKillMidPush`).
 - 16 writers holding the same `index/<n>` race for 20 rounds: exactly one
   index object per sequence, every writer's every push lands, and no two
   index objects share a sequence (`internal/wal`,
@@ -323,7 +335,7 @@ the size limits (spec 012).
   `TestMaterializeFromAnEmptyDiskThenCatchUp`, `TestReadersUpgradeAndWritersAdvance`).
 - A node with an empty disk materializes a repository from packs and
   entries and `git fsck` passes on the result (`internal/repo`,
-  `TestCompactionPacksAreFetched`; `test/e2e`, `TestPushThenCloneFromAnEmptyDisk`).
+  `TestCompactionPacksAreFetched`; `test/e2e`, `TestE2EPushThenCloneFromAnEmptyDisk`).
 - A local copy with a deliberately corrupted pack is evicted and rebuilt
   from the log and serves the same history (`internal/repo`,
   `TestCorruptCopyIsRebuiltFromTheLog`).
@@ -334,27 +346,36 @@ the size limits (spec 012).
   013) on the weekly schedule.
 - 100 concurrent pushes to distinct branches from 8 clients all land and
   the newest index lists 100 entries in sequence order (proposed:
-  `test/e2e`, `TestHundredConcurrentPushesFromEightClients`, after spec
-  013 gives the suite a CI budget).
+  `test/e2e`, `TestE2EHundredConcurrentPushesFromEightClients`, a test
+  of the one-node run once spec 013 gives the tier its job).
 - A repository of 10 000 entries and 3 packs materializes onto an empty
-  disk and `git fsck` passes (proposed: `test/e2e`,
-  `TestMaterializeTenThousandEntries`, after spec 006 can produce the
-  packs).
+  disk and `git fsck` passes; the entries are written by the harness
+  through `Log.Commit`, not by `git push`, and the packs by a compaction
+  (spec 006) (proposed: `test/e2e`,
+  `TestSlowMaterializeTenThousandEntries`, in the `e2e-slow` job of spec
+  013 under that job's 30 minute budget).
 - The create race, `HEAD` 404, and `GET` 304 rows of the probe pass on
   DigitalOcean Spaces with the current build (`tools/spike/condwrite`,
-  recorded in the spike; the conformance run against Spaces is spec 021).
+  recorded in the spike): a release checklist item of spec 017, run by
+  a maintainer before a tag, not a CI test; the conformance run against
+  Spaces is spec 021.
 
 ## Outcome
 
 Phase 1 shipped the log on 2026-09-06 as the Current state describes.
-The first seven criteria have passing tests in the tree; the last three
-wait for specs 006, 013, and 021, which is why the spec stays at
-testing. The two defects the Current state records are fixed under this
+The first seven criteria have passing tests in the tree; the eighth and
+ninth wait for the jobs of spec 013 and the packs of spec 006, which is
+why the spec stays at testing, and the tenth is a release checklist
+item of spec 017. Spec 013 renames the end-to-end tests with the
+`TestE2E` prefix its job regex selects; the names above are the renamed
+ones. The three defects the Current state records are fixed under this
 spec before it moves on: `TestCompactionPacksAreFetched` gains the
 assertion that the fetched files are named `pack-<hash>.pack` and that
-`git verify-pack` reads them, and a new `TestPacksAreFetchedForACurrentCopy`
+`git verify-pack` reads them, a new `TestPacksAreFetchedForACurrentCopy`
 removes a pack file from a current copy and asserts the next apply
-restores it.
+restores it, and `TestParseIndex` gains a case for an index object
+without `pushed_at` and `TestCommitWritesOneEntryAndOneIndex` asserts
+the field a push sets and a delete copies forward.
 
 Measurements, one node on an Apple silicon laptop against MinIO in a
 podman virtual machine (`test/e2e`, `TestMeasure` with
