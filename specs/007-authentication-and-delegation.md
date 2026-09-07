@@ -39,14 +39,18 @@ Removing `ORIGO_DEV_TOKEN` breaks three things that set it today:
 `deploy/base/deployment.yaml`). The replacement is the stub issuer and
 the stub authorizer of spec 013 under `test/stubs/`, built in the same
 phase as this spec: `make dev` runs `test/stubs/cmd/origo-stubs` beside
-MinIO and prints a clone line with a token the stub minted (spec 002,
-Local stack); the harness starts the issuer and the authorizer
-in-process and points `ORIGO_OIDC_ISSUERS` and `ORIGO_AUTHORIZER_URL` at
-them; the bootstrap Secret becomes `origod-auth` with
-`ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN`,
-and `ORIGO_TOKEN_KEY`, and the kind overlay (spec 013) runs the stubs as
-pods. `cmd/origod/main_test.go` and `internal/config/config_test.go`
-drop the variable from their fixtures.
+MinIO, generates `ORIGO_TOKEN_KEY` at start with `openssl ecparam
+-genkey -name prime256v1` into a file under `out/`, and prints a clone
+line with a token the stub minted (spec 002, Local stack); the harness
+starts the issuer and the authorizer in-process, generates a key with
+`crypto/ecdsa`, and points `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
+and `ORIGO_TOKEN_KEY` at them; the bootstrap Secret becomes `origod-auth`
+with `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
+`ORIGO_AUTHORIZER_TOKEN`, and `ORIGO_TOKEN_KEY`, and the kind overlay
+(spec 013) runs the stubs as pods and generates the key into a Secret
+the same way `make dev` does. `cmd/origod/main_test.go` and
+`internal/config/config_test.go` drop the variable from their fixtures
+and gain the key.
 
 ## Design
 
@@ -63,6 +67,7 @@ spec 003's table carries.
 | shape | three base64url segments whose header and claims parse as JSON objects | `malformed` |
 | algorithms | `RS256`, `ES256`; anything else | `signature` |
 | `iss` | one of `ORIGO_OIDC_ISSUERS`, or `ORIGO_PUBLIC_URL` for a repository-bound token | `issuer` |
+| local issuer | a token whose `iss` equals `ORIGO_PUBLIC_URL` is verified against the public key of `ORIGO_TOKEN_KEY` directly, with no discovery and no JWKS fetch, because the node holds the key: its `kid` must equal the node's own `kid` below, else `unknown_key`, and the rows from `signature` on apply as to any token; the issuer rows above and below are skipped for it | `unknown_key` |
 | issuer keys | the issuer's key set has been fetched at least once; until discovery of that issuer succeeds every token naming it is refused | `issuer_unavailable` |
 | `kid` | names a key of the issuer's set, after one refresh when unknown | `unknown_key` |
 | signature | verifies with that key | `signature` |
@@ -77,10 +82,12 @@ spec 003's table carries.
 
 `ORIGO_DEV_TOKEN` is removed with this spec: `internal/config` refuses a
 start-up that sets it (`ORIGO_DEV_TOKEN is no longer read; remove it`),
-and `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`, and
-`ORIGO_AUTHORIZER_TOKEN` become required. Development and the test
-tiers run the stub issuer and the stub authorizer of spec 013 in its
-place (Current state).
+and `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
+`ORIGO_AUTHORIZER_TOKEN`, and `ORIGO_TOKEN_KEY` become required, the
+key in every mode: a node never starts without one, so the token
+endpoint below never runs without a key to sign with. Development and
+the test tiers run the stub issuer and the stub authorizer of spec 013
+in its place and generate the key at start (Current state).
 
 ### Effective subject and actor
 
@@ -130,7 +137,12 @@ LFS upload; `admin` for `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`,
 body names.
 
 Response 200 `{"allow": true, "ttl": 60, "replicas": 1, "quota_bytes": 53687091200}`
-or 200 `{"allow": false, "reason": "…"}`. `ttl` defaults to 60 seconds
+or 200 `{"allow": false, "reason": "…"}`. One rule of the contract binds
+every authorizer: the repository id
+`00000000-0000-0000-0000-000000000001` is reserved and must be denied
+for every subject and action, because `origod check` (spec 018) sends
+it with an empty subject and treats an allow as a misconfigured
+authorizer; the stub of spec 013 denies it. `ttl` defaults to 60 seconds
 and is capped at 600; `replicas` (spec 005) defaults to 1; `quota_bytes`
 (spec 012) defaults to 53687091200. An allow is cached per
 `(subject, actor, repo id, action)` for `ttl`; a deny for 5 seconds; an
@@ -179,13 +191,20 @@ beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
 ## Acceptance criteria
 
 - Tokens from two stub issuers (`test/stubs/issuer`, spec 013) verify,
-  and a token that fails each row of the verification table answers 401
-  `unauthenticated` with that row's `details.reason` (`missing`,
-  `size`, `malformed`, `signature` for an unsupported `alg` and for a
-  bad signature, `issuer`, `issuer_unavailable`, `unknown_key` after
-  one refresh, `audience`, `expired`, `nbf`, `iat`) on `info/refs`,
-  `git-upload-pack`, and `GET /v1/repos/{id}` (proposed:
-  `internal/auth`, `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`).
+  a token with `iss` equal to `ORIGO_PUBLIC_URL` verifies against the
+  node's key with no fetch, and a token that fails each row of the
+  verification table answers 401 `unauthenticated` with that row's
+  `details.reason` (`missing`, `size`, `malformed`, `signature` for an
+  unsupported `alg` and for a bad signature, `issuer`,
+  `issuer_unavailable`, `unknown_key` after one refresh and for a local
+  token with another `kid`, `audience`, `expired`, `nbf`, `iat`),
+  asserted on the verifier alone (proposed: `internal/auth`,
+  `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`); that every
+  route of the public listener runs the verifier, `info/refs`,
+  `git-upload-pack`, `git-receive-pack`, `GET /v1/repos/{id}`, and the
+  rest, is the route sweep in `cmd/origod`, `TestEveryRouteRequiresAToken`,
+  which spec 016 names as its criterion and which asserts `missing`,
+  `audience`, and `expired` on every route.
 - With one of two issuers unreachable at start-up, the node starts,
   serves the other issuer's tokens, refuses the first's with
   `issuer_unavailable`, and serves them without a restart once the
