@@ -10,7 +10,7 @@ depends_on:
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/017-release-and-versioning.md
   - specs/021-conformance-suite.md
-affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile]
+affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
