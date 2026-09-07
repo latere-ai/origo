@@ -1,6 +1,6 @@
 ---
 title: "Architecture: components, storage model, flows, and invariants"
-status: validated
+status: testing
 track: infra
 depends_on: []
 affects: [cmd/origod/, internal/, deploy/, docs/]
@@ -219,6 +219,25 @@ a consumer concern; a one-time import is spec 019.
   `TestE2EKillMidPush`).
 - The build list of `github.com/latere-ai/origo/...` reaches no package
   under `github.com/aws/`, `cloud.google.com/`, `github.com/Azure/`, or
-  `k8s.io/` (proposed: the `depcheck` gate in `.lateregate.yaml` naming
-  `./cmd/origod` with an allow list of `latere.ai/x/pkg` and the standard
-  library; `tools/spike` is its own module and is not on the build list).
+  `k8s.io/` (the `depcheck` gate in `.lateregate.yaml`, its
+  `depcheck.packages` naming `./cmd/origod` with an allow list of
+  `latere.ai/x/pkg` and the standard library; `tools/spike` is its own
+  module and is not on the build list; owned by spec 013, which
+  configures the gate as part of the test tooling).
+
+The fourth criterion is deferred to spec 013, which owns the gate's
+configuration; the dispatch rule of `specs/README.md` (every dependency
+at `testing` or later) is what lets the specs that build on this one
+start meanwhile.
+
+## Outcome
+
+The design above is built by phase 1 (specs 002, 003, 004) as the
+Current state describes: one node, the log as the source of truth, the
+storage model, the write path, and the read path, verified by the three
+end-to-end scenarios the first three criteria name. What remains is
+owned elsewhere: the `TestE2E` renames of those scenarios land with
+spec 013, whose job regex selects the prefix, and the `depcheck`
+criterion is spec 013's, which configures `depcheck.packages` in
+`.lateregate.yaml` as part of the test tooling. The spec moves to
+`complete` when that gate runs on every push.
