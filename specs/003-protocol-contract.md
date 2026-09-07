@@ -20,9 +20,9 @@ endpoint, header, capability, and error a consumer may rely on, and
 nothing else is promised. A consumer that codes against this contract can
 run its tests against the contract stub (spec 013) and against a live
 Origo and get the same answers, which the conformance suite (spec 021)
-proves. Specs 007, 008, 009, 010, and 019 add surfaces to the contract;
-each owns its own table, and this document points at them so the
-contract is one document with five appendices.
+proves. Specs 007, 008, 009, 010, 014, 019, and 020 add surfaces to the
+contract; each owns its own table, and this document points at them so
+the contract is one document with its appendices.
 
 ## Current state
 
@@ -272,4 +272,7 @@ Divergences to fix, owned by spec 021's code-table test:
   with `no such route`; it moves to `invalid_request` with
   `details.reason: "no such route"`.
 - The sideband for a refused commit is `storage_unavailable: the push
-  was not recorded, retry`; it becomes the table's sentence.
+  was not recorded, retry`, and for a moved reference
+  `non_fast_forward: <ref> moved to <sha> since you fetched; fetch
+  first`; both become the table's sentences, the reference and the
+  hashes moving to the developer detail.
