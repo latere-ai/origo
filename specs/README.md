@@ -47,15 +47,15 @@ passing test in the tree and the Outcome records every divergence.
 | [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | in-progress |
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | drafted |
-| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | drafted |
+| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | validated |
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | validated |
-| [008](008-push-events.md) | Push events: signed webhooks per reference update | small | drafted |
+| [008](008-push-events.md) | Push events: signed webhooks per reference update | small | validated |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | validated |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | drafted |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | drafted |
-| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | drafted |
+| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | validated |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | validated |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
@@ -222,7 +222,7 @@ deck and stated here so a reader sees them without the owning spec.
 | the `integration` job is 25 minutes, the two cluster jobs 30, the mutation job 20; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow`, which installs `git-lfs`; the `specindex` job installs and runs `promtool` | 013 | 006, 010, 011, 019, 021 |
 | a write under an open read breaker is refused at once with `storage_unavailable`; stale serving is for reads only | 015 | 003, 019, 020 |
 | the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the source stub's CA, while git talks plain HTTP to the proxy; `transfer.fsckObjects` is a `-c` argument, not a `GIT_CONFIG_*` key | 016 | 002, 013, 014, 019 |
-| the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify`; a host named exactly in `ORIGO_EGRESS_ALLOW` may resolve into `ORIGO_CLUSTER_CIDRS`, which is how the stack's nodes reach the in-cluster source stub | 016 | 013, 014, 019 |
+| the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify`; a host named in `ORIGO_EGRESS_ALLOW` as `host=address` may resolve to exactly that address inside `ORIGO_CLUSTER_CIDRS` and to no other, which is how the stack's nodes reach the in-cluster source stub at its fixed `clusterIP` | 016 | 013, 014, 019 |
 | the three LFS sentences are the codes `lfs_object_mismatch`, `lfs_object_not_stored`, and `lfs_locks_unsupported`, rendered through `contract.Sentence` in the LFS body shape; 021's code table holds them | 010 | 003, 021 |
 | the tag-time install run is the `install-release` job of `release.yml` after `publish`, with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`; the push-time `install` job of `verify.yml` uses the candidate build | 018 | 002, 017 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
@@ -332,8 +332,8 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 008, 013 |
 | variable | `ORIGO_GOSSIP_SECRET` | [002](002-repository-scaffold.md) | 005, 008, 013, 016, 018 |
 | variable | `ORIGO_HOOK_DIR` | [004](004-write-ahead-log.md) | 002, 016 |
-| variable | `ORIGO_INSTALL_IMAGE` | [018](018-installation.md) | 002 |
-| variable | `ORIGO_INSTALL_MANIFESTS` | [018](018-installation.md) | 002 |
+| variable | `ORIGO_INSTALL_IMAGE` | [018](018-installation.md) | 002, 017 |
+| variable | `ORIGO_INSTALL_MANIFESTS` | [018](018-installation.md) | 002, 017 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
