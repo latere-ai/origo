@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
-affects: [internal/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
+affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-07
@@ -28,9 +28,19 @@ deck.
 `cmd/origod` serves the registry on the internal listener and logs one
 JSON line per event through `log/slog` to stdout. `internal/wal`,
 `internal/repo`, and `internal/httpgit` record the twelve phase 1
-metrics below; every counter reads 0 before its first event. There are
+metrics below, each registered by the package that records it with an
+`Add(nil, 0)` so the series reads 0 before its first event. There are
 no traces, no request log line, no PrometheusRule in `deploy/base`, and
 `OTEL_*` is not read: `pkg/otel` is not imported.
+
+One change to the tree, for the builder: registration moves out of the
+recording packages into one place, `internal/metrics/register.go`
+(spec 002's layout), which registers every name in the table below on
+the registry at start-up and hands the handles to the packages that
+record them, so a metric of a spec not built yet still exists at 0 and
+the presence test below needs no fixture. The `internal/metrics` of
+phase 1 that moved to `latere.ai/x/pkg/metrics` (spec 002, Outcome)
+was the registry; this is the list of names over it.
 
 ## Design
 
@@ -76,8 +86,12 @@ never recorded and are replaced by the names below.
 | `origo_storage_bytes` | gauge | | bytes under the prefix, from the weekly sweep (019) |
 
 No label ever carries a repository id, owner, slug, subject, reference,
-or path. Gauges are registered with `Registry.Gauge` and read at scrape
-time.
+or path. Every metric in the table is registered at start-up in
+`internal/metrics/register.go`, one function `Register(reg) *Set` that
+returns the handles the recording packages take, so `GET /metrics`
+carries every name at 0 before anything is recorded; a labelled counter
+is registered with one `Add` of 0 per label value in its vocabulary.
+Gauges are registered with `Registry.Gauge` and read at scrape time.
 
 ### Traces
 
@@ -127,11 +141,15 @@ defaults.
 
 ## Acceptance criteria
 
-- After a fixture load (create, push, clone, a refused push, a
-  compaction), `GET /metrics` contains every name in the table with the
-  listed labels and no label value equal to a repository id, subject,
-  reference, or path used by the fixture (proposed: `cmd/origod`,
-  `TestMetricsVocabulary`).
+- Right after start-up, with nothing recorded, `GET /metrics` contains
+  every name in the table with every listed label value at 0, because
+  `internal/metrics/register.go` registered them; after a fixture load
+  (create, push, clone, a refused push) no label value equals a
+  repository id, subject, reference, or path used by the fixture
+  (proposed: `cmd/origod`, `TestMetricsVocabulary`, the presence part
+  needing no fixture; `internal/metrics`, `TestRegisterNamesEveryMetric`
+  comparing the registered names to the table of this spec read from
+  the file).
 - A push against an in-memory OTLP receiver produces one trace whose
   spans are the five named, with the repository id as an attribute
   (proposed: `cmd/origod`, `TestPushTrace`).
