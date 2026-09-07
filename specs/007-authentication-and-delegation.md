@@ -1,6 +1,6 @@
 ---
 title: "Authentication and delegation: issuers, the authorizer, acting on behalf of a subject"
-status: validated
+status: in-progress
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md

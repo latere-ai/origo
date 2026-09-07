@@ -56,7 +56,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | drafted |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | validated |
-| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | validated |
+| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | in-progress |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | validated |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | validated |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | validated |
