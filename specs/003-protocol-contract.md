@@ -213,7 +213,7 @@ header `Origo-Contract: <n>` from the next major version on (spec 017).
 - A consumer's integration tests written against the stub pass unchanged
   against a live node (spec 013, the stub criterion).
 - Every code in the table above and in the tables of specs 007, 009,
-  015, 019, and 020 has exactly one `message`, asserted by a test over
+  010, 015, 019, and 020 has exactly one `message`, asserted by a test over
   `internal/contract` that lists the codes and their sentences and by the
   conformance suite comparing responses to it (proposed:
   `internal/contract`, `TestEveryCodeHasOneSentence`).
