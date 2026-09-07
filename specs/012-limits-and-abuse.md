@@ -42,9 +42,10 @@ not exist.
 | references | 100 000 commands per push and 100 000 references in the map after it | receive-pack | `over_quota`, `details.limit: "refs"` (phase 1 answers 400 `invalid_request` for the command count) |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
 | requests per subject | 600 per minute, a token bucket per effective subject per node, burst 600; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
-| concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot | 429 `rate_limited`, `details.limit: "subprocesses"` |
-| subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 503 `storage_unavailable` on the API, git's own error on the sideband |
+| concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
+| subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) and the `commits` operation, 5 minutes for the merge family (spec 020); 10 minutes for an export (spec 019) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 504 `operation_timeout` (spec 020) on the API, git's own error on the sideband |
 | JSON body | 64 KiB | every `/v1/` route except the operation routes of spec 020, which carry their own 64 MiB limit | 400 `invalid_request` |
+| LFS batch body | 1 MiB | `POST /{repo}/info/lfs/objects/batch` (spec 010) | 400 with the LFS body of spec 010 carrying the `invalid_request` sentence |
 | entry header, transaction, index object | 4 KiB, 64 MiB, 64 MiB | the parsers of spec 004 | the entry or index is refused as corrupt (spec 015) |
 | object storage retries | 3 attempts from 50 ms, capped at 2 s, under `ORIGO_STORAGE_TIMEOUT` per attempt (spec 015) | `pkg/s3` | the store's error |
 
@@ -78,7 +79,9 @@ Connection limits at the ingress. Bandwidth shaping.
   `TestIdleBucketsAreEvicted`).
 - With `ORIGO_MAX_GIT_PROCS=2`, a third concurrent clone waits up to 5
   seconds then answers 429 `rate_limited` with
-  `details.limit: "subprocesses"` (proposed: `internal/limits`,
-  `TestSubprocessCap`).
+  `details.limit: "subprocesses"`, and a compaction started under the
+  same two held slots skips with `result="skipped"` and runs on the
+  next sweep once a slot is free (proposed: `internal/limits`,
+  `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`).
 - A frozen repository accepts a clone and refuses a push with
-  `repo_frozen` (spec 019's conformance case).
+  `repo_frozen` (spec 019's conformance case in spec 021).
