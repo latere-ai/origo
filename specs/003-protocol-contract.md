@@ -90,7 +90,8 @@ surface. Bodies are JSON, at most 64 KiB, unknown fields refused.
 `size_bytes` is the sum of the pack bytes in the log since creation;
 `head` is the object id of the default branch, empty when the branch does
 not exist; `updated_at` is the time of the last create or rename of the
-metadata, not the last push (spec 009 adds `pushed_at`).
+metadata, not the last push (spec 009 adds `pushed_at`, read from the
+index object's `pushed_at` of spec 004).
 
 Clone URLs are `<ORIGO_PUBLIC_URL>/<owner>/<slug>.git`; the id form
 `<ORIGO_PUBLIC_URL>/r/<id>.git` always works and is what a consumer
@@ -162,9 +163,9 @@ and never built from the underlying error, `details` is an object of the
 developer fields named below, present only when there is one. Git
 protocol errors use the sideband as `<code>: <message>`. Codes other
 specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
-`repository_unavailable` (015), `gone`, `repo_frozen`, `repo_importing`,
-`repo_not_empty`, `import_not_found` (019), `merge_conflict`,
-`invalid_change`, `operation_timeout` (020).
+`operation_timeout` (009), `repository_unavailable` (015), `gone`,
+`repo_frozen`, `repo_importing`, `repo_not_empty`, `import_not_found`
+(019), `merge_conflict`, `invalid_change` (020).
 
 | Code | Status | Message | Details |
 |---|---|---|---|
@@ -191,7 +192,7 @@ contract; each is defined by the spec named:
 | Spec | Header | Meaning |
 |---|---|---|
 | this spec | `Origo-Contract` | the contract version, above |
-| 005 | `Origo-Prefer` | on every response that names a repository: the nodes that hold it warm, highest score first; a hint for routing, never a redirect |
+| 005 | `Origo-Prefer` | on every response that names a repository: the nodes that hold it warm, highest score first; a hint for routing, never a redirect; absent on a 401 or 403 for a name that did not resolve, so a refused caller learns nothing about where a repository lives |
 | 015 | `Origo-Stale` | on a response served from the local copy without a currency check while the bucket is unreachable: the whole seconds since the last check that answered; absent on every consistent response, so a consumer that must not read stale refuses the response by this header |
 
 The read API's `Origo-Commit` and `Origo-Truncated` are spec 009's; the
@@ -249,8 +250,8 @@ Divergences recorded against the first draft, all kept:
 - `owner` and `slug` are restricted to the grammar above and `r` and
   `v1` are reserved.
 - `updated_at` is the metadata's update time, not the last push: the
-  index objects carry no timestamp. Spec 009 adds `pushed_at` from the
-  newest entry's header.
+  phase 1 index objects carry no timestamp. Spec 004 gives the index
+  object `pushed_at` and spec 009 serves it.
 - The name is stored beside the log as `origo/names/<owner>/<slug>`,
   created by create-if-absent, so a taken name is refused by the store.
 - `invalid_request` was added for a malformed body, id, label, branch
