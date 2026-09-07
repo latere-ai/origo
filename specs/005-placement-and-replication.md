@@ -171,7 +171,10 @@ needs the resource metrics API, which the kind overlay of spec 013
 provides with `metrics-server`, one row of its overlay table; this spec
 adds to that overlay the patch that sets the scale-down window to 60
 seconds, so the autoscaler test below leaves a small cluster for the
-next test inside the job budget. CPU is the only signal: the base and
+next test inside the job budget. That overlay runs the nodes as the
+StatefulSet `origod` so each pod has a host port of its own (spec 013,
+ports table), and patches the autoscaler's `scaleTargetRef` to it; the
+base keeps the Deployment. CPU is the only signal: the base and
 every example overlay of spec 018 scale on it and install no metrics
 adapter. `origo_requests_in_flight` (spec 011) stays defined for
 dashboards and is not an autoscaler input; `docs/operations.md` says
@@ -225,11 +228,13 @@ the cache on shutdown.
 
 ## Acceptance criteria
 
-- With 3 nodes and `replicas = 1`, a clone through any node answers
-  `Origo-Prefer` with the same first name on every node, and a second
-  clone sent to that node leaves `origo_repo_materialized_total` on it
-  unchanged (proposed: `internal/placement`, `TestRendezvousAgreesAcrossNodes`;
-  `test/e2e`, `TestClusterPreferredNodeIsWarm`).
+- With 3 nodes and `replicas = 1`, a clone through each of nodes 1, 2,
+  and 3 of spec 013's ports table (their public host ports) answers
+  `Origo-Prefer` with the same first name, and a second clone sent to
+  that node's own public host port leaves `origo_repo_materialized_total`,
+  read from that node's internal host port, unchanged (proposed:
+  `internal/placement`, `TestRendezvousAgreesAcrossNodes`; `test/e2e`,
+  `TestClusterPreferredNodeIsWarm`).
 - A push acknowledged on node A is returned by a fetch on node B: with
   gossip, the test waits until B's `origo_repo_entries_applied_total`
   rose by one, which is the background catch-up the announcement
@@ -261,18 +266,28 @@ the cache on shutdown.
   `rev-list --all` (proposed: `internal/placement`, `TestEvictionIsLRUAndNeverInUse`).
 - A repository not acquired for 24 hours is evicted at the next evictor
   run with a fake clock (proposed: `internal/placement`, `TestIdleEviction`).
-- Removing one of 3 nodes during a load of 50 clones per second causes
-  no failed request (proposed: `test/e2e`, `TestClusterNodeRemovalUnderReadLoad`).
+- Deleting node 2 of spec 013's ports table with
+  `cluster.DeletePod("origod-1")` (that spec's `test/e2e/cluster`
+  helper) during a load of 50 clones per second through the balanced
+  port causes no failed request, and the replacement pod is ready
+  before the test ends (proposed: `test/e2e`,
+  `TestClusterNodeRemovalUnderReadLoad`).
 - Under a synthetic read load of 200 clones of a 10 MiB repository on
   the kind stack of spec 013, clones per second measured at 2, 4, and 8
-  replicas is monotonic non-decreasing with no push failure; the ratio
+  replicas is monotonic non-decreasing with no push failure; each
+  replica count is set with `cluster.ApplyManifest` of
+  `test/e2e/testdata/hpa-<n>.yaml`, an autoscaler with `minReplicas`
+  and `maxReplicas` both `<n>`, and confirmed with
+  `cluster.HPAStatus("origod")` before the load starts; the ratio
   between 8 and 2 is recorded in the test output as a measurement and
   no ratio is asserted, because the runner's CPU, not the design,
-  bounds it. The HPA reaches 4 replicas within 60 seconds of CPU
-  crossing the target; scale-down is not asserted, the overlay's 60
-  second window only keeps the cluster small for the next test
-  (proposed: `test/e2e` in the `e2e-slow` job of spec 013,
-  `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp`).
+  bounds it. The autoscaler test restores the overlay's own autoscaler
+  with `cluster.Apply("deploy/examples/kind")`, drives CPU past the
+  target, and reads `cluster.HPAStatus("origod")` until it reports 4
+  replicas, within 60 seconds of the crossing; scale-down is not
+  asserted, the overlay's 60 second window only keeps the cluster
+  small for the next test (proposed: `test/e2e` in the `e2e-slow` job
+  of spec 013, `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp`).
 - A drain during 100 concurrent pushes loses none: every push is either
   acknowledged and in the newest index or refused with
   `storage_unavailable` and absent (proposed: `test/e2e`,
