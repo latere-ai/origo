@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -67,6 +67,12 @@ Defects against the Design found by review, for the builder:
   defines it, `ParseIndex` accepts its absence, and `nextIndex` sets it
   as the section says, so `GET /v1/repos/{id}` (spec 009) and `stats`
   (spec 019) read one field instead of the newest entry's header.
+
+Not a defect, for the reader: `origo_push_duration_seconds{phase}` of
+spec 011's table is attributed to the receive path this spec built,
+and phase 1 does not record it. The builder of spec 008, who changes
+the receive path for the `forced` flag and the enqueue, records it;
+spec 008's Current state and affects say so.
 
 ## Decision record
 
