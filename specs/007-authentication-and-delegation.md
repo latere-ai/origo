@@ -5,10 +5,10 @@ track: infra
 depends_on:
   - specs/002-repository-scaffold.md
   - specs/003-protocol-contract.md
-affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/]
+affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -37,8 +37,11 @@ Removing `ORIGO_DEV_TOKEN` breaks three things that set it today:
 (`test/e2e/harness_test.go`, `start`), and the bootstrap Secret
 `origod-dev-token` (`deploy/bootstrap/secrets.example.yaml`, read by
 `deploy/base/deployment.yaml`). The replacement is the stub issuer and
-the stub authorizer of spec 013 under `test/stubs/`, built in the same
-phase as this spec: `make dev` runs `test/stubs/cmd/origo-stubs` beside
+the stub authorizer, `test/stubs/issuer` and `test/stubs/authorizer`,
+which this spec builds because its own criteria need them, to the
+control API spec 013's stub table fixes; spec 013 builds the binary
+that runs them, the sink, the contract stub, the source stub, the
+overlay, and the jobs. In the same phase, `make dev` runs `test/stubs/cmd/origo-stubs` beside
 MinIO, generates `ORIGO_TOKEN_KEY` at start with `openssl ecparam
 -genkey -name prime256v1` into a file under `out/`, and prints a clone
 line with a token the stub minted (spec 002, Local stack); the harness
@@ -190,7 +193,8 @@ beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
 
 ## Acceptance criteria
 
-- Tokens from two stub issuers (`test/stubs/issuer`, spec 013) verify,
+- Tokens from two stub issuers (`test/stubs/issuer`, built by this spec
+  to spec 013's table) verify,
   a token with `iss` equal to `ORIGO_PUBLIC_URL` verifies against the
   node's key with no fetch, and a token that fails each row of the
   verification table answers 401 `unauthenticated` with that row's
