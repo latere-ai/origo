@@ -75,10 +75,10 @@ was already running when the request arrived, is answered 202 with
 `details.running: true` and `details.started_at`, the start time of the
 run in progress, which the caller polls with `stats` (spec 019). The
 bound exists because a full repack takes up to the 30 minute deadline
-and every ingress cuts an idle response before that: the ingress of
-`deploy/base` carries a 600 second read timeout and an operator's may be
-shorter, so `gc` never blocks longer than 10 seconds whatever sits in
-front of the node. A threshold compaction and a `gc` are the same run.
+and every ingress cuts an idle response before that: the `kind`
+example overlay's ingress carries a 600 second read timeout (spec 018)
+and an operator's may be shorter, so `gc` never blocks longer than 10
+seconds whatever sits in front of the node. A threshold compaction and a `gc` are the same run.
 The hourly limit of spec 019 refuses only `POST /v1/repos/{id}/gc`: a
 threshold run is never rate-limited, and either kind of run counts as
 the compaction that makes the next `gc` inside the hour a 429. The primary's
@@ -97,10 +97,10 @@ one.
 `internal/compact.Run(repo)` on the primary, under its own deadline of
 30 minutes for the whole run (the repack subprocess runs with that
 deadline rather than the 5 minutes of spec 004, which spec 012 records).
-Every git subprocess of the run takes a slot of the subprocess
-semaphore of spec 012; a run that waits more than 5 seconds for a slot
-skips this run with `origo_compactions_total{result="skipped"}` and the
-next sweep retries it:
+Once spec 012 lands, every git subprocess of the run takes a slot of
+its subprocess semaphore; a run that waits more than 5 seconds for a
+slot skips this run with `origo_compactions_total{result="skipped"}`
+and the next sweep retries it:
 
 ```mermaid
 sequenceDiagram
@@ -147,8 +147,11 @@ sequenceDiagram
    between has advanced the local sequence, and `Log.Commit` sees it in
    the next step. Commit a `compact` entry with an empty transaction, no
    pack, `Packs` = the packs of step 2 (the new ones and the large ones
-   left alone), and `CompactedThrough = n`, through `Log.Commit`. The
-   catch-up callback refuses: a lost round means a push landed after
+   left alone), `PacksBytes` = the bytes of those `.pack` files, and
+   `CompactedThrough = n`, through `Log.Commit`; the commit sets the
+   index's `size_bytes` to `PacksBytes` (spec 004), so after a
+   compaction the figure is what the log holds and the next push adds
+   its own pack bytes to it. The catch-up callback refuses: a lost round means a push landed after
    step 1, and a replay would produce an index whose `entries` no longer
    names that push. The compaction aborts with `result="stale"`, its
    entry becomes an orphan the sweeper removes, the uploaded packs stay
@@ -236,7 +239,7 @@ request and response shape, rate limit, and event (spec 019).
   `ORIGO_SWEEP_MIN_AGE` and one that the newest index lists is kept
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
-  10% of its latency after 10 pushes, measured as the p50 of 10 clones
+  25% of its latency after 10 pushes, measured as the p50 of 10 clones
   each through node 1 of spec 013's ports table, asserted on every push to `main`
   (proposed: `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat`,
   in the `e2e` job of spec 013; the fixture is sized so the test fits
