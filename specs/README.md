@@ -172,6 +172,7 @@ flowchart LR
   S021 --> S009
   S021 --> S010
   S021 --> S013
+  S021 --> S015
   S021 --> S019
 ```
 
@@ -180,7 +181,7 @@ flowchart LR
 | Phase | Specs | Outcome | State |
 |---|---|---|---|
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
-| 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO on a host port, the stubs, metrics-server, Cilium, the restricted namespace, the HPA patch), the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | next |
+| 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, the slow proxy, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | next |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
@@ -205,19 +206,25 @@ deck and stated here so a reader sees them without the owning spec.
 | Decision | Owner | Relied on by |
 |---|---|---|
 | the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces; both Dockerfiles move to it under 017 | 017 | 002, 018, 020 |
-| `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all | 002 | 014, 018 |
+| `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all; the dispatcher is not built, 018 builds it with `check` first and 014's `migrate` joins it | 002 | 014, 018 |
 | `ORIGO_TOKEN_KEY` is required in every mode; `make dev` and the kind overlay generate one at start | 002, 007 | 013, 016, 018 |
 | `ORIGO_GOSSIP_SECRET` is required only when `ORIGO_GOSSIP_PEERS` is set; a single node runs with neither | 002, 005 | 013, 016, 018 |
 | the index object carries `pushed_at`; the read API and `stats` serve it from there | 004 | 003, 009, 019 |
 | `operation_timeout` is defined by the read API and named by the limits and the server-side operations | 009 | 012, 020 |
-| the kind overlay is a table of rows, each with the spec that needs it; the CI jobs select tests by name prefix (`TestE2E`, `TestCluster`, `TestSlow`) and reach the stack through `ORIGO_TEST_URL` | 013 | 004, 005, 008, 015, 016, 021 |
-| the kind stack has no ingress controller; its ports table fixes every host port (origod 30080, the stub issuer 30081, authorizer 30082, sink 30083, MinIO 30900), the defaults of `ORIGO_TEST_URL` and `ORIGO_S3_PUBLIC_ENDPOINT` on the stack | 013 | 010, 017, 021 |
+| the kind overlay is a table of rows, each with the spec that needs it; the CI jobs select tests by name prefix (`TestE2E`, `TestCluster`, `TestSlow`) and reach the stack through `ORIGO_TEST_URL`; `up.sh` creates the cluster and applies the overlay, `down.sh` deletes it, `make dev-up` and `make dev-down` call them | 013 | 004, 005, 008, 015, 016, 021 |
+| the kind stack has no ingress controller; its ports table fixes every host port (origod balanced 30080, nodes 1 to 3 public 30180 to 30182 and internal 30190 to 30192 on the StatefulSet `origod-0` to `origod-2`, the stub issuer 30081, authorizer 30082, sink 30083, the TLS source 30084, the slow proxy 30085, MinIO 30900), the defaults of `ORIGO_TEST_URL` and `ORIGO_S3_PUBLIC_ENDPOINT` on the stack; a criterion names a node by its row, "node 1 of the ports table" | 013 | 005, 006, 010, 015, 017, 021 |
+| the stack's MinIO has fixed values (bucket `origo-test`, key and secret `minioadmin`, region `us-east-1`, path style, host port 30900) that the cluster jobs export as the `ORIGO_TEST_S3_ENDPOINT` family, read by a test that starts a node of its own, the fixture harness, and the `Fault` | 013 | 008, 017, 021 |
+| a cluster test changes the cluster only through `test/e2e/cluster` (`DeletePod`, `ApplyManifest`, `HPAStatus`, `Apply`), which shells out to `kubectl` on `PATH` under the job's kubeconfig; fault manifests live under `test/e2e/testdata/`; every cluster criterion names the function it uses | 013 | 005, 015, 016, 021 |
+| 007 builds `test/stubs/issuer` and `test/stubs/authorizer`; 013 builds the sink, the contract stub, the TLS source stub, the binary, the overlay, and the jobs | 007, 013 | 014, 018, 019, 021 |
 | `tools/docs/run-blocks.sh` runs a document's `sh` blocks as its test | 013 | 014, 018 |
 | every event kind goes through `internal/events`: `Enqueue` for a `push` entry, `Emit` for a kind without a sequence, keyed `a-<uuid v5 of repo:kind:at>` so a repeated emit is one event; one delivery loop, retry schedule, dead-letter, cursor, and repair for all | 008 | 014, 018, 019 |
 | the autoscaler scales on CPU only, in the base and in every example overlay; `origo_requests_in_flight` is a dashboard signal | 005 | 011, 018, `docs/operations.md` |
-| the `integration` job is 25 minutes; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow` | 013 | 006, 010, 019 |
+| the `integration` job is 25 minutes, the two cluster jobs 30, the mutation job 20; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow`, which installs `git-lfs`; the `specindex` job installs and runs `promtool` | 013 | 006, 010, 011, 019, 021 |
 | a write under an open read breaker is refused at once with `storage_unavailable`; stale serving is for reads only | 015 | 003, 019, 020 |
-| the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the stubs' CA, while git talks plain HTTP to the proxy | 016 | 002, 013, 014, 019 |
+| the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the source stub's CA, while git talks plain HTTP to the proxy; `transfer.fsckObjects` is a `-c` argument, not a `GIT_CONFIG_*` key | 016 | 002, 013, 014, 019 |
+| the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify`; a host named exactly in `ORIGO_EGRESS_ALLOW` may resolve into `ORIGO_CLUSTER_CIDRS`, which is how the stack's nodes reach the in-cluster source stub | 016 | 013, 014, 019 |
+| the three LFS sentences are the codes `lfs_object_mismatch`, `lfs_object_not_stored`, and `lfs_locks_unsupported`, rendered through `contract.Sentence` in the LFS body shape; 021's code table holds them | 010 | 003, 021 |
+| the tag-time install run is the `install-release` job of `release.yml` after `publish`, with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`; the push-time `install` job of `verify.yml` uses the candidate build | 018 | 002, 017 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
 | the code table is the one source of every sentence; every `httpjson.Error` literal is checked against it | 021 | 003 and every spec with a Code table |
 
@@ -291,6 +298,9 @@ name, or when a spec names something no spec defines.
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003 |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020 |
+| error code | `lfs_locks_unsupported` | [010](010-lfs.md) | - |
+| error code | `lfs_object_mismatch` | [010](010-lfs.md) | - |
+| error code | `lfs_object_not_stored` | [010](010-lfs.md) | - |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003 |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020 |
@@ -303,25 +313,27 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 017, 021 |
-| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 015, 017, 021 |
+| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 013, 015, 017, 021 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010 |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |
 | variable | `ORIGO_CHECK_SELFTEST` | [002](002-repository-scaffold.md) | 018 |
-| variable | `ORIGO_CLUSTER_CIDRS` | [002](002-repository-scaffold.md) | 016 |
+| variable | `ORIGO_CLUSTER_CIDRS` | [002](002-repository-scaffold.md) | 013, 016 |
 | variable | `ORIGO_DATA_DIR` | [002](002-repository-scaffold.md) | 004, 005, 016, 018 |
 | variable | `ORIGO_DEV_TOKEN` | [002](002-repository-scaffold.md) | 003, 007, 013 |
 | variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013 |
-| variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 014, 016, 019 |
+| variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EGRESS_CA_BUNDLE` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 016 |
 | variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 018 |
 | variable | `ORIGO_FAILPOINT` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_GOSSIP_ADDR` | [002](002-repository-scaffold.md) | 005 |
-| variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 013 |
-| variable | `ORIGO_GOSSIP_SECRET` | [002](002-repository-scaffold.md) | 005, 013, 016, 018 |
+| variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 008, 013 |
+| variable | `ORIGO_GOSSIP_SECRET` | [002](002-repository-scaffold.md) | 005, 008, 013, 016, 018 |
 | variable | `ORIGO_HOOK_DIR` | [004](004-write-ahead-log.md) | 002, 016 |
+| variable | `ORIGO_INSTALL_IMAGE` | [018](018-installation.md) | 002 |
+| variable | `ORIGO_INSTALL_MANIFESTS` | [018](018-installation.md) | 002 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
@@ -330,7 +342,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
-| variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 019 |
+| variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 013, 019 |
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
@@ -339,25 +351,25 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010 |
+| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013 |
 | variable | `ORIGO_S3_KEY` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 017, 018 |
+| variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 018 |
 | variable | `ORIGO_S3_REGION` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_SECRET` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 015 |
+| variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 013, 015 |
 | variable | `ORIGO_STORAGE_TIMEOUT` | [002](002-repository-scaffold.md) | 012, 015 |
 | variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004 |
 | variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006 |
 | variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 013, 014, 021 |
-| variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 021 |
+| variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 013, 021 |
 | variable | `ORIGO_TEST_S3_BUCKET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 013 |
+| variable | `ORIGO_TEST_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 008, 013, 015, 017, 021 |
 | variable | `ORIGO_TEST_S3_KEY` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_REGION` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 013, 014, 021 |
+| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 013, 014, 019, 021 |
 | variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018 |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
@@ -408,7 +420,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 005, 016 |
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
-| endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011 |
+| endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |

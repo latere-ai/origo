@@ -22,9 +22,11 @@ worth backing up.
 ## Restore a repository
 
 A node that finds a local copy corrupt rebuilds it from the log by
-itself. If an object in the log itself is missing or corrupt (the node
-reports `origo_log_integrity_errors_total` and answers 503
-`repository_unavailable` for that repository):
+itself. If an object in the log itself is missing or corrupt, a node
+built with spec 015 reports `origo_log_integrity_errors_total` and
+answers 503 `repository_unavailable` for that repository; until that
+spec lands the node answers 503 `storage_unavailable` and the key is
+in its log line. Either way:
 
 1. Find the key in the node's log line.
 2. Restore that object from the bucket's version history, or copy it from
@@ -43,22 +45,28 @@ pipeline of spec 017; a release cut before it lands carries neither.
 
 ## Scale
 
-The HorizontalPodAutoscaler scales on CPU only, between 2 and 32
-replicas; `origo_requests_in_flight` is a signal for a dashboard, not an
-autoscaler input. Reads scale with replicas. Pushes to one repository do
+The HorizontalPodAutoscaler, which spec 005 adds to `deploy/base`,
+scales on CPU only, between 2 and 32 replicas; until it lands the
+Deployment's replica count is what you set. `origo_requests_in_flight`
+is a signal for a dashboard, not an autoscaler input. Reads scale with
+replicas. Pushes to one repository do
 not, by design; if one repository needs more than about ten pushes per
 second sustained, that is a design conversation, not a replica count.
 
 ## When the bucket is unhealthy
 
-Reads of warm repositories keep working with an `Origo-Stale` header for
-up to five minutes; pushes are refused with a message telling the client
-to retry. The alerts `storage breaker open` and `stale serving` fire.
-Nothing to do on the Origo side but wait for the bucket; when it returns,
-nodes catch up on their own.
+With spec 015 in place, reads of warm repositories keep working with an
+`Origo-Stale` header for up to five minutes and pushes are refused with
+a message telling the client to retry; the alerts `OrigoBreakerOpen`
+and `OrigoStaleServing` of spec 011 fire. Until then every request
+fails with 503 `storage_unavailable` after the client's retries. In
+both cases there is nothing to do on the Origo side but wait for the
+bucket; when it returns, nodes catch up on their own.
 
 ## Dashboards and alerts
 
-`deploy/base` carries the PrometheusRule. The metrics are listed in spec
-011; the ones to watch first are `origo_storage_breaker_state`,
-`origo_wal_head_check_seconds`, and `origo_requests_in_flight`.
+Spec 011 adds the PrometheusRule to `deploy/base`; until it lands there
+is no rule file to apply. The metrics are listed in spec 011; the ones
+to watch first are `origo_storage_breaker_state` (spec 015),
+`origo_wal_head_check_seconds` (in the tree), and
+`origo_requests_in_flight` (spec 011).
