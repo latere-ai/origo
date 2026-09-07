@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
-affects: [internal/, cmd/origod/, deploy/]
+affects: [internal/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-07
@@ -57,7 +57,7 @@ never recorded and are replaced by the names below.
 | `origo_repo_materialize_seconds` | histogram, buckets 10 ms to 60 s | | time to bring a local copy current (004, phase 1) |
 | `origo_requests_total` | counter | `route` (the mux pattern), `status_class` (`2xx` to `5xx`) | the `pkg/otel` metrics hook on the public listener |
 | `origo_request_duration_seconds` | histogram | `route`, `status_class` | same |
-| `origo_requests_in_flight` | gauge | | requests started and not finished on the public listener; the autoscaler's second signal (005) |
+| `origo_requests_in_flight` | gauge | | requests started and not finished on the public listener, counted by a middleware in `cmd/origod` around the public handler, because the `pkg/otel` hook fires only after a request ends; the autoscaler's second signal (005) |
 | `origo_push_duration_seconds` | histogram | `phase` (`receive`, `entry`, `index`, `apply`) | the receive path (004) |
 | `origo_cache_bytes`, `origo_cache_repos` | gauge | | the evictor (005) |
 | `origo_evictions_total` | counter | `reason` (`pressure`, `idle`) | the evictor (005) |
