@@ -26,14 +26,14 @@ the currency check of spec 004.
 
 Spec 003 names the endpoints and points here. `internal/api` serves the
 lifecycle only; `internal/repo.Git` runs git with a hermetic environment
-and a deadline, and `Cache.Acquire(id, false)` gives a handler a current
-copy under a read lock. `internal/gittest` builds fixtures with the real
+and a deadline, and `Cache.Acquire(ctx, id, false)` gives a handler a
+current copy under a read lock. `internal/gittest` builds fixtures with the real
 git. None of the endpoints below exists.
 
 ## Design
 
 All paths are under `/v1/repos/{id}`, action `read`, and begin with
-`Cache.Acquire(id, false)`.
+`Cache.Acquire(ctx, id, false)`.
 
 ### Path grammar
 
@@ -98,19 +98,25 @@ format is git's own `tar.gz`.
 | Code | Status | Message | Details |
 |---|---|---|---|
 | `blob_too_large` | 413 | This file is larger than 50 MiB. Request it in ranges of at most 50 MiB. | `size`, `max` |
+| `operation_timeout` | 504 | The operation took too long and nothing was changed. | `operation`, `budget_seconds` |
 
-`GET /v1/repos/{id}` gains `pushed_at`, the `at` of the newest entry
-named by the index, null for a repository with no push.
+`GET /v1/repos/{id}` gains `pushed_at`, the `pushed_at` of the index
+object the copy holds (spec 004: the `at` of the newest `push` entry,
+null for a repository with no push, and the rule for an index object
+written before the field existed); spec 019's `stats` reports the same
+value.
 
 Every operation runs one git subprocess with a 30 second deadline,
 `--no-pager`, and the environment of spec 016, under the per-node
 subprocess cap `ORIGO_MAX_GIT_PROCS` (spec 012), beyond which the answer
 is 429 `rate_limited`. A subprocess that reaches the deadline is
-killed and the answer is 504 `operation_timeout` (defined in spec 020,
-with `details.operation` the endpoint's last path segment and
-`details.budget_seconds` 30); a streamed response (`compare`, `blob`,
-the archive) whose subprocess is killed after the first byte is cut
-short, which the client sees as a truncated body and not as a status.
+killed and the answer is 504 `operation_timeout`, defined in the table
+above and answered wherever a subprocess of the JSON API reaches its
+budget (specs 012, 020), with `details.operation` the endpoint's last
+path segment and `details.budget_seconds` the budget that ran out, 30
+here; a streamed response (`compare`, `blob`, the archive) whose
+subprocess is killed after the first byte is cut short, which the
+client sees as a truncated body and not as a status.
 
 The archive is what a build system should fetch for a single commit: one
 request, no negotiation, reproducible bytes.
@@ -123,8 +129,10 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
 
 - Every endpoint has a golden test against a fixture with merges,
   renames, a binary file, and a 60 MiB blob built by `internal/gittest`,
-  comparing the body to a checked-in expectation (proposed:
-  `internal/api`, `TestReadEndpointsGolden`).
+  comparing each JSON and diff body to a checked-in expectation and the
+  blob's body to its checked-in SHA-256, because a 60 MiB expectation
+  does not belong in the tree (proposed: `internal/api`,
+  `TestReadEndpointsGolden`).
 - The archive of the fixture at one commit has the same SHA-256 on two
   nodes and after a rebuild from the log (proposed: `internal/api`,
   `TestArchiveIsReproducible`).
@@ -133,7 +141,7 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
   `internal/api`, `TestCompareTruncates`).
 - The archive of a 200 MiB tree sends its first byte within 200 ms,
   asserted on every push to `main` (proposed: `test/e2e`,
-  `TestArchiveStreams`, a plain test of the `e2e` tier; the fixture is
+  `TestE2EArchiveStreams`, a plain test of the one-node run; the fixture is
   sized to the job budget of spec 013, and `TestMeasure` under
   `ORIGO_E2E_MEASURE=1` prints the same figure for a 1 GiB tree without
   asserting it).
