@@ -1,6 +1,6 @@
 ---
 title: "Release and versioning: images, binaries, compatibility, and what a version promises"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -91,8 +91,9 @@ makes. On a `v*` tag:
    `deploy/examples` with the image pinned.
 2. `conformance`: the `e2e` job of spec 013 against the candidate
    image, running `TestContract` of spec 021, which also pushes the
-   fixture repository; the harness then reads every object under that
-   repository's prefix from the stack's MinIO through
+   fixture repository, and `TestPreviousReleaseFixture` below against
+   the fixture of the previous release; the harness then reads every
+   object under that repository's prefix from the stack's MinIO through
    `ORIGO_S3_PUBLIC_ENDPOINT` (the host port of spec 013's overlay
    table) and packs them as `fixture-<version>.tar.gz`; a failure stops
    the release.
@@ -105,10 +106,15 @@ makes. On a `v*` tag:
    output is the evidence. Latere sets the variable and the secret on
    its own repository; a fork does not, so a tag on a fork publishes
    every artifact and skips this step.
-4. `publish`: the GitHub release with every artifact, the `CHANGELOG.md`
-   section as the body, the smoke evidence when step 3 ran, and the
-   conformance timings.
-5. `release-verify`: from a clean runner, `cosign verify` on the image
+4. `live`: the live run of spec 021, `TestContract` against
+   `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` (spec 002) and that spec's
+   four-entry skip list, after step 3 and skipped when the secret is
+   unset; its report and timings are attached to the release.
+5. `publish`: the GitHub release with every artifact, the `CHANGELOG.md`
+   section as the body, the smoke evidence when step 3 ran, the
+   conformance timings of step 2, and the live report of step 4 when
+   it ran.
+6. `release-verify`: from a clean runner, `cosign verify` on the image
    and the checksums with the workflow identity, `sha256sum -c
    checksums.txt` over the downloaded archives, `gh attestation verify`
    on the image, and the release body compared with the changelog
