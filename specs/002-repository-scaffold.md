@@ -136,7 +136,10 @@ configuration table and shares the `-version` flag:
 | `check` | the node's variables | one line per requirement of the installation, exit 1 on any failure | 018 |
 | `migrate -manifest <file> -report <file>` | `ORIGO_MIGRATE_URL`, `ORIGO_MIGRATE_TOKEN_ENV`, `ORIGO_MIGRATE_PARALLEL` and none of the node's | drives a batch of imports against an Origo as a client | 014 |
 
-An unknown subcommand is a usage error, exit 2.
+An unknown subcommand is a usage error, exit 2. The dispatcher is not
+in the tree: `cmd/origod` parses flags and serves (Outcome). Spec 018
+builds it, with `check` as its first subcommand, and spec 014's
+`migrate` joins it there; this spec keeps the table.
 
 ### Configuration
 
@@ -205,6 +208,8 @@ one page:
 | spec 014 | `ORIGO_MIGRATE_URL` | the Origo the `origod migrate` subcommand drives |
 | spec 014 | `ORIGO_MIGRATE_TOKEN_ENV` | the name of the variable holding the bearer `origod migrate` presents to Origo |
 | spec 014 | `ORIGO_MIGRATE_PARALLEL` | repositories `origod migrate` drives at once |
+| spec 018 | `ORIGO_INSTALL_IMAGE` | the image reference the install document's blocks apply, set by the `install` job of `verify.yml` and the `install-release` job of `release.yml` |
+| spec 018 | `ORIGO_INSTALL_MANIFESTS` | the path of the manifests those blocks apply, set by the same two jobs |
 
 ### Failpoints
 
@@ -321,3 +326,8 @@ Divergences from the first draft:
 - `deploy/base` has no HorizontalPodAutoscaler and no PrometheusRule yet;
   they land with specs 005 and 011. The PodDisruptionBudget keeps
   `minAvailable: 1`.
+- The subcommand table is the design and the dispatcher is not built:
+  `cmd/origod` takes flags only and serves. Spec 018 builds the
+  dispatcher with `check` as its first subcommand, and spec 014's
+  `migrate` joins it; this spec keeps the table and the configuration
+  rule that every subcommand shares.
