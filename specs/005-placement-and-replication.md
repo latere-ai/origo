@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
-  - specs/013-conformance-suite.md
+  - specs/013-test-stubs-and-kind-overlay.md
 affects: [internal/placement/, internal/repo/, internal/config/, cmd/origod/, deploy/, test/e2e/]
 effort: medium
 created: 2026-09-06
