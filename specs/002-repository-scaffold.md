@@ -142,9 +142,9 @@ an unknown variable is never an error.
 | `ORIGO_SWEEP_INTERVAL` | no | `10m` | how often the sweeper runs over every repository (spec 004); `0` disables it |
 | `ORIGO_SWEEP_MIN_AGE` | no | `1h` | how old an orphan must be before the sweeper deletes it (spec 004) |
 | `ORIGO_FAILPOINT` | no | unset | the name of an injected failure from the Failpoint table below, for the end-to-end suite; empty in every deployment |
-| `ORIGO_OIDC_ISSUERS` | spec 007 | unset | comma separated issuer URLs whose tokens are accepted |
+| `ORIGO_OIDC_ISSUERS` | yes, from spec 007 | none | comma separated issuer URLs whose tokens are accepted |
 | `ORIGO_OIDC_INSECURE_ISSUERS` | spec 007 | unset | comma separated issuer URLs from `ORIGO_OIDC_ISSUERS` that may use `http://` on a host other than a loopback address (spec 007); set by the kind overlay for the stub issuer, never in production |
-| `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | spec 007 | unset | the consumer's authorization endpoint and the bearer Origo sends it |
+| `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | yes, from spec 007 | none | the consumer's authorization endpoint and the bearer Origo sends it |
 | `ORIGO_TOKEN_KEY` | spec 007 | unset | PEM-encoded ECDSA P-256 private key that signs repository-bound tokens |
 | `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | spec 008 | unset | the push event sink and the HMAC key; events are off when the URL is unset; the URL without the secret is a start-up failure (spec 008) |
 | `ORIGO_REPAIR_UNHEARD` | spec 008 | `5m` | how long a node must be unheard before another node repairs the events its journals name (spec 008) |
