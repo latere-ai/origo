@@ -196,11 +196,12 @@ request and response shape, rate limit, and event (spec 019).
 
 ## Acceptance criteria
 
-- After 500 pushes of 1 KiB commits to one repository through one node
-  of the stack and after the background run the last threshold crossing
-  scheduled completes, the newest index lists at most 64 entries and at
-  most 6 packs, and `git fsck` passes on the copy a clone through
-  another node materializes (proposed: `test/e2e`,
+- After 500 pushes of 1 KiB commits to one repository through node 1
+  of spec 013's ports table and after the background run the last
+  threshold crossing scheduled completes, the newest index lists at
+  most 64 entries and at most 6 packs, and `git fsck` passes on the
+  copy a clone through node 2 of that table materializes (proposed:
+  `test/e2e`,
   `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, in the
   `e2e` job of spec 013 against its stack and not in the unit suite the
   gate runs, because 500 pushes through the real git take minutes; the
@@ -236,7 +237,7 @@ request and response shape, rate limit, and event (spec 019).
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
   10% of its latency after 10 pushes, measured as the p50 of 10 clones
-  each through one node of the stack, asserted on every push to `main`
+  each through node 1 of spec 013's ports table, asserted on every push to `main`
   (proposed: `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat`,
   in the `e2e` job of spec 013; the fixture is sized so the test fits
   that job's budget, and `TestMeasure` under `ORIGO_E2E_MEASURE=1`
