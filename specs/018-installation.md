@@ -7,8 +7,9 @@ depends_on:
   - specs/005-placement-and-replication.md
   - specs/007-authentication-and-delegation.md
   - specs/011-observability.md
-  - specs/013-conformance-suite.md
+  - specs/013-test-stubs-and-kind-overlay.md
   - specs/017-release-and-versioning.md
+  - specs/021-conformance-suite.md
 affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile]
 effort: medium
 created: 2026-09-06
@@ -48,7 +49,7 @@ planned.
 |---|---|
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
-| identity | any OIDC issuer with discovery and JWKS; the operator registers one client for people and one for each service that will act on behalf of users |
+| identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
 | authorizer | an HTTP endpoint the operator runs (spec 007); for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
 
@@ -56,9 +57,11 @@ planned.
 
 `deploy/base` becomes provider-neutral and complete: Namespace,
 ServiceAccount, Deployment with the cache volume, Service, the headless
-gossip Service, Ingress without a class or an issuer annotation,
+gossip Service, the NetworkPolicy on the gossip port (spec 016),
+Ingress without a class or an issuer annotation,
 HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
-(spec 011), and a Secret template with every required variable. The
+(spec 011), and a Secret template with every required variable,
+`ORIGO_GOSSIP_SECRET` (spec 005) among them. The
 Latere values move out of the base into `deploy/prod`. An operator
 writes an overlay with their hostname, ingress class, storage class or
 local-volume choice, replica bounds, and the Secret with their bucket
@@ -69,6 +72,15 @@ push), `digitalocean`, and `aws`. The two cloud overlays are validated
 by `kustomize build` in CI only; nothing applies them there, because
 CI has no cloud account, and the install document says so. Helm is not
 offered; a kustomize overlay is a directory an operator can read.
+
+The `install` job in `verify.yml` walks the install document's steps
+against the `kind` overlay with what an operator would have: on every
+push it uses the candidate build of that push, the image the `e2e`
+job of spec 013 built, because there is no release for it; on a `v*`
+tag it uses the release artifacts of spec 017, the signed image and
+`deploy-<version>.tar.gz`, downloaded from the release, so the tag
+proves the documented install works from the artifacts alone. Both
+runs end with `TestContract` (spec 021) against the installed nodes.
 
 ### The check
 
@@ -116,10 +128,12 @@ binary artifact of spec 017.
 
 ## Acceptance criteria
 
-- The `kind` example overlay installs in the CI stack from the release
-  artifacts alone and `TestContract` passes against it (spec 013's
-  stack; proposed: `.github/workflows/verify.yml`, the `install` job),
-  and `kustomize build` succeeds on `deploy/examples/digitalocean` and
+- The `kind` example overlay installs in the CI stack from the
+  candidate build on every push and from the release artifacts alone
+  on a tag, and `TestContract` (spec 021) passes against it both ways
+  (spec 013's stack; proposed: `.github/workflows/verify.yml`, the
+  `install` job with its source chosen by the trigger), and
+  `kustomize build` succeeds on `deploy/examples/digitalocean` and
   `deploy/examples/aws` (proposed: `verify.yml`, the `overlays` job).
 - `origod check` prints a `fail` line naming the requirement for each
   of: an unreachable bucket, a store that ignores conditional create
