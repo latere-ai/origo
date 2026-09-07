@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -108,7 +108,7 @@ deadline, and under the pod's security context.
 | Malformed or malicious git objects | `receive.fsckObjects` (phase 1), `transfer.fsckObjects`, `core.protectNTFS` (phase 1), `core.protectHFS`; Origo never checks out a tree on the server except into the archive stream, which is `git archive` with no filesystem write | 004, 009 |
 | Command injection through refs, owner, slug, or paths | reference names validated by `internal/wal.ValidRefName`; owner and slug by the grammar of spec 003; subprocess arguments never pass through a shell; `GIT_DIR` set explicitly; the only hook is Origo's own pre-receive, installed by the node and never from a push | 003, 004 |
 | Resource exhaustion by one client | per-subject rate limit, per-node subprocess cap, body and repository size limits, subprocess deadlines | 012 |
-| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, the fetch runs through a `DialContext` that resolves the host once, refuses every resolved address in a refused range, and dials one of the remaining addresses by IP, so a name that rebinds between the check and the connection cannot redirect it; the refused ranges are RFC 1918, RFC 4193 (ULA), loopback, link-local, and unspecified, plus the cluster's service and pod ranges from `ORIGO_CLUSTER_CIDRS` (spec 002), default empty, meaning only the well-known ranges. Every redirect hop is resolved and dialed the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened. The dialer is what git's `http.proxy` cannot give, so the fetch runs through a local forward proxy the node starts per import on a loopback port, which git is pointed at and which applies the dialer. Git is configured through the environment and nothing else, stated here once and referenced by specs 019 and 014: `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=http.<source>.extraheader` with `GIT_CONFIG_VALUE_0=Authorization: Bearer <token>`, and `GIT_CONFIG_KEY_1=http.proxy` with `GIT_CONFIG_VALUE_1=http://127.0.0.1:<port>` of that proxy; the source URL, the token, and the proxy never appear on git's command line, and the proxy accepts connections from the one git process it was started for and closes with it | 019, 014 |
+| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, the fetch runs through a `DialContext` that resolves the host once, refuses every resolved address in a refused range, and dials one of the remaining addresses by IP, so a name that rebinds between the check and the connection cannot redirect it; the refused ranges are RFC 1918, RFC 4193 (ULA), loopback, link-local, and unspecified, plus the cluster's service and pod ranges from `ORIGO_CLUSTER_CIDRS` (spec 002), default empty, meaning only the well-known ranges. Every redirect hop is resolved and dialed the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened. The dialer is what git's `http.proxy` cannot give, so the fetch runs through a local forward proxy the node starts per import on a loopback port, which git is pointed at and which applies the dialer. The proxy is the one place that dials the source, so it, not git, terminates the source's TLS: git is given the source with its scheme rewritten to `http://` and talks plain HTTP to the proxy; the proxy dials the source over TLS at the pinned address, verifies its certificate against the system roots plus the PEM bundle `ORIGO_EGRESS_CA_BUNDLE` (spec 002) names when it is set, unset in production and set by the kind overlay of spec 013 to the CA of the stubs' certificates, and forwards every request and every redirect hop through the same dialer, which a `CONNECT` tunnel would hide from it. Git is configured through the environment and nothing else, stated here once and referenced by specs 019 and 014: `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=http.<source>.extraheader` with `GIT_CONFIG_VALUE_0=Authorization: Bearer <token>`, `<source>` the rewritten `http://` URL git is given, and `GIT_CONFIG_KEY_1=http.proxy` with `GIT_CONFIG_VALUE_1=http://127.0.0.1:<port>` of that proxy; the source URL, the token, and the proxy never appear on git's command line, and the proxy accepts connections from the one git process it was started for and closes with it | 019, 014 |
 | Membership forgery through gossip | every datagram carries an HMAC-SHA256 under `ORIGO_GOSSIP_SECRET`; one without a valid MAC is dropped before it is parsed and counted on `origo_gossip_packets_total{direction="dropped"}`, so a sender without the secret cannot enter the live set, keep a dead node in it, or trigger a catch-up, and cannot change who a repository's compaction primary, import lease holder, or orphan sweeper is (specs 006, 019); the NetworkPolicy on the gossip port is defence in depth | 005 |
 | Amplification through gossip | a valid datagram is at most one catch-up, and catch-ups triggered by gossip are rate-limited to one per repository per second, so a flood from a node that holds the secret costs one `HEAD` per named repository per second and nothing else; a datagram that names a repository the node does not hold is dropped; an invalid one costs one HMAC | 005 |
 | Exhaustion through the bucket | breakers and per-operation deadlines so one slow client cannot hold a subprocess open against a slow bucket | 015 |
@@ -129,9 +129,15 @@ only writable mounts, CPU request 250m, memory request 256Mi and limit
 2Gi. Git subprocesses inherit exactly this environment
 (`internal/repo.Git.Env`): `PATH`, `HOME` (an empty directory under
 `ORIGO_DATA_DIR`), `GIT_DIR`, `GIT_CONFIG_NOSYSTEM=1`,
-`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, plus
-`GIT_PROTOCOL` on the smart HTTP services and `ORIGO_HOOK_DIR` on
-`receive-pack`. No credential helper, no user hooks.
+`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, plus,
+per operation and nothing else: `GIT_PROTOCOL` on the smart HTTP
+services and `ORIGO_HOOK_DIR` on `receive-pack`;
+`GIT_ALTERNATE_OBJECT_DIRECTORIES` on the `forced` check of spec 008;
+the `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, and `GIT_CONFIG_VALUE_<n>`
+of the egress row on an `import` or a `verify` (specs 019, 014); and
+`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, and
+`GIT_ALTERNATE_OBJECT_DIRECTORIES` on a server-side operation (spec
+020). No credential helper, no user hooks.
 
 ### Transport
 

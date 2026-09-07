@@ -9,7 +9,7 @@ depends_on:
   - specs/008-push-events.md
   - specs/016-security-and-threat-model.md
   - specs/019-repository-administration.md
-affects: [internal/api/, internal/events/, cmd/origod/, docs/migration.md]
+affects: [internal/api/, internal/events/, cmd/origod/, test/e2e/, docs/migration.md]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -96,7 +96,9 @@ history, spec 004).
 | POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source or one the egress rules of spec 016 refuse |
 
 The node runs `git ls-remote --end-of-options <source>` with the token
-in the environment the way spec 019's import does, drops the peeled
+and the egress proxy in the environment the way spec 019's import does,
+the proxy terminating the source's TLS and trusting
+`ORIGO_EGRESS_CA_BUNDLE` beside the system roots (spec 016), drops the peeled
 lines (`<ref>^{}`, which name a tag's target and not a reference), and
 runs `git for-each-ref` on its own copy, and compares every reference
 by name and hash; `equal` is true when the two maps are identical. It

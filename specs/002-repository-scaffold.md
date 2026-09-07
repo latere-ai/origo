@@ -176,6 +176,7 @@ an unknown variable is never an error.
 | `ORIGO_MAX_GIT_PROCS` | spec 012 | `64` | concurrent git subprocesses per node |
 | `ORIGO_EGRESS_ALLOW` | spec 016 | unset | comma separated hostnames, exact or `*.` wildcards, that server-side fetches (`import`, `verify`) may reach, matched with `latere.ai/x/pkg/hostmatch`; unset refuses every source |
 | `ORIGO_CLUSTER_CIDRS` | spec 016 | unset | comma separated CIDR ranges of the cluster's service and pod networks that a server-side fetch must never reach, added to the well-known refused ranges of spec 016; unset refuses only the well-known ranges |
+| `ORIGO_EGRESS_CA_BUNDLE` | spec 016 | unset | the path of a PEM file of CA certificates the egress proxy of spec 016 trusts beside the system roots when it dials an `import` or `verify` source over TLS; unset in production; the kind overlay of spec 013 sets it to the CA the stubs' certificates are signed by |
 | `ORIGO_TEST_DROP_CAPABILITY` | spec 021 | unset | one git-controlled capability name the node stops advertising, for the mutation job of spec 021; empty in every deployment |
 | `ORIGO_CHECK_SELFTEST` | spec 018 | unset | `1` makes `origod check` run its `conditional-create` line against an in-process store that ignores the header, so the check's own failure path is testable |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_*` | spec 011 | unset | the standard OpenTelemetry exporter variables, read by `latere.ai/x/pkg/otel`; telemetry is off without the endpoint |
@@ -190,7 +191,7 @@ node:
 |---|---|---|
 | `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the `integration` and `e2e` tiers (spec 013) | the bucket the tiers use; the tiers skip when the endpoint is unset |
 | `ORIGO_E2E_MEASURE` | `test/e2e` (spec 013) | `1` runs `TestMeasure`, which prints the measurements spec 004's Outcome records; no threshold depends on it |
-| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the `e2e` and `e2e-slow` jobs (spec 013), `TestContract` (spec 021) | the base URL of the kind stack and a token with `admin` on every repository, set by the job from the overlay's known values, so a test that targets the stack instead of starting a node knows where it is |
+| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the `e2e` and `e2e-slow` jobs (spec 013), `TestContract` (spec 021) | the base URL of the kind stack and a token with `admin` on every repository; unset, each defaults to the ports table of spec 013 (`http://localhost:30080`, a token minted at the stub issuer's host port for the dev subject), so the jobs set neither and a test that targets the stack instead of starting a node knows where it is |
 | `ORIGO_LIVE_URL`, `ORIGO_LIVE_TOKEN` | the live conformance run (spec 021) | repository secrets: the installation the run targets after a release and a token with `admin` on its conformance prefix |
 | `ORIGO_KUBECONFIG` | the `deploy` job of `release.yml` (spec 017) | a repository secret holding the kubeconfig `kubectl` applies the release with |
 | `ORIGO_RELEASE_DEPLOY` | `release.yml` (spec 017) | a repository variable; unset skips the deploy and smoke step, so a tag on a fork publishes artifacts only |

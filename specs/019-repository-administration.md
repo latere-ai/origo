@@ -10,7 +10,7 @@ depends_on:
   - specs/008-push-events.md
   - specs/010-lfs.md
   - specs/016-security-and-threat-model.md
-affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, docs/]
+affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -87,9 +87,11 @@ One import is one log entry. The node clones the source with `git
 clone --mirror --end-of-options <source>` into a scratch directory
 under `ORIGO_DATA_DIR/spool/`, with the source token and the
 pinned-address forward proxy passed through the environment the way
-spec 016's egress row states them (`GIT_CONFIG_COUNT=2`, the
-`extraheader` and the `http.proxy` keys), so neither is in a process
-listing or a log line. It then runs `git repack -a -d` and `git
+spec 016's egress row states them (`GIT_CONFIG_COUNT=2`, the `extraheader` and the `http.proxy` keys), so
+neither is in a process listing or a log line; the proxy is what dials
+the source and terminates its TLS, trusting the system roots and the
+bundle `ORIGO_EGRESS_CA_BUNDLE` names (spec 016), which is how the
+import fixture test below trusts its stub source's certificate. It then runs `git repack -a -d` and `git
 fsck --connectivity-only`, uploads every pack under `objects/pack/`
 under the log key the mapping of spec 004 gives its file name
 (`pack-<hash>.pack` is `packs/<hash>.pack`, `.idx` first) the way
@@ -218,8 +220,10 @@ than weekly.
   understand is reported by key and counted (proposed: `internal/api`,
   `TestOrphanSweepRunsOnOneNode`).
 - An import of a fixture of 5 000 commits built by `internal/gittest`
-  and served by the stub source (`internal/gittest.ServeHTTP`, `git
-  http-backend` behind an `httptest` server that requires the bearer)
+  and served over TLS by the stub source (`internal/gittest.ServeHTTP`,
+  `git http-backend` behind an `httptest` TLS server that requires the
+  bearer, its CA written to a file the test names in
+  `ORIGO_EGRESS_CA_BUNDLE` of the node it starts, spec 016)
   completes within the budget as one `compact` entry, `import` reports
   `done` with the reference count, the bearer appears in no process
   argument list and no log line, and a clone from Origo has the same
