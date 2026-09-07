@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
-affects: [internal/events/, internal/httpgit/, internal/wal/, cmd/origod/]
+affects: [internal/events/, internal/httpgit/, internal/wal/, internal/config/, cmd/origod/, test/e2e/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-07
@@ -26,7 +26,8 @@ never polls.
 Spec 003 fixes the payload. `internal/httpgit` records the client's push
 options in the entry header (`push_options`), so `origo.event=off` is
 already in the log. `ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` are read
-by `internal/config` and unused. `internal/events` does not exist.
+by `internal/config` and unused; `ORIGO_REPAIR_UNHEARD` and
+`ORIGO_REPAIR_INTERVAL` are not read. `internal/events` does not exist.
 
 ## Design
 
@@ -45,10 +46,15 @@ The payload is spec 003's, with `kind`:
 
 | Event | Payload |
 |---|---|
-| `push` | `{"id", "kind": "push", "repo", "owner", "slug", "pusher": {"sub", "actor"}, "updates": [{"ref", "before", "after", "forced"}], "at", "kind_detail", "operation"}`; `id` is a UUID v4 drawn once per event; `forced` is true when `before` is not an ancestor of `after`; `at` is the entry header's `at`; `kind_detail` is present only when `updates` is empty and says why the push entry carries no reference change: `undelete` (spec 004's undelete commits a push entry with an empty transaction); `operation` is present only for a push made by a server-side operation of spec 020 and is its name (`commits`, `merge`, `cherry-pick`, `revert`), copied from the push option `origo.operation=<name>` in the entry header |
+| `push` | `{"id", "kind": "push", "repo", "seq", "owner", "slug", "pusher": {"sub", "actor"}, "updates": [{"ref", "before", "after", "forced"}], "at", "kind_detail", "operation"}`; `seq` is the entry's sequence; `id` is deterministic: the UUID v5 (RFC 9562, SHA-1) of the name `<repo>:<seq>`, `<seq>` as the 12 digit zero-padded decimal of the log key, under the namespace UUID `7c1f0b6e-4d0a-4b6a-9d3e-2a8f5c1e9b47`, fixed here and in `internal/events`, so the enqueue and the repair sweep produce the same id for one entry and a consumer that deduplicates on `id` sees one event however many times it is delivered; `forced` is true when `before` is not an ancestor of `after`; `at` is the entry header's `at`; `kind_detail` is present only when the push changes no branch or tag and says what it did instead: `undelete` with `updates` empty (spec 004's undelete commits a push entry with an empty transaction), or `default_branch` with `updates` holding the one symbolic update `{"ref": "HEAD", "before": "ref: refs/heads/<old>", "after": "ref: refs/heads/<new>", "forced": false}` (spec 003's `PATCH` of `default_branch` moves `HEAD` through the log); `operation` is present only for a push made by a server-side operation of spec 020 and is its name (`commits`, `merge`, `cherry-pick`, `revert`), copied from the push option `origo.operation=<name>` in the entry header |
 
 Spec 019 adds the administration kinds and spec 018 the `ping` probe on
-the same channel.
+the same channel; those carry no `seq` and draw a UUID v4 per event.
+
+`ORIGO_EVENTS_URL` set without `ORIGO_EVENTS_SECRET` is a start-up
+failure in the one message of spec 002 (`ORIGO_EVENTS_SECRET is
+required with ORIGO_EVENTS_URL`), because an unsigned delivery is one
+the sink cannot trust. Both unset turns events off.
 
 ### The `forced` flag
 
@@ -77,9 +83,13 @@ is there whatever happens after. The in-memory journal is flushed to
 `origo/events/nodes/<node>/<date>.log` every 10 seconds, and at once,
 before the index create, the first time in a day the node commits to a
 repository, so every repository a node committed to on a day is named
-by that day's journal before the commit exists. A day's object is at
-most one line per commit, a few MiB for the busiest node; the sweep
-deletes journals older than 2 days.
+by that day's journal before the commit exists. A flush that fails
+before the index create is logged and the push proceeds: the journal
+is what repair reads, not what a push needs, and a repository whose
+line never reached the bucket is the one case repair does not cover,
+which the next successful flush closes for every later push. A day's
+object is at most one line per commit, a few MiB for the busiest node;
+the sweep deletes journals older than 2 days.
 
 ### Deliver
 
@@ -115,26 +125,31 @@ event when a sweep overlaps a loop.
 
 ### Repair
 
-A sweep every 10 minutes on every node, offset by the node's name so
-nodes do not sweep together, does two things over `origo/events/`:
+A sweep every `ORIGO_REPAIR_INTERVAL` (spec 002, default 10 minutes) on
+every node, offset by the node's name so nodes do not sweep together,
+does two things over `origo/events/`:
 
 1. Delivers every pending object whose `next_at` is more than 1 minute
    in the past, which is what a dead node left behind.
 2. Reads the journals of nodes that are not in the live set of spec 005
-   and were last heard more than 5 minutes ago, or never heard since
-   this node started, for today and yesterday. For every repository
+   and were last heard more than `ORIGO_REPAIR_UNHEARD` ago (spec 002,
+   default 5 minutes), or never heard since this node started, for
+   today and yesterday. For every repository
    those journals name, it reads the newest index and, for each listed
    `push` entry with a sequence above the cursor and an `at` older than
    1 minute that has no event object, reads the entry head and writes
    the event from it: `updates` from the transaction, `pusher` from the
    header, `forced` false, `kind_detail` and `operation` from the
-   header. This covers a node that died between the index create and
-   the enqueue; an entry whose header carries `origo.event=off` is
-   skipped. A node also runs this step once at start-up over its own
-   journals, which covers a restart under the same name. No sweep
-   lists every repository: the cost is one listing of
-   `origo/events/nodes/` and one index read per repository a dead node
-   touched.
+   header, and `id` from `repo` and `seq` as the payload table says,
+   so a consumer that received the original before the node died and
+   the repair after it sees one id. This covers a node that died
+   between the index create and the enqueue; an entry whose header
+   carries `origo.event=off` is skipped. A node also runs this step
+   once at start-up over its own journals, which covers a restart
+   under the same name. No sweep lists every repository: the cost is
+   one listing of `origo/events/nodes/` and one index read per
+   repository a dead node touched. The two durations are variables so
+   a test sets them to seconds; a deployment keeps the defaults.
 
 ## Not in this spec
 
@@ -154,17 +169,32 @@ sink. Replay of dead events; an operator moves an object back under
   `internal/events`, `TestRetryScheduleAndDeadLetter`).
 - A node killed at `ORIGO_FAILPOINT=events.before-enqueue` (spec 002)
   after the index create and the verdict yields one event from another
-  node's repair sweep within one sweep interval once the dead node is 5
-  minutes unheard, with `updates` equal to the entry's transaction, and
-  the dead node's journal names the repository (proposed: `test/e2e`,
-  `TestEventRepairAfterKill`).
-- The repair sweep reads only the journals of nodes not heard for 5
-  minutes and reads the index of only the repositories they name, with
-  a fake clock and a store that counts reads (proposed:
+  node's repair sweep within one `ORIGO_REPAIR_INTERVAL` once the dead
+  node is `ORIGO_REPAIR_UNHEARD` unheard, both set to seconds, with
+  `updates` equal to the entry's transaction and `id` equal to the
+  UUID v5 the payload table defines, and the dead node's journal names
+  the repository (proposed: `test/e2e`, `TestEventRepairAfterKill`, in
+  the `e2e-slow` job of spec 013).
+- The repair sweep reads only the journals of nodes not heard for
+  `ORIGO_REPAIR_UNHEARD` and reads the index of only the repositories
+  they name, with a fake clock and a store that counts reads (proposed:
   `internal/events`, `TestRepairReadsOnlyDeadJournals`).
+- The enqueue and the repair of one entry produce the same `id`, two
+  entries of one repository produce two, and the id equals the UUID v5
+  computed by the test from the namespace and `<repo>:<seq>` (proposed:
+  `internal/events`, `TestEventIDIsDeterministic`).
+- A push with a service token carrying `act` delivers `pusher.sub` equal
+  to `act` and `pusher.actor` equal to the token's `sub`, and one
+  without `act` delivers `actor` empty (proposed: `internal/events`,
+  `TestPusherCarriesSubjectAndActor`).
 - An undelete produces a `push` event with `updates: []` and
-  `kind_detail: "undelete"` (proposed: `internal/events`,
-  `TestEmptyTransactionCarriesKindDetail`).
+  `kind_detail: "undelete"`, and a `PATCH` of `default_branch` produces
+  one with the single `HEAD` update and `kind_detail: "default_branch"`
+  (proposed: `internal/events`, `TestEmptyTransactionCarriesKindDetail`,
+  `TestDefaultBranchChangeIsAHeadUpdate`).
+- `ORIGO_EVENTS_URL` set without `ORIGO_EVENTS_SECRET` fails the
+  start-up with the one message (proposed: `internal/config`,
+  `TestEventsURLNeedsTheSecret`).
 - `git push -o origo.event=off` delivers nothing for that push and the
   repair sweep writes nothing for it, while a following push without the
   option delivers (proposed: `internal/events`, `TestEventOffSuppressesOnlyThatPush`).
