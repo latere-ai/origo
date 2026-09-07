@@ -6,7 +6,7 @@ depends_on:
   - specs/001-architecture.md
   - specs/007-authentication-and-delegation.md
   - specs/012-limits-and-abuse.md
-affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, deploy/, SECURITY.md]
+affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -43,8 +43,8 @@ environment.
 
 Repository contents and history; the bucket credentials; the token
 signing key `ORIGO_TOKEN_KEY`; `ORIGO_AUTHORIZER_TOKEN`;
-`ORIGO_EVENTS_SECRET`; the availability of the service for every
-repository at once.
+`ORIGO_EVENTS_SECRET`; `ORIGO_GOSSIP_SECRET`; the availability of the
+service for every repository at once.
 
 ### Trust boundaries
 
@@ -67,6 +67,9 @@ flowchart LR
   subgraph external
     X[import / verify source]
   end
+  subgraph peers[other origod pods]
+    P[gossip]
+  end
   C -->|TLS, bearer| H
   H -->|argv, stdin, GIT_DIR| G
   H --> W --> S
@@ -74,12 +77,19 @@ flowchart LR
   H -->|service token| A
   H -->|HMAC| E
   G -->|https, egress allow-list| X
+  P -.->|UDP, HMAC| H
 ```
 
 Everything left of `origod` is hostile. The bucket, the issuer, the
 authorizer, and the sink are trusted for what they say but not for
-availability (spec 015). Gossip peers (spec 005) are trusted for
-nothing: an announcement triggers a currency check and grants nothing.
+availability (spec 015). Gossip peers (spec 005) are the other pods of
+the same Deployment and hold `ORIGO_GOSSIP_SECRET`; a datagram is
+believed for membership only when its MAC verifies, and even then it
+grants nothing: an announcement triggers a currency check, the log
+decides what is served. The NetworkPolicy of `deploy/base` that admits
+UDP 7946 from the Deployment's own pods only is defence in depth, not
+the control, because a policy is enforced by the network plugin and a
+MAC by the node.
 The source of an `import` or a `verify` (specs 019, 014) is a host the
 caller names, so it is hostile until the egress allow-list admits it,
 and trusted only for the bytes git checks.
@@ -97,8 +107,9 @@ deadline, and under the pod's security context.
 | Malformed or malicious git objects | `receive.fsckObjects` (phase 1), `transfer.fsckObjects`, `core.protectNTFS` (phase 1), `core.protectHFS`; Origo never checks out a tree on the server except into the archive stream, which is `git archive` with no filesystem write | 004, 009 |
 | Command injection through refs, owner, slug, or paths | reference names validated by `internal/wal.ValidRefName`; owner and slug by the grammar of spec 003; subprocess arguments never pass through a shell; `GIT_DIR` set explicitly; the only hook is Origo's own pre-receive, installed by the node and never from a push | 003, 004 |
 | Resource exhaustion by one client | per-subject rate limit, per-node subprocess cap, body and repository size limits, subprocess deadlines | 012 |
-| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, a source whose name resolves to a loopback, link-local, private (RFC 1918, ULA), or unspecified address, or to the cluster's service or pod range, is refused, and every redirect hop is checked the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened | 019, 014 |
-| Amplification through gossip | a datagram is at most one catch-up, and catch-ups triggered by gossip are rate-limited to one per repository per second, so a flood costs one `HEAD` per named repository per second and nothing else; a datagram that names a repository the node does not hold is dropped | 005 |
+| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, the fetch runs through a `DialContext` that resolves the host once, refuses every resolved address in a refused range, and dials one of the remaining addresses by IP, so a name that rebinds between the check and the connection cannot redirect it; the refused ranges are RFC 1918, RFC 4193 (ULA), loopback, link-local, and unspecified, plus the cluster's service and pod ranges from `ORIGO_CLUSTER_CIDRS` (spec 002), default empty, meaning only the well-known ranges. Every redirect hop is resolved and dialed the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened. The dialer is what git's `http.proxy` cannot give, so the fetch runs through a local forward proxy the node starts per import on a loopback port, which git is pointed at and which applies the dialer; the source URL, the token, and the proxy never appear on git's command line | 019, 014 |
+| Membership forgery through gossip | every datagram carries an HMAC-SHA256 under `ORIGO_GOSSIP_SECRET`; one without a valid MAC is dropped before it is parsed and counted on `origo_gossip_packets_total{direction="dropped"}`, so a sender without the secret cannot enter the live set, keep a dead node in it, or trigger a catch-up, and cannot change who a repository's compaction primary, import lease holder, or orphan sweeper is (specs 006, 019); the NetworkPolicy on the gossip port is defence in depth | 005 |
+| Amplification through gossip | a valid datagram is at most one catch-up, and catch-ups triggered by gossip are rate-limited to one per repository per second, so a flood from a node that holds the secret costs one `HEAD` per named repository per second and nothing else; a datagram that names a repository the node does not hold is dropped; an invalid one costs one HMAC | 005 |
 | Exhaustion through the bucket | breakers and per-operation deadlines so one slow client cannot hold a subprocess open against a slow bucket | 015 |
 | Token theft | short-lived repository tokens; issuer tokens verified for audience; tokens never logged, never in URLs on the server side; the basic auth password is accepted for git and never written to a log line | 007, 011 |
 | Secret exposure in logs or metrics | fixed-vocabulary labels; the redaction test of spec 011; the registers rule for messages | 011 |
@@ -161,20 +172,26 @@ Audit export beyond the log itself.
   `FuzzValidRefName` and `FuzzValidLabel` in `internal/wal` find no
   input the validator accepts that git refuses: each runs as a
   seed-corpus test in the suite on every push and for 40 seconds under
-  `make fuzz` (spec 002) on the weekly schedule (proposed:
+  `make fuzz` (spec 013) on the weekly schedule (proposed:
   `internal/wal`, `FuzzValidRefName`, `FuzzValidLabel`).
 - A git subprocess observes exactly the documented environment
   (proposed: `internal/repo`, `TestSubprocessEnvironment`, running `env`
   through `Git.Command`).
 - An `import` or `verify` whose source is not on `ORIGO_EGRESS_ALLOW`,
-  or resolves to `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, or `fd00::1`
-  though listed, or redirects to one of those, is 400 `invalid_request`
-  with `details.reason: "egress"` and opens no connection, asserted by a
-  listener that counts connections; with the list unset every source is
-  refused (proposed: `internal/api`,
-  `TestServerSideFetchHonoursTheEgressList`).
-- 10 000 gossip datagrams for one repository in one second cause at most
-  one catch-up (spec 005, `TestGossipCatchUpIsRateLimited`).
+  or resolves to `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `fd00::1`,
+  or an address in `ORIGO_CLUSTER_CIDRS` though listed, or redirects to
+  one of those, is 400 `invalid_request` with `details.reason:
+  "egress"` and opens no connection, asserted by a listener that counts
+  connections; with the list unset every source is refused; and a
+  source whose name resolves to a public address on the check and to
+  `127.0.0.1` on the next lookup (a resolver the test controls) is
+  dialed at the first address and never reaches the loopback listener
+  (proposed: `internal/api`, `TestServerSideFetchHonoursTheEgressList`,
+  `TestServerSideFetchPinsTheResolvedAddress`).
+- A gossip datagram without a valid MAC is dropped and never enters
+  the live set (spec 005, `TestGossipDropsABadMAC`), and 10 000 valid
+  gossip datagrams for one repository in one second cause at most one
+  catch-up (spec 005, `TestGossipCatchUpIsRateLimited`).
 - The pod runs with the documented security context in the kind stack,
   and a test overlay that sets `allowPrivilegeEscalation: true` is refused
   by Pod Security admission at `restricted` (proposed: `test/e2e`,
