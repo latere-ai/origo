@@ -37,13 +37,13 @@ not exist.
 
 | Limit | Value | Enforced at | Answer |
 |---|---|---|---|
-| repository size | the authorizer's `quota_bytes`, default 50 GiB | receive-pack, before the entry is written: `size_bytes` of the held index plus the pack's bytes; LFS upload batch (spec 010) | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010 |
+| repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` |
 | single push | 2 GiB, one entry, one `PUT` (spec 004) | receive-pack, from `Content-Length` when present and while spooling | 413 `over_quota`, `details.limit: "push"` |
 | references | 100 000 commands per push and 100 000 references in the map after it | receive-pack | `over_quota`, `details.limit: "refs"` (phase 1 answers 400 `invalid_request` for the command count) |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
 | requests per subject | 600 per minute, a token bucket per effective subject per node, burst 600; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
 | concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
-| subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) and the `commits` operation, 5 minutes for the merge family (spec 020); 10 minutes for an export (spec 019) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 504 `operation_timeout` (spec 020) on the API, git's own error on the sideband |
+| subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) and the `commits` operation, 5 minutes for the merge family (spec 020); 10 minutes for an export (spec 019) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 504 `operation_timeout` (spec 009) on the API, git's own error on the sideband |
 | JSON body | 64 KiB | every `/v1/` route except the operation routes of spec 020, which carry their own 64 MiB limit | 400 `invalid_request` |
 | LFS batch body | 1 MiB | `POST /{repo}/info/lfs/objects/batch` (spec 010) | 400 with the LFS body of spec 010 carrying the `invalid_request` sentence |
 | entry header, transaction, index object | 4 KiB, 64 MiB, 64 MiB | the parsers of spec 004 | the entry or index is refused as corrupt (spec 015) |
@@ -64,9 +64,11 @@ Connection limits at the ingress. Bandwidth shaping.
 
 ## Acceptance criteria
 
-- A push that would take `size_bytes` past `quota_bytes` is refused in
-  the sideband with `over_quota`, no entry is written, and
-  `details.bytes` and `max` name the sizes (proposed: `internal/httpgit`,
+- A push that would take `size_bytes` plus the LFS bytes past
+  `quota_bytes` is refused in the sideband with `over_quota`, no entry
+  is written, and `details.bytes` and `max` name the sizes; the LFS
+  bytes count, asserted with an object under `lfs/` sized to make the
+  difference (proposed: `internal/httpgit`,
   `TestPushOverQuotaWritesNothing`).
 - A push whose `Content-Length` or spooled body exceeds 2 GiB is 413
   `over_quota` with `details.limit: "push"`, with the spool stopped at
@@ -84,4 +86,7 @@ Connection limits at the ingress. Bandwidth shaping.
   next sweep once a slot is free (proposed: `internal/limits`,
   `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`).
 - A frozen repository accepts a clone and refuses a push with
-  `repo_frozen` (spec 019's conformance case in spec 021).
+  `repo_frozen`: owned by spec 021, whose `TestContract` carries spec
+  019's freeze case; this criterion passes when spec 021 lands and
+  this spec's `depends_on` does not name it, because nothing here is
+  built from it.
