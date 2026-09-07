@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -37,7 +37,7 @@ not exist.
 
 | Limit | Value | Enforced at | Answer |
 |---|---|---|---|
-| repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` |
+| repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index as spec 004 defines it (the bytes of the listed packs plus the pack bytes of the entries since the last compaction, so a compaction lowers it and the quota counts what the log holds, not every byte ever pushed) plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` |
 | single push | 2 GiB, one entry, one `PUT` (spec 004) | receive-pack, from `Content-Length` when present and while spooling | 413 `over_quota`, `details.limit: "push"` |
 | references | 100 000 commands per push and 100 000 references in the map after it | receive-pack | `over_quota`, `details.limit: "refs"` (phase 1 answers 400 `invalid_request` for the command count) |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
