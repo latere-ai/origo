@@ -1,6 +1,6 @@
 ---
 title: "Push events: signed webhooks per reference update"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md

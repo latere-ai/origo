@@ -1,6 +1,6 @@
 ---
 title: "Compaction: primary-only repacks and log truncation"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
