@@ -98,7 +98,9 @@ history, spec 004).
 The node runs `git ls-remote --end-of-options <source>` with the token
 and the egress proxy in the environment the way spec 019's import does,
 the proxy terminating the source's TLS and trusting
-`ORIGO_EGRESS_CA_BUNDLE` beside the system roots (spec 016), drops the peeled
+`ORIGO_EGRESS_CA_BUNDLE` beside the system roots (spec 016) and
+passing `-c transfer.fsckObjects=true` on git's command line, not as a
+`GIT_CONFIG_*` key, because it is no secret (spec 016), drops the peeled
 lines (`<ref>^{}`, which name a tag's target and not a reference), and
 runs `git for-each-ref` on its own copy, and compares every reference
 by name and hash; `equal` is true when the two maps are identical. It
@@ -208,10 +210,15 @@ host's data model.
   reference counts equal and `objects.origo` equal to the fixture's
   reachable-object count, writes `verified_at` and `verified_equal`
   into `meta`, and after one extra commit on the source returns
-  `equal: false` naming that reference with both hashes (proposed:
-  `internal/api`, `TestVerifyDetectsADivergedReference`).
+  `equal: false` naming that reference with both hashes; the source is
+  `test/stubs/source` in-process and the handler is constructed with
+  `AllowLoopback` (spec 016), the only way a test admits a loopback
+  source (proposed: `internal/api`,
+  `TestVerifyDetectsADivergedReference`).
 - `origod migrate` over a manifest of 20 fixture repositories served by
-  the stub source of spec 019 with parallelism 4 reaches `mirrored` for
+  the stub source of spec 013 (`test/stubs/source`, in-process, the
+  handler constructed with `AllowLoopback` of spec 016 so the source's
+  loopback address is admitted) with parallelism 4 reaches `mirrored` for
   all 20, writes one report line each in the documented shape with
   `prior_id` copied through, reports all 20 as `skipped` on a second
   run without importing again, exits non-zero when one source is
@@ -220,11 +227,21 @@ host's data model.
   `TestMigrateBatchIsResumableAndReportsFailures`).
 - The source bearer of `verify` and `import` appears in no log line, no
   process argument, and no URL of the node, asserted over the node's
-  log output and the stub source's request log (proposed:
-  `internal/api`, `TestSourceTokenIsNeverLogged`).
-- A write on the source between import and verification is detected by
-  verification, and after a fresh id and a second import the repository
-  reaches `mirrored` (proposed: `test/e2e`, `TestE2EMigrationCatchesALateWrite`).
+  log output and the stub source's request list, which records
+  whether the bearer was carried and never its value (proposed:
+  `internal/api`, `TestSourceTokenIsNeverLogged`, in-process with
+  `AllowLoopback`; this is also where spec 019's import asserts the
+  same for its bearer).
+- A write on the source between import and verification, made with
+  the source stub's `Commit` through its host port of spec 013's ports
+  table, is detected by verification, and after a fresh id and a
+  second import the repository reaches `mirrored`; the source is the
+  in-cluster stub at `https://origo-stubs.origo.svc:8443`, which the
+  stack's nodes reach because the overlay names it in
+  `ORIGO_EGRESS_ALLOW` and the dialer's cluster exception of spec 016
+  admits it (proposed: `test/e2e`,
+  `TestClusterMigrationCatchesALateWrite`, in the `e2e` job of spec
+  013).
 - A 308 from a stub prior host to Origo makes `git clone` and `git push`
   against the old URL succeed against Origo with no client change
   (proposed: `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo`).
