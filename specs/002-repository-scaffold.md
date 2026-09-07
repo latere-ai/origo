@@ -39,6 +39,14 @@ from the first draft. The rows the table below gained for later specs
 and the Failpoint table are reference entries; the spec named in each
 row builds what reads it.
 
+One change to the tree, for the builder: the shared runtime stage of
+`Dockerfile` and `Dockerfile.ci` is `debian:bookworm-slim`, whose `git`
+is 2.39, and `origod check` (spec 018) requires 2.40 because spec 020's
+merge family needs it. The base becomes `debian:trixie-slim` pinned by
+digest, which ships git 2.47, in both files at once so the two stages
+stay byte for byte the same; the Images section below and spec 017's
+artifact table say so.
+
 ## Design
 
 ### Layout
@@ -61,6 +69,7 @@ internal/compact/       compaction (spec 006)                                 --
 internal/events/        push events (spec 008)                                -- not yet
 internal/lfs/           the LFS batch API (spec 010)                          -- not yet
 internal/limits/        quotas and rate limits (spec 012)                     -- not yet
+internal/metrics/       the one place every metric of spec 011 is registered   -- not yet
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
 test/conformance/       the contract as an importable test package (spec 021) -- not yet
 test/stubs/             the stub issuer, authorizer, event sink, contract stub, and slow proxy, importable (spec 013, 015) -- not yet
@@ -82,9 +91,11 @@ prints carries `ORIGO_DEV_TOKEN`. `make test-integration` starts the
 same MinIO and runs the `integration` and `e2e` tiers against it. Spec
 013 owns what the local stack becomes once spec 007 removes
 `ORIGO_DEV_TOKEN`: `make dev` running the stub issuer and authorizer
-beside MinIO, and `make test-tiers`, the target that runs the tiers
-against the test bucket variables the environment carries and that CI
-calls with its service container.
+beside MinIO, generating `ORIGO_TOKEN_KEY` at start with `openssl
+ecparam -genkey -name prime256v1` into a file under `out/` (spec 007),
+and `make test-tiers`, the target that runs the tiers against the test
+bucket variables the environment carries and that CI calls with its
+service container.
 
 ### Binary and listeners
 
@@ -116,6 +127,18 @@ then the background loops. The Deployment's
 0; a bad flag exits 2; a configuration or start-up failure exits 1 with
 one line on stderr prefixed `origod:`.
 
+The first argument that does not start with `-` selects a subcommand;
+without one the binary serves. Every subcommand reads the same
+configuration table and shares the `-version` flag:
+
+| Subcommand | Reads | Does | Spec |
+|---|---|---|---|
+| `serve` (default) | the node's variables | the listeners and the loops above | this spec |
+| `check` | the node's variables | one line per requirement of the installation, exit 1 on any failure | 018 |
+| `migrate -manifest <file> -report <file>` | `ORIGO_MIGRATE_URL`, `ORIGO_MIGRATE_TOKEN_ENV`, `ORIGO_MIGRATE_PARALLEL` and none of the node's | drives a batch of imports against an Origo as a client | 014 |
+
+An unknown subcommand is a usage error, exit 2.
+
 ### Configuration
 
 Every variable is read once at start-up by `internal/config.Load`, which
@@ -138,14 +161,14 @@ an unknown variable is never an error.
 | `ORIGO_PUBLIC_ADDR`, `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` | no | `:8080`, `:8081`, `:7946` | listen addresses; a test binds `127.0.0.1:0` |
 | `ORIGO_NODE_NAME` | no | the host name, `origod` when unknown | the identity used in gossip and placement (spec 005); the pod name in Kubernetes |
 | `ORIGO_GOSSIP_PEERS` | no | unset | a DNS name resolving to every node (spec 005); the headless Service `origod-gossip` |
-| `ORIGO_GOSSIP_SECRET` | yes, from spec 005 | none | the key of the HMAC-SHA256 every gossip datagram carries (spec 005); at least 32 bytes; the same value on every node of one installation |
+| `ORIGO_GOSSIP_SECRET` | from spec 005, when `ORIGO_GOSSIP_PEERS` is set | none | the key of the HMAC-SHA256 every gossip datagram carries (spec 005); at least 32 bytes; the same value on every node of one installation; a single node with no peers runs with neither variable, and the secret without the peers is read and unused |
 | `ORIGO_SWEEP_INTERVAL` | no | `10m` | how often the sweeper runs over every repository (spec 004); `0` disables it |
 | `ORIGO_SWEEP_MIN_AGE` | no | `1h` | how old an orphan must be before the sweeper deletes it (spec 004) |
 | `ORIGO_FAILPOINT` | no | unset | the name of an injected failure from the Failpoint table below, for the end-to-end suite; empty in every deployment |
 | `ORIGO_OIDC_ISSUERS` | yes, from spec 007 | none | comma separated issuer URLs whose tokens are accepted |
 | `ORIGO_OIDC_INSECURE_ISSUERS` | spec 007 | unset | comma separated issuer URLs from `ORIGO_OIDC_ISSUERS` that may use `http://` on a host other than a loopback address (spec 007); set by the kind overlay for the stub issuer, never in production |
 | `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN` | yes, from spec 007 | none | the consumer's authorization endpoint and the bearer Origo sends it |
-| `ORIGO_TOKEN_KEY` | spec 007 | unset | PEM-encoded ECDSA P-256 private key that signs repository-bound tokens |
+| `ORIGO_TOKEN_KEY` | yes, from spec 007 | none | PEM-encoded ECDSA P-256 private key that signs repository-bound tokens; required in every mode, so a node without it never starts and `POST /v1/repos/{id}/tokens` never runs without a key; `make dev` and the kind overlay of spec 013 generate one at start with `openssl ecparam` |
 | `ORIGO_EVENTS_URL`, `ORIGO_EVENTS_SECRET` | spec 008 | unset | the push event sink and the HMAC key; events are off when the URL is unset; the URL without the secret is a start-up failure (spec 008) |
 | `ORIGO_REPAIR_UNHEARD` | spec 008 | `5m` | how long a node must be unheard before another node repairs the events its journals name (spec 008) |
 | `ORIGO_REPAIR_INTERVAL` | spec 008 | `10m` | how often the event repair sweep runs (spec 008) |
@@ -168,6 +191,9 @@ node:
 |---|---|---|
 | `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the `integration` and `e2e` tiers (spec 013) | the bucket the tiers use; the tiers skip when the endpoint is unset |
 | `ORIGO_E2E_MEASURE` | `test/e2e` (spec 013) | `1` runs `TestMeasure`, which prints the measurements spec 004's Outcome records; no threshold depends on it |
+| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the `e2e` and `e2e-slow` jobs (spec 013), `TestContract` (spec 021) | the base URL of the kind stack and a token with `admin` on every repository, set by the job from the overlay's known values, so a test that targets the stack instead of starting a node knows where it is |
+| `ORIGO_LIVE_URL`, `ORIGO_LIVE_TOKEN` | the live conformance run (spec 021) | repository secrets: the installation the run targets after a release and a token with `admin` on its conformance prefix |
+| `ORIGO_KUBECONFIG` | the `deploy` job of `release.yml` (spec 017) | a repository secret holding the kubeconfig `kubectl` applies the release with |
 | `ORIGO_RELEASE_DEPLOY` | `release.yml` (spec 017) | a repository variable; unset skips the deploy and smoke step, so a tag on a fork publishes artifacts only |
 
 Variables another spec's table defines, listed here so the reference is
@@ -225,10 +251,11 @@ release evidence beyond the smoke.
 
 `Dockerfile` builds the binary inside the image for a developer;
 `Dockerfile.ci` copies `out/origod` the verify run built. Both share one
-runtime stage, byte for byte: Debian bookworm-slim pinned by digest with
-`git` and `ca-certificates`, user `65532`, `/var/lib/origo` owned by it,
-ports `8080`, `8081`, `7946/udp`. The runtime is not distroless because
-origod runs git as a subprocess.
+runtime stage, byte for byte: Debian trixie-slim pinned by digest, which
+ships git 2.47, with `git` and `ca-certificates`, user `65532`,
+`/var/lib/origo` owned by it, ports `8080`, `8081`, `7946/udp`. The
+runtime is not distroless because origod runs git as a subprocess. The
+tree still carries bookworm-slim, whose git is 2.39 (Current state).
 
 ## Acceptance criteria
 
