@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -67,7 +67,7 @@ never recorded and are replaced by the names below.
 | `origo_repo_materialize_seconds` | histogram, buckets 10 ms to 60 s | | time to bring a local copy current (004, phase 1) |
 | `origo_requests_total` | counter | `route` (the mux pattern), `status_class` (`2xx` to `5xx`) | the `pkg/otel` metrics hook on the public listener |
 | `origo_request_duration_seconds` | histogram | `route`, `status_class` | same |
-| `origo_requests_in_flight` | gauge | | requests started and not finished on the public listener, counted by a middleware in `cmd/origod` around the public handler, because the `pkg/otel` hook fires only after a request ends; the autoscaler's second signal (005) |
+| `origo_requests_in_flight` | gauge | | requests started and not finished on the public listener, counted by a middleware in `cmd/origod` around the public handler, because the `pkg/otel` hook fires only after a request ends; a dashboard signal (`docs/operations.md`), not an autoscaler input, which is CPU only (005) |
 | `origo_push_duration_seconds` | histogram | `phase` (`receive`, `entry`, `index`, `apply`) | the receive path (004) |
 | `origo_cache_bytes`, `origo_cache_repos` | gauge | | the evictor (005) |
 | `origo_evictions_total` | counter | `reason` (`pressure`, `idle`) | the evictor (005) |
@@ -149,7 +149,12 @@ defaults.
   (proposed: `cmd/origod`, `TestMetricsVocabulary`, the presence part
   needing no fixture; `internal/metrics`, `TestRegisterNamesEveryMetric`
   comparing the registered names to the table of this spec read from
-  the file).
+  the file, whose path is a test-only constant resolved from the test's
+  own source file with `runtime.Caller`, never from the working
+  directory, so the `tempdir` gate of spec 002, which runs the suite
+  from an empty directory, and the `hermetic` gate see the spec file;
+  spec 021's code-table test walks the module the same way, and the
+  builder of each is told here).
 - A push against an in-memory OTLP receiver produces one trace whose
   spans are the five named, with the repository id as an attribute
   (proposed: `cmd/origod`, `TestPushTrace`).
