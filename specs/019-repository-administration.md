@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -154,9 +154,9 @@ metadata names and older than a day is an orphan, and so is every
 object under `origo/` outside them, which the sweep reports with its
 key so an operator sees what wrote it. It reports the orphan count as
 `origo_orphan_objects`, deletes the orphans after 7 days, and reports
-the bytes under the prefix as `origo_storage_bytes`. The sweep runs on one
+the bytes under the prefix as `origo_storage_bytes`. The sweep runs on Sundays at 03:00 UTC on one
 node: the one whose `ORIGO_NODE_NAME` sorts first in the live set of
-spec 005 at the sweep's hour, so an installation of any size lists the
+spec 005 at that hour, so an installation of any size lists the
 prefix once a week and a node that leaves hands the sweep to the next
 name without coordination; the other nodes report the two gauges from
 the last run they read from `origo/sweep/latest`, which the sweeping
@@ -165,8 +165,12 @@ node writes. An operator can bound total storage as the sum of
 
 ### Events
 
-Each operation emits an event of its kind on the channel of spec 008,
-with the shared fields `id`, `kind`, `repo`, `owner`, `slug`, `at`, and
+Each operation emits an event of its kind through `events.Emit` of
+spec 008, after its write and before its response; that spec fixes the
+key, the id (a UUID v5 of the repository, the kind, and `at`, so a
+repeated emit is one event), delivery, retry, dead-letter, the cursor,
+and repair for every kind, and this spec adds nothing to them. The
+shared fields are `id`, `kind`, `repo`, `owner`, `slug`, `at`, and
 `pusher` (`{"sub", "actor"}` of the caller, the same field and shape
 as the `push` event, so a consumer decodes one identity for every
 kind):
@@ -220,7 +224,11 @@ than weekly.
   `done` with the reference count, the bearer appears in no process
   argument list and no log line, and a clone from Origo has the same
   `rev-list --all` as a clone of the source (proposed: `test/e2e`,
-  `TestE2EImportFixture`).
+  `TestClusterImportFixture`, in the `e2e` job of spec 013 for its
+  size; it starts its own node against the stack's MinIO through the
+  test bucket variables the job sets, because the stub source runs on
+  the runner and spec 016's egress rules keep the stack's nodes from
+  reaching a private address).
 - A node killed during an import leaves `importing_since` set; another
   node reports `running` for 45 minutes with a fake clock, then
   `failed` with `import node lost`, and accepts a new import; a node
@@ -241,7 +249,8 @@ than weekly.
 - After 500 pushes and a `gc`, `stats.size_bytes` is within 10% of the
   pack size of a fresh `git clone --mirror`, and the weekly sweep run
   once reports `origo_orphan_objects` 0 (proposed: `test/e2e`,
-  `TestE2EGcBoundsStorage`).
+  `TestClusterGcBoundsStorage`, in the `e2e` job of spec 013 against
+  its stack, because 500 pushes take minutes).
 - A purged repository answers 410 `gone` on every endpoint, its id is
   refused by `POST /v1/repos` with 409, and its name is accepted
   (proposed: `internal/wal`, `TestPurgeLeavesATombstone` for the
