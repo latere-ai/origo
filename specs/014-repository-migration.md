@@ -72,7 +72,7 @@ stateDiagram-v2
 
 | Phase | Origo | Prior host |
 |---|---|---|
-| registered | `POST /v1/repos` with the prior host's id for the repository, so the id never changes across the migration (spec 003) | records the Origo repository id on its own record |
+| registered | `POST /v1/repos` with the manifest's `id`, the prior host's own id when that is a UUID and one it minted otherwise, so the id never changes across the migration (spec 003) | records the Origo repository id on its own record |
 | importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: one entry, 30 minute budget, `transfer.fsckObjects`, the source host in `ORIGO_EGRESS_ALLOW`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
 | verifying | `verify` (below) compares the two sides and records the result in `meta` | none |
 | mirrored | serves reads; writes are allowed but the prior host has not yet sent any; Origo's copy is never frozen by this protocol | keeps serving both |
@@ -88,11 +88,7 @@ second is the default because it keeps the failed attempt for inspection.
 
 | Method | Path | Behaviour |
 |---|---|---|
-| GET | `/v1/repos/{id}/verify` | `?source=<https URL>`, action `admin`, the source bearer in the header below; compares the source and Origo's copy and answers the document below; read-only on both sides; 400 `invalid_request` for a non-HTTPS source |
-
-| Header | Value |
-|---|---|
-| `Origo-Source-Token` | the bearer Origo presents to the source for `verify` and `import`; never logged |
+| POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source or one the egress rules of spec 016 refuse |
 
 The node runs `git ls-remote --end-of-options <source>` with the token
 in the environment the way spec 019's import does, and `git
@@ -123,20 +119,27 @@ The operator drives many repositories with `origod migrate -manifest
 manifest, drives each repository from `registered` to `mirrored`
 concurrently, writes a report line per repository as it finishes, and
 exits non-zero when any repository is `failed`. Cut-over is the prior
-host's step and is not driven by the command.
+host's step and is not driven by the command. The command reads the
+three variables of the table below and none of the node's: it is a
+client of Origo's API, not a node.
 
 The manifest is JSON lines, one object per repository:
 
 ```json
-{"id": "<uuid>", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME"}
+{"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME"}
 ```
 
-Tokens come from the environment variables `token_env` names, never
-from the manifest itself. The report is JSON lines, one object per
-repository in finishing order:
+`id` is the repository's id on Origo and must be a UUID (spec 003). A
+prior host whose own ids are not UUIDs mints one per repository when
+it writes the manifest, records it on its own record, and may carry
+the old id in `prior_id`, which Origo never reads and the report
+copies back; the mapping between the two lives in the prior host and
+in the manifest, nowhere in Origo. Tokens come from the environment
+variables `token_env` names, never from the manifest itself. The
+report is JSON lines, one object per repository in finishing order:
 
 ```json
-{"id": "<uuid>", "owner": "acme", "slug": "api", "state": "mirrored", "refs": 42, "objects": 18211, "seconds": 31.4, "error": ""}
+{"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "state": "mirrored", "refs": 42, "objects": 18211, "seconds": 31.4, "error": ""}
 ```
 
 `state` is `mirrored`, `skipped`, or `failed`, and `error` carries the
@@ -148,6 +151,8 @@ means `mirrored`, which is reported as `skipped` on a second run.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
+| `ORIGO_MIGRATE_URL` | yes | none | the Origo the command drives, an absolute URL such as `https://git.example.com` |
+| `ORIGO_MIGRATE_TOKEN_ENV` | yes | none | the name of the environment variable holding the bearer the command presents to Origo, a token with `admin` on every repository in the manifest; the token itself is never on the command line and never in the manifest |
 | `ORIGO_MIGRATE_PARALLEL` | no | `4` | repositories `origod migrate` drives at once |
 
 The command is the
@@ -195,10 +200,16 @@ host's data model.
   `internal/api`, `TestVerifyDetectsADivergedReference`).
 - `origod migrate` over a manifest of 20 fixture repositories served by
   the stub source of spec 019 with parallelism 4 reaches `mirrored` for
-  all 20, writes one report line each in the documented shape, reports
-  all 20 as `skipped` on a second run without importing again, and
-  exits non-zero when one source is unreachable, naming it in `error`
-  (proposed: `cmd/origod`, `TestMigrateBatchIsResumableAndReportsFailures`).
+  all 20, writes one report line each in the documented shape with
+  `prior_id` copied through, reports all 20 as `skipped` on a second
+  run without importing again, exits non-zero when one source is
+  unreachable, naming it in `error`, and refuses a manifest line whose
+  `id` is not a UUID before it calls Origo (proposed: `cmd/origod`,
+  `TestMigrateBatchIsResumableAndReportsFailures`).
+- The source bearer of `verify` and `import` appears in no log line, no
+  process argument, and no URL of the node, asserted over the node's
+  log output and the stub source's request log (proposed:
+  `internal/api`, `TestSourceTokenIsNeverLogged`).
 - A write on the source between import and verification is detected by
   verification, and after a fresh id and a second import the repository
   reaches `mirrored` (proposed: `test/e2e`, `TestMigrationCatchesALateWrite`).
