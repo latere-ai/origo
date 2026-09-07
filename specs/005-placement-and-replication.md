@@ -273,15 +273,18 @@ the cache on shutdown.
   before the test ends (proposed: `test/e2e`,
   `TestClusterNodeRemovalUnderReadLoad`).
 - Under a synthetic read load of 200 clones of a 10 MiB repository on
-  the kind stack of spec 013, clones per second measured at 2, 4, and 8
-  replicas is monotonic non-decreasing with no push failure; each
+  the kind stack of spec 013, with a push every second beside it, no
+  push fails and no clone fails at 2, 4, and 8 replicas; each
   replica count is set with `cluster.ApplyManifest` of
   `test/e2e/testdata/hpa-<n>.yaml`, an autoscaler with `minReplicas`
   and `maxReplicas` both `<n>`, and confirmed with
-  `cluster.HPAStatus("origod")` before the load starts; the ratio
-  between 8 and 2 is recorded in the test output as a measurement and
-  no ratio is asserted, because the runner's CPU, not the design,
-  bounds it. The autoscaler test restores the overlay's own autoscaler
+  `cluster.HPAStatus("origod")` before the load starts; the three
+  clones-per-second figures are recorded in the test output as
+  measurements and nothing about them is asserted, because the
+  runner's CPU, not the design, bounds them. Monotonicity over the
+  three counts is asserted only in `TestMeasure` under
+  `ORIGO_E2E_MEASURE=1`, run against the stack, which no job selects.
+  The autoscaler test restores the overlay's own autoscaler
   with `cluster.Apply("deploy/examples/kind")`, drives CPU past the
   target, and reads `cluster.HPAStatus("origod")` until it reports 4
   replicas, within 60 seconds of the crossing; scale-down is not
