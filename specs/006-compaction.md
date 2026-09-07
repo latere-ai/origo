@@ -67,8 +67,19 @@ reason arrives second. It is written by a node that is not the primary
 in two cases: after a push it served crossed a threshold, and on `POST
 /v1/repos/{id}/gc` (spec 019), which on such a node forwards nothing
 and compacts nothing and answers 202 naming the primary in the body's
-`details`. On the primary, `gc` runs the procedure below at once,
-whatever the thresholds say, and answers when it is done. The primary's
+`details`. On the primary, `gc` starts the procedure below at once,
+whatever the thresholds say, and waits for it at most 10 seconds: a run
+that finishes inside them is answered 200 with the before and after
+figures of spec 019, and one still running at 10 seconds, or one that
+was already running when the request arrived, is answered 202 with
+`details.running: true` and `details.started_at`, the start time of the
+run in progress, which the caller polls with `stats` (spec 019). The
+bound exists because a full repack takes up to the 30 minute deadline
+and every ingress cuts an idle response before that: the ingress of
+`deploy/base` carries a 600 second read timeout and an operator's may be
+shorter, so `gc` never blocks longer than 10 seconds whatever sits in
+front of the node. A threshold compaction and a `gc` are the same run
+and both count toward the hourly `gc` limit of spec 019. The primary's
 10 minute sweep lists `origo/gc/`, usually empty, and for every id whose
 primary it is materializes the repository if it does not hold it
 (`Acquire`, which step 1 does anyway), runs the procedure, and deletes
@@ -180,16 +191,21 @@ request and response shape, rate limit, and event (spec 019).
 
 - After 500 pushes of 1 KiB commits to one repository through one node,
   the newest index lists at most 64 entries and at most 6 packs, and
-  `git fsck` passes on a fresh node's copy (proposed: `internal/compact`,
-  `TestFiveHundredPushesStayUnder64EntriesAnd6Packs`).
+  `git fsck` passes on a fresh node's copy (proposed: `test/e2e`,
+  `TestE2EFiveHundredPushesStayUnder64EntriesAnd6Packs`, a test of the
+  one-node run of spec 013 and not of the unit suite the gate runs,
+  because 500 pushes through the real git take minutes; the unit suite
+  covers the procedure with a fixture of 65 entries written through
+  `Log.Commit`, `internal/compact`, `TestThresholdFoldsEntries`).
 - A push that lands between step 1 and step 5 makes the compaction
   abort with `result="stale"`, the push is in the newest index, and the
   next run folds it (proposed: `internal/compact`,
   `TestPushDuringCompactionIsPreserved`).
 - The after-push trigger returns before the compaction starts, a second
-  trigger while one runs starts none, and a clone served during step 2
-  succeeds (proposed: `internal/compact`,
-  `TestTriggerIsBackgroundAndSingle`).
+  trigger while one runs starts none, a `gc` while one runs answers 202
+  with `details.running: true` and the run's start time within 10
+  seconds, and a clone served during step 2 succeeds (proposed:
+  `internal/compact`, `TestTriggerIsBackgroundAndSingle`).
 - A `gc` request on a node that is not the primary creates
   `origo/gc/<id>`, answers 202 naming the primary, and the primary's
   sweep compacts within one sweep interval and deletes the request
@@ -212,7 +228,7 @@ request and response shape, rate limit, and event (spec 019).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
   10% of its latency after 10 pushes, measured as the p50 of 10 clones
   each, asserted on every push to `main` (proposed: `test/e2e`,
-  `TestCompactionKeepsFetchLatencyFlat`, a plain test of the `e2e`
-  tier; the fixture is sized so the test fits the job budget of spec
+  `TestE2ECompactionKeepsFetchLatencyFlat`, a plain test of the one-node
+  run; the fixture is sized so the test fits the job budget of spec
   013, and `TestMeasure` under `ORIGO_E2E_MEASURE=1` prints the same
   figures for a 1 GiB fixture without asserting them).
