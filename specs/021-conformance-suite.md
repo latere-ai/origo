@@ -13,7 +13,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -106,11 +106,13 @@ the surface and the stack run proves the surface, the trust logic, and
 the degraded rows.
 
 The stack run reads its target from `ORIGO_TEST_URL` and
-`ORIGO_TEST_ADMIN_TOKEN` (spec 002), set by spec 013's `e2e` job, and
-reaches the three stub control endpoints through the host ports the
-overlay's `kind` config maps for them (the `origo-stubs` row of spec
-013's overlay table), which the package holds as defaults so the job
-sets nothing else. The live run reads `ORIGO_LIVE_URL` and
+`ORIGO_TEST_ADMIN_TOKEN` (spec 002), whose defaults are the ports
+table of spec 013 (`http://localhost:30080`, and a token minted at the
+issuer's host port for the dev subject), and reaches the three stub
+control endpoints at the host ports of the same table
+(`http://localhost:30081`, `30082`, `30083`) and MinIO for its `Fault`
+at `http://localhost:30900`, all held by the package as defaults so
+spec 013's `e2e` job sets nothing. The live run reads `ORIGO_LIVE_URL` and
 `ORIGO_LIVE_TOKEN` (spec 002), two repository secrets: the installation
 a release reaches and a token with `admin` on the `conformance-`
 prefix.
@@ -135,7 +137,13 @@ and line. The sideband and hook lines (`ERR <code>: <sentence>`,
 `contract.Sentence(code)` and hold no sentence of their own, so the
 grep over `httpjson.Error` literals is the whole of what can drift. The
 suite compares live responses to the same table. The divergences spec
-003's Outcome lists are fixed by making this test pass.
+003's Outcome lists are fixed by making this test pass. The test walks
+the module from a root held in a test-only constant resolved from its
+own source file with `runtime.Caller`, never from the working
+directory, so the `tempdir` gate of spec 002, which runs the suite
+from an empty directory, and the `hermetic` gate see the module's
+files; spec 011's register test reads its spec the same way, and the
+builder is told here.
 
 ### The mutation job
 
@@ -173,7 +181,7 @@ flowchart LR
 
 | Run | Target | When |
 |---|---|---|
-| stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired | every push to `main` and every pull request, inside that job's 30 minute budget |
+| stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired; `TestSameAnswersOnStubAndStack` runs in the same job, because it needs the stack as its second target | every push to `main` and every pull request, inside that job's 30 minute budget |
 | stub | `test/stubs/origo` in-process, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
 | mutation | one node with MinIO, once per capability | every push |
 | live | the installation `ORIGO_LIVE_URL` names, with `ORIGO_LIVE_TOKEN`, the `conformance-` prefix, and the skip list above | the `live` job of `release.yml`, after spec 017's deploy step and before its publish step, when the secret is set; its report and timings are attached to the release (spec 017) |
@@ -212,8 +220,9 @@ assertions beyond the thresholds the owning specs name.
 - A consumer's integration tests written against the stub pass
   unchanged against a live node (spec 003's criterion; proposed:
   `test/conformance`, `TestSameAnswersOnStubAndStack`, which runs one
-  consumer-shaped flow against both targets and compares the
-  responses field by field).
+  consumer-shaped flow against the in-process stub and against the
+  stack at `ORIGO_TEST_URL` and compares the responses field by field;
+  it runs in spec 013's `e2e` job beside `TestContract`).
 - Every `httpjson.Error` literal in the module carries a `Code` the
   table holds and a `Message` that is the string literal of the
   table's sentence, every table row is sent by at least one literal,
