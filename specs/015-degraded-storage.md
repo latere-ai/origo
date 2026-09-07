@@ -6,7 +6,7 @@ depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
   - specs/011-observability.md
-affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, docs/operations.md]
+affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -36,6 +36,14 @@ every request slow, and an unreachable one makes every request fail
 after the retries with 503 `storage_unavailable`. `pkg/circuitbreaker`
 exists and is unused.
 
+One item in `latere.ai/x/pkg`, for the builder, before the wrapper
+below can be tested with a fake clock: `circuitbreaker.Breaker` reads
+`time.Now` directly and `New(threshold, openDuration)` takes no
+option, so its open window cannot be advanced in a test.
+`pkg/circuitbreaker` gains `WithClock(func() time.Time)`, an `Option`
+on `New`, defaulting to `time.Now`, the way `BackoffConfig.Now` already
+does for the other breaker; the wrapper passes its own clock through.
+
 ## Design
 
 ### Deadline per operation
@@ -49,11 +57,17 @@ failure toward the breaker.
 
 `internal/wal` wraps the `Store` in two `circuitbreaker.Breaker` from
 `latere.ai/x/pkg/circuitbreaker`, each `circuitbreaker.New(5,
-30*time.Second)`: one for reads (`Get`, `Head`, `List`) and one for
-writes (`Put`, `Create`, `Delete`), so a write-side outage does not
-stop reads the cache can answer. The wrapper calls `Allow` before every
-`Store` call and refuses at once when it answers false; after the call
-it records one success or one failure. One `Store` call is one count
+30*time.Second, circuitbreaker.WithClock(clock.Now))`: one for reads
+(`Get`, `Head`, `List`) and one for writes (`Put`, `Create`, `Delete`),
+so a write-side outage does not stop reads the cache can answer. The
+wrapper, `wal.BreakerStore`, takes a clock, an interface with one
+method `Now() time.Time`, defaulting to `time.Now`, and passes it to
+both breakers, so every duration in this spec runs under a fake clock
+in the suite. The wrapper calls `Allow` before every `Store` call and
+refuses at once with `wal.ErrStorageOpen` when it answers false, which
+the handlers map to 503 `storage_unavailable` with `details.op` and
+`details.error: "breaker open"`; after the call it records one success
+or one failure. One `Store` call is one count
 whatever `pkg/s3` did inside it: its three attempts under
 `DefaultRetry` are one failure when the last attempt fails, and a
 timeout, a transport error, and a 5xx are failures, while a 404, a
@@ -75,7 +89,7 @@ are recorded on every call.
 |---|---|---|
 | healthy | `HEAD index/<n+1>` answers | as spec 005 |
 | slow (a check exceeds `ORIGO_STORAGE_TIMEOUT`) | counted as a failure toward the read breaker | the request waits for the check and fails with 503 `storage_unavailable` on timeout; no stale serving below the breaker threshold, because a slow check is still a correct one |
-| read breaker open, repository warm | skipped | served from the local copy with `Origo-Stale`, up to `ORIGO_STALE_MAX` (default 5 minutes) after the last confirmed check; past the cap, 503 `storage_unavailable` |
+| read breaker open, repository warm | skipped | served from the local copy with `Origo-Stale`, up to `ORIGO_STALE_MAX` (default 5 minutes) after the last confirmed check; past the cap, 503 `storage_unavailable`. The time of the last check that answered lives in the cache entry of `internal/repo`, beside the sequence the copy holds, written by `Acquire` on every check that answers and read by the handler that decides whether the copy may be served stale, so the bound is per repository and survives nothing a request cannot rebuild: an evicted copy has no last check and is cold |
 | read breaker open, repository cold | impossible | 503 `storage_unavailable` |
 
 | Header | Meaning |
@@ -101,9 +115,13 @@ the breaker's remaining open time in whole seconds, and a body of the
 storage_unavailable: <the sentence of spec 003>` pkt-line. Git prints
 `fatal: remote error: storage_unavailable: …` and sends no pack; a 503
 would show the user only the status. A pack already spooled when the
-breaker opens is committed under the breaker's half-open probes for at
-most 60 seconds, then refused with the same line in the sideband; the
-entry, if written, is an orphan the sweeper removes.
+breaker opens waits for the breaker: the commit polls `Allow` on the
+write breaker every 500 ms for at most 60 seconds, runs as the probe
+the first time `Allow` answers true, and is refused with the same line
+in the sideband when the 60 seconds pass with no admission or the
+probe fails; the entry, if written, is an orphan the sweeper removes.
+The hook of spec 004 holds git's verdict FIFO for that minute, which
+is inside the 5 minute deadline of `receive-pack`.
 
 ### Partial failure
 
@@ -143,21 +161,28 @@ Queueing pushes for later commit.
   `TestReadBreakerServesStaleThenRefuses`).
 - With every store call answering after 15 seconds, reads and writes
   fail after `ORIGO_STORAGE_TIMEOUT`, one call with three internal
-  attempts counts one failure, and the breaker opens on the 5th; after
-  30 seconds with a fake clock one probe is admitted while a concurrent
-  call is refused, a failed probe reopens for 30 seconds and not 60,
-  and after the store recovers the first request after a successful
-  probe is served without `Origo-Stale` (proposed: `internal/wal`,
+  attempts counts one failure, and the breaker opens on the 5th and
+  refuses with `ErrStorageOpen`; after 30 seconds with the wrapper's
+  fake clock one probe is admitted while a concurrent call is refused,
+  a failed probe reopens for 30 seconds and not 60, and after the store
+  recovers the first request after a successful probe is served
+  without `Origo-Stale` (proposed: `internal/wal`,
   `TestBreakerOpensOnTimeoutsAndRecovers` with `MemStore.SetFault`).
 - With the write breaker open, `info/refs?service=git-receive-pack`
   answers 200 with the `ERR` pkt-line and `Retry-After`, and `git push`
-  exits with the sentence in `remote error` having sent no pack
-  (proposed: `internal/httpgit`, `TestWriteBreakerRefusesBeforeUpload`).
+  exits with the sentence in `remote error` having sent no pack; a
+  push whose pack was spooled before the breaker opened is committed
+  when the breaker admits a probe within 60 seconds of fake time and
+  refused in the sideband when it does not (proposed:
+  `internal/httpgit`, `TestWriteBreakerRefusesBeforeUpload`,
+  `TestSpooledPushWaitsForTheBreaker`).
 - A missing pack object makes that repository 503 `repository_unavailable`
   with `details.key`, increments `origo_log_integrity_errors_total`, and
   leaves another repository served (proposed: `internal/repo`,
   `TestMissingPackIsAnIntegrityError`).
 - All of the above run in the kind stack against MinIO with a fault
-  injector: a NetworkPolicy for unreachable, a delaying proxy for slow,
-  object deletion for partial (proposed: `test/e2e`,
-  `TestDegradedStorage` on the stack of spec 013).
+  injector: a NetworkPolicy for unreachable, `test/stubs/slowproxy` for
+  slow (a small Go program that forwards TCP to MinIO and holds each
+  connection's first bytes for the delay a control endpoint sets), and
+  object deletion for partial, inside the `e2e` job of spec 013
+  (proposed: `test/e2e`, `TestDegradedStorage`).
