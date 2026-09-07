@@ -61,7 +61,7 @@ passing test in the tree and the Outcome records every divergence.
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | drafted |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | drafted |
-| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | drafted |
+| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | validated |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | drafted |
 
 ## Dependency graph
@@ -116,6 +116,7 @@ flowchart LR
   S007 --> S002
   S007 --> S003
   S008 --> S004
+  S008 --> S005
   S008 --> S007
   S009 --> S004
   S009 --> S007
@@ -216,6 +217,7 @@ deck and stated here so a reader sees them without the owning spec.
 | the autoscaler scales on CPU only, in the base and in every example overlay; `origo_requests_in_flight` is a dashboard signal | 005 | 011, 018, `docs/operations.md` |
 | the `integration` job is 25 minutes; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow` | 013 | 006, 010, 019 |
 | a write under an open read breaker is refused at once with `storage_unavailable`; stale serving is for reads only | 015 | 003, 019, 020 |
+| the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the stubs' CA, while git talks plain HTTP to the proxy | 016 | 002, 013, 014, 019 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
 | the code table is the one source of every sentence; every `httpjson.Error` literal is checked against it | 021 | 003 and every spec with a Code table |
 
@@ -312,6 +314,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_DEV_TOKEN` | [002](002-repository-scaffold.md) | 003, 007, 013 |
 | variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013 |
 | variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 014, 016, 019 |
+| variable | `ORIGO_EGRESS_CA_BUNDLE` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 016 |
 | variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 018 |
 | variable | `ORIGO_FAILPOINT` | [002](002-repository-scaffold.md) | 008 |

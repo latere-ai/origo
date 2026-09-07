@@ -1,6 +1,6 @@
 ---
 title: "Server-side git operations: commits, merges, cherry-picks, and reverts without a clone"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -9,7 +9,7 @@ depends_on:
   - specs/009-read-api-and-archive.md
   - specs/012-limits-and-abuse.md
   - specs/019-repository-administration.md
-affects: [internal/api/, internal/repo/, internal/httpgit/]
+affects: [internal/api/, internal/repo/, internal/httpgit/, test/conformance/]
 effort: large
 created: 2026-09-06
 updated: 2026-09-08
