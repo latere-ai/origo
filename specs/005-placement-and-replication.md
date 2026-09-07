@@ -55,8 +55,16 @@ repositories that hash to it.
 
 Membership is by heartbeat. Every 10 seconds a node sends one datagram
 in the gossip format below with an empty `repo` and `seq` 0 to every
-address `ORIGO_GOSSIP_PEERS` resolves to, on the port of
-`ORIGO_GOSSIP_ADDR`, the resolution refreshed every 10 seconds. The live node set is the names heard, by heartbeat or by an
+peer address, the resolution refreshed every 10 seconds.
+`ORIGO_GOSSIP_PEERS` (spec 002) takes two forms: a comma separated list
+of `host:port` entries, each sent to as given, or one DNS name, which
+resolves to every node's address on the port of `ORIGO_GOSSIP_ADDR`;
+a value containing a comma or a port is the list, anything else the
+name. Kubernetes uses the name (the headless Service `origod-gossip`),
+and two local nodes use two entries on loopback with distinct ports,
+which is how the end-to-end harness starts the two nodes of the tests
+below, each with its own `ORIGO_GOSSIP_ADDR` on `127.0.0.1` and the
+other's address in its peer list. The live node set is the names heard, by heartbeat or by an
 announcement that carried a valid MAC, in the last 60 seconds, plus the
 node's own name, which is always in the set. A node with a single-node
 set is preferred for everything. The set is what placement, the
@@ -74,8 +82,8 @@ The compaction primary of spec 006 is the first name.
 ### Gossip
 
 After every index object a node creates, it sends one datagram three
-times, 10 ms apart, to every address `ORIGO_GOSSIP_PEERS` resolves to on
-the port of `ORIGO_GOSSIP_ADDR`, with no acknowledgement. A datagram is
+times, 10 ms apart, to every peer address `ORIGO_GOSSIP_PEERS` names or
+resolves to, with no acknowledgement. A datagram is
 a 32 byte tag followed by a payload: the tag is the HMAC-SHA256 of the
 payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002: required whenever
 `ORIGO_GOSSIP_PEERS` is set, the same value on every node; a single node
@@ -276,9 +284,12 @@ the cache on shutdown.
   the kind stack of spec 013, with a push every second beside it, no
   push fails and no clone fails at 2, 4, and 8 replicas; each
   replica count is set with `cluster.ApplyManifest` of
-  `test/e2e/testdata/hpa-<n>.yaml`, an autoscaler with `minReplicas`
-  and `maxReplicas` both `<n>`, and confirmed with
-  `cluster.HPAStatus("origod")` before the load starts; the three
+  `test/e2e/testdata/hpa-<n>.yaml`, a HorizontalPodAutoscaler named
+  `origod` with `minReplicas` and `maxReplicas` both `<n>`, which
+  replaces the overlay's autoscaler of the same name rather than
+  adding a second one, so `cluster.HPAStatus("origod")` reads it and
+  `cluster.Apply` of the overlay restores the original; each count is
+  confirmed with `cluster.HPAStatus("origod")` before the load starts; the three
   clones-per-second figures are recorded in the test output as
   measurements and nothing about them is asserted, because the
   runner's CPU, not the design, bounds them. Monotonicity over the
