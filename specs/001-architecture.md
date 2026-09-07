@@ -6,7 +6,7 @@ depends_on: []
 affects: [cmd/origod/, internal/, deploy/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -111,7 +111,10 @@ repositories. Spec 004 fixes every format.
 | `origo/repos/<id>/index/latest` | `{"seq": n}` as a hint; written unconditionally, may lag, never leads correctness |
 | `origo/repos/<id>/packs/<hash>.pack`, `.idx` | packs produced by compaction (spec 006), named by the index objects that follow it |
 | `origo/repos/<id>/lfs/<oid>` | LFS objects (spec 010) |
+| `origo/repos/<id>/lfs/verified/<oid>` | the marker `verify` creates once an upload is checked (spec 010) |
 | `origo/events/<repo>/<seq>.json` | a push event waiting for delivery (spec 008) |
+| `origo/events/<repo>/a-<id>.json` | an administration or verification event waiting for delivery, `<id>` its UUID v5, so a repeated emit is one object (specs 008, 019, 014) |
+| `origo/events/<repo>/cursor`, `origo/events/dead/<repo>/…`, `origo/events/nodes/<node>/<date>.log` | the delivery cursor, the events that exhausted their window, and each node's enqueue journal (spec 008) |
 | `origo/gc/<id>` | a compaction request written by a node that is not the repository's primary (spec 006) |
 | `origo/sweep/latest` | the last orphan sweep's figures, written by the node that ran it (spec 019) |
 | `origo/check/<uuid>` | the key `origod check` creates and deletes to prove conditional create (spec 018) |
