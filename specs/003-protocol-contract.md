@@ -87,8 +87,10 @@ surface. Bodies are JSON, at most 64 KiB, unknown fields refused.
 | DELETE | `/v1/repos/{id}` | | 202 `{"id", "deleted_at", "purge_after"}`; every other endpoint answers 404 from then on and 410 `gone` once the objects are purged after the 7 day hold (spec 019); repeated on a deleted repository, 202 with the original times |
 | POST | `/v1/repos/{id}/undelete` | | 200 with the representation within the hold; 410 `gone` after the purge (spec 019) |
 
-`size_bytes` is the sum of the pack bytes in the log since creation;
-`head` is the object id of the default branch, empty when the branch does
+`size_bytes` is the figure spec 004 defines on the index object: the
+bytes of the packs the log lists plus the pack bytes of the entries
+since the last compaction, so a compaction lowers it and it is what
+the log holds for the repository; `head` is the object id of the default branch, empty when the branch does
 not exist; `updated_at` is the time of the last create or rename of the
 metadata, not the last push (spec 009 adds `pushed_at`, read from the
 index object's `pushed_at` of spec 004).
@@ -176,7 +178,7 @@ specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
 | `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |
 | `repo_exists` | 409 | A repository with this id or name already exists. | `field`: `id` or `name`; `id`, `owner`, `slug` |
 | `non_fast_forward` | sideband; 409 on the JSON API | The reference moved since you fetched. Fetch, then push again. | `ref`, `expected`, `actual` |
-| `over_quota` | 413 | The push exceeds the repository's limit. | `limit`: `repository`, `push`, or `refs`; `bytes`; `max` |
+| `over_quota` | 413 | The request exceeds this repository's storage limit. | `limit`: `repository`, `push`, or `refs`; `bytes`; `max` |
 | `rate_limited` | 429 with `Retry-After` | Too many requests. Wait and try again. | `limit`, `retry_after` |
 | `storage_unavailable` | 503 | The repository is temporarily unavailable. Nothing was lost. Try again in a few minutes. | `op`, `key`, `error` |
 
@@ -207,16 +209,24 @@ header `Origo-Contract: <n>` from the next major version on (spec 017).
 
 ## Acceptance criteria
 
+The first three criteria are deferred: each names the spec that owns
+the test, and this spec reaches `complete` when that spec's test passes.
+The dispatch rule of `specs/README.md` (every dependency at `testing`
+or later) is what lets the specs that build on this one start before
+then.
+
 - The conformance suite (spec 021) exercises every row of every table
   above against a live node and against the stub, and both pass
-  (`test/conformance`, `TestContract`).
+  (`test/conformance`, `TestContract`; owned by spec 021).
 - A consumer's integration tests written against the stub pass unchanged
-  against a live node (spec 013, the stub criterion).
+  against a live node (spec 013 builds the stub, spec 021 owns the
+  test: `test/conformance`, `TestSameAnswersOnStubAndStack`).
 - Every code in the table above and in the tables of specs 007, 009,
   010, 015, 019, and 020 has exactly one `message`, asserted by a test over
   `internal/contract` that lists the codes and their sentences and by the
-  conformance suite comparing responses to it (proposed:
-  `internal/contract`, `TestEveryCodeHasOneSentence`).
+  conformance suite comparing responses to it (`internal/contract`,
+  `TestEveryCodeHasOneSentence`; owned by spec 021, whose code table
+  section defines it).
 - A repository created with an id, renamed, deleted, and undeleted goes
   through every status of the lifecycle table, the old URL answers 404
   after the rename, and a duplicate id or a taken name answers 409
