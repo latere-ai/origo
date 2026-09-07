@@ -39,7 +39,10 @@ reads `origod-s3` and `origod-dev-token`. There is no HPA, no
 PrometheusRule, no `deploy/examples`, no `origod check`, no
 `docs/install.md`, and no `docs/configuration.md`; spec 002's table is
 the only configuration reference. `docs/README.md` lists both pages as
-planned.
+planned. `cmd/origod` has no subcommand dispatcher: it parses flags
+and serves. This spec builds the dispatcher spec 002's subcommand
+table describes, with `check` as its first subcommand; spec 014's
+`migrate` joins it later, and spec 002's Outcome records the transfer.
 
 ## Design
 
@@ -77,21 +80,31 @@ by `kustomize build` in CI only; nothing applies them there, because
 CI has no cloud account, and the install document says so. Helm is not
 offered; a kustomize overlay is a directory an operator can read.
 
-The `install` job in `verify.yml` walks the install document's steps
-against the `kind` overlay with what an operator would have: it runs
-the fenced `sh` blocks of `docs/install.md` in order through
-`tools/docs/run-blocks.sh`, the script spec 013 owns under "Documents
-as tests" and spec 014 uses for its migration document, so the
-document is the test and a step that drifts from the manifests fails
-the job. On every push it uses the candidate build of
-that push, the image the `e2e` job of spec 013 built, because there is
-no release for it; on a `v*` tag it uses the release artifacts of spec
-017, the signed image and `deploy-<version>.tar.gz`, downloaded from
-the release, so the tag proves the documented install works from the
-artifacts alone; the document reads the image reference and the
-manifest path from two variables the job sets, and names the release
-values as their defaults. Both runs end with `TestContract` (spec 021)
-against the installed nodes.
+Two jobs walk the install document's steps against the `kind` overlay
+with what an operator would have: each runs the fenced `sh` blocks of
+`docs/install.md` in order through `tools/docs/run-blocks.sh`, the
+script spec 013 owns under "Documents as tests" and spec 014 uses for
+its migration document, so the document is the test and a step that
+drifts from the manifests fails the job. The `install` job in
+`verify.yml` runs on every push with the candidate build of that
+push, the image the `e2e` job of spec 013 built, because there is no
+release for it. The `install-release` job in `release.yml` runs on a
+`v*` tag after the `publish` step of spec 017's pipeline, with the
+release artifacts alone, the signed image and
+`deploy-<version>.tar.gz` downloaded from the published release, so
+the tag proves the documented install works from what an operator
+downloads; a failure there fails the workflow after the release
+exists, which is the evidence the release notes link. The document
+reads the image reference and the manifest path from two variables
+the jobs set:
+
+| Variable | Set by | Value |
+|---|---|---|
+| `ORIGO_INSTALL_IMAGE` | the `install` job of `verify.yml`, the `install-release` job of `release.yml` | the image reference the document's `apply` block pins: the candidate image the `e2e` job loaded on a push, `ghcr.io/latere-ai/origod:<version>` on a tag; the document names the release form as the default a reader copies |
+| `ORIGO_INSTALL_MANIFESTS` | the same two jobs | the path of the manifests the document applies: `deploy/examples/kind` in the checkout on a push, the unpacked `deploy-<version>.tar.gz` on a tag; the document names the archive's path as the default |
+
+Both runs end with `TestContract` (spec 021) against the installed
+nodes.
 
 ### The check
 
@@ -143,9 +156,17 @@ binary artifact of spec 017.
   candidate build on every push and from the release artifacts alone
   on a tag, and `TestContract` (spec 021) passes against it both ways
   (spec 013's stack; proposed: `.github/workflows/verify.yml`, the
-  `install` job with its source chosen by the trigger), and
+  `install` job with `ORIGO_INSTALL_IMAGE` and
+  `ORIGO_INSTALL_MANIFESTS` set to the candidate build;
+  `.github/workflows/release.yml`, the `install-release` job after
+  `publish` with the two variables set to the release artifacts), and
   `kustomize build` succeeds on `deploy/examples/digitalocean` and
   `deploy/examples/aws` (proposed: `verify.yml`, the `overlays` job).
+- `origod check` is dispatched by the subcommand table of spec 002,
+  which this spec builds: `origod check` runs the check, `origod` and
+  `origod serve` serve, `origod -version` prints the identity, and
+  `origod nosuch` exits 2 with a usage line (proposed: `cmd/origod`,
+  `TestSubcommandDispatch`).
 - `origod check` prints a `fail` line naming the requirement for each
   of: an unreachable bucket, a store that ignores conditional create
   (`ORIGO_CHECK_SELFTEST=1`), an unreachable issuer, an authorizer
