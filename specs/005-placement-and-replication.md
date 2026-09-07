@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/placement/, internal/repo/, internal/config/, cmd/origod/, deploy/, deploy/examples/kind/, Makefile, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -171,10 +171,11 @@ needs the resource metrics API, which the kind overlay of spec 013
 provides with `metrics-server`, one row of its overlay table; this spec
 adds to that overlay the patch that sets the scale-down window to 60
 seconds, so the autoscaler test below leaves a small cluster for the
-next test inside the job budget. The second signal,
-`origo_requests_in_flight` averaged at 64 per pod, needs a metrics
-adapter and is added by the example overlays of spec 018 that carry
-one. The PodDisruptionBudget keeps `minAvailable: 1`, pod anti-affinity
+next test inside the job budget. CPU is the only signal: the base and
+every example overlay of spec 018 scale on it and install no metrics
+adapter. `origo_requests_in_flight` (spec 011) stays defined for
+dashboards and is not an autoscaler input; `docs/operations.md` says
+the same. The PodDisruptionBudget keeps `minAvailable: 1`, pod anti-affinity
 prefers spreading replicas across nodes, and the rolling update stays
 `maxSurge: 1, maxUnavailable: 0`.
 
