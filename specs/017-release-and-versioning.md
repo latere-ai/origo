@@ -63,7 +63,7 @@ changed by this spec's text.
 
 | Artifact | Where | Notes |
 |---|---|---|
-| `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | signed with cosign keyless; an SPDX bill of materials and SLSA provenance attached as referrers |
+| `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.ci` over the shared runtime stage of spec 002: `debian:trixie-slim` pinned by digest, which ships git 2.47, above the 2.40 floor `origod check` (spec 018) enforces; signed with cosign keyless; an SPDX bill of materials and SLSA provenance attached as referrers |
 | `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
 | `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository pushed through the candidate image in the `kind` stack, so the next release can prove it reads what this one wrote |
@@ -91,15 +91,20 @@ makes. On a `v*` tag:
    `deploy/examples` with the image pinned.
 2. `conformance`: the `e2e` job of spec 013 against the candidate
    image, running `TestContract` of spec 021, which also pushes the
-   fixture repository and packs its prefix as
-   `fixture-<version>.tar.gz`; a failure stops the release.
+   fixture repository; the harness then reads every object under that
+   repository's prefix from the stack's MinIO through
+   `ORIGO_S3_PUBLIC_ENDPOINT` (the host port of spec 013's overlay
+   table) and packs them as `fixture-<version>.tar.gz`; a failure stops
+   the release.
 3. `deploy`: runs only when the repository variable
-   `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl apply -k
-   deploy/prod/` with the image pinned to the tag, `kubectl rollout
-   status` with a 10 minute wait, then `tools/smoke/release.sh`
-   against the public URL, whose markdown output is the evidence.
-   Latere sets the variable on its own repository; a fork does not, so
-   a tag on a fork publishes every artifact and skips this step.
+   `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl`, with the
+   kubeconfig held in the repository secret `ORIGO_KUBECONFIG` (spec
+   002), runs `apply -k deploy/prod/` with the image pinned to the tag
+   and `rollout status` with a 10 minute wait, then
+   `tools/smoke/release.sh` runs against the public URL, whose markdown
+   output is the evidence. Latere sets the variable and the secret on
+   its own repository; a fork does not, so a tag on a fork publishes
+   every artifact and skips this step.
 4. `publish`: the GitHub release with every artifact, the `CHANGELOG.md`
    section as the body, the smoke evidence when step 3 ran, and the
    conformance timings.
@@ -150,6 +155,17 @@ recent minor series receive patches. A release is cut only from a green
 `main` with the conformance suite (spec 021) passed against the
 candidate image in the kind stack (spec 013).
 
+### Release checklist
+
+What no job proves and a maintainer does by hand before the tag, each
+recorded in the release notes as done or as not applicable:
+
+| Item | Spec |
+|---|---|
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec |
+| the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 |
+| `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 |
+
 ## Not in this spec
 
 A Helm chart. A public container registry other than GHCR. Signing
@@ -165,9 +181,10 @@ workflow identity, which is what an outside operator can verify.
   `release-verify` job in `release.yml`).
 - A tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every
   artifact and skips the deploy and smoke step, and the same tag with
-  the variable set runs it (proposed: `release.yml`, the `deploy` job's
-  `if` on the variable, exercised by tagging a fork once and recorded in
-  the first release's notes).
+  the variable set runs it: a release checklist item above, done by a
+  maintainer by tagging a fork and recorded in the release notes, not
+  a CI test, because CI cannot tag a fork of itself (`release.yml`, the
+  `deploy` job's `if` on the variable).
 - The fixture repository attached to release N-1 materializes and
   serves on release N with identical `rev-list --all`, the fixture
   downloaded from that release's assets at test time and skipped when
