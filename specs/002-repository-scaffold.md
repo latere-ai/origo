@@ -154,7 +154,7 @@ an unknown variable is never an error.
 | `ORIGO_MAX_GIT_PROCS` | spec 012 | `64` | concurrent git subprocesses per node |
 | `ORIGO_EGRESS_ALLOW` | spec 016 | unset | comma separated hostnames, exact or `*.` wildcards, that server-side fetches (`import`, `verify`) may reach, matched with `latere.ai/x/pkg/hostmatch`; unset refuses every source |
 | `ORIGO_CLUSTER_CIDRS` | spec 016 | unset | comma separated CIDR ranges of the cluster's service and pod networks that a server-side fetch must never reach, added to the well-known refused ranges of spec 016; unset refuses only the well-known ranges |
-| `ORIGO_TEST_DROP_CAPABILITY` | spec 013 | unset | one git-controlled capability name the node stops advertising, for the mutation job; empty in every deployment |
+| `ORIGO_TEST_DROP_CAPABILITY` | spec 021 | unset | one git-controlled capability name the node stops advertising, for the mutation job of spec 021; empty in every deployment |
 | `ORIGO_CHECK_SELFTEST` | spec 018 | unset | `1` makes `origod check` run its `conditional-create` line against an in-process store that ignores the header, so the check's own failure path is testable |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_*` | spec 011 | unset | the standard OpenTelemetry exporter variables, read by `latere.ai/x/pkg/otel`; telemetry is off without the endpoint |
 
