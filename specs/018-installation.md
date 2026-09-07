@@ -50,7 +50,7 @@ planned.
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
-| authorizer | an HTTP endpoint the operator runs (spec 007); for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay |
+| authorizer | an HTTP endpoint the operator runs (spec 007), which must deny the probe id spec 007's authorizer contract reserves; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
 
 ### Manifests
@@ -61,7 +61,8 @@ gossip Service, the NetworkPolicy on the gossip port (spec 016),
 Ingress without a class or an issuer annotation,
 HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
 (spec 011), and a Secret template with every required variable,
-`ORIGO_GOSSIP_SECRET` (spec 005) among them. The
+`ORIGO_GOSSIP_SECRET` (spec 005) and `ORIGO_TOKEN_KEY` (spec 007) among
+them. The
 Latere values move out of the base into `deploy/prod`. An operator
 writes an overlay with their hostname, ingress class, storage class or
 local-volume choice, replica bounds, and the Secret with their bucket
@@ -74,13 +75,19 @@ CI has no cloud account, and the install document says so. Helm is not
 offered; a kustomize overlay is a directory an operator can read.
 
 The `install` job in `verify.yml` walks the install document's steps
-against the `kind` overlay with what an operator would have: on every
-push it uses the candidate build of that push, the image the `e2e`
-job of spec 013 built, because there is no release for it; on a `v*`
-tag it uses the release artifacts of spec 017, the signed image and
-`deploy-<version>.tar.gz`, downloaded from the release, so the tag
-proves the documented install works from the artifacts alone. Both
-runs end with `TestContract` (spec 021) against the installed nodes.
+against the `kind` overlay with what an operator would have: it runs
+the fenced `sh` blocks of `docs/install.md` in order through
+`tools/docs/run-blocks.sh`, the script spec 014 uses for its migration
+document, so the document is the test and a step that drifts from the
+manifests fails the job. On every push it uses the candidate build of
+that push, the image the `e2e` job of spec 013 built, because there is
+no release for it; on a `v*` tag it uses the release artifacts of spec
+017, the signed image and `deploy-<version>.tar.gz`, downloaded from
+the release, so the tag proves the documented install works from the
+artifacts alone; the document reads the image reference and the
+manifest path from two variables the job sets, and names the release
+values as their defaults. Both runs end with `TestContract` (spec 021)
+against the installed nodes.
 
 ### The check
 
@@ -93,10 +100,10 @@ exiting 1 on any failure:
 | `bucket` | a listing under the prefix answers |
 | `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards. With `ORIGO_CHECK_SELFTEST=1` (spec 002) the check runs against an in-process HTTP server inside `origod check` that accepts every `PUT` and ignores the header, so the line must read `fail conditional-create: second create answered 200`; that is how the check's own detection is tested, since `pkg/s3/s3test` always honours the header |
 | `issuer` | each issuer's discovery document and JWKS are fetched |
-| `authorizer` | a `POST` with `action: "read"`, an empty subject, and the probe repository id `00000000-0000-0000-0000-000000000001` answers 200 with `allow: false`; an authorizer must deny that id, so an allow is `fail authorizer: probe id allowed`, and the stub of spec 013 denies it |
+| `authorizer` | a `POST` with `action: "read"`, an empty subject, and the probe repository id `00000000-0000-0000-0000-000000000001` answers 200 with `allow: false`; spec 007's authorizer contract reserves that id and requires the deny, so an allow is `fail authorizer: probe id allowed`, and the stub of spec 013 denies it |
 | `events` | when `ORIGO_EVENTS_URL` is set, a signed `ping` event (below) answers any status under 500 |
 | `disk` | a file is created and removed under `ORIGO_DATA_DIR` and the file system holds at least `ORIGO_CACHE_BYTES` |
-| `git` | `git --version` runs and reports 2.40 or newer, the floor spec 020's merge family needs |
+| `git` | `git --version` runs and the version parsed from its output (`git version 2.47.1`, the first three dot-separated numbers after the second word) is 2.40 or newer, the floor spec 020's merge family needs; the released image carries 2.47 (spec 002, Images), and the floor stays at what the feature needs, not at what the image ships |
 
 | Event | Payload |
 |---|---|
@@ -147,5 +154,7 @@ binary artifact of spec 017.
 - `make docs` regenerates `docs/configuration.md` byte-identical in the
   verify workflow (proposed: `internal/config`, `TestConfigurationDocIsCurrent`).
 - A maintainer following `docs/install.md` on a fresh kind cluster
-  reaches a successful push without consulting any other document, once
-  per release, recorded in the release notes (spec 017).
+  reaches a successful push without consulting any other document: a
+  release checklist item of spec 017, done once per release by hand and
+  recorded in the release notes, not a CI test, because the `install`
+  job proves the commands and only a person proves the prose.
