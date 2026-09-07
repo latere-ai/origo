@@ -162,7 +162,7 @@ an unknown variable is never an error.
 | `ORIGO_CACHE_BYTES` | no | 80% of the file system holding `ORIGO_DATA_DIR` | eviction ceiling of the cache (spec 005); a positive integer |
 | `ORIGO_PUBLIC_ADDR`, `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` | no | `:8080`, `:8081`, `:7946` | listen addresses; a test binds `127.0.0.1:0` |
 | `ORIGO_NODE_NAME` | no | the host name, `origod` when unknown | the identity used in gossip and placement (spec 005); the pod name in Kubernetes |
-| `ORIGO_GOSSIP_PEERS` | no | unset | a DNS name resolving to every node (spec 005); the headless Service `origod-gossip` |
+| `ORIGO_GOSSIP_PEERS` | no | unset | the other nodes (spec 005): a comma separated list of `host:port` entries, or one DNS name, which resolves to every node on the port of `ORIGO_GOSSIP_ADDR`; the headless Service `origod-gossip` in Kubernetes, two loopback entries with distinct ports for two local nodes |
 | `ORIGO_GOSSIP_SECRET` | from spec 005, when `ORIGO_GOSSIP_PEERS` is set | none | the key of the HMAC-SHA256 every gossip datagram carries (spec 005); at least 32 bytes; the same value on every node of one installation; a single node with no peers runs with neither variable, and the secret without the peers is read and unused |
 | `ORIGO_SWEEP_INTERVAL` | no | `10m` | how often the sweeper runs over every repository (spec 004); `0` disables it |
 | `ORIGO_SWEEP_MIN_AGE` | no | `1h` | how old an orphan must be before the sweeper deletes it (spec 004) |
