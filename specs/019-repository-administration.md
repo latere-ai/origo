@@ -88,7 +88,11 @@ clone --mirror --end-of-options <source>` into a scratch directory
 under `ORIGO_DATA_DIR/spool/`, with the source token and the
 pinned-address forward proxy passed through the environment the way
 spec 016's egress row states them (`GIT_CONFIG_COUNT=2`, the `extraheader` and the `http.proxy` keys), so
-neither is in a process listing or a log line; the proxy is what dials
+neither is in a process listing or a log line, while
+`-c transfer.fsckObjects=true` goes on the command line, because it is
+no secret and spec 016 keeps the environment to what is (the clone
+lands in a scratch directory that has no repository configuration of
+spec 004 yet, which is why the option travels with the command); the proxy is what dials
 the source and terminates its TLS, trusting the system roots and the
 bundle `ORIGO_EGRESS_CA_BUNDLE` names (spec 016), which is how the
 import fixture test below trusts its stub source's certificate. It then runs `git repack -a -d` and `git
@@ -219,20 +223,24 @@ than weekly.
   `origo/sweep/latest`, and an object under a prefix the sweep does not
   understand is reported by key and counted (proposed: `internal/api`,
   `TestOrphanSweepRunsOnOneNode`).
-- An import of a fixture of 5 000 commits built by `internal/gittest`
-  and served over TLS by the stub source (`internal/gittest.ServeHTTP`,
-  `git http-backend` behind an `httptest` TLS server that requires the
-  bearer, its CA written to a file the test names in
-  `ORIGO_EGRESS_CA_BUNDLE` of the node it starts, spec 016)
-  completes within the budget as one `compact` entry, `import` reports
-  `done` with the reference count, the bearer appears in no process
-  argument list and no log line, and a clone from Origo has the same
-  `rev-list --all` as a clone of the source (proposed: `test/e2e`,
-  `TestClusterImportFixture`, in the `e2e` job of spec 013 for its
-  size; it starts its own node against the stack's MinIO through the
-  test bucket variables the job sets, because the stub source runs on
-  the runner and spec 016's egress rules keep the stack's nodes from
-  reaching a private address).
+- An import of the 5 000-commit fixture the source stub of spec 013
+  embeds (`test/stubs/source`, `git http-backend` behind TLS requiring
+  the bearer), fetched by the stack from the in-cluster source
+  `https://origo-stubs.origo.svc:8443/fixture.git`, which the nodes
+  trust through the overlay's `ORIGO_EGRESS_CA_BUNDLE` and reach
+  because the overlay names the host in `ORIGO_EGRESS_ALLOW` and the
+  dialer's cluster exception of spec 016 admits it, completes within
+  the budget as one `compact` entry, `import` reports `done` with the
+  reference count, the stub's request list read through its host port
+  of spec 013's ports table shows every request carried the bearer,
+  and a clone from Origo through the balanced port has the same
+  `rev-list --all` as a clone of the source through that host port
+  (proposed: `test/e2e`, `TestClusterImportFixture`, in the `e2e` job
+  of spec 013 for its size, against the stack through
+  `ORIGO_TEST_URL`; that the bearer appears in no process argument and
+  no log line is asserted in-process by spec 014's
+  `TestSourceTokenIsNeverLogged`, which runs an import and a verify
+  with `AllowLoopback` of spec 016 against the same stub).
 - A node killed during an import leaves `importing_since` set; another
   node reports `running` for 45 minutes with a fake clock, then
   `failed` with `import node lost`, and accepts a new import; a node
