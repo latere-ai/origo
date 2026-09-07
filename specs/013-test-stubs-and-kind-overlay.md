@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/002-repository-scaffold.md
   - specs/007-authentication-and-delegation.md
-affects: [test/stubs/, test/e2e/, deploy/examples/kind/, Dockerfile.stubs, Makefile, .github/workflows/, internal/config/, tools/docs/]
+affects: [test/stubs/sink/, test/stubs/origo/, test/stubs/source/, test/stubs/cmd/, Dockerfile.stubs, test/e2e/, test/e2e/cluster/, test/e2e/testdata/, deploy/examples/kind/, Makefile, .github/workflows/, internal/config/, tools/docs/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -19,12 +19,17 @@ author: changkun
 Every spec after 007 needs the same three things beside the node to be
 tested: an OIDC issuer that mints any token, an authorizer whose answer
 a test chooses, and an event sink that records what it received. This
-spec owns those stubs, a fourth that is the contract itself served
-in-process, the `kind` overlay that runs the stubs and three nodes
-beside MinIO, the test tiers and the targets that run them, and the CI
-jobs that give the tiers a budget. It is built with spec 007 because
-the stubs are what replaces `ORIGO_DEV_TOKEN`. The conformance suite
-that runs on this stack is spec 021.
+spec fixes the control API of every stub and builds the sink, the
+contract stub that is the node's own code served in-process, the
+source stub that serves a repository over TLS to an `import` or a
+`verify`, the binary that runs the stubs, the `kind` overlay that runs
+them and three nodes beside MinIO, the helper a cluster test drives
+the cluster with, the test tiers and the targets that run them, and
+the CI jobs that give the tiers a budget. Spec 007 builds the issuer
+and the authorizer packages, because its own criteria need them, to
+the table below; that is the whole split. It is built with spec 007
+because the stubs are what replaces `ORIGO_DEV_TOKEN`. The conformance
+suite that runs on this stack is spec 021.
 
 ## Current state
 
@@ -63,13 +68,16 @@ and no job regex does.
 
 ### The stubs
 
-`test/stubs/` holds four importable packages and one binary. Each
+`test/stubs/` holds five importable packages and one binary. Each
 package has a `New(t testing.TB, ...) *Server` that starts an
 `httptest.Server` and stops it with the test, a control API a test
 drives, and no dependency beyond the standard library and
-`latere.ai/x/pkg`. The binary `test/stubs/cmd/origo-stubs` runs the
-first three from flags for `make dev` and as pods in the `kind`
-overlay, and `Dockerfile.stubs` packages it as
+`latere.ai/x/pkg`. Spec 007 builds `test/stubs/issuer` and
+`test/stubs/authorizer`; this spec builds `test/stubs/sink`,
+`test/stubs/origo`, `test/stubs/source`, and the binary
+`test/stubs/cmd/origo-stubs`, which runs the issuer, the authorizer,
+the sink, and the source from flags for `make dev` and as pods in the
+`kind` overlay; `Dockerfile.stubs` packages it as
 `ghcr.io/latere-ai/origo-stubs`, built by `verify.yml` and loaded into
 kind, never released.
 
@@ -79,6 +87,7 @@ kind, never released.
 | `test/stubs/authorizer` | spec 007's endpoint: a POST to its root with the bearer `-token` answers from a rule table keyed by `(subject, actor, repo id or owner/slug, action)` with a default of allow for every subject in `-allow <subjects>` (`*` for all); the probe id `00000000-0000-0000-0000-000000000001` is always denied, the rule spec 007's authorizer contract states and spec 018's check relies on; `ttl`, `replicas`, and `quota_bytes` are per rule; a PUT to `/rules` with `{"rules": [{"subject", "actor", "repo", "action", "allow", "reason", "ttl", "replicas", "quota_bytes"}]}` replaces the table, `subject`, `actor`, `repo`, and `action` each `*` or a value, `repo` an id or `owner/slug`, `allow` a boolean and the rest optional; a GET of `/requests` lists every request seen in order, a DELETE of it clears the list; `-fail <status>` makes every answer that status and `-hang` makes it never answer, for the outage cases | `Allow(rule)`, `Deny(rule, reason)`, `Requests()`, `Fail(status)`, `Hang()` |
 | `test/stubs/sink` | spec 008's sink: a POST to its root verifies `Origo-Signature` with `-secret`, records the headers and body, and answers the configured status (200 by default; a PUT to `/status` with `{"status": <int>, "body": <json>, "count": <int>}` changes it, answering `status` with `body` for the next `count` deliveries, every one when `count` is 0, then 200 again); a GET of `/deliveries` with `repo` and `kind` parameters lists deliveries in order, a DELETE of it clears them | `Deliveries(repo, kind)`, `Fail(n, status)`, `Wait(repo, kind, n, timeout)` |
 | `test/stubs/origo` | the contract stub a consumer's tests target: the real handlers of `internal/httpgit` and `internal/api`, and `internal/lfs` once spec 010 lands, wired to `wal.MemStore`, a temporary cache directory, and an in-process issuer, authorizer, and sink from the packages above; `New(t)` returns the base URL, a minting function, and the authorizer and sink handles; it speaks the whole contract because it is the node's own code, which spec 021 proves by running `TestContract` against it | `URL()`, `Token(sub, act)`, `Authorizer()`, `Sink()` |
+| `test/stubs/source` | a git source for `import` (spec 019) and `verify` (spec 014): `git http-backend` behind a TLS listener that requires the bearer `-token`, serving the fixture repository `/fixture.git` unpacked at start from a bundle the package embeds (`testdata/fixture.bundle`, 5 000 commits, produced by `go generate` in the package from `internal/gittest` and checked in), and any repository a test adds; the certificate is signed by a CA the binary generates at start or reads from `-ca <pem>` and `-ca-key <pem>`, and `GET /ca.pem` serves it; a POST to `/commit` with `{"repo", "branch"}` adds one commit on that branch, which is the "late write" of spec 014's cut-over test; a POST to `/repos` with `{"name", "bundle"}` (base64) adds a repository; a GET of `/requests` lists every request seen with its path and whether it carried the bearer, never the bearer itself, and a DELETE of it clears the list | `URL()`, `CA() []byte`, `Commit(repo, branch)`, `AddRepo(name, bundle)`, `Requests()` |
 
 A consumer imports `test/stubs/origo` to run its integration tests
 against Origo in-process. The slow proxy of spec 015
@@ -91,9 +100,14 @@ against Origo in-process. The slow proxy of spec 015
 `test/stubs/cmd/origo-stubs` beside it, points `ORIGO_OIDC_ISSUERS`,
 `ORIGO_OIDC_INSECURE_ISSUERS`, and `ORIGO_AUTHORIZER_URL` at the stubs,
 and prints a clone line with a token the stub issuer minted.
-`make dev-down`, added by this spec, stops what `make dev` started for
-the checkout's `DEV_PROJECT` (the compose stack and the stubs) and
-leaves `out/` in place; `make clean` (spec 002) removes `out/` as well.
+`make dev-up`, added by this spec, runs `deploy/examples/kind/up.sh`
+(The stack, below) for the cluster `origo-<DEV_PROJECT>`, so a
+developer has the three-node stack the cluster tiers target. `make
+dev-down`, added by this spec, stops what `make dev` or `make dev-up`
+started for the checkout's `DEV_PROJECT`: the compose stack and the
+stubs, and the kind cluster through `down.sh`; each half is a no-op
+when nothing of it runs, and `out/` stays in place; `make clean` (spec
+002) removes `out/` as well.
 `make test-tiers` runs the `integration` and `e2e` tiers against
 whatever values of the test bucket variables the environment carries,
 which is what CI calls with its service container; `make
@@ -113,39 +127,59 @@ spec 018 runs `docs/install.md`.
 ### The stack
 
 `deploy/examples/kind`, which spec 018 lists as one of its three
-example overlays, applies MinIO, three `origod` replicas from the
+example overlays, applies MinIO, three `origod` pods from the
 candidate image, and `origo-stubs` running the issuer, the authorizer,
-and the sink, to a kind cluster the job creates from a `kind` config
-this directory carries. The stack has no ingress controller: every
-address the runner reaches is a host port the `kind` config maps to a
-NodePort, listed in the ports table below. Every capability the stack
-has beyond a plain cluster is one row here with the spec that needs
-it, so a later spec that needs another adds a row rather than a step
-in a job:
+the sink, and the source, to a kind cluster created from `kind.yaml`
+in this directory. The directory carries two scripts: `up.sh` creates
+the cluster from `kind.yaml` (name `origo` by default, `origo-<name>`
+with an argument), installs Cilium and `metrics-server`, generates the
+two secrets below, builds and loads the two images unless it is given
+`-images-loaded` (the jobs build them in a step of their own), applies
+the overlay with `kubectl
+apply -k`, and waits until every pod of the tables below is ready and
+every host port of the ports table answers, at most 5 minutes; `down.sh`
+deletes the cluster. The `e2e` and `e2e-slow` jobs and `make dev-up`
+call `up.sh`; `make dev-down` calls `down.sh`. The stack has no ingress
+controller: every address the runner reaches is a host port
+`kind.yaml` maps to a NodePort, listed in the ports table below. Every
+capability the stack has beyond a plain cluster is one row here with
+the spec that needs it, so a later spec that needs another adds a row
+rather than a step in a job:
 
 | Row | Provides | Needed by |
 |---|---|---|
-| MinIO | one in-cluster bucket, path style, on the host port of the ports table so the runner reaches it too; `ORIGO_S3_PUBLIC_ENDPOINT=http://localhost:30900` on every node, which is what a presigned URL and the harness use from outside the cluster | every spec; 010 for LFS transfers from the runner, 017 for the fixture the harness extracts |
-| three `origod` replicas | the candidate image with `ORIGO_GOSSIP_PEERS` on the headless Service, `ORIGO_GOSSIP_SECRET` a fixed value (spec 005), `ORIGO_OIDC_INSECURE_ISSUERS` naming the stub issuer's in-cluster URL (spec 007), `ORIGO_EGRESS_CA_BUNDLE` naming the CA the stubs' TLS certificates are signed by (spec 016), and `ORIGO_TOKEN_KEY` from a Secret the overlay's apply script generates with `openssl ecparam -genkey -name prime256v1` (spec 007); the public listener on the host port of the ports table | every spec |
-| `origo-stubs` | the issuer, the authorizer with `-allow *`, and the sink as pods, each on a Service, each control endpoint on its host port of the ports table so `TestContract` drives them from the runner (spec 021) | 007, 008, 021 |
+| MinIO | one in-cluster bucket, path style, on the host port of the ports table so the runner reaches it too, with fixed values: bucket `origo-test`, key `minioadmin`, secret `minioadmin`, region `us-east-1`, path style on, endpoint `http://localhost:30900` from the runner; `ORIGO_S3_PUBLIC_ENDPOINT=http://localhost:30900` on every node, which is what a presigned URL and the harness use from outside the cluster; the `e2e` and `e2e-slow` jobs export those values as `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, and `ORIGO_TEST_S3_PATH_STYLE` (spec 002), which is how a test that starts its own node in a cluster job, spec 017's fixture harness, and the `Fault` of spec 021 reach the bucket | every spec; 008 and 021 for a node or a fault of their own, 010 for LFS transfers from the runner, 017 for the fixture the harness extracts |
+| three `origod` pods | the StatefulSet `origod` with 3 replicas, `origod-0`, `origod-1`, `origod-2`, replacing the base's Deployment with the same labels so the Service, the PodDisruptionBudget, the NetworkPolicy, and the HorizontalPodAutoscaler (its `scaleTargetRef` patched to the StatefulSet, spec 005) apply unchanged; the candidate image with `ORIGO_NODE_NAME` the pod name, `ORIGO_GOSSIP_PEERS` on the headless Service, `ORIGO_GOSSIP_SECRET` a fixed value (spec 005), `ORIGO_OIDC_INSECURE_ISSUERS` naming the stub issuer's in-cluster URL (spec 007), `ORIGO_STALE_MAX=30s` so spec 015's cluster scenario waits 30 seconds and not 5 minutes for stale serving to end, `ORIGO_EGRESS_ALLOW=origo-stubs.origo.svc`, `ORIGO_CLUSTER_CIDRS` naming kind's service and pod ranges, and `ORIGO_EGRESS_CA_BUNDLE=/etc/origo/stub-ca.pem`, the CA the source stub's certificate is signed by, mounted from the ConfigMap `origo-stub-ca` (spec 016), and `ORIGO_TOKEN_KEY` from a Secret `up.sh` generates with `openssl ecparam -genkey -name prime256v1` (spec 007); one balanced Service for the public listener and, per pod, one public and one internal Service selecting on `statefulset.kubernetes.io/pod-name`, each on its host port of the ports table, so a test can push through one node, read that node's `/metrics`, and clone through another | every spec; 005, 006, 015 for per-node addresses |
+| `origo-stubs` | the issuer, the authorizer with `-allow *`, the sink, and the source as pods, each on a Service, each control endpoint on its host port of the ports table so `TestContract` drives them from the runner (spec 021); the source serves TLS in-cluster at `https://origo-stubs.origo.svc:8443` with the bearer `stub-source-token`, its CA generated by `up.sh` with `openssl` into the ConfigMap above and written to `test/e2e/testdata/stub-ca.pem` on the runner (ignored by git), so the nodes trust it through `ORIGO_EGRESS_CA_BUNDLE` and a test on the runner trusts the host port through the file | 007, 008, 021; 014 and 019 for an in-cluster HTTPS source |
+| `slowproxy` | `test/stubs/slowproxy` (spec 015) as a pod in front of MinIO, `ORIGO_S3_ENDPOINT` on every node pointing at its Service, delay 0 until its control endpoint, on its host port of the ports table, sets one | 015 for the slow-bucket case |
 | `metrics-server` | the resource metrics API a CPU-target HorizontalPodAutoscaler reads, installed with the flag that accepts kind's kubelet certificates | 005 |
-| Cilium | the CNI, installed in place of kindnet (`disableDefaultCNI` in the `kind` config), so NetworkPolicy is enforced | 015 for the unreachable-bucket policy, 016 for the gossip policy |
+| Cilium | the CNI, installed in place of kindnet (`disableDefaultCNI` in `kind.yaml`), so NetworkPolicy is enforced | 015 for the unreachable-bucket policy, 016 for the gossip policy |
 | Pod Security admission | the label `pod-security.kubernetes.io/enforce=restricted` on the `origo` namespace | 016 |
 | HPA scale-down window | a patch setting the stabilization window to 60 seconds, which spec 005 adds to this overlay | 005 |
 
 #### Ports
 
-The `kind` config maps each host port to the NodePort of the Service
-named, so every address a test or a document uses is fixed and the jobs set
-neither `ORIGO_TEST_URL` nor `ORIGO_TEST_ADMIN_TOKEN`:
+`kind.yaml` maps each host port to the NodePort of the Service named,
+so every address a test or a document uses is fixed and the jobs set
+neither `ORIGO_TEST_URL` nor `ORIGO_TEST_ADMIN_TOKEN`. A criterion of
+another spec names a node by its row here, "node 1 of the ports
+table", and never by a pod name a Kubernetes version might change:
 
 | Host port | Service | Reached as | Used by |
 |---|---|---|---|
-| 30080 | `origod` public listener, all three replicas behind one Service | `http://localhost:30080`, the default of `ORIGO_TEST_URL` | every `TestCluster` and `TestSlow` test, `TestContract` (021), the documents of 014 and 018 |
+| 30080 | `origod` public listener, all three pods behind one balanced Service | `http://localhost:30080`, the default of `ORIGO_TEST_URL` | every `TestCluster` and `TestSlow` test that does not care which node answers, `TestContract` (021), the documents of 014 and 018 |
+| 30180 | node 1, the pod `origod-0`, public listener | `http://localhost:30180` | a test that pushes or clones through one named node (005, 006, 015) |
+| 30181 | node 2, the pod `origod-1`, public listener | `http://localhost:30181` | same |
+| 30182 | node 3, the pod `origod-2`, public listener | `http://localhost:30182` | same |
+| 30190 | node 1, internal listener, `GET /metrics` | `http://localhost:30190/metrics` | a test that reads one node's counters (005, 006, 015) |
+| 30191 | node 2, internal listener | `http://localhost:30191/metrics` | same |
+| 30192 | node 3, internal listener | `http://localhost:30192/metrics` | same |
 | 30081 | the stub issuer, its discovery, JWKS, and control endpoints | `http://localhost:30081` | the harness minting tokens, `TestContract` (021) |
 | 30082 | the stub authorizer, its endpoint and control endpoints | `http://localhost:30082` | `TestContract` (021) flipping allow and deny |
 | 30083 | the stub sink, its endpoint and control endpoints | `http://localhost:30083` | `TestContract` (021) reading deliveries, 008's repair case |
-| 30900 | MinIO | `http://localhost:30900`, the value of `ORIGO_S3_PUBLIC_ENDPOINT` on every node | LFS transfers from the runner (010), the fixture extraction of 017, the `Fault` of 021, a one-node test in a cluster job through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables |
+| 30084 | the stub source, its git endpoint over TLS and its control endpoints | `https://localhost:30084`, trusted through `test/e2e/testdata/stub-ca.pem` | 014's and 019's cluster tests adding a commit or reading the request list; inside the cluster the nodes reach it as `https://origo-stubs.origo.svc:8443` |
+| 30085 | the slow proxy's control endpoint | `http://localhost:30085` | 015's slow-bucket case |
+| 30900 | MinIO | `http://localhost:30900`, the value of `ORIGO_S3_PUBLIC_ENDPOINT` on every node | LFS transfers from the runner (010), the fixture extraction of 017, the `Fault` of 021, a test that starts a node of its own in a cluster job (008, 021) through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables |
 
 Inside the cluster the nodes reach the stubs and MinIO by their Service
 names; the host ports are for the runner. The fixed dev subject of the
@@ -155,6 +189,29 @@ the issuer's host port, valid for the run, so no fixed token value is
 checked in (spec 007 refuses a token whose `iat` is older than 24
 hours, which rules a fixed one out). Spec 021 references this table
 for its defaults.
+
+#### Driving the cluster
+
+A cluster test that changes the cluster, rather than only talking to
+it, does so through `test/e2e/cluster`, a helper package of the `e2e`
+tier that shells out to `kubectl` from `PATH` under the kubeconfig
+`kind` wrote for the job (`KUBECONFIG`, or the default path), in the
+namespace `origo`; no test runs `kubectl` on its own and no test
+imports a Kubernetes client, which keeps spec 001's dependency rule.
+Every function takes the `testing.TB`, fails the test on a non-zero
+exit with `kubectl`'s stderr, and is named by the criterion that uses
+it:
+
+| Function | Runs | Used by |
+|---|---|---|
+| `DeletePod(t, name)` | `kubectl delete pod <name>` and waits until the StatefulSet's replacement is ready | 005's node removal |
+| `ApplyManifest(t, path)` | `kubectl apply -f <path>` of a manifest under `test/e2e/testdata/`, and registers `kubectl delete -f <path>` to run when the test ends, so a fault lasts exactly one test | 015's and 021's unreachable bucket (`cut-storage.yaml`, a NetworkPolicy denying the nodes egress to MinIO), 005's replica counts (`hpa-2.yaml`, `hpa-4.yaml`, `hpa-8.yaml`), 016's refused pod (`privileged-pod.yaml`) |
+| `HPAStatus(t, name)` | `kubectl get hpa <name> -o json` and returns the current and desired replica counts | 005's autoscaler and replica cases |
+| `Apply(t, overlay)` | `kubectl apply -k <overlay>` and waits for the rollout, which restores the stack after a test changed it | 005 after its replica cases, any test that applied a manifest the cleanup of `ApplyManifest` cannot undo |
+
+`test/e2e/testdata/` holds every fault manifest, one file per fault,
+and the CA file `up.sh` writes; a cluster criterion of another spec
+names the function and the manifest it uses.
 
 `test/e2e` gains the scenarios that need a cluster: node kill
 mid-push, cache pressure, compaction under load, the degraded-storage
@@ -169,8 +226,9 @@ conformance suite runs on the same stack.
 | Job | Runs | Budget |
 |---|---|---|
 | `integration` | MinIO as a service container, then `make test-tiers`: the `integration` tier and the `e2e` tier's one-node run, `-run 'TestE2E'`, which is every end-to-end test that needs no cluster, starts its own nodes against the bucket, and fits the budget: the tests that push 500 or 1 000 times, import 5 000 commits, or move 500 MiB are in the two cluster jobs below | 25 minutes |
-| `e2e` | creates the kind cluster, builds and loads the two images, applies `deploy/examples/kind`, then runs the `e2e` tier's cluster scenarios, `-run 'TestCluster'`, against the three-node overlay, among them the 500 and 1 000 push tests of spec 006 (`TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, `TestClusterCompactionKeepsFetchLatencyFlat`), spec 019's `TestClusterGcBoundsStorage` and `TestClusterImportFixture` (the 5 000-commit import, which starts its own node against the stack's MinIO through the test bucket variables of spec 002, `ORIGO_TEST_S3_ENDPOINT` and its siblings, which the job sets to the host port, because its stub source runs on the runner and spec 016's egress rules keep the stack's nodes from reaching it); from spec 021 on, `TestContract` and `TestSameAnswersOnStubAndStack` of `test/conformance` as a second step against the same stack | 30 minutes |
-| `e2e-slow` | the same cluster, then `-run 'TestSlow'`: spec 005's `TestSlowAutoscalerScalesUp` and `TestSlowReplicasScaleReads`, spec 008's `TestSlowEventRepairAfterKill`, spec 004's `TestSlowMaterializeTenThousandEntries`, and spec 010's `TestSlowLFSRoundTripBypassesTheNode` (500 MiB through MinIO's host port), which each wait on a timer or a fixture the others do not | 30 minutes |
+| `e2e` | builds the two images, then `deploy/examples/kind/up.sh -images-loaded`, which creates the cluster and applies the overlay, exports the MinIO values of the overlay table as the `ORIGO_TEST_S3_ENDPOINT` family, then runs the `e2e` tier's cluster scenarios, `-run 'TestCluster'`, against the three-node overlay with `kubectl` on `PATH` for `test/e2e/cluster`, among them the 500 and 1 000 push tests of spec 006 (`TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, `TestClusterCompactionKeepsFetchLatencyFlat`), spec 019's `TestClusterGcBoundsStorage` and `TestClusterImportFixture` (the 5 000-commit import from the in-cluster source stub, `https://origo-stubs.origo.svc:8443/fixture.git`, into the stack), and spec 014's `TestClusterMigrationCatchesALateWrite`; from spec 021 on, `TestContract` and `TestSameAnswersOnStubAndStack` of `test/conformance` as a second step against the same stack | 30 minutes |
+| `e2e-slow` | the same set-up, with `git-lfs` installed on the runner for spec 010, then `-run 'TestSlow'`: spec 005's `TestSlowAutoscalerScalesUp` and `TestSlowReplicasScaleReads`, spec 008's `TestSlowEventRepairAfterKill`, spec 004's `TestSlowMaterializeTenThousandEntries`, and spec 010's `TestSlowLFSRoundTripBypassesTheNode` (500 MiB through MinIO's host port), which each wait on a timer or a fixture the others do not | 30 minutes |
+| `mutation` | spec 021's job: one node with MinIO as a service container, like `integration`, and `TestContract` once per capability in `ORIGO_TEST_DROP_CAPABILITY`; spec 021 says what it asserts, this table gives it its budget | 20 minutes |
 | `fuzz` | `make fuzz` on a weekly `schedule` trigger | 60 minutes |
 
 Every test of the tier carries the build tag `e2e`; which job runs it
@@ -182,7 +240,12 @@ variables of spec 002; a cluster or slow test targets the stack the job
 applied through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` (spec
 002), whose defaults are the ports table's: `http://localhost:30080`,
 and a token minted at the issuer's host port for the dev subject when
-the token is unset, so the jobs set neither. The two cluster jobs run in parallel on every push
+the token is unset, so the jobs set neither. A cluster or slow test
+that starts a node of its own beside the stack (008's repair case,
+021's mutation of a capability) reads the bucket from the
+`ORIGO_TEST_S3_ENDPOINT` family the job exported, and one that changes
+the cluster does so through `test/e2e/cluster`. The two cluster jobs
+run in parallel on every push
 to `main` and every pull request. A job over its budget fails the push;
 a scenario that needs more time moves to `e2e-slow`, and one that makes
 `e2e-slow` exceed its budget is a spec change, not a budget change. The
@@ -199,26 +262,32 @@ do with them:
 
 | Test variable | Purpose |
 |---|---|
-| `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the bucket the `integration` and `e2e` tiers use; the tiers skip when the endpoint is unset |
+| `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the bucket the `integration` and `e2e` tiers use; the tiers skip when the endpoint is unset; in the two cluster jobs the values are the overlay's MinIO row (`http://localhost:30900`, `us-east-1`, `origo-test`, `minioadmin`, `minioadmin`, `1`), exported by the job, and what a test that starts its own node, spec 017's fixture harness, and spec 021's `Fault` read |
 | `ORIGO_E2E_MEASURE` | `1` runs `TestMeasure`, which prints the measurements spec 004's Outcome records and asserts nothing; every threshold a spec names is a plain test of the `e2e` tier that runs without it |
 | `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the stack a `TestCluster` or `TestSlow` test targets and the token it creates repositories with; the URL defaults to `http://localhost:30080` and the token to one minted for the dev subject at the issuer's host port (the ports table); a cluster test skips when nothing answers at the URL, so the tier runs on a developer's machine without the stack |
 
 ## Not in this spec
 
-The conformance suite, the code table, the mutation job, and the run
-against the live service (spec 021). A stub of a provider other than
-Origo.
+The conformance suite, the code table, what the mutation job asserts,
+and the run against the live service (spec 021). The issuer and the
+authorizer packages (spec 007, to the table above). The slow proxy
+(spec 015). A stub of a provider other than Origo.
 
 ## Acceptance criteria
 
 - The stub issuer mints a token spec 007's verifier accepts and one
   refused token per row of its verification table, and stops answering
   on `Hang`; the stub authorizer answers its rule table, denies the
-  probe id, and records requests in order; the stub sink refuses a bad
-  signature and answers the configured failures then recovers
-  (proposed: `test/stubs/issuer`, `TestMintsEachFailure`;
-  `test/stubs/authorizer`, `TestRulesAndProbe`; `test/stubs/sink`,
-  `TestSignatureAndFailures`).
+  probe id, and records requests in order (both built by spec 007 to
+  the table above: `test/stubs/issuer`, `TestMintsEachFailure`;
+  `test/stubs/authorizer`, `TestRulesAndProbe`); the stub sink refuses
+  a bad signature and answers the configured failures then recovers
+  (proposed: `test/stubs/sink`, `TestSignatureAndFailures`).
+- The stub source serves `/fixture.git` over TLS to `git clone` with
+  the bearer and refuses a clone without it, `Commit` adds one commit
+  the next `ls-remote` shows, `Requests` lists the clone without the
+  bearer's value, and the embedded bundle unpacks to 5 000 commits
+  (proposed: `test/stubs/source`, `TestSourceServesTheFixtureOverTLS`).
 - The contract stub serves a clone, a push, and the lifecycle table of
   spec 003 to the real git and `net/http` in-process (proposed:
   `test/stubs/origo`, `TestStubServesTheContract`; spec 021's
@@ -232,14 +301,31 @@ Origo.
   and tears the stack down with `make dev-down` for that project
   whatever happened, never with `make clean`, which would remove the
   `out/` of the checkout under test).
-- `kustomize build deploy/examples/kind` succeeds and the applied
-  overlay reaches three ready nodes, the stubs, `metrics-server`, and
-  Cilium within 5 minutes, with the namespace carrying the restricted
-  label and every host port of the ports table answering (proposed:
-  `verify.yml`, the `e2e` job's set-up step).
-- The `integration`, `e2e`, and `e2e-slow` jobs exist in `verify.yml`
-  and each selects its prefix and nothing else: the `go test` line of
-  each carries `-run 'TestE2E'`, `-run 'TestCluster'`, or `-run
+- `kustomize build deploy/examples/kind` succeeds and `up.sh` reaches
+  the three ready pods `origod-0`, `origod-1`, `origod-2`, the stubs,
+  the slow proxy, `metrics-server`, and Cilium within 5 minutes, with
+  the namespace carrying the restricted label, every host port of the
+  ports table answering (each per-node public port answering `GET
+  /version`, each internal port `GET /metrics`), the nodes carrying the
+  variables of the overlay table (`ORIGO_STALE_MAX=30s` among them),
+  and `test/e2e/testdata/stub-ca.pem` written; `down.sh` then removes
+  the cluster (proposed: `verify.yml`, the `e2e` job's set-up step;
+  `deploy/examples/kind`, `up_test.sh` run through a Go test in
+  `test/e2e` under the `e2e` tag that is skipped when `kind` is not on
+  `PATH`).
+- `test/e2e/cluster` runs each of its four functions against the
+  stack: `DeletePod` of node 2 returns once the replacement pod is
+  ready, `ApplyManifest` of `test/e2e/testdata/cut-storage.yaml` makes
+  a node answer 503 `storage_unavailable` and its cleanup restores the
+  answer, `HPAStatus` reports the counts `kubectl` shows, and `Apply`
+  of the overlay restores the replica count after an `hpa-2.yaml`
+  (proposed: `test/e2e`, `TestClusterHelperDrivesKubectl`).
+- The `integration`, `e2e`, `e2e-slow`, and `mutation` jobs exist in
+  `verify.yml` with the budgets of the table, the two cluster jobs
+  export the six `ORIGO_TEST_S3_ENDPOINT` family values of the overlay
+  table, `e2e-slow` installs `git-lfs`, and each of the first three
+  selects its prefix and nothing else: the `go test` line of each
+  carries `-run 'TestE2E'`, `-run 'TestCluster'`, or `-run
   'TestSlow'`, and no other job runs the `e2e` tier (proposed:
   `test/e2e`, `TestJobsSelectByPrefix`, which reads
   `.github/workflows/verify.yml` through a test-only constant resolved
