@@ -8,6 +8,8 @@ depends_on:
   - specs/006-compaction.md
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
+  - specs/010-lfs.md
+  - specs/016-security-and-threat-model.md
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06

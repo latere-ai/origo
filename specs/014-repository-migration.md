@@ -3,9 +3,11 @@ title: "Migration of existing repositories from a prior host"
 status: drafted
 track: infra
 depends_on:
+  - specs/002-repository-scaffold.md
   - specs/003-protocol-contract.md
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
+  - specs/016-security-and-threat-model.md
   - specs/019-repository-administration.md
 affects: [internal/api/, cmd/origod/, docs/migration.md, tools/docs/]
 effort: medium

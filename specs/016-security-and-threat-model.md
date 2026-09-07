@@ -1,11 +1,12 @@
 ---
 title: "Security and threat model: what Origo protects, against whom, and how"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/001-architecture.md
   - specs/007-authentication-and-delegation.md
   - specs/012-limits-and-abuse.md
+  - specs/013-test-stubs-and-kind-overlay.md
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06

@@ -1,11 +1,12 @@
 ---
 title: "Degraded storage: what a node does when the bucket is slow, partial, or gone"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
   - specs/011-observability.md
+  - specs/013-test-stubs-and-kind-overlay.md
 affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
