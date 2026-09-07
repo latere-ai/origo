@@ -7,7 +7,7 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
   - specs/019-repository-administration.md
-affects: [internal/api/, cmd/origod/, docs/migration.md]
+affects: [internal/api/, cmd/origod/, docs/migration.md, tools/docs/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -79,10 +79,13 @@ stateDiagram-v2
 | cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; its mounts clone from Origo |
 
 A repository whose verification finds a difference is imported again
-after the operator fixes the cause; the import refuses a non-empty
-repository (`repo_not_empty`), so the operator deletes and undeletes it
-or the prior host registers a fresh id. Both paths are documented; the
-second is the default because it keeps the failed attempt for inspection.
+after the operator fixes the cause. The import refuses a non-empty
+repository (`repo_not_empty`), so the prior host registers a fresh id,
+writes it to its record and to a new manifest line, and the failed
+attempt stays under the old id for inspection until the operator
+deletes it; that is the one documented path, because deleting and
+undeleting the old id would not empty it (an undelete restores the
+history, spec 004).
 
 ### Verification
 
@@ -91,9 +94,11 @@ second is the default because it keeps the failed attempt for inspection.
 | POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source or one the egress rules of spec 016 refuse |
 
 The node runs `git ls-remote --end-of-options <source>` with the token
-in the environment the way spec 019's import does, and `git
-for-each-ref` on its own copy, and compares every reference by name and
-hash; `equal` is true when the two maps are identical. It then counts
+in the environment the way spec 019's import does, drops the peeled
+lines (`<ref>^{}`, which name a tag's target and not a reference), and
+runs `git for-each-ref` on its own copy, and compares every reference
+by name and hash; `equal` is true when the two maps are identical. It
+then counts
 the reachable objects on its own side with `git rev-list --objects
 --all` and reports the count, which the operator compares with the
 prior host's own figure; nothing is counted on the source, because a
@@ -115,8 +120,9 @@ bounded by the 30 second read budget of spec 009, and idempotent.
 ### Batches
 
 The operator drives many repositories with `origod migrate -manifest
-<file> -report <file>`, a subcommand of the binary that reads the
-manifest, drives each repository from `registered` to `mirrored`
+<file> -report <file>`, a subcommand of the binary dispatched by the
+subcommand table of spec 002, that reads the manifest, drives each
+repository from `registered` to `mirrored`
 concurrently, writes a report line per repository as it finishes, and
 exits non-zero when any repository is `failed`. Cut-over is the prior
 host's step and is not driven by the command. The command reads the
@@ -212,14 +218,18 @@ host's data model.
   `internal/api`, `TestSourceTokenIsNeverLogged`).
 - A write on the source between import and verification is detected by
   verification, and after a fresh id and a second import the repository
-  reaches `mirrored` (proposed: `test/e2e`, `TestMigrationCatchesALateWrite`).
+  reaches `mirrored` (proposed: `test/e2e`, `TestE2EMigrationCatchesALateWrite`).
 - A 308 from a stub prior host to Origo makes `git clone` and `git push`
   against the old URL succeed against Origo with no client change
-  (proposed: `test/e2e`, `TestOldCloneURLRedirectsToOrigo`).
+  (proposed: `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo`).
 - `verified` events are delivered with the documented payload
   (proposed: `internal/events`, `TestVerifiedEventPayload`).
 - The shell blocks of `docs/migration.md`, one repository and then one
   batch, run unchanged against the kind stack of spec 013 and end with
   `mirrored` for every repository (proposed: `test/e2e`,
-  `TestMigrationDocCommandsRun`, which extracts the fenced `sh` blocks
-  and runs them with the stack's URLs in the environment).
+  `TestClusterMigrationDocCommandsRun`, which runs
+  `tools/docs/run-blocks.sh docs/migration.md`: the script extracts the
+  fenced `sh` blocks of one document and runs them in order in one
+  shell with `set -e`, the stack's values in the environment as
+  `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN`; spec 018 runs its
+  install document through the same script).
