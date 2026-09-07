@@ -72,7 +72,7 @@ runs user code: no hooks, no filters, no smudge, no submodule fetch.
 | Operation | Path | Body beyond the common fields | Result |
 |---|---|---|---|
 | write files | `commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
-| merge | `merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
+| merge | `merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
 | cherry-pick | `cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
 | revert | `revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
 
@@ -110,11 +110,13 @@ pack; `git index-pack --strict` over that pack and `git fsck
 `quota_bytes` and the push size limit (spec 012); and `Log.Commit` of
 spec 004 commits the pack with the one-update transaction, the
 subject and actor, and `push_options: ["origo.operation=<name>"]`,
-after which `Cache.Advance` records the sequence and the branch is
-moved with `git update-ref`. `commits` is bounded by the 30 second
-budget of spec 009 and the merge family by 5 minutes; over budget is
-504 `operation_timeout`, nothing is committed, and the loose objects
-stay unreachable until the next compaction removes them.
+after which `Cache.Advance` records the sequence, the branch is
+moved with `git update-ref`, and `events.Enqueue` (spec 008) writes the
+event. `commits` is bounded by the 30 second budget of spec 009 and the
+merge family by 5 minutes; over budget is 504 `operation_timeout`
+(spec 009) with `details.budget_seconds` 30 or 300, nothing is
+committed, and the loose objects stay unreachable until the next
+compaction removes them.
 
 Concurrent operations on one branch serialize on `expected_head`: the
 second sees a mismatch and retries after reading the branch. Operations
@@ -133,10 +135,9 @@ Codes this spec defines:
 |---|---|---|---|
 | `merge_conflict` | 409 | The change conflicts with the branch. Resolve it in a clone and push. | `commit`, `paths` |
 | `invalid_change` | 400 | A change in the request is not valid. | `index`, `reason` (`path`, `mode`, `content`, `too_many`, `too_large`) |
-| `operation_timeout` | 504 | The operation took too long and nothing was changed. | `operation`, `budget_seconds` |
 
-`ref_not_found`, `over_quota`, `forbidden`, and `repo_frozen` apply as
-elsewhere.
+`operation_timeout` (spec 009), `ref_not_found`, `over_quota`,
+`forbidden`, and `repo_frozen` apply as elsewhere.
 
 ### Limits
 
