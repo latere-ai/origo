@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -192,10 +192,18 @@ Queueing pushes for later commit.
   leaves another repository served (proposed: `internal/repo`,
   `TestMissingPackIsAnIntegrityError`).
 - All of the above run in the kind stack against MinIO with a fault
-  injector: a NetworkPolicy for unreachable, enforced because the
-  stack's CNI is Cilium (a row of spec 013's overlay table; kindnet
-  enforces no policy), `test/stubs/slowproxy` for slow (a small Go
-  program that forwards TCP to MinIO and holds each connection's first
-  bytes for the delay a control endpoint sets), and object deletion for
-  partial, inside the `e2e` job of spec 013 (proposed: `test/e2e`,
-  `TestClusterDegradedStorage`).
+  injector, through node 1 of spec 013's ports table with its counters
+  read from that node's internal host port: a NetworkPolicy for
+  unreachable, `test/e2e/testdata/cut-storage.yaml` applied with
+  `cluster.ApplyManifest` of spec 013's `test/e2e/cluster` and removed
+  by its cleanup, enforced because the stack's CNI is Cilium (a row of
+  spec 013's overlay table; kindnet enforces no policy), with
+  `ORIGO_STALE_MAX` set to `30s` on the stack's nodes by the overlay
+  so the warm clone carries `Origo-Stale` for 30 seconds and answers
+  503 after; `test/stubs/slowproxy` for slow (a small Go program that
+  forwards TCP to MinIO and holds each connection's first bytes for
+  the delay a control endpoint sets; a row of spec 013's overlay table,
+  its control endpoint on that table's host port); and a deletion
+  through the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family
+  the job exported for partial, inside the `e2e` job of spec 013
+  (proposed: `test/e2e`, `TestClusterDegradedStorage`).
