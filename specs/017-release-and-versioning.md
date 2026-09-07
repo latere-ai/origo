@@ -75,7 +75,7 @@ changed by this spec's text.
 | `ghcr.io/latere-ai/origo-stubs:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.stubs` of spec 013, the stub issuer, authorizer, sink, and source in one image, published beside `origod` under the same tag and signed the same way, with the same bill of materials and provenance; pinned in the `kind` overlay of `deploy-<version>.tar.gz` beside `origod`, so spec 018's `install-release` job and an operator's first installation run the stub authorizer from a released, signed image and not from a checkout |
 | `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
-| `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository pushed through the candidate image in the `kind` stack, so the next release can prove it reads what this one wrote |
+| `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository the harness pushes through the candidate image in the `kind` stack before `TestContract` and keeps, so the next release can prove it reads what this one wrote |
 | release notes | the GitHub release | the `CHANGELOG.md` section for the version, the smoke evidence, and the conformance run's timings (spec 021) |
 
 `GET /version` on a released node serves the tag as `version`.
@@ -100,10 +100,14 @@ makes. On a `v*` tag:
    archive from `deploy/base` and `deploy/examples` with both images
    pinned.
 2. `conformance`: the `e2e` job of spec 013 against the candidate
-   image, running `TestContract` of spec 021, which also pushes the
-   fixture repository, and `TestPreviousReleaseFixture` below against
-   the fixture of the previous release; the harness then reads every
-   object under that repository's prefix from the stack's MinIO
+   image. The fixture harness of this spec pushes the fixture
+   repository through the stack first, under a slug outside the
+   `conformance-` prefix, and keeps it; then `TestContract` of spec
+   021 runs, whose `Run` deletes only the repositories it created and
+   never by prefix (spec 021), so the fixture survives the run; then
+   `TestPreviousReleaseFixture` below runs against the fixture of the
+   previous release; the harness then reads every
+   object under the fixture repository's prefix from the stack's MinIO
    through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables, which
    the job exports with the overlay's fixed values (spec 013, the MinIO
    row: `http://localhost:30900`, bucket `origo-test`), and packs them
