@@ -53,7 +53,7 @@ table describes, with `check` as its first subcommand; spec 014's
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
-| authorizer | an HTTP endpoint the operator runs (spec 007), which must deny the probe id spec 007's authorizer contract reserves; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay |
+| authorizer | an HTTP endpoint the operator runs (spec 007), which must deny the probe id spec 007's authorizer contract reserves; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay, with the image `ghcr.io/latere-ai/origo-stubs:<version>` of the same release as `origod` (spec 017's artifact table), which the archive pins |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
 
 ### Manifests
@@ -61,7 +61,14 @@ table describes, with `check` as its first subcommand; spec 014's
 `deploy/base` becomes provider-neutral and complete: Namespace,
 ServiceAccount, Deployment with the cache volume, Service, the headless
 gossip Service, the NetworkPolicy on the gossip port (spec 016),
-Ingress without a class or an issuer annotation,
+Ingress without a class, an issuer annotation, or any
+controller-specific annotation (the base's
+`nginx.ingress.kubernetes.io/proxy-body-size: "0"` and
+`nginx.ingress.kubernetes.io/proxy-read-timeout: "600"`, with the
+send timeout and request buffering beside them, move to the `kind`
+overlay, which adds them because a push body is a pack of any size and
+a clone can take minutes; an operator's overlay adds the equivalent
+for their controller, and the install document says so),
 HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
 (spec 011), and a Secret template with every required variable,
 `ORIGO_GOSSIP_SECRET` (spec 005) and `ORIGO_TOKEN_KEY` (spec 007) among
@@ -87,12 +94,21 @@ script spec 013 owns under "Documents as tests" and spec 014 uses for
 its migration document, so the document is the test and a step that
 drifts from the manifests fails the job. The `install` job in
 `verify.yml` runs on every push with the candidate build of that
-push, the image the `e2e` job of spec 013 built, because there is no
-release for it. The `install-release` job in `release.yml` runs on a
+push, because there is no release for it: it creates a bare kind
+cluster from `deploy/examples/kind/kind.yaml` with `kind create
+cluster`, not with `up.sh`, because an operator has a cluster and no
+script, and installs Cilium as the one step `up.sh` also takes, because
+`kind.yaml` disables the default CNI (spec 013) and an operator's
+cluster comes with one; downloads the `candidate-images` artifact the `e2e` job of
+spec 013 uploaded (`actions/upload-artifact` there,
+`actions/download-artifact` here, the two `docker save` tarballs of
+`origod` and `origo-stubs`) and loads both with `kind load
+image-archive`; then walks the document, under a 20 minute budget.
+The `install-release` job in `release.yml` runs on a
 `v*` tag after the `publish` step of spec 017's pipeline, with the
-release artifacts alone, the signed image and
-`deploy-<version>.tar.gz` downloaded from the published release, so
-the tag proves the documented install works from what an operator
+release artifacts alone, the signed `origod` and `origo-stubs` images
+and `deploy-<version>.tar.gz` downloaded from the published release,
+so the tag proves the documented install works from what an operator
 downloads; a failure there fails the workflow after the release
 exists, which is the evidence the release notes link. The document
 reads the image reference and the manifest path from two variables
@@ -100,11 +116,12 @@ the jobs set:
 
 | Variable | Set by | Value |
 |---|---|---|
-| `ORIGO_INSTALL_IMAGE` | the `install` job of `verify.yml`, the `install-release` job of `release.yml` | the image reference the document's `apply` block pins: the candidate image the `e2e` job loaded on a push, `ghcr.io/latere-ai/origod:<version>` on a tag; the document names the release form as the default a reader copies |
-| `ORIGO_INSTALL_MANIFESTS` | the same two jobs | the path of the manifests the document applies: `deploy/examples/kind` in the checkout on a push, the unpacked `deploy-<version>.tar.gz` on a tag; the document names the archive's path as the default |
+| `ORIGO_INSTALL_IMAGE` | the `install` job of `verify.yml`, the `install-release` job of `release.yml` | the image reference the document's `apply` block pins: the candidate image the `install` job loaded on a push, `ghcr.io/latere-ai/origod:<version>` on a tag; the document names the release form as the default a reader copies; the stubs image is the same tag of `ghcr.io/latere-ai/origo-stubs`, pinned by the manifests the next row names, so the document carries no second variable |
+| `ORIGO_INSTALL_MANIFESTS` | the same two jobs | the path of the manifests the document applies: `deploy/examples/kind` in the checkout on a push, the unpacked `deploy-<version>.tar.gz` on a tag, whose `kind` overlay pins both images; the document names the archive's path as the default |
 
 Both runs end with `TestContract` (spec 021) against the installed
-nodes.
+nodes. The `overlays` job of `verify.yml` runs `kustomize build` over
+the three example overlays under a 5 minute budget.
 
 ### The check
 
@@ -152,16 +169,26 @@ binary artifact of spec 017.
 
 ## Acceptance criteria
 
-- The `kind` example overlay installs in the CI stack from the
+- The `kind` example overlay installs on a bare kind cluster from the
   candidate build on every push and from the release artifacts alone
   on a tag, and `TestContract` (spec 021) passes against it both ways
-  (spec 013's stack; proposed: `.github/workflows/verify.yml`, the
-  `install` job with `ORIGO_INSTALL_IMAGE` and
+  (proposed: `.github/workflows/verify.yml`, the
+  `install` job, 20 minutes, creating the cluster from `kind.yaml`,
+  loading the `candidate-images` artifact of spec 013's `e2e` job, and
+  walking `docs/install.md` with `ORIGO_INSTALL_IMAGE` and
   `ORIGO_INSTALL_MANIFESTS` set to the candidate build;
   `.github/workflows/release.yml`, the `install-release` job after
   `publish` with the two variables set to the release artifacts), and
   `kustomize build` succeeds on `deploy/examples/digitalocean` and
-  `deploy/examples/aws` (proposed: `verify.yml`, the `overlays` job).
+  `deploy/examples/aws` (proposed: `verify.yml`, the `overlays` job, 5
+  minutes).
+- `deploy/base/ingress.yaml` carries no annotation whose key starts
+  with `nginx.ingress.kubernetes.io/` or `cert-manager.io/` and no
+  `ingressClassName`, and `kustomize build deploy/examples/kind`
+  renders the Ingress with `proxy-body-size: "0"` and
+  `proxy-read-timeout: "600"` (proposed: `cmd/origod`,
+  `TestBaseIngressIsControllerNeutral`, reading the two files through
+  a test-only constant resolved from its own source file).
 - `origod check` is dispatched by the subcommand table of spec 002,
   which this spec builds: `origod check` runs the check, `origod` and
   `origod serve` serve, `origod -version` prints the identity, and
