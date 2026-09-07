@@ -1,6 +1,6 @@
 ---
 title: "Migration of existing repositories from a prior host"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -238,8 +238,8 @@ host's data model.
   second import the repository reaches `mirrored`; the source is the
   in-cluster stub at `https://origo-stubs.origo.svc:8443`, which the
   stack's nodes reach because the overlay names it in
-  `ORIGO_EGRESS_ALLOW` and the dialer's cluster exception of spec 016
-  admits it (proposed: `test/e2e`,
+  `ORIGO_EGRESS_ALLOW` with its pinned `clusterIP` and the dialer's
+  cluster exception of spec 016 admits that address (proposed: `test/e2e`,
   `TestClusterMigrationCatchesALateWrite`, in the `e2e` job of spec
   013).
 - A 308 from a stub prior host to Origo makes `git clone` and `git push`

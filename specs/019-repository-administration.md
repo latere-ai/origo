@@ -228,8 +228,9 @@ than weekly.
   the bearer), fetched by the stack from the in-cluster source
   `https://origo-stubs.origo.svc:8443/fixture.git`, which the nodes
   trust through the overlay's `ORIGO_EGRESS_CA_BUNDLE` and reach
-  because the overlay names the host in `ORIGO_EGRESS_ALLOW` and the
-  dialer's cluster exception of spec 016 admits it, completes within
+  because the overlay names the host in `ORIGO_EGRESS_ALLOW` with its
+  pinned `clusterIP` and the dialer's cluster exception of spec 016
+  admits that address, completes within
   the budget as one `compact` entry, `import` reports `done` with the
   reference count, the stub's request list read through its host port
   of spec 013's ports table shows every request carried the bearer,
