@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -39,13 +39,12 @@ from the first draft. The rows the table below gained for later specs
 and the Failpoint table are reference entries; the spec named in each
 row builds what reads it.
 
-One change to the tree, for the builder: the shared runtime stage of
-`Dockerfile` and `Dockerfile.ci` is `debian:bookworm-slim`, whose `git`
-is 2.39, and `origod check` (spec 018) requires 2.40 because spec 020's
-merge family needs it. The base becomes `debian:trixie-slim` pinned by
-digest, which ships git 2.47, in both files at once so the two stages
-stay byte for byte the same; the Images section below and spec 017's
-artifact table say so.
+The shared runtime stage of `Dockerfile` and `Dockerfile.ci` is
+`debian:bookworm-slim`, whose `git` is 2.39. Spec 017 owns the move to
+`debian:trixie-slim` pinned by digest, which ships git 2.47, the floor
+`origod check` (spec 018) enforces for spec 020's merge family; both
+files are in that spec's affects and change at once so the two stages
+stay byte for byte the same. This spec is complete as built.
 
 ## Design
 
@@ -251,11 +250,11 @@ release evidence beyond the smoke.
 
 `Dockerfile` builds the binary inside the image for a developer;
 `Dockerfile.ci` copies `out/origod` the verify run built. Both share one
-runtime stage, byte for byte: Debian trixie-slim pinned by digest, which
-ships git 2.47, with `git` and `ca-certificates`, user `65532`,
-`/var/lib/origo` owned by it, ports `8080`, `8081`, `7946/udp`. The
-runtime is not distroless because origod runs git as a subprocess. The
-tree still carries bookworm-slim, whose git is 2.39 (Current state).
+runtime stage, byte for byte: Debian slim pinned by digest, with `git`
+and `ca-certificates`, user `65532`, `/var/lib/origo` owned by it, ports
+`8080`, `8081`, `7946/udp`. The runtime is not distroless because origod
+runs git as a subprocess. The tree carries bookworm-slim, whose git is
+2.39; spec 017 moves both files to trixie-slim, git 2.47 (Current state).
 
 ## Acceptance criteria
 
