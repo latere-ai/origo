@@ -6,7 +6,7 @@ depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
   - specs/013-test-stubs-and-kind-overlay.md
-affects: [internal/placement/, internal/repo/, internal/config/, cmd/origod/, deploy/, test/e2e/]
+affects: [internal/placement/, internal/repo/, internal/config/, cmd/origod/, deploy/, deploy/examples/kind/, Makefile, test/e2e/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -67,7 +67,7 @@ per name.
 
 | Header | Meaning |
 |---|---|
-| `Origo-Prefer` | on every response to a request that names a repository, whatever the status: the comma separated names of the preferred nodes for that repository, highest score first; absent on a response that names none (`POST /v1/repos`, the probes, `GET /.well-known/jwks.json`); a request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
+| `Origo-Prefer` | on every response to a request that names a repository, whatever the status, with one exception: the comma separated names of the preferred nodes for that repository, highest score first; absent on a response that names none (`POST /v1/repos`, the probes, `GET /.well-known/jwks.json`) and absent on a 401 or 403 to a name that did not resolve, because the score needs the id and a refused caller is told nothing about it (spec 007, "Authorization before lookup"); a request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
 
 The compaction primary of spec 006 is the first name.
 
@@ -77,8 +77,12 @@ After every index object a node creates, it sends one datagram three
 times, 10 ms apart, to every address `ORIGO_GOSSIP_PEERS` resolves to on
 the port of `ORIGO_GOSSIP_ADDR`, with no acknowledgement. A datagram is
 a 32 byte tag followed by a payload: the tag is the HMAC-SHA256 of the
-payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002, required from this
-spec on, the same value on every node), and the payload is one JSON
+payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002: required whenever
+`ORIGO_GOSSIP_PEERS` is set, the same value on every node; a single node
+with no peers runs with neither, which is what `make dev` does, while
+the end-to-end harness sets both for its two-node tests, the bootstrap
+Secret template of `deploy/bootstrap` carries the key, and the kind
+overlay of spec 013 sets a fixed value), and the payload is one JSON
 object:
 
 ```json
@@ -127,7 +131,7 @@ measured after every apply and walked once at start-up:
 | Rule | Value |
 |---|---|
 | ceiling | `ORIGO_CACHE_BYTES` |
-| order | least recently acquired first |
+| order | least recently acquired first; a copy found on disk at start-up, which no request has acquired in this process, counts as acquired at the process start time, so a restarted node keeps its warm set for the floor below and then ranks it by use |
 | floor | a copy acquired in the last 10 minutes is never evicted for pressure |
 | idle | a copy not acquired for 24 hours is evicted whatever the pressure, so idle repositories hold no copy anywhere |
 | in use | eviction takes the repository's write lock, so it never removes a copy mid-request or mid-apply |
@@ -161,9 +165,12 @@ else.
 The autoscaler is a HorizontalPodAutoscaler in `deploy/base`:
 `minReplicas: 2`, `maxReplicas: 32`, target CPU utilization 70% of the
 request, scale-up stabilization 30 seconds, scale-down stabilization 600
-seconds so a burst of clones does not churn the cache; the kind overlay
-of spec 013 sets the scale-down window to 60 seconds so its test
-finishes inside the job budget. The second signal,
+seconds so a burst of clones does not churn the cache. A CPU target
+needs the resource metrics API, which the kind overlay of spec 013
+provides with `metrics-server`, one row of its overlay table; this spec
+adds to that overlay the patch that sets the scale-down window to 60
+seconds, so the autoscaler test below leaves a small cluster for the
+next test inside the job budget. The second signal,
 `origo_requests_in_flight` averaged at 64 per pod, needs a metrics
 adapter and is added by the example overlays of spec 018 that carry
 one. The PodDisruptionBudget keeps `minAvailable: 1`, pod anti-affinity
@@ -220,16 +227,19 @@ the cache on shutdown.
   `Origo-Prefer` with the same first name on every node, and a second
   clone sent to that node leaves `origo_repo_materialized_total` on it
   unchanged (proposed: `internal/placement`, `TestRendezvousAgreesAcrossNodes`;
-  `test/e2e`, `TestPreferredNodeIsWarm`).
+  `test/e2e`, `TestClusterPreferredNodeIsWarm`).
 - A push acknowledged on node A is returned by a fetch on node B: with
-  gossip, a fetch on B started 100 ms after A's acknowledgement returns
-  the pushed commit and B's `origo_wal_head_check_seconds{result="404"}`
-  count rose by one while its `result="200"` count did not, so the
-  catch-up happened before the request; with gossip disabled
-  (`ORIGO_GOSSIP_PEERS` unset) the first fetch on B returns the pushed
-  commit with the `result="200"` count risen by one. The test measures
-  the time from A's acknowledgement until a fetch on B returns the
-  commit (proposed: `test/e2e`, `TestGossipShortensTheCatchUp`).
+  gossip, the test waits until B's `origo_repo_entries_applied_total`
+  rose by one, which is the background catch-up the announcement
+  scheduled, then fetches on B and finds the pushed commit with B's
+  `origo_wal_head_check_seconds{result="404"}` count risen by one while
+  its `result="200"` count did not, so the catch-up happened before the
+  request; with gossip disabled (`ORIGO_GOSSIP_PEERS` unset) the first
+  fetch on B returns the pushed commit with the `result="200"` count
+  risen by one. The test also records the time from A's acknowledgement
+  until B's counter rose (proposed: `test/e2e`,
+  `TestE2EGossipShortensTheCatchUp`, two nodes of the one-node run's
+  harness).
 - Three nodes exchanging heartbeats agree on the live set within 60
   seconds of a node joining and drop a node 60 seconds after its last
   datagram with a fake clock, and a node's own name is in its set with
@@ -250,22 +260,29 @@ the cache on shutdown.
 - A repository not acquired for 24 hours is evicted at the next evictor
   run with a fake clock (proposed: `internal/placement`, `TestIdleEviction`).
 - Removing one of 3 nodes during a load of 50 clones per second causes
-  no failed request (proposed: `test/e2e`, `TestNodeRemovalUnderReadLoad`).
-- Under a synthetic read load of 200 clones of a 10 MiB repository,
-  going from 2 to 8 replicas raises clones per second at least 3 times
-  with no push failure, and the HPA reaches 4 replicas within 60
-  seconds of CPU crossing the target; scale-down is not asserted, the
-  overlay's 60 second window only keeps the cluster small for the next
-  test (proposed: `test/e2e` on the kind stack of spec 013 in its
-  `e2e-slow` job, `TestReplicasScaleReads`, `TestAutoscalerScalesUp`).
+  no failed request (proposed: `test/e2e`, `TestClusterNodeRemovalUnderReadLoad`).
+- Under a synthetic read load of 200 clones of a 10 MiB repository on
+  the kind stack of spec 013, clones per second measured at 2, 4, and 8
+  replicas is monotonic non-decreasing with no push failure; the ratio
+  between 8 and 2 is recorded in the test output as a measurement and
+  no ratio is asserted, because the runner's CPU, not the design,
+  bounds it. The HPA reaches 4 replicas within 60 seconds of CPU
+  crossing the target; scale-down is not asserted, the overlay's 60
+  second window only keeps the cluster small for the next test
+  (proposed: `test/e2e` in the `e2e-slow` job of spec 013,
+  `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp`).
 - A drain during 100 concurrent pushes loses none: every push is either
   acknowledged and in the newest index or refused with
   `storage_unavailable` and absent (proposed: `test/e2e`,
-  `TestDrainLosesNoPush`).
+  `TestE2EDrainLosesNoPush`).
 - Materializing 1 000 entries from an empty disk with 4 workers
   finishes under 30 seconds against MinIO on the CI runner, and a thin
-  entry whose base is in the previous entry lands on the retry
-  (proposed: `test/e2e`, `TestMaterializeThousandEntriesUnderBudget`,
-  a plain test of the `e2e` tier that runs on every push and shares
+  entry whose base is in the previous entry lands on the retry. The
+  fixture is written by the harness through `Log.Commit`, one entry per
+  commit with a pack the harness builds, not by `git push`, under a
+  budget of its own of 5 minutes, because phase 1 measured 98 seconds
+  for the same 1 000 entries through the git client (spec 004 Outcome)
+  (proposed: `test/e2e`, `TestE2EMaterializeThousandEntriesUnderBudget`,
+  a plain test of the one-node run that runs on every push and shares
   its fixture builder with `TestMeasure`; `internal/repo`,
   `TestConcurrentWorkersApplyThinEntries`).
