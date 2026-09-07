@@ -35,9 +35,11 @@ live service after a release.
 
 Nothing of this spec exists. `test/e2e` covers the flows of specs 003
 and 004 against one node with the phase 1 bearer; `internal/contract`
-holds the codes and the header and no table of sentences; spec 003's
-Outcome lists the sentences the code sends that differ from the
-contract, which the code table test below is what fixes. Spec 013's
+holds the codes and the header and no table of sentences; the
+sentences the code sends are the `Message` fields of the
+`httpjson.Error` literals in `cmd/origod`, `internal/httpgit`, and
+`internal/api`, and spec 003's Outcome lists the ones that differ from
+the contract, which the code table test below is what fixes. Spec 013's
 stubs and overlay, which the suite needs for its delegation and
 deny-flipping cases and for its CI run, are not built either.
 
@@ -54,6 +56,8 @@ conformance.Run(t, conformance.Target{
     Issuer:     "<the stub issuer's URL, for the delegation and token cases>",
     Authorizer: "<the stub authorizer's control URL, to flip allow and deny>",
     EventsSink: "<the stub sink's control URL, to read deliveries>",
+    Fault:      <a Fault, to cut the bucket and delete an object; nil on a live target>,
+    Skip:       []string{"<a subtest name>"},
 })
 ```
 
@@ -77,19 +81,61 @@ they drive the stubs and a live service has none: the delegation cases
 (`act` on a service token, which need `Issuer` to mint one) and the
 deny-flipping cases (403 before lookup, the authorizer outage, and
 `authorizer_unavailable`, which need `Authorizer` to flip an answer).
-Against a live service with a real issuer and authorizer those two
-groups are skipped and every other case runs, so the live run proves
-the surface and the stack run proves the surface and the trust logic.
+Two rows need a fault in the bucket that a caller outside the
+installation cannot cause: `storage_unavailable` (spec 003) needs the
+bucket unreachable, and `repository_unavailable` (spec 015) needs a
+pack object gone. `Fault` is an interface with `CutStorage(t)`, which
+makes the bucket unreachable until the test ends, and
+`DeleteObject(t, key)`; the stack run implements it with the
+NetworkPolicy spec 015's cluster scenario uses (enforced by the Cilium
+row of spec 013's overlay table) and a delete through the MinIO host
+port, the stub run implements it on `wal.MemStore` in-process, and a
+live target has none. The live run's `Skip` list is exactly the table
+below and nothing else; the run prints each entry as skipped, so a
+report with fewer or more skipped names is a failure of the run.
+
+| Skipped on the live run | Why |
+|---|---|
+| the delegation group: `act` on a service token, the repository-bound token minted through delegation | needs `Issuer` to mint the token |
+| the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable` | needs `Authorizer` to flip an answer |
+| the `storage_unavailable` row of spec 003 | needs `Fault` to cut the bucket |
+| the `repository_unavailable` row of spec 015 | needs `Fault` to delete a pack object |
+
+Every other case runs against the live service, so the live run proves
+the surface and the stack run proves the surface, the trust logic, and
+the degraded rows.
+
+The stack run reads its target from `ORIGO_TEST_URL` and
+`ORIGO_TEST_ADMIN_TOKEN` (spec 002), set by spec 013's `e2e` job, and
+reaches the three stub control endpoints through the host ports the
+overlay's `kind` config maps for them (the `origo-stubs` row of spec
+013's overlay table), which the package holds as defaults so the job
+sets nothing else. The live run reads `ORIGO_LIVE_URL` and
+`ORIGO_LIVE_TOKEN` (spec 002), two repository secrets: the installation
+a release reaches and a token with `admin` on the `conformance-`
+prefix.
 
 ### The code table
 
 `internal/contract` gains the code table as data: code, status, and
-the one sentence, for every code spec 003 and the specs it points at
-define. A test over the packages asserts that every code they send is
-in the table with that sentence and that no package sends a sentence
-the table does not have; the suite compares live responses to the same
-table. The divergences spec 003's Outcome lists are fixed by making
-this test pass.
+the one sentence, for every row of the Code tables of spec 003 and of
+specs 007, 009, 015, 019, and 020, which is every code the
+cross-reference in `specs/README.md` lists. `TestEveryCodeHasOneSentence`
+walks every Go file of the module outside `tools/`, parses it with
+`go/parser`, and collects every composite literal of type
+`httpjson.Error` (the envelope type of `latere.ai/x/pkg/httpjson`,
+which every handler renders through `httpjson.WriteError`): its `Code` field must be a `contract.Code*` constant
+the table holds, and its `Message` field must be a string literal equal
+to the table's sentence for that code. A `Message` built from an
+expression (`err.Error()`, a concatenation, a `fmt.Sprintf`) is a
+failure, because the reason belongs in `details`, and so is a table row
+no literal sends, so a dead row is noticed. Each failure names the file
+and line. The sideband and hook lines (`ERR <code>: <sentence>`,
+`reject <code>: <sentence>`) are rendered from the same table by
+`contract.Sentence(code)` and hold no sentence of their own, so the
+grep over `httpjson.Error` literals is the whole of what can drift. The
+suite compares live responses to the same table. The divergences spec
+003's Outcome lists are fixed by making this test pass.
 
 ### The mutation job
 
@@ -112,15 +158,25 @@ the capabilities are per node.
 | Test variable | Purpose |
 |---|---|
 | `ORIGO_TEST_DROP_CAPABILITY` | defined in spec 002's table; set by the mutation job on the node under test, one name from the set above |
+| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | defined in spec 002's table; the stack run's target, set by spec 013's `e2e` job |
+| `ORIGO_LIVE_URL`, `ORIGO_LIVE_TOKEN` | defined in spec 002's table; the live run's target, two repository secrets; the `live` job is skipped when the URL is unset, so a fork runs no live run |
 
 ### Runs
 
+```mermaid
+flowchart LR
+  C[TestContract] --> K[kind stack of spec 013<br/>ORIGO_TEST_URL, stubs, Fault<br/>Skip: none]
+  C --> S[test/stubs/origo in-process<br/>MemStore Fault<br/>Skip: none]
+  C --> M[one node with MinIO<br/>ORIGO_TEST_DROP_CAPABILITY<br/>must fail]
+  C --> L[ORIGO_LIVE_URL after a release<br/>no stubs, no Fault<br/>Skip: the four-entry list]
+```
+
 | Run | Target | When |
 |---|---|---|
-| stack | the kind stack of spec 013, in its `e2e` job | every push to `main` and every pull request, inside that job's 30 minute budget |
+| stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired | every push to `main` and every pull request, inside that job's 30 minute budget |
 | stub | `test/stubs/origo` in-process, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
 | mutation | one node with MinIO, once per capability | every push |
-| live | the installation `ORIGO_RELEASE_DEPLOY` names, with a dedicated repository prefix and the two stub-driven groups skipped | after every release; the timings are attached to the release (spec 017) |
+| live | the installation `ORIGO_LIVE_URL` names, with `ORIGO_LIVE_TOKEN`, the `conformance-` prefix, and the skip list above | the `live` job of `release.yml`, after spec 017's deploy step and before its publish step, when the secret is set; its report and timings are attached to the release (spec 017) |
 | previous release | the fixture of release N-1 on release N (spec 017, `TestPreviousReleaseFixture`) | in the release pipeline |
 
 ## Not in this spec
@@ -132,9 +188,18 @@ assertions beyond the thresholds the owning specs name.
 ## Acceptance criteria
 
 - `TestContract` passes against the kind stack on every push to `main`
-  inside spec 013's `e2e` job, and against the live service after a
-  release with exactly the delegation and deny-flipping groups skipped
-  and reported (`verify.yml`; the release evidence of spec 017).
+  inside spec 013's `e2e` job with nothing skipped, and against the
+  installation `ORIGO_LIVE_URL` names after a release with exactly the
+  four entries of the skip list skipped and each reported by name
+  (`verify.yml`; `release.yml`, the `live` job; the release evidence of
+  spec 017).
+- With `Fault` wired, the `storage_unavailable` row answers 503 with
+  the table's sentence while the bucket is cut and the
+  `repository_unavailable` row answers 503 with `details.key` naming
+  the deleted pack, on the stack and on the stub; on a target with no
+  `Fault` both rows are skipped and reported (proposed:
+  `test/conformance`, `TestContract/003/storage_unavailable`,
+  `TestContract/015/repository_unavailable`).
 - Removing any one git-controlled capability (`filter`,
   `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`, `atomic`,
   `push-options`) from the server's advertised set fails at least one
@@ -149,9 +214,14 @@ assertions beyond the thresholds the owning specs name.
   `test/conformance`, `TestSameAnswersOnStubAndStack`, which runs one
   consumer-shaped flow against both targets and compares the
   responses field by field).
-- Every code any package sends appears in the code table with one
-  sentence, and no package sends a sentence the table does not have
-  (proposed: `internal/contract`, `TestEveryCodeHasOneSentence`).
+- Every `httpjson.Error` literal in the module carries a `Code` the
+  table holds and a `Message` that is the string literal of the
+  table's sentence, every table row is sent by at least one literal,
+  and a `Message` built from an expression fails with its file and
+  line; the test fails on the tree as it stands today, on the
+  lower-case sentences spec 003's Outcome lists, and passes once they
+  are the table's (proposed: `internal/contract`,
+  `TestEveryCodeHasOneSentence`).
 - A run against a shared installation leaves no repository behind:
   after `TestContract`, `GET /v1/repos/{id}` answers 404 for every id
   the run created (proposed: `test/conformance`, `TestRunCleansUp`).

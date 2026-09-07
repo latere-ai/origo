@@ -111,7 +111,7 @@ that needs another adds a row rather than a step in a job:
 |---|---|---|
 | MinIO | one in-cluster bucket, path style, with a host port mapped in the `kind` config so the runner reaches it too; `ORIGO_S3_PUBLIC_ENDPOINT` is set to that host address, which is what a presigned URL and the harness use from outside the cluster | every spec; 010 for LFS transfers from the runner, 017 for the fixture the harness extracts |
 | three `origod` replicas | the candidate image with `ORIGO_GOSSIP_PEERS` on the headless Service, `ORIGO_GOSSIP_SECRET` a fixed value (spec 005), `ORIGO_OIDC_INSECURE_ISSUERS` naming the stub issuer's in-cluster URL (spec 007), and `ORIGO_TOKEN_KEY` from a Secret the overlay's apply script generates with `openssl ecparam -genkey -name prime256v1` (spec 007) | every spec |
-| `origo-stubs` | the issuer, the authorizer with `-allow *`, and the sink as pods, each on a Service | 007, 008, 021 |
+| `origo-stubs` | the issuer, the authorizer with `-allow *`, and the sink as pods, each on a Service, with the three control endpoints mapped to host ports in the `kind` config so `TestContract` drives them from the runner (spec 021) | 007, 008, 021 |
 | `metrics-server` | the resource metrics API a CPU-target HorizontalPodAutoscaler reads, installed with the flag that accepts kind's kubelet certificates | 005 |
 | Cilium | the CNI, installed in place of kindnet (`disableDefaultCNI` in the `kind` config), so NetworkPolicy is enforced | 015 for the unreachable-bucket policy, 016 for the gossip policy |
 | Pod Security admission | the label `pod-security.kubernetes.io/enforce=restricted` on the `origo` namespace | 016 |
