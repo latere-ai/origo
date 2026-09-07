@@ -1,6 +1,6 @@
 ---
 title: "Read API and archive: refs, log, diff, tree, blob, tarball"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md

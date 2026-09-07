@@ -1,6 +1,6 @@
 ---
 title: "Limits and abuse controls"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
