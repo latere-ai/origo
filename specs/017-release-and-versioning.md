@@ -72,6 +72,7 @@ changed by this spec's text.
 | Artifact | Where | Notes |
 |---|---|---|
 | `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.ci` over the shared runtime stage of spec 002: `debian:trixie-slim` pinned by digest, which ships git 2.47, above the 2.40 floor `origod check` (spec 018) enforces; signed with cosign keyless; an SPDX bill of materials and SLSA provenance attached as referrers |
+| `ghcr.io/latere-ai/origo-stubs:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.stubs` of spec 013, the stub issuer, authorizer, sink, and source in one image, published beside `origod` under the same tag and signed the same way, with the same bill of materials and provenance; pinned in the `kind` overlay of `deploy-<version>.tar.gz` beside `origod`, so spec 018's `install-release` job and an operator's first installation run the stub authorizer from a released, signed image and not from a checkout |
 | `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
 | `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository pushed through the candidate image in the `kind` stack, so the next release can prove it reads what this one wrote |
@@ -90,13 +91,14 @@ makes. On a `v*` tag:
 
 1. `build`: `go build` for the four `os/arch` pairs with the `-ldflags`
    of spec 002 setting `internal/version`, the archives and
-   `checksums.txt`; `docker buildx` of `Dockerfile.ci` for
-   `linux/amd64` and `linux/arm64` pushed as one multi-arch image;
-   `cosign sign` keyless with the workflow's OIDC identity on the image
-   and on `checksums.txt`; an SPDX bill of materials from the module
-   graph and the image, attached with `attest-sbom`; provenance with
-   `attest-build-provenance`; the deploy archive from `deploy/base` and
-   `deploy/examples` with the image pinned.
+   `checksums.txt`; `docker buildx` of `Dockerfile.ci` and of
+   `Dockerfile.stubs` for `linux/amd64` and `linux/arm64`, each pushed
+   as one multi-arch image; `cosign sign` keyless with the workflow's
+   OIDC identity on both images and on `checksums.txt`; an SPDX bill of
+   materials from the module graph and each image, attached with
+   `attest-sbom`; provenance with `attest-build-provenance`; the deploy
+   archive from `deploy/base` and `deploy/examples` with both images
+   pinned.
 2. `conformance`: the `e2e` job of spec 013 against the candidate
    image, running `TestContract` of spec 021, which also pushes the
    fixture repository, and `TestPreviousReleaseFixture` below against
