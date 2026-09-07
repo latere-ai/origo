@@ -5,8 +5,9 @@ track: infra
 depends_on:
   - specs/002-repository-scaffold.md
   - specs/003-protocol-contract.md
-  - specs/013-conformance-suite.md
-affects: [.github/workflows/, Dockerfile, Dockerfile.ci, CHANGELOG.md, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, cmd/origod/, test/conformance/]
+  - specs/013-test-stubs-and-kind-overlay.md
+  - specs/021-conformance-suite.md
+affects: [.github/workflows/, Dockerfile, Dockerfile.ci, CHANGELOG.md, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-07
@@ -38,6 +39,16 @@ section. No tag has been cut, so the pipeline has never run for Origo.
 other version, and nothing maps that refusal to a response code.
 `docs/upgrades/` is empty. There is no compatibility statement.
 
+Two version mechanisms exist, for the builder to reduce to one:
+`internal/version.Version`, set by the `-ldflags` of spec 002's
+`Makefile`, and `main.version` in `cmd/origod/main.go`, set by the
+shared pipeline with `-X main.version=<tag>` and copied over the first
+at start-up when non-empty. `main.version` is removed under this spec;
+`release.yml` below sets `internal/version.Version`, `Commit`, and
+`Date` with the same `-ldflags` the `Makefile` uses, so a binary from
+the pipeline and one from `make build` carry their identity the same
+way and `GET /version` has one source.
+
 Known defect the first tag will hit, which the builder fixes under this
 spec with the shell test the criteria propose: after `GET /readyz`
 answers 200, `tools/smoke/release.sh` runs `grep -qx "ok"` with no
@@ -56,34 +67,39 @@ changed by this spec's text.
 | `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
 | `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository pushed through the candidate image in the `kind` stack, so the next release can prove it reads what this one wrote |
-| release notes | the GitHub release | the `CHANGELOG.md` section for the version, the smoke evidence, and the conformance run's timings (spec 013) |
+| release notes | the GitHub release | the `CHANGELOG.md` section for the version, the smoke evidence, and the conformance run's timings (spec 021) |
 
 `GET /version` on a released node serves the tag as `version`.
 
 ### The pipeline
 
 `release.yml` in this repository produces every artifact itself and
-calls `latere-ai/ci` for one step. On a `v*` tag:
+calls no shared workflow: `service-release.yml` of `latere-ai/ci` runs
+its deploy and smoke as one job it does not expose as a separate
+callable step, so the two steps are written inline here, the same
+`kubectl` and `tools/smoke/release.sh` invocations the shared workflow
+makes. On a `v*` tag:
 
 1. `build`: `go build` for the four `os/arch` pairs with the `-ldflags`
-   of spec 002, the archives and `checksums.txt`; `docker buildx` of
-   `Dockerfile.ci` for `linux/amd64` and `linux/arm64` pushed as one
-   multi-arch image; `cosign sign` keyless with the workflow's OIDC
-   identity on the image and on `checksums.txt`; an SPDX bill of
-   materials from the module graph and the image, attached with
-   `attest-sbom`; provenance with `attest-build-provenance`; the deploy
-   archive from `deploy/base` and `deploy/examples` with the image
-   pinned.
-2. `conformance`: the `kind` job of spec 013 against the candidate
-   image, which also pushes the fixture repository and packs its
-   prefix as `fixture-<version>.tar.gz`; a failure stops the release.
+   of spec 002 setting `internal/version`, the archives and
+   `checksums.txt`; `docker buildx` of `Dockerfile.ci` for
+   `linux/amd64` and `linux/arm64` pushed as one multi-arch image;
+   `cosign sign` keyless with the workflow's OIDC identity on the image
+   and on `checksums.txt`; an SPDX bill of materials from the module
+   graph and the image, attached with `attest-sbom`; provenance with
+   `attest-build-provenance`; the deploy archive from `deploy/base` and
+   `deploy/examples` with the image pinned.
+2. `conformance`: the `e2e` job of spec 013 against the candidate
+   image, running `TestContract` of spec 021, which also pushes the
+   fixture repository and packs its prefix as
+   `fixture-<version>.tar.gz`; a failure stops the release.
 3. `deploy`: runs only when the repository variable
-   `ORIGO_RELEASE_DEPLOY` (spec 002) is set, and then calls
-   `service-release.yml` of `latere-ai/ci` for its deploy and smoke
-   step alone: apply `deploy/prod/`, wait for the rollout, run
-   `tools/smoke/release.sh`, and hand back the evidence. Latere sets the
-   variable on its own repository; a fork does not, so a tag on a fork
-   publishes every artifact and skips this step.
+   `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl apply -k
+   deploy/prod/` with the image pinned to the tag, `kubectl rollout
+   status` with a 10 minute wait, then `tools/smoke/release.sh`
+   against the public URL, whose markdown output is the evidence.
+   Latere sets the variable on its own repository; a fork does not, so
+   a tag on a fork publishes every artifact and skips this step.
 4. `publish`: the GitHub release with every artifact, the `CHANGELOG.md`
    section as the body, the smoke evidence when step 3 ran, and the
    conformance timings.
@@ -131,8 +147,8 @@ supported within a minor series; across a major it is not.
 
 Minor releases as features land; patch releases for fixes; the two most
 recent minor series receive patches. A release is cut only from a green
-`main` with the conformance suite passed against the candidate image in
-the kind stack (spec 013).
+`main` with the conformance suite (spec 021) passed against the
+candidate image in the kind stack (spec 013).
 
 ## Not in this spec
 
@@ -166,3 +182,8 @@ workflow identity, which is what an outside operator can verify.
   standard input closed, and fails naming the mismatch when the version
   differs (proposed: `tools/smoke/release_test.sh`, run by the `test`
   gate through a Go test in `tools/smoke` that executes it).
+- `main.version` no longer exists: a binary built with
+  `-X github.com/latere-ai/origo/internal/version.Version=v1.2.3`
+  serves `v1.2.3` on `GET /version` and prints it for `-version`, and
+  `grep -r 'main.version' cmd/` finds nothing (proposed: `cmd/origod`,
+  `TestVersionHasOneSource`).
