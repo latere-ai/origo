@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -62,7 +62,10 @@ Ingress without a class or an issuer annotation,
 HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
 (spec 011), and a Secret template with every required variable,
 `ORIGO_GOSSIP_SECRET` (spec 005) and `ORIGO_TOKEN_KEY` (spec 007) among
-them. The
+them. The HorizontalPodAutoscaler scales on CPU only, in the base and
+in every example overlay; no overlay installs a metrics adapter, and
+`origo_requests_in_flight` (spec 011) is a dashboard signal, not an
+autoscaler input (spec 005). The
 Latere values move out of the base into `deploy/prod`. An operator
 writes an overlay with their hostname, ingress class, storage class or
 local-volume choice, replica bounds, and the Secret with their bucket
@@ -77,9 +80,10 @@ offered; a kustomize overlay is a directory an operator can read.
 The `install` job in `verify.yml` walks the install document's steps
 against the `kind` overlay with what an operator would have: it runs
 the fenced `sh` blocks of `docs/install.md` in order through
-`tools/docs/run-blocks.sh`, the script spec 014 uses for its migration
-document, so the document is the test and a step that drifts from the
-manifests fails the job. On every push it uses the candidate build of
+`tools/docs/run-blocks.sh`, the script spec 013 owns under "Documents
+as tests" and spec 014 uses for its migration document, so the
+document is the test and a step that drifts from the manifests fails
+the job. On every push it uses the candidate build of
 that push, the image the `e2e` job of spec 013 built, because there is
 no release for it; on a `v*` tag it uses the release artifacts of spec
 017, the signed image and `deploy-<version>.tar.gz`, downloaded from
