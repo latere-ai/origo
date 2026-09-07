@@ -101,7 +101,9 @@ under the log key the mapping of spec 004 gives its file name
 (`pack-<hash>.pack` is `packs/<hash>.pack`, `.idx` first) the way
 compaction does (spec 006, step 4), and commits one entry through `Log.Commit` in
 the shape of a compaction: kind `compact`, no pack in the entry,
-`Packs` = the uploaded packs, `CompactedThrough` = the sequence before
+`Packs` = the uploaded packs, `PacksBytes` = the bytes of their `.pack`
+files, which the commit sets as the index's `size_bytes` (spec 004),
+`CompactedThrough` = the sequence before
 its own (the index format of spec 004 lists entries in
 `(compacted_through, seq]`, so an entry cannot fold itself), and a full
 reference transaction creating every reference from zeros; `HEAD` is in
