@@ -119,7 +119,9 @@ Entries in the log itself are the audit record (spec 004).
 ### Alerts
 
 A PrometheusRule `origod` in `deploy/base`, validated by
-`promtool check rules` in the verify workflow:
+`promtool check rules` in the `specindex` job of `verify.yml`, which
+installs `promtool` and runs it beside the cross-reference test (spec
+013 owns the job's other steps):
 
 | Alert | Condition |
 |---|---|
@@ -162,6 +164,7 @@ defaults.
   `Authorization` value when the request used basic auth (proposed:
   `cmd/origod`, `TestRequestLogRedactsCredentials`).
 - `promtool check rules deploy/base/prometheusrule.yaml` passes in the
-  verify workflow, and every alert's metric names are in the table
-  (proposed: `tools/specindex` reads the rule file; `verify.yml` runs
-  `promtool`).
+  `specindex` job of `verify.yml`, which installs `promtool` and runs
+  it, and every alert's metric names are in the table (proposed:
+  `tools/specindex` reads the rule file; `verify.yml`, the `specindex`
+  job).
