@@ -47,7 +47,7 @@ never recorded and are replaced by the names below.
 | `origo_wal_commit_conflicts_total` | counter | | commits refused because a reference moved (004, phase 1) |
 | `origo_wal_commit_retries_total` | counter | | commit rounds lost to another writer and replayed (004, phase 1) |
 | `origo_wal_entry_bytes_total` | counter | | bytes written as entries (004, phase 1) |
-| `origo_wal_head_check_seconds` | histogram, buckets 1 ms to 2.5 s | | the `HEAD` currency check (004, phase 1) |
+| `origo_wal_head_check_seconds` | histogram, buckets 1 ms to 2.5 s | `result` (`404`, `200`, `error`), added by 005 so a test can tell a check that found the copy current from one that found a newer index; phase 1 records it unlabelled | the `HEAD` currency check (004, phase 1) |
 | `origo_pushes_total` | counter | | pushes acknowledged (003, phase 1) |
 | `origo_pushes_rejected_total` | counter | | pushes refused by the log (003, phase 1) |
 | `origo_fetches_total` | counter | | upload-pack requests served (003, phase 1) |
@@ -62,7 +62,7 @@ never recorded and are replaced by the names below.
 | `origo_cache_bytes`, `origo_cache_repos` | gauge | | the evictor (005) |
 | `origo_evictions_total` | counter | `reason` (`pressure`, `idle`) | the evictor (005) |
 | `origo_gossip_packets_total` | counter | `direction` (`sent`, `received`, `dropped`) | gossip (005) |
-| `origo_compactions_total` | counter | `result` (`ok`, `stale`, `error`) | compaction (006) |
+| `origo_compactions_total` | counter | `result` (`ok`, `stale`, `error`, `skipped`) | compaction (006); `skipped` is a run that found no subprocess slot within 5 seconds (012) |
 | `origo_compaction_seconds` | histogram | | compaction (006) |
 | `origo_authorizer_seconds` | histogram | `result` (`allow`, `deny`, `error`) | the authorizer client (007) |
 | `origo_events_delivered_total`, `origo_events_dead_total` | counter | | event delivery (008) |
