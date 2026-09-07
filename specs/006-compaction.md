@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/compact/, internal/wal/, internal/repo/, internal/httpgit/, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -78,8 +78,10 @@ bound exists because a full repack takes up to the 30 minute deadline
 and every ingress cuts an idle response before that: the ingress of
 `deploy/base` carries a 600 second read timeout and an operator's may be
 shorter, so `gc` never blocks longer than 10 seconds whatever sits in
-front of the node. A threshold compaction and a `gc` are the same run
-and both count toward the hourly `gc` limit of spec 019. The primary's
+front of the node. A threshold compaction and a `gc` are the same run.
+The hourly limit of spec 019 refuses only `POST /v1/repos/{id}/gc`: a
+threshold run is never rate-limited, and either kind of run counts as
+the compaction that makes the next `gc` inside the hour a 429. The primary's
 10 minute sweep lists `origo/gc/`, usually empty, and for every id whose
 primary it is materializes the repository if it does not hold it
 (`Acquire`, which step 1 does anyway), runs the procedure, and deletes
@@ -173,7 +175,12 @@ Compaction never changes a reference and never drops a reachable
 object: the transaction is empty, the reference map is copied, and step 3
 proves connectivity before anything is uploaded. It commits by the same
 create-if-absent as a push, so a push and a compaction never interleave
-in the index and the index stays a total order.
+in the index and the index stays a total order. Compaction does not
+prune loose objects: `git repack` without `-d` and without `-A`
+leaves every loose object under `objects/` in place, so an unreachable
+loose object (a server-side operation of spec 020 that ran out of
+budget) is removed only by eviction (spec 005) or a rebuild (spec 004)
+of the copy, never by a compaction.
 
 ### Cost
 
@@ -189,14 +196,16 @@ request and response shape, rate limit, and event (spec 019).
 
 ## Acceptance criteria
 
-- After 500 pushes of 1 KiB commits to one repository through one node,
-  the newest index lists at most 64 entries and at most 6 packs, and
-  `git fsck` passes on a fresh node's copy (proposed: `test/e2e`,
-  `TestE2EFiveHundredPushesStayUnder64EntriesAnd6Packs`, a test of the
-  one-node run of spec 013 and not of the unit suite the gate runs,
-  because 500 pushes through the real git take minutes; the unit suite
-  covers the procedure with a fixture of 65 entries written through
-  `Log.Commit`, `internal/compact`, `TestThresholdFoldsEntries`).
+- After 500 pushes of 1 KiB commits to one repository through one node
+  of the stack and after the background run the last threshold crossing
+  scheduled completes, the newest index lists at most 64 entries and at
+  most 6 packs, and `git fsck` passes on the copy a clone through
+  another node materializes (proposed: `test/e2e`,
+  `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, in the
+  `e2e` job of spec 013 against its stack and not in the unit suite the
+  gate runs, because 500 pushes through the real git take minutes; the
+  unit suite covers the procedure with a fixture of 65 entries written
+  through `Log.Commit`, `internal/compact`, `TestThresholdFoldsEntries`).
 - A push that lands between step 1 and step 5 makes the compaction
   abort with `result="stale"`, the push is in the newest index, and the
   next run folds it (proposed: `internal/compact`,
@@ -227,8 +236,8 @@ request and response shape, rate limit, and event (spec 019).
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
   10% of its latency after 10 pushes, measured as the p50 of 10 clones
-  each, asserted on every push to `main` (proposed: `test/e2e`,
-  `TestE2ECompactionKeepsFetchLatencyFlat`, a plain test of the one-node
-  run; the fixture is sized so the test fits the job budget of spec
-  013, and `TestMeasure` under `ORIGO_E2E_MEASURE=1` prints the same
-  figures for a 1 GiB fixture without asserting them).
+  each through one node of the stack, asserted on every push to `main`
+  (proposed: `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat`,
+  in the `e2e` job of spec 013; the fixture is sized so the test fits
+  that job's budget, and `TestMeasure` under `ORIGO_E2E_MEASURE=1`
+  prints the same figures for a 1 GiB fixture without asserting them).
