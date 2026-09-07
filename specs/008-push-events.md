@@ -232,11 +232,18 @@ moves an object back under `origo/events/<repo>/` to retry it.
   repository its first push put in its journal, yields one event for
   the second push from another node's repair sweep within one
   `ORIGO_REPAIR_INTERVAL` once the dead node is `ORIGO_REPAIR_UNHEARD`
-  unheard, both set to seconds, with `updates` equal to the entry's
-  transaction and `id` equal to the UUID v5 the payload table defines,
-  and the dead node's journal names the repository once (proposed:
-  `test/e2e`, `TestSlowEventRepairAfterKill`, in the `e2e-slow` job of
-  spec 013).
+  unheard, with `updates` equal to the entry's transaction and `id`
+  equal to the UUID v5 the payload table defines, and the dead node's
+  journal names the repository once. The test starts two nodes of its
+  own against the stack's MinIO through `ORIGO_TEST_S3_ENDPOINT` and
+  its sibling variables, which spec 013's job fills with the overlay's
+  values, with `ORIGO_EVENTS_URL` pointing at the stub sink's host port
+  of spec 013's ports table, `ORIGO_GOSSIP_PEERS` and
+  `ORIGO_GOSSIP_SECRET` set so the survivor's live set drops the dead
+  node, and `ORIGO_REPAIR_UNHEARD` and `ORIGO_REPAIR_INTERVAL` set in
+  seconds on both, `5s` and `10s`; one node carries the failpoint and
+  is killed by it, the other runs the sweep (proposed: `test/e2e`,
+  `TestSlowEventRepairAfterKill`, in the `e2e-slow` job of spec 013).
 - `Emit` called twice for one operation with one `at` writes one
   object under `a-<id>.json` and delivers one event; called for two
   operations of one kind with different `at` values it writes two; a
