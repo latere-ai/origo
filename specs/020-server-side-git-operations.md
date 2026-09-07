@@ -7,6 +7,8 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
   - specs/009-read-api-and-archive.md
+  - specs/012-limits-and-abuse.md
+  - specs/019-repository-administration.md
 affects: [internal/api/, internal/repo/, internal/httpgit/]
 effort: large
 created: 2026-09-06
@@ -69,12 +71,12 @@ runs user code: no hooks, no filters, no smudge, no submodule fetch.
 
 ### Operations
 
-| Operation | Path | Body beyond the common fields | Result |
+| Method | Path | Body beyond the common fields | Result |
 |---|---|---|---|
-| write files | `commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
-| merge | `merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
-| cherry-pick | `cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
-| revert | `revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
+| POST | `/v1/repos/{id}/commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
+| POST | `/v1/repos/{id}/merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
+| POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
+| POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
 
 ### Paths
 
@@ -211,4 +213,8 @@ consumer's.
   mutated request bodies: it runs as a seed-corpus test in the suite
   on every push and for 40 seconds under `make fuzz` (spec 013) on the
   weekly schedule (proposed: `internal/api`, `FuzzOperationBody`).
-- The conformance suite (spec 021) gains one case per operation.
+- The conformance suite (spec 021) gains one case per row of the
+  Operations table, each running the row's success path against the
+  fixture the suite pushes (proposed: `test/conformance`,
+  `TestContract/020/commits`, `TestContract/020/merge`,
+  `TestContract/020/cherry-pick`, `TestContract/020/revert`).

@@ -48,17 +48,17 @@ passing test in the tree and the Outcome records every divergence.
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | drafted |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | drafted |
-| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | drafted |
+| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | validated |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | drafted |
-| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | drafted |
+| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | validated |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | drafted |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
-| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | drafted |
+| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | drafted |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | drafted |
-| [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | drafted |
-| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | drafted |
-| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | drafted |
+| [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | validated |
+| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | validated |
+| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | drafted |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | drafted |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | drafted |
@@ -131,12 +131,16 @@ flowchart LR
   S014 --> S007
   S014 --> S008
   S014 --> S019
+  S014 --> S002
+  S014 --> S016
   S015 --> S004
   S015 --> S005
   S015 --> S011
+  S015 --> S013
   S016 --> S001
   S016 --> S007
   S016 --> S012
+  S016 --> S013
   S017 --> S002
   S017 --> S003
   S017 --> S013
@@ -153,10 +157,14 @@ flowchart LR
   S019 --> S006
   S019 --> S007
   S019 --> S008
+  S019 --> S010
+  S019 --> S016
   S020 --> S004
   S020 --> S007
   S020 --> S008
   S020 --> S009
+  S020 --> S012
+  S020 --> S019
   S021 --> S003
   S021 --> S007
   S021 --> S008
@@ -308,8 +316,8 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_HOOK_DIR` | [004](004-write-ahead-log.md) | 002, 016 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
-| variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 021 |
-| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 021 |
+| variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
+| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 021 |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 009, 012 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
@@ -409,9 +417,13 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 019 |
+| endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
+| endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
+| endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | - |
+| endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 019 |
