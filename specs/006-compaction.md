@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
-affects: [internal/compact/, internal/wal/, internal/repo/]
+affects: [internal/compact/, internal/wal/, internal/repo/, internal/httpgit/, test/e2e/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -38,9 +38,8 @@ compaction entry: `internal/compact` does not exist.
 
 The first name in `Origo-Prefer` for a repository (spec 005) is its
 compaction primary; with one node, every repository's primary is that
-node. The primary checks the thresholds after every push it serves and
-in a sweep every 10 minutes over the repositories it holds locally, and
-compacts when any of these holds for the newest index:
+node. Every node checks the thresholds after every push it serves,
+against the newest index the commit produced:
 
 | Condition | Threshold |
 |---|---|
@@ -48,33 +47,47 @@ compacts when any of these holds for the newest index:
 | bytes of those entries | sum of `pack_bytes` over `entries` > 256 MiB |
 | size of the index object | > 512 KiB |
 
-The after-push check schedules the compaction in the background and
-returns; the request never waits for it. At most one compaction per
+When any of them holds, the primary schedules the compaction in the
+background and returns; a node that is not the primary creates the
+request object `origo/gc/<id>` below and returns. The request never
+waits for either. The primary also runs a sweep every 10 minutes that
+checks the thresholds over the repositories it holds locally and lists
+`origo/gc/`, so a repository pushed to through other nodes is found
+whether or not the primary holds it. At most one compaction per
 repository runs on a node at a time: a trigger that finds one running
 is a no-op, and the sweep starts the next one. A node that is not the
-primary never compacts; it only downloads packs. Two primaries after a
-placement change are harmless: create-if-absent lets one commit and the
-other aborts.
+primary never compacts; it only downloads packs and writes requests.
+Two primaries after a placement change are harmless: create-if-absent
+lets one commit and the other aborts.
 
-This spec owns compaction wherever it is asked for. `POST
-/v1/repos/{id}/gc` (spec 019) on the primary runs the procedure below at
-once, whatever the thresholds say, and answers when it is done. On any
-other node it forwards nothing and compacts nothing: it creates the
-request object `origo/gc/<id>` holding `{"requested_at", "node"}` (an
-existing one is left alone) and answers 202 naming the primary in the
-body's `details`. The primary's 10 minute sweep lists `origo/gc/`,
-usually empty, and for every id whose primary it is runs the procedure
-and deletes the request object; the sweep on a node that is not the
-primary of a listed id leaves it. A request is therefore acted on within
-10 minutes while the primary is up; the compaction sweep on any node
-deletes a request object older than 24 hours, which only a primary that
-never ran leaves behind.
+This spec owns compaction wherever it is asked for. The request object
+`origo/gc/<id>` holds `{"requested_at", "node", "reason"}` with
+`reason` `threshold` or `gc`; an existing one is left alone whichever
+reason arrives second. It is written by a node that is not the primary
+in two cases: after a push it served crossed a threshold, and on `POST
+/v1/repos/{id}/gc` (spec 019), which on such a node forwards nothing
+and compacts nothing and answers 202 naming the primary in the body's
+`details`. On the primary, `gc` runs the procedure below at once,
+whatever the thresholds say, and answers when it is done. The primary's
+10 minute sweep lists `origo/gc/`, usually empty, and for every id whose
+primary it is materializes the repository if it does not hold it
+(`Acquire`, which step 1 does anyway), runs the procedure, and deletes
+the request object; the sweep on a node that is not the primary of a
+listed id leaves it. A request is therefore acted on within 10 minutes
+while the primary is up; the compaction sweep on any node deletes a
+request object older than 24 hours, which only a primary that never
+ran leaves behind, and the next push through any node writes a fresh
+one.
 
 ### Procedure
 
 `internal/compact.Run(repo)` on the primary, under its own deadline of
 30 minutes for the whole run (the repack subprocess runs with that
-deadline rather than the 5 minutes of spec 004, which spec 012 records):
+deadline rather than the 5 minutes of spec 004, which spec 012 records).
+Every git subprocess of the run takes a slot of the subprocess
+semaphore of spec 012; a run that waits more than 5 seconds for a slot
+skips this run with `origo_compactions_total{result="skipped"}` and the
+next sweep retries it:
 
 ```mermaid
 sequenceDiagram
@@ -90,6 +103,7 @@ sequenceDiagram
   C->>S: commit compact entry (create index/n+1)
   alt won
     C->>G: delete packs the new index does not list
+    C->>G: multi-pack-index write
   else lost round
     C->>C: abort stale, uploaded packs stay
   end
@@ -113,9 +127,9 @@ sequenceDiagram
    `origo_compactions_total{result="error"}` and the copy is evicted for
    rebuild (spec 004).
 4. Upload every pack now under `objects/pack/` that the held index does
-   not list, with its `.idx`, as `packs/<hash>.pack` and `packs/<hash>.idx`,
-   `<hash>` from the file name `pack-<hash>.pack`; the `.idx` first so a
-   reader never sees a pack without one.
+   not list, with its `.idx`, under the log key the mapping of spec 004
+   gives its file name (`pack-<hash>.pack` is `packs/<hash>.pack`); the
+   `.idx` first so a reader never sees a pack without one.
 5. Release the read lock and take the write lock; a push that landed in
    between has advanced the local sequence, and `Log.Commit` sees it in
    the next step. Commit a `compact` entry with an empty transaction, no
@@ -130,10 +144,12 @@ sequenceDiagram
 6. On success, still under the write lock, swap the pack list: delete
    the packs under `objects/pack/` that the new index does not list
    (`git repack -d` semantics, done by the node so the set on disk equals
-   the index) and rewrite the multi-pack index. Release the write lock,
-   `result="ok"`, `origo_compaction_seconds` observed, and the sweeper
-   (spec 004) deletes the folded entries and the superseded index
-   objects once they are older than `ORIGO_SWEEP_MIN_AGE`.
+   the index) and run `git multi-pack-index write --bitmap`, so the
+   multi-pack index names exactly the packs on disk and the bitmap of
+   step 2 is rebuilt over them. Release the write lock, `result="ok"`,
+   `origo_compaction_seconds` observed, and the sweeper (spec 004)
+   deletes the folded entries and the superseded index objects once
+   they are older than `ORIGO_SWEEP_MIN_AGE`.
 
 The sweeper gains one rule: a pack under `packs/` that the newest index
 does not list and that is older than `ORIGO_SWEEP_MIN_AGE` is deleted.
@@ -179,6 +195,12 @@ request and response shape, rate limit, and event (spec 019).
   sweep compacts within one sweep interval and deletes the request
   object with a fake clock (proposed: `internal/compact`,
   `TestGcRequestIsPickedUpByThePrimary`).
+- 65 pushes to one repository through a node that is not its primary,
+  the primary holding no copy, leave `origo/gc/<id>` with `reason:
+  "threshold"` after the 65th, and the primary's next sweep
+  materializes the repository, compacts it to at most 64 entries, and
+  deletes the request object (proposed: `internal/compact`,
+  `TestPushOnANonPrimaryRequestsCompaction`).
 - A node that read the previous index before compaction and fetches its
   entries after it completes materializes successfully as long as the
   entries are younger than `ORIGO_SWEEP_MIN_AGE` (proposed:
@@ -187,6 +209,10 @@ request and response shape, rate limit, and event (spec 019).
 - A pack no index lists is deleted by the sweeper after
   `ORIGO_SWEEP_MIN_AGE` and one that the newest index lists is kept
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
-- Fetch latency of a 1 GiB repository after 1 000 pushes is within 10%
-  of its latency after 10 pushes, measured as the p50 of 20 clones each
-  (proposed: `test/e2e`, `TestMeasureCompaction` under `ORIGO_E2E_MEASURE=1`).
+- Fetch latency of a 100 MiB repository after 1 000 pushes is within
+  10% of its latency after 10 pushes, measured as the p50 of 10 clones
+  each, asserted on every push to `main` (proposed: `test/e2e`,
+  `TestCompactionKeepsFetchLatencyFlat`, a plain test of the `e2e`
+  tier; the fixture is sized so the test fits the job budget of spec
+  013, and `TestMeasure` under `ORIGO_E2E_MEASURE=1` prints the same
+  figures for a 1 GiB fixture without asserting them).
