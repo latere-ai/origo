@@ -112,6 +112,12 @@ repositories. Spec 004 fixes every format.
 | `origo/repos/<id>/packs/<hash>.pack`, `.idx` | packs produced by compaction (spec 006), named by the index objects that follow it |
 | `origo/repos/<id>/lfs/<oid>` | LFS objects (spec 010) |
 | `origo/events/<repo>/<seq>.json` | a push event waiting for delivery (spec 008) |
+| `origo/gc/<id>` | a compaction request written by a node that is not the repository's primary (spec 006) |
+| `origo/sweep/latest` | the last orphan sweep's figures, written by the node that ran it (spec 019) |
+| `origo/check/<uuid>` | the key `origod check` creates and deletes to prove conditional create (spec 018) |
+
+Spec 019's orphan sweep enumerates exactly these prefixes and reports
+anything else under `origo/`.
 
 A node materializes `<id>` by reading the newest index object and applying
 entries into a bare repository at `<ORIGO_DATA_DIR>/repos/<id>.git`. The
@@ -197,15 +203,17 @@ a consumer concern; a one-time import is spec 019.
 
 - A node with an empty disk serves a clone of a repository that exists
   only in object storage, and `git rev-list --all` of the clone equals
-  that of the pushed history (`test/e2e`, `TestPushThenCloneFromAnEmptyDisk`).
+  that of the pushed history (`test/e2e`, `TestE2EPushThenCloneFromAnEmptyDisk`;
+  the `TestE2E` prefix is the one spec 013's job regex selects, and the
+  builder renames the phase 1 tests under that spec).
 - After one push of a base commit, two nodes accept concurrent pushes to
   two branches of one repository; both land, the newest index object lists both references, exactly the
   index objects `000000000000` to `000000000003` exist, and neither client
-  sees a failure (`test/e2e`, `TestConcurrentPushesToDifferentBranchesOnTwoNodes`).
+  sees a failure (`test/e2e`, `TestE2EConcurrentPushesToDifferentBranchesOnTwoNodes`).
 - Killing a node between the entry write and the index create leaves no
   visible change, the client sees a failure, the orphan is swept, and a
   retry lands at the same sequence under a fresh nonce (`test/e2e`,
-  `TestKillMidPush`).
+  `TestE2EKillMidPush`).
 - The build list of `github.com/latere-ai/origo/...` reaches no package
   under `github.com/aws/`, `cloud.google.com/`, `github.com/Azure/`, or
   `k8s.io/` (proposed: the `depcheck` gate in `.lateregate.yaml` naming
