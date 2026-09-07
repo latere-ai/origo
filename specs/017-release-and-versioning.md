@@ -101,10 +101,11 @@ makes. On a `v*` tag:
    image, running `TestContract` of spec 021, which also pushes the
    fixture repository, and `TestPreviousReleaseFixture` below against
    the fixture of the previous release; the harness then reads every
-   object under that repository's prefix from the stack's MinIO at
-   `http://localhost:30900`, the `ORIGO_S3_PUBLIC_ENDPOINT` of the
-   ports table of spec 013, and packs them as
-   `fixture-<version>.tar.gz`; a failure stops the release.
+   object under that repository's prefix from the stack's MinIO
+   through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables, which
+   the job exports with the overlay's fixed values (spec 013, the MinIO
+   row: `http://localhost:30900`, bucket `origo-test`), and packs them
+   as `fixture-<version>.tar.gz`; a failure stops the release.
 3. `deploy`: runs only when the repository variable
    `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl`, with the
    kubeconfig held in the repository secret `ORIGO_KUBECONFIG` (spec
