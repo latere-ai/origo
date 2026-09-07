@@ -225,6 +225,8 @@ than weekly.
   `TestGcBoundsStorage`).
 - A purged repository answers 410 `gone` on every endpoint, its id is
   refused by `POST /v1/repos` with 409, and its name is accepted
-  (proposed: `internal/wal`, `TestPurgeLeavesATombstone`).
+  (proposed: `internal/wal`, `TestPurgeLeavesATombstone` for the
+  objects and the name; `internal/api`, `TestPurgedRepositoryIsGone`
+  for the responses).
 - Every operation delivers one event of its kind with the listed fields
   (proposed: `internal/events`, `TestAdministrationEvents`).
