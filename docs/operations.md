@@ -37,12 +37,15 @@ reports `origo_log_integrity_errors_total` and answers 503
 Push a tag. The release pipeline builds the image, applies `deploy/prod`,
 and waits for the rollout. The Deployment rolls one pod at a time with
 none unavailable; a replaced pod starts cold and warms as requests
-arrive. No migration step exists because there is no schema.
+arrive. No migration step exists because there is no schema. A
+software bill of materials and build provenance ship with the release
+pipeline of spec 017; a release cut before it lands carries neither.
 
 ## Scale
 
-The HorizontalPodAutoscaler scales on CPU and in-flight requests between
-2 and 32 replicas. Reads scale with replicas. Pushes to one repository do
+The HorizontalPodAutoscaler scales on CPU only, between 2 and 32
+replicas; `origo_requests_in_flight` is a signal for a dashboard, not an
+autoscaler input. Reads scale with replicas. Pushes to one repository do
 not, by design; if one repository needs more than about ten pushes per
 second sustained, that is a design conversation, not a replica count.
 

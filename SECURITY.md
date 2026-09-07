@@ -7,6 +7,7 @@ on request.
 
 The threat model, the trust boundaries, and the control for each threat
 are in [`specs/016-security-and-threat-model.md`](specs/016-security-and-threat-model.md).
-Every release carries a software bill of materials and build provenance,
-and the quality gate checks dependencies for known vulnerabilities on
-every push.
+A software bill of materials and build provenance ship with the release
+pipeline of spec 017; until it lands, a release carries neither. The
+quality gate checks dependencies for known vulnerabilities on every
+push.

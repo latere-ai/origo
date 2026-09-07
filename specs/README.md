@@ -203,13 +203,18 @@ deck and stated here so a reader sees them without the owning spec.
 
 | Decision | Owner | Relied on by |
 |---|---|---|
-| the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces | 002 | 017, 018, 020 |
+| the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces; both Dockerfiles move to it under 017 | 017 | 002, 018, 020 |
 | `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all | 002 | 014, 018 |
 | `ORIGO_TOKEN_KEY` is required in every mode; `make dev` and the kind overlay generate one at start | 002, 007 | 013, 016, 018 |
 | `ORIGO_GOSSIP_SECRET` is required only when `ORIGO_GOSSIP_PEERS` is set; a single node runs with neither | 002, 005 | 013, 016, 018 |
 | the index object carries `pushed_at`; the read API and `stats` serve it from there | 004 | 003, 009, 019 |
 | `operation_timeout` is defined by the read API and named by the limits and the server-side operations | 009 | 012, 020 |
 | the kind overlay is a table of rows, each with the spec that needs it; the CI jobs select tests by name prefix (`TestE2E`, `TestCluster`, `TestSlow`) and reach the stack through `ORIGO_TEST_URL` | 013 | 004, 005, 008, 015, 016, 021 |
+| the kind stack has no ingress controller; its ports table fixes every host port (origod 30080, the stub issuer 30081, authorizer 30082, sink 30083, MinIO 30900), the defaults of `ORIGO_TEST_URL` and `ORIGO_S3_PUBLIC_ENDPOINT` on the stack | 013 | 010, 017, 021 |
+| `tools/docs/run-blocks.sh` runs a document's `sh` blocks as its test | 013 | 014, 018 |
+| every event kind goes through `internal/events`: `Enqueue` for a `push` entry, `Emit` for a kind without a sequence, keyed `a-<uuid v5 of repo:kind:at>` so a repeated emit is one event; one delivery loop, retry schedule, dead-letter, cursor, and repair for all | 008 | 014, 018, 019 |
+| the autoscaler scales on CPU only, in the base and in every example overlay; `origo_requests_in_flight` is a dashboard signal | 005 | 011, 018, `docs/operations.md` |
+| the `integration` job is 25 minutes; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow` | 013 | 006, 010, 019 |
 | a write under an open read breaker is refused at once with `storage_unavailable`; stale serving is for reads only | 015 | 003, 019, 020 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
 | the code table is the one source of every sentence; every `httpjson.Error` literal is checked against it | 021 | 003 and every spec with a Code table |
@@ -365,7 +370,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_gossip_packets_total` | [011](011-observability.md) | 005, 016 |
 | metric | `origo_log_integrity_errors_total` | [011](011-observability.md) | 015 |
 | metric | `origo_orphan_objects` | [011](011-observability.md) | 006, 019 |
-| metric | `origo_push_duration_seconds` | [011](011-observability.md) | - |
+| metric | `origo_push_duration_seconds` | [011](011-observability.md) | 004, 008 |
 | metric | `origo_pushes_rejected_total` | [011](011-observability.md) | - |
 | metric | `origo_pushes_total` | [011](011-observability.md) | - |
 | metric | `origo_rate_limited_total` | [011](011-observability.md) | 012, 019, 020 |
@@ -374,7 +379,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_repo_materialized_total` | [011](011-observability.md) | 005 |
 | metric | `origo_repo_rebuilt_total` | [011](011-observability.md) | 004 |
 | metric | `origo_request_duration_seconds` | [011](011-observability.md) | - |
-| metric | `origo_requests_in_flight` | [011](011-observability.md) | 005 |
+| metric | `origo_requests_in_flight` | [011](011-observability.md) | 005, 018 |
 | metric | `origo_requests_total` | [011](011-observability.md) | - |
 | metric | `origo_stale_responses_total` | [011](011-observability.md) | 015 |
 | metric | `origo_storage_breaker_state` | [011](011-observability.md) | 015 |
@@ -396,7 +401,7 @@ name, or when a spec names something no spec defines.
 | event | `transferred` | [019](019-repository-administration.md) | - |
 | event | `undeleted` | [019](019-repository-administration.md) | 008 |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
-| event | `verified` | [014](014-repository-migration.md) | - |
+| event | `verified` | [014](014-repository-migration.md) | 008 |
 | endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 005, 016 |
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
@@ -420,7 +425,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
-| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | - |
+| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006 |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
 | endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | - |
