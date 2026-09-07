@@ -123,7 +123,13 @@ makes. On a `v*` tag:
    section as the body, the smoke evidence when step 3 ran, the
    conformance timings of step 2, and the live report of step 4 when
    it ran.
-6. `release-verify`: from a clean runner, `cosign verify` on the image
+6. `install-release`: the job spec 018 owns, after `publish`: the
+   blocks of `docs/install.md` run against a fresh kind cluster with
+   `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` set to the
+   published image and the unpacked `deploy-<version>.tar.gz`, and
+   end with `TestContract`; a failure fails the workflow after the
+   release exists, which is the evidence the release notes link.
+7. `release-verify`: from a clean runner, `cosign verify` on the image
    and the checksums with the workflow identity, `sha256sum -c
    checksums.txt` over the downloaded archives, `gh attestation verify`
    on the image, and the release body compared with the changelog
