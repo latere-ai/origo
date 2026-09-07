@@ -71,7 +71,7 @@ internal/limits/        quotas and rate limits (spec 012)                     --
 internal/metrics/       the one place every metric of spec 011 is registered   -- not yet
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
 test/conformance/       the contract as an importable test package (spec 021) -- not yet
-test/stubs/             the stub issuer, authorizer, event sink, contract stub, and slow proxy, importable (spec 013, 015) -- not yet
+test/stubs/             the stub issuer, authorizer, event sink, contract stub, source, and slow proxy, importable (spec 007, 013, 015) -- not yet
 tools/smoke/            the post-deploy smoke the release pipeline runs
 tools/spike/            the conditional-write probe; its own module
 tools/specindex/        the cross-reference table of specs/README.md; its own module
