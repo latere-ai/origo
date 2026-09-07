@@ -9,6 +9,7 @@ depends_on:
   - specs/009-read-api-and-archive.md
   - specs/010-lfs.md
   - specs/013-test-stubs-and-kind-overlay.md
+  - specs/015-degraded-storage.md
   - specs/019-repository-administration.md
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
@@ -87,10 +88,13 @@ bucket unreachable, and `repository_unavailable` (spec 015) needs a
 pack object gone. `Fault` is an interface with `CutStorage(t)`, which
 makes the bucket unreachable until the test ends, and
 `DeleteObject(t, key)`; the stack run implements it with the
-NetworkPolicy spec 015's cluster scenario uses (enforced by the Cilium
-row of spec 013's overlay table) and a delete through the MinIO host
-port, the stub run implements it on `wal.MemStore` in-process, and a
-live target has none. The live run's `Skip` list is exactly the table
+NetworkPolicy spec 015's cluster scenario uses,
+`test/e2e/testdata/cut-storage.yaml` applied with `cluster.ApplyManifest`
+of spec 013's `test/e2e/cluster` and removed by its cleanup (enforced
+by the Cilium row of spec 013's overlay table), and a delete through
+the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family the job
+exported; the stub run implements it on `wal.MemStore` in-process, and
+a live target has none. The live run's `Skip` list is exactly the table
 below and nothing else; the run prints each entry as skipped, so a
 report with fewer or more skipped names is a failure of the run.
 
@@ -121,8 +125,11 @@ prefix.
 
 `internal/contract` gains the code table as data: code, status, and
 the one sentence, for every row of the Code tables of spec 003 and of
-specs 007, 009, 015, 019, and 020, which is every code the
-cross-reference in `specs/README.md` lists. `TestEveryCodeHasOneSentence`
+specs 007, 009, 010, 015, 019, and 020, which is every code the
+cross-reference in `specs/README.md` lists; spec 010's three rows are
+rendered in the LFS body shape and through `contract.Sentence`, never
+as an `httpjson.Error`, so for them the test asserts the `Sentence`
+call and no literal. `TestEveryCodeHasOneSentence`
 walks every Go file of the module outside `tools/`, parses it with
 `go/parser`, and collects every composite literal of type
 `httpjson.Error` (the envelope type of `latere.ai/x/pkg/httpjson`,
@@ -161,7 +168,10 @@ configuration of spec 004: `filter` turns `uploadpack.allowFilter` off,
 configuration and are not in the mutation set; the suite asserts them
 on every run. Any other value is a start-up error. The job runs against
 one node with MinIO, like the `integration` job of spec 013, because
-the capabilities are per node.
+the capabilities are per node, under the 20 minute budget spec 013's
+job table gives it: five runs of the suite, so a suite that takes
+more than 4 minutes against one node is a spec change, not a budget
+change.
 
 | Test variable | Purpose |
 |---|---|
@@ -183,7 +193,7 @@ flowchart LR
 |---|---|---|
 | stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired; `TestSameAnswersOnStubAndStack` runs in the same job, because it needs the stack as its second target | every push to `main` and every pull request, inside that job's 30 minute budget |
 | stub | `test/stubs/origo` in-process, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
-| mutation | one node with MinIO, once per capability | every push |
+| mutation | one node with MinIO, once per capability, 20 minutes (spec 013's job table) | every push |
 | live | the installation `ORIGO_LIVE_URL` names, with `ORIGO_LIVE_TOKEN`, the `conformance-` prefix, and the skip list above | the `live` job of `release.yml`, after spec 017's deploy step and before its publish step, when the secret is set; its report and timings are attached to the release (spec 017) |
 | previous release | the fixture of release N-1 on release N (spec 017, `TestPreviousReleaseFixture`) | in the release pipeline |
 
@@ -202,16 +212,19 @@ assertions beyond the thresholds the owning specs name.
   (`verify.yml`; `release.yml`, the `live` job; the release evidence of
   spec 017).
 - With `Fault` wired, the `storage_unavailable` row answers 503 with
-  the table's sentence while the bucket is cut and the
+  the table's sentence while the bucket is cut (on the stack, by
+  `cluster.ApplyManifest` of `cut-storage.yaml`) and the
   `repository_unavailable` row answers 503 with `details.key` naming
-  the deleted pack, on the stack and on the stub; on a target with no
-  `Fault` both rows are skipped and reported (proposed:
+  the deleted pack (on the stack, deleted through the MinIO host
+  port), on the stack and on the stub; on a target with no `Fault`
+  both rows are skipped and reported (proposed:
   `test/conformance`, `TestContract/003/storage_unavailable`,
   `TestContract/015/repository_unavailable`).
 - Removing any one git-controlled capability (`filter`,
   `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`, `atomic`,
   `push-options`) from the server's advertised set fails at least one
-  subtest, and an unknown value refuses start-up (proposed:
+  subtest, and an unknown value refuses start-up, the five runs inside
+  the job's 20 minutes (proposed:
   `.github/workflows/verify.yml`, the `mutation` job driving
   `TestContract` with `ORIGO_TEST_DROP_CAPABILITY`; `internal/config`,
   `TestDropCapabilityIsOneOfTheSet`).
@@ -225,7 +238,8 @@ assertions beyond the thresholds the owning specs name.
   it runs in spec 013's `e2e` job beside `TestContract`).
 - Every `httpjson.Error` literal in the module carries a `Code` the
   table holds and a `Message` that is the string literal of the
-  table's sentence, every table row is sent by at least one literal,
+  table's sentence, every table row is sent by at least one literal or,
+  for spec 010's three LFS rows, by one `contract.Sentence` call,
   and a `Message` built from an expression fails with its file and
   line; the test fails on the tree as it stands today, on the
   lower-case sentences spec 003's Outcome lists, and passes once they
