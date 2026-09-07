@@ -10,7 +10,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, CHANGELOG.md, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -48,6 +48,14 @@ at start-up when non-empty. `main.version` is removed under this spec;
 `Date` with the same `-ldflags` the `Makefile` uses, so a binary from
 the pipeline and one from `make build` carry their identity the same
 way and `GET /version` has one source.
+
+One change to the tree, for the builder: the shared runtime stage of
+`Dockerfile` and `Dockerfile.ci` is `debian:bookworm-slim`, whose
+`git` is 2.39, and `origod check` (spec 018) requires 2.40 because
+spec 020's merge family needs it. This spec owns the move: the base
+becomes `debian:trixie-slim` pinned by digest, which ships git 2.47,
+in both files in one change so the two stages stay byte for byte the
+same, as the artifact table below and spec 002's Images section say.
 
 Known defect the first tag will hit, which the builder fixes under this
 spec with the shell test the criteria propose: after `GET /readyz`
@@ -93,10 +101,10 @@ makes. On a `v*` tag:
    image, running `TestContract` of spec 021, which also pushes the
    fixture repository, and `TestPreviousReleaseFixture` below against
    the fixture of the previous release; the harness then reads every
-   object under that repository's prefix from the stack's MinIO through
-   `ORIGO_S3_PUBLIC_ENDPOINT` (the host port of spec 013's overlay
-   table) and packs them as `fixture-<version>.tar.gz`; a failure stops
-   the release.
+   object under that repository's prefix from the stack's MinIO at
+   `http://localhost:30900`, the `ORIGO_S3_PUBLIC_ENDPOINT` of the
+   ports table of spec 013, and packs them as
+   `fixture-<version>.tar.gz`; a failure stops the release.
 3. `deploy`: runs only when the repository variable
    `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl`, with the
    kubeconfig held in the repository secret `ORIGO_KUBECONFIG` (spec
@@ -200,6 +208,14 @@ workflow identity, which is what an outside operator can verify.
   `repository_unavailable` with `details.key` for that repository, logs
   the documented line, serves another repository, and stays ready
   (proposed: `internal/repo`, `TestNewerLogFormatIsRefused`).
+- Both Dockerfiles name `debian:trixie-slim` by one digest and the
+  built image answers `git --version` with 2.47 or newer, so `origod
+  check` passes its `git` line inside the image (proposed: `verify.yml`,
+  the `e2e` job's image build step running `git --version` in the
+  candidate image, and a test in `cmd/origod`,
+  `TestDockerfilesShareOneRuntimeStage`, comparing the two files'
+  runtime stages byte for byte through a test-only constant resolved
+  from its own source file).
 - `tools/smoke/release.sh` passes against a stub server whose
   `GET /readyz` answers `ok` and `GET /version` serves `TAG`, with
   standard input closed, and fails naming the mismatch when the version
