@@ -80,7 +80,8 @@ a 32 byte tag followed by a payload: the tag is the HMAC-SHA256 of the
 payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002: required whenever
 `ORIGO_GOSSIP_PEERS` is set, the same value on every node; a single node
 with no peers runs with neither, which is what `make dev` does, while
-the end-to-end harness sets both for its two-node tests, the bootstrap
+the end-to-end harness sets both for its two-node tests from this spec
+on (today it sets `ORIGO_GOSSIP_ADDR` only), the bootstrap
 Secret template of `deploy/bootstrap` carries the key, and the kind
 overlay of spec 013 sets a fixed value), and the payload is one JSON
 object:
