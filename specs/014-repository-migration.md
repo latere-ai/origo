@@ -130,7 +130,8 @@ The operator drives many repositories with `origod migrate -manifest
 subcommand table of spec 002, that reads the manifest, drives each
 repository from `registered` to `mirrored`
 concurrently, writes a report line per repository as it finishes, and
-exits non-zero when any repository is `failed`. Cut-over is the prior
+exits 1 when any repository is `failed` and 0 otherwise (a usage error
+is exit 2, as for every subcommand of spec 002). Cut-over is the prior
 host's step and is not driven by the command. The command reads the
 three variables of the table below and none of the node's: it is a
 client of Origo's API, not a node.
@@ -221,7 +222,7 @@ host's data model.
   loopback address is admitted) with parallelism 4 reaches `mirrored` for
   all 20, writes one report line each in the documented shape with
   `prior_id` copied through, reports all 20 as `skipped` on a second
-  run without importing again, exits non-zero when one source is
+  run without importing again, exits 1 when one source is
   unreachable, naming it in `error`, and refuses a manifest line whose
   `id` is not a UUID before it calls Origo (proposed: `cmd/origod`,
   `TestMigrateBatchIsResumableAndReportsFailures`).
