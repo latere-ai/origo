@@ -9,10 +9,10 @@ depends_on:
   - specs/008-push-events.md
   - specs/016-security-and-threat-model.md
   - specs/019-repository-administration.md
-affects: [internal/api/, cmd/origod/, docs/migration.md, tools/docs/]
+affects: [internal/api/, internal/events/, cmd/origod/, docs/migration.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -170,9 +170,11 @@ drive the migration from its own code.
 ### Events
 
 `imported` (spec 019) after the import and `verified` after each
-verification, both on the push event channel of spec 008 with the shared
-fields of spec 019, so the prior host can advance its own record without
-polling.
+verification, both through `events.Emit` of spec 008, which fixes the
+key, the id, delivery, retry, dead-letter, and repair for every kind,
+with the shared fields of spec 019, so the prior host can advance its
+own record without polling. `verify` calls `Emit` after it wrote
+`verified_at` and before it answers.
 
 | Event | Extra fields |
 |---|---|
@@ -230,8 +232,6 @@ host's data model.
   batch, run unchanged against the kind stack of spec 013 and end with
   `mirrored` for every repository (proposed: `test/e2e`,
   `TestClusterMigrationDocCommandsRun`, which runs
-  `tools/docs/run-blocks.sh docs/migration.md`: the script extracts the
-  fenced `sh` blocks of one document and runs them in order in one
-  shell with `set -e`, the stack's values in the environment as
-  `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN`; spec 018 runs its
-  install document through the same script).
+  `tools/docs/run-blocks.sh docs/migration.md`, the script spec 013
+  owns under "Documents as tests", with the stack's `ORIGO_TEST_URL`
+  and `ORIGO_TEST_ADMIN_TOKEN` in the environment).
