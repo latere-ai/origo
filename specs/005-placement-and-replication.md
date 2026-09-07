@@ -6,7 +6,7 @@ depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
   - specs/013-conformance-suite.md
-affects: [internal/placement/, internal/repo/, cmd/origod/, deploy/]
+affects: [internal/placement/, internal/repo/, internal/config/, cmd/origod/, deploy/, test/e2e/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -30,8 +30,8 @@ Spec 004 gives one node correct behaviour: `internal/repo.Cache.Acquire`
 runs the `HEAD index/<n+1>` currency check on every open and applies
 what the copy lacks. `cmd/origod` opens the gossip socket on
 `ORIGO_GOSSIP_ADDR`, reads datagrams, and discards them; `ORIGO_NODE_NAME`
-and `ORIGO_GOSSIP_PEERS` are read and unused. `ORIGO_CACHE_BYTES` is
-resolved and unused: nothing evicts. `deploy/base` has a Deployment with
+and `ORIGO_GOSSIP_PEERS` are read and unused; `ORIGO_GOSSIP_SECRET` is
+not read. `ORIGO_CACHE_BYTES` is resolved and unused: nothing evicts. `deploy/base` has a Deployment with
 2 replicas, `maxSurge: 1, maxUnavailable: 0`, a PodDisruptionBudget with
 `minAvailable: 1`, an `emptyDir` of 20 GiB for `/var/lib/origo`, the
 headless Service `origod-gossip`, and no HorizontalPodAutoscaler.
@@ -45,24 +45,29 @@ Rendezvous hashing over the live node set: for repository `id` and node
 name `n`, `score(n, id)` is the first 8 bytes of `SHA-256(n || "\n" || id)`
 as a big-endian integer, and the `k` nodes with the highest scores are
 the preferred replicas. `k` is per repository from the authorizer's
-`replicas` field (spec 007), default 1, at most the node count. There is
-no table; a node joining or leaving moves only the repositories that
-hash to it.
+`replicas` field (spec 007), default 1, at most the node count. A
+request that made no authorizer call has no `replicas` value: a
+repository-bound token (spec 007) skips the authorizer, and such a
+request uses `k` = 1, so the first name, which is what the compaction
+primary and the header's first entry need, is the same whatever the
+credential. There is no table; a node joining or leaving moves only the
+repositories that hash to it.
 
 Membership is by heartbeat. Every 10 seconds a node sends one datagram
 in the gossip format below with an empty `repo` and `seq` 0 to every
 address `ORIGO_GOSSIP_PEERS` resolves to, on the port of
 `ORIGO_GOSSIP_ADDR`, the resolution refreshed every 10 seconds. The live node set is the names heard, by heartbeat or by an
-announcement, in the last 60 seconds, plus the node's own name, which is
-always in the set. A node with a single-node set is preferred for
-everything. The set is what placement, the compaction primary (spec
-006), the import lease (spec 019), and the event repair sweep (spec 008)
-read; each of those also needs the time a node was last heard, which
-the set records per name.
+announcement that carried a valid MAC, in the last 60 seconds, plus the
+node's own name, which is always in the set. A node with a single-node
+set is preferred for everything. The set is what placement, the
+compaction primary (spec 006), the import lease (spec 019), the orphan
+sweep (spec 019), and the event repair sweep (spec 008) read; each of
+those also needs the time a node was last heard, which the set records
+per name.
 
 | Header | Meaning |
 |---|---|
-| `Origo-Prefer` | on every response of the public listener: the comma separated names of the preferred nodes for the repository, highest score first; a request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
+| `Origo-Prefer` | on every response to a request that names a repository, whatever the status: the comma separated names of the preferred nodes for that repository, highest score first; absent on a response that names none (`POST /v1/repos`, the probes, `GET /.well-known/jwks.json`); a request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
 
 The compaction primary of spec 006 is the first name.
 
@@ -70,25 +75,38 @@ The compaction primary of spec 006 is the first name.
 
 After every index object a node creates, it sends one datagram three
 times, 10 ms apart, to every address `ORIGO_GOSSIP_PEERS` resolves to on
-the port of `ORIGO_GOSSIP_ADDR`, with no acknowledgement:
+the port of `ORIGO_GOSSIP_ADDR`, with no acknowledgement. A datagram is
+a 32 byte tag followed by a payload: the tag is the HMAC-SHA256 of the
+payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002, required from this
+spec on, the same value on every node), and the payload is one JSON
+object:
 
 ```json
-{"v": 1, "node": "<ORIGO_NODE_NAME>", "repo": "<id>", "seq": 1044}
+{"v": 1, "node": "<ORIGO_NODE_NAME>", "repo": "<id>", "seq": 1044, "at": "<RFC 3339>"}
 ```
 
-The same format with `repo` empty and `seq` 0 is the heartbeat above; a
-receiver records the sender's name and the time and does nothing else.
-A receiver that holds the repository locally below `seq` schedules one
-background catch-up (an `Acquire` for writing that returns at once) so
-the next request finds the copy current, at most one catch-up per
-repository per second whatever the datagram rate, which bounds what a
-forged flood can cost (spec 016). A datagram that fails to parse,
-carries another version, or names a repository the node does not hold is
-dropped. Gossip carries no secret and grants nothing: the currency check
-still decides, so a forged announcement costs at most one `HEAD`. It is
-an optimization: a lost packet costs one `HEAD` that answers 200 instead
-of 404 on the next read. `origo_gossip_packets_total{direction}` counts
-`sent`, `received`, and `dropped`.
+The same payload with `repo` empty and `seq` 0 is the heartbeat above.
+A receiver recomputes the tag over the payload and compares it in
+constant time; a datagram shorter than 33 bytes, or whose tag differs,
+is dropped before the payload is parsed and counted on
+`origo_gossip_packets_total{direction="dropped"}`, so a sender without
+the secret cannot join the live set, cannot keep a dead name in it, and
+cannot trigger a catch-up (spec 016, the membership forgery row). `at`
+more than 60 seconds from the receiver's clock is dropped the same way,
+which bounds a replay to the window a live sender would fill anyway. A
+valid heartbeat records the sender's name and the time and does nothing
+else. A valid announcement whose receiver holds the repository locally
+below `seq` schedules one background catch-up (an `Acquire` for writing
+that returns at once) so the next request finds the copy current, at
+most one catch-up per repository per second whatever the datagram rate,
+which bounds what a flood from a node that holds the secret can cost
+(spec 016). A datagram that fails to parse, carries another version, or
+names a repository the node does not hold is dropped and counted the
+same way. The MAC authenticates membership and nothing more: gossip
+grants no read and no write, the currency check still decides what is
+served, and a lost packet costs one `HEAD` that answers 200 instead of
+404 on the next read. `origo_gossip_packets_total{direction}` counts
+`sent`, `received` (valid), and `dropped`.
 
 ### Consistent reads
 
@@ -143,7 +161,9 @@ else.
 The autoscaler is a HorizontalPodAutoscaler in `deploy/base`:
 `minReplicas: 2`, `maxReplicas: 32`, target CPU utilization 70% of the
 request, scale-up stabilization 30 seconds, scale-down stabilization 600
-seconds so a burst of clones does not churn the cache. The second signal,
+seconds so a burst of clones does not churn the cache; the kind overlay
+of spec 013 sets the scale-down window to 60 seconds so its test
+finishes inside the job budget. The second signal,
 `origo_requests_in_flight` averaged at 64 per pod, needs a metrics
 adapter and is added by the example overlays of spec 018 that carry
 one. The PodDisruptionBudget keeps `minAvailable: 1`, pod anti-affinity
@@ -179,7 +199,9 @@ more, and a failure after that is corruption (spec 004). The per-entry
 4 of materialization, which reconciles the whole map to the index. On
 the phase 1 numbers that reaches about 20 ms per entry with 4 workers,
 so 1 000 entries in about 20 seconds on the laptop; the acceptance
-threshold on the CI runner is 30 seconds for 1 000 entries. Compaction
+threshold on the CI runner is 30 seconds for 1 000 entries, asserted by
+a plain end-to-end test that runs on every push, not by the measurement
+run `ORIGO_E2E_MEASURE` selects, which only prints. Compaction
 (spec 006) keeps the entry count under 64 for any repository that is
 pushed to, so the budget matters on a cold node after a compaction gap,
 not on every request. A materialization over 60 seconds is visible on
@@ -201,16 +223,23 @@ the cache on shutdown.
   `test/e2e`, `TestPreferredNodeIsWarm`).
 - A push acknowledged on node A is returned by a fetch on node B: with
   gossip, a fetch on B started 100 ms after A's acknowledgement returns
-  the pushed commit with B's currency check answering 404, so the
+  the pushed commit and B's `origo_wal_head_check_seconds{result="404"}`
+  count rose by one while its `result="200"` count did not, so the
   catch-up happened before the request; with gossip disabled
   (`ORIGO_GOSSIP_PEERS` unset) the first fetch on B returns the pushed
-  commit after one currency check that answers 200. The test measures
+  commit with the `result="200"` count risen by one. The test measures
   the time from A's acknowledgement until a fetch on B returns the
   commit (proposed: `test/e2e`, `TestGossipShortensTheCatchUp`).
 - Three nodes exchanging heartbeats agree on the live set within 60
   seconds of a node joining and drop a node 60 seconds after its last
   datagram with a fake clock, and a node's own name is in its set with
   no peers (proposed: `internal/placement`, `TestMembershipByHeartbeat`).
+- A datagram with no tag, a tag under another secret, a tag over a
+  changed payload, or an `at` 61 seconds old is dropped and counted on
+  `origo_gossip_packets_total{direction="dropped"}` without entering
+  the live set or scheduling a catch-up, and the same payload under the
+  right secret is accepted (proposed: `internal/placement`,
+  `TestGossipDropsABadMAC`).
 - 10 000 gossip datagrams for one repository in one second cause at most
   one catch-up on the receiver (proposed: `internal/placement`,
   `TestGossipCatchUpIsRateLimited`).
@@ -224,10 +253,11 @@ the cache on shutdown.
   no failed request (proposed: `test/e2e`, `TestNodeRemovalUnderReadLoad`).
 - Under a synthetic read load of 200 clones of a 10 MiB repository,
   going from 2 to 8 replicas raises clones per second at least 3 times
-  with no push failure; the HPA reaches 4 replicas within 60 seconds of
-  CPU crossing the target and returns to 2 after the 600 second window
-  (proposed: `test/e2e` on the kind stack of spec 013,
-  `TestReplicasScaleReads`, `TestAutoscalerFollowsLoad`).
+  with no push failure, and the HPA reaches 4 replicas within 60
+  seconds of CPU crossing the target; scale-down is not asserted, the
+  overlay's 60 second window only keeps the cluster small for the next
+  test (proposed: `test/e2e` on the kind stack of spec 013 in its
+  `e2e-slow` job, `TestReplicasScaleReads`, `TestAutoscalerScalesUp`).
 - A drain during 100 concurrent pushes loses none: every push is either
   acknowledged and in the newest index or refused with
   `storage_unavailable` and absent (proposed: `test/e2e`,
@@ -235,6 +265,7 @@ the cache on shutdown.
 - Materializing 1 000 entries from an empty disk with 4 workers
   finishes under 30 seconds against MinIO on the CI runner, and a thin
   entry whose base is in the previous entry lands on the retry
-  (`test/e2e`, `TestMeasure`, `materialize 1000 entries`, with the
-  threshold asserted; proposed: `internal/repo`,
+  (proposed: `test/e2e`, `TestMaterializeThousandEntriesUnderBudget`,
+  a plain test of the `e2e` tier that runs on every push and shares
+  its fixture builder with `TestMeasure`; `internal/repo`,
   `TestConcurrentWorkersApplyThinEntries`).
