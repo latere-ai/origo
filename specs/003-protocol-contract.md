@@ -1,6 +1,6 @@
 ---
 title: "Protocol contract: what a consumer relies on"
-status: in-progress
+status: testing
 track: infra
 depends_on:
   - specs/001-architecture.md
