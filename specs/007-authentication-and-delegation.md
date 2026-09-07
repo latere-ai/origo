@@ -63,13 +63,15 @@ spec 003's table carries.
 | shape | three base64url segments whose header and claims parse as JSON objects | `malformed` |
 | algorithms | `RS256`, `ES256`; anything else | `signature` |
 | `iss` | one of `ORIGO_OIDC_ISSUERS`, or `ORIGO_PUBLIC_URL` for a repository-bound token | `issuer` |
-| `kid` | names a key of the issuer's set, after one refresh when unknown | `kid` |
+| issuer keys | the issuer's key set has been fetched at least once; until discovery of that issuer succeeds every token naming it is refused | `issuer_unavailable` |
+| `kid` | names a key of the issuer's set, after one refresh when unknown | `unknown_key` |
 | signature | verifies with that key | `signature` |
 | `aud` | contains `origo` | `audience` |
 | `exp` | in the future, with 60 seconds of skew | `expired` |
 | `nbf` | absent or in the past, with 60 seconds of skew | `nbf` |
 | `iat` | present and at most 24 hours old | `iat` |
-| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer | |
+| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
+| issuer scheme | an issuer URL is `https://`; `http://` is accepted only when the URL's host is a loopback address or the URL is listed in `ORIGO_OIDC_INSECURE_ISSUERS` (spec 002), which the kind overlay of spec 013 sets for the stub issuer and a production deployment never sets; any other `http://` issuer is a start-up failure naming it | |
 | credential forms | `Authorization: Bearer <token>`; basic auth with any username and the token as the password; basic auth with the token as the username and an empty password | |
 | verified-token cache | keyed by the SHA-256 of the token for the shorter of its lifetime and 5 minutes, so a busy client costs one signature check per 5 minutes; at most 65 536 entries, least recently used evicted | |
 
@@ -171,8 +173,8 @@ invalidates outstanding tokens; their `ttl` bounds the damage.
 ## Not in this spec
 
 Anonymous reads (spec 016 names the option). Token revocation lists.
-Per-request rate limits (spec 012). Issuer discovery over anything but
-HTTPS.
+Per-request rate limits (spec 012). Issuer discovery over plain HTTP
+beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
 
 ## Acceptance criteria
 
@@ -180,14 +182,25 @@ HTTPS.
   and a token that fails each row of the verification table answers 401
   `unauthenticated` with that row's `details.reason` (`missing`,
   `size`, `malformed`, `signature` for an unsupported `alg` and for a
-  bad signature, `issuer`, `kid` after one refresh, `audience`,
-  `expired`, `nbf`, `iat`) on `info/refs`, `git-upload-pack`, and
-  `GET /v1/repos/{id}` (proposed: `internal/auth`,
-  `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`).
+  bad signature, `issuer`, `issuer_unavailable`, `unknown_key` after
+  one refresh, `audience`, `expired`, `nbf`, `iat`) on `info/refs`,
+  `git-upload-pack`, and `GET /v1/repos/{id}` (proposed:
+  `internal/auth`, `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`).
+- With one of two issuers unreachable at start-up, the node starts,
+  serves the other issuer's tokens, refuses the first's with
+  `issuer_unavailable`, and serves them without a restart once the
+  issuer answers and the minute retry ran with a fake clock; a
+  discovery fetch that hangs is abandoned after 5 seconds (proposed:
+  `internal/auth`, `TestIssuerUnavailableIsRetried`).
+- An `http://` issuer on a loopback host starts, one on another host
+  fails the start-up naming it, and the same URL listed in
+  `ORIGO_OIDC_INSECURE_ISSUERS` starts (proposed: `internal/config`,
+  `TestInsecureIssuersNeedTheList`).
 - A service token with `act` sets the effective subject: the authorizer
-  request carries both, the entry header carries `subject` and `actor`,
-  and the push event carries `pusher.sub` and `pusher.actor` (proposed:
-  `internal/httpgit`, `TestActClaimIsRecordedOnEntryAndAuthorizer`).
+  request carries both and the entry header carries `subject` and
+  `actor` (proposed: `internal/httpgit`,
+  `TestActClaimIsRecordedOnEntryAndAuthorizer`; the push event's
+  `pusher` is spec 008's criterion).
 - With the authorizer answering 500 or not at all, every request is 503
   `authorizer_unavailable` within 5 seconds, a 500 is sent one request
   and a refused connection two, and the first request after it recovers
@@ -214,5 +227,5 @@ HTTPS.
   (proposed: `internal/config`, `TestDevTokenIsRefused`).
 - `FuzzParseToken` in `internal/auth` finds no panic over random bytes
   and mutated valid tokens: it runs as a seed-corpus test in the suite
-  on every push and for 40 seconds under `make fuzz` (spec 002) on the
+  on every push and for 40 seconds under `make fuzz` (spec 013) on the
   weekly schedule (proposed: `internal/auth`, `FuzzParseToken`).
