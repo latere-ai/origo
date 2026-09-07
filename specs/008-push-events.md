@@ -4,6 +4,7 @@ status: drafted
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
+  - specs/005-placement-and-replication.md
   - specs/007-authentication-and-delegation.md
 affects: [internal/events/, internal/httpgit/, internal/api/, internal/wal/, internal/config/, cmd/origod/, test/e2e/]
 effort: small
