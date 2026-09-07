@@ -50,8 +50,9 @@ does for the other breaker; the wrapper passes its own clock through.
 
 Every `Store` call in `internal/wal` runs under a context deadline of
 `ORIGO_STORAGE_TIMEOUT` (default 10 seconds) per attempt, so the three
-attempts of `DefaultRetry` take at most 34 seconds. A timeout is a
-failure toward the breaker.
+attempts of `DefaultRetry` take about 30 seconds: three attempts of 10
+seconds and two pauses of 50 and 100 milliseconds, jitter subtracted.
+A timeout is a failure toward the breaker.
 
 ### Breaker per operation class
 
@@ -101,7 +102,14 @@ stale (a build fetching a commit it was just told about) can refuse the
 response by the header, while a clone that would otherwise fail gets a
 recent copy. `info/refs`, `git-upload-pack`, and every read endpoint of
 spec 009 carry the header the same way; `origo_stale_responses_total`
-counts them.
+counts them. Stale serving is for reads only: `Cache.Acquire(ctx, id,
+true)` under an open read breaker answers `ErrStorageOpen` at once,
+which the handlers map to 503 `storage_unavailable`, because a write
+needs a current index object as its base and a stale one would only
+lose its round or refuse a reference that did not move; so a push, an
+administration operation, or a server-side operation is refused before
+it does any work while the read breaker is open, whatever the write
+breaker says.
 
 ### Writes while degraded
 
@@ -157,7 +165,9 @@ Queueing pushes for later commit.
   `Origo-Stale` for 5 minutes (fake clock) and answers 503
   `storage_unavailable` afterwards; a cold one answers 503 at once; a
   push is refused at `info/refs` with the `ERR` pkt-line before any
-  pack is uploaded (proposed: `internal/httpgit`,
+  pack is uploaded, and an `Acquire` for writing answers
+  `storage_unavailable` at once while the clone is still served stale
+  (proposed: `internal/httpgit`,
   `TestReadBreakerServesStaleThenRefuses`).
 - With every store call answering after 15 seconds, reads and writes
   fail after `ORIGO_STORAGE_TIMEOUT`, one call with three internal
@@ -181,8 +191,10 @@ Queueing pushes for later commit.
   leaves another repository served (proposed: `internal/repo`,
   `TestMissingPackIsAnIntegrityError`).
 - All of the above run in the kind stack against MinIO with a fault
-  injector: a NetworkPolicy for unreachable, `test/stubs/slowproxy` for
-  slow (a small Go program that forwards TCP to MinIO and holds each
-  connection's first bytes for the delay a control endpoint sets), and
-  object deletion for partial, inside the `e2e` job of spec 013
-  (proposed: `test/e2e`, `TestDegradedStorage`).
+  injector: a NetworkPolicy for unreachable, enforced because the
+  stack's CNI is Cilium (a row of spec 013's overlay table; kindnet
+  enforces no policy), `test/stubs/slowproxy` for slow (a small Go
+  program that forwards TCP to MinIO and holds each connection's first
+  bytes for the delay a control endpoint sets), and object deletion for
+  partial, inside the `e2e` job of spec 013 (proposed: `test/e2e`,
+  `TestClusterDegradedStorage`).
