@@ -8,7 +8,7 @@ depends_on:
   - specs/006-compaction.md
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
-affects: [internal/api/, internal/wal/, internal/repo/, internal/events/, docs/]
+affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-07
@@ -52,11 +52,11 @@ hold and emits `undeleted`; after the purge it answers 410 `gone`.
 | Method | Path | Behaviour |
 |---|---|---|
 | POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap |
-| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
+| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defence for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository's `quota_bytes` as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
-| GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `ref_not_found` with `details.ref: "import"` when none of them is; `refs` and `bytes` are the transaction length and `pack_bytes` of the import entry; action `read` |
-| GET | `/v1/repos/{id}/export.bundle` | `git bundle create - --all` streamed as `application/x-git-bundle`: the complete repository in one portable file; action `read` |
+| GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `import_not_found` when none of them is; `refs` and `bytes` are the transaction length and `pack_bytes` of the import entry; action `read` |
+| GET | `/v1/repos/{id}/export.bundle` | `git bundle create - --all` streamed as `application/x-git-bundle`: the complete repository in one portable file; action `read`; the subprocess runs under a 10 minute deadline (spec 012), and a bundle cut by the deadline is a truncated body the client's `git bundle verify` refuses, never a status, because the headers are sent with the first byte |
 | GET | `/v1/repos/{id}/stats` | `{"size_bytes", "lfs_bytes", "packs", "entries_since_compaction", "refs", "pushed_at", "compacted_at"}`; action `read` |
 | POST | `/v1/repos/{id}/gc` | on the repository's compaction primary (spec 005), runs compaction now (spec 006) and answers 200 `{"before": {"packs", "entries", "size_bytes"}, "after": {…}}`; on any other node, forwards nothing and compacts nothing: it creates the request object of spec 006 and answers 202 `{"status": "scheduled", "details": {"primary": "<node name>", "within_seconds": 600}}`, and the primary's sweep compacts within 10 minutes; 429 `rate_limited` with `Retry-After` and `details.limit: "repository"`, `details.retry_after` when a `gc` ran on the repository within the last hour, counted on `origo_rate_limited_total{limit="repository"}`; emits `compacted` from the node that compacted |
 
@@ -66,6 +66,16 @@ hold and emits `undeleted`; after the purge it answers 410 `gone`.
 | `repo_frozen` | 403 on a write, 409 on a second freeze | This repository is frozen and does not accept pushes. | `frozen_at` |
 | `repo_importing` | 409 | This repository is importing and does not accept pushes until the import finishes. | `started_at` |
 | `repo_not_empty` | 409 | This repository already has history; import into an empty repository. | `seq` |
+| `import_not_found` | 404 | No import has been started for this repository. | `id` |
+
+The push path reads `meta` once, at `info/refs`, after the authorizer
+allowed the request, and caches it for that request and the
+`git-receive-pack` that follows it (keyed by the request's token hash
+and repository id for 60 seconds, the advertisement's lifetime in git),
+so `frozen_at`, `importing_since`, and `deleted_at` are checked at the
+advertisement with no second `meta` read at the upload; a state that
+changes between the two is caught by the hook's verdict, which reads
+the newest index and `meta` under the write lock before it commits.
 
 ### Import
 
@@ -75,10 +85,12 @@ under `ORIGO_DATA_DIR/spool/`, with the source token passed through the
 environment and never on the command line: `GIT_CONFIG_COUNT=1`,
 `GIT_CONFIG_KEY_0=http.<source>.extraheader`, and
 `GIT_CONFIG_VALUE_0=Authorization: Bearer <token>`, so the token is
-in no process listing and no log line. It then runs `git repack -a -d`
-and `git fsck --connectivity-only`, uploads every pack under
-`objects/pack/` as `packs/<hash>.pack` and `.idx` the way compaction
-does (spec 006, step 4), and commits one entry through `Log.Commit` in
+in no process listing and no log line, and through the pinned-address
+forward proxy of spec 016. It then runs `git repack -a -d` and `git
+fsck --connectivity-only`, uploads every pack under `objects/pack/`
+under the log key the mapping of spec 004 gives its file name
+(`pack-<hash>.pack` is `packs/<hash>.pack`, `.idx` first) the way
+compaction does (spec 006, step 4), and commits one entry through `Log.Commit` in
 the shape of a compaction: kind `compact`, no pack in the entry,
 `Packs` = the uploaded packs, `CompactedThrough` = the sequence before
 its own (the index format of spec 004 lists entries in
@@ -104,7 +116,8 @@ two imports that start within one read-write window both run; the
 second one's `Log.Commit` loses its round to the first, its callback
 refuses like a compaction's (spec 006), and it ends with
 `import_error: "not empty"`, so the log never holds two imports. A node that reads an `importing_since` older than 45 minutes
-whose `import_node` is not in the live set of spec 005 clears both
+whose `import_node` is not in the live set of spec 005 (a set only a
+node holding the gossip secret can enter) clears both
 and sets `import_error: "import node lost"`, so a node killed
 mid-import leaves a repository that reports `failed` and accepts a new
 import within 45 minutes; the scratch directory on the dead node is
@@ -127,8 +140,14 @@ purged after the hold. LFS objects with no `lfs/verified/<oid>` marker (spec 010
 are deleted 7 days after upload. A weekly sweep lists the bucket prefix,
 reports objects no index, marker, or metadata names and older than a day
 as `origo_orphan_objects`, deletes them after 7 days, and reports the
-bytes under the prefix as `origo_storage_bytes`. An operator can bound
-total storage as the sum of `size_bytes` and `lfs_bytes` over `stats`.
+bytes under the prefix as `origo_storage_bytes`. The sweep runs on one
+node: the one whose `ORIGO_NODE_NAME` sorts first in the live set of
+spec 005 at the sweep's hour, so an installation of any size lists the
+prefix once a week and a node that leaves hands the sweep to the next
+name without coordination; the other nodes report the two gauges from
+the last run they read from `origo/sweep/latest`, which the sweeping
+node writes. An operator can bound total storage as the sum of
+`size_bytes` and `lfs_bytes` over `stats`.
 
 ### Events
 
@@ -155,12 +174,30 @@ than weekly.
 
 ## Acceptance criteria
 
-- Each operation has a conformance case in `TestContract` (spec 013)
+- Each operation has a conformance case in `TestContract` (spec 021)
   covering the success path, the 403 on a caller without `admin`, and
   the state conflict: freeze twice (409 `repo_frozen`), undelete after
   the purge (410 `gone`), import into a repository with an entry (409
-  `repo_not_empty`), a push during an import (409 `repo_importing`)
+  `repo_not_empty`), a push during an import (409 `repo_importing`),
+  `GET` of an import that was never started (404 `import_not_found`)
   (proposed: `internal/api`, `TestAdministrationOperations`).
+- A push to a frozen repository is refused at `info/refs` with the
+  `ERR repo_frozen` pkt-line and the sentence in git's `remote error`
+  before any pack is sent, a `git-receive-pack` sent without the
+  advertisement is refused by the hook's verdict with the same
+  sentence, the push path reads `meta` once for the two requests, and
+  a clone succeeds throughout (proposed: `internal/httpgit`,
+  `TestFrozenRepositoryRefusesAtInfoRefs`, with a store that counts
+  `meta` reads).
+- An export of a fixture whose `git bundle` is held past the deadline
+  by a stub is cut with the deadline lowered by an option in the test
+  and the client's `git bundle verify` refuses the result (proposed:
+  `internal/api`, `TestExportDeadline`).
+- With three nodes, the weekly sweep runs on the node whose name sorts
+  first and on the next name once that node is out of the live set,
+  with a fake clock, and the other nodes report the gauges from
+  `origo/sweep/latest` (proposed: `internal/api`,
+  `TestOrphanSweepRunsOnOneNode`).
 - An import of a fixture of 5 000 commits built by `internal/gittest`
   and served by the stub source (`internal/gittest.ServeHTTP`, `git
   http-backend` behind an `httptest` server that requires the bearer)
