@@ -44,7 +44,14 @@ that runs them, the sink, the contract stub, the source stub, the
 overlay, and the jobs. In the same phase, `make dev` runs `test/stubs/cmd/origo-stubs` beside
 MinIO, generates `ORIGO_TOKEN_KEY` at start with `openssl ecparam
 -genkey -name prime256v1` into a file under `out/`, and prints a clone
-line with a token the stub minted (spec 002, Local stack); the harness
+line with a token the stub minted (spec 002, Local stack); between this
+spec landing and spec 013 landing, `make dev` is out of service, because
+the binary it runs is spec 013's and the bearer it set is gone, and
+nothing in this spec's criteria needs it: this spec's own tests, the
+unit suites of `internal/auth`, `internal/config`, `internal/api`,
+`internal/httpgit`, and `cmd/origod` and the end-to-end harness, run
+the stub issuer and the stub authorizer in-process from the two
+packages this spec builds; the harness
 starts the issuer and the authorizer in-process, generates a key with
 `crypto/ecdsa`, and points `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
 and `ORIGO_TOKEN_KEY` at them; the bootstrap Secret becomes `origod-auth`
