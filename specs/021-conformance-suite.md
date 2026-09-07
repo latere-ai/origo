@@ -109,7 +109,12 @@ Every other case runs against the live service, so the live run proves
 the surface and the stack run proves the surface, the trust logic, and
 the degraded rows.
 
-The stack run reads its target from `ORIGO_TEST_URL` and
+`TestContract` is the package's own test over `Run`. It carries the
+`e2e` build tag, like every test that needs a stack, so the unit suite
+the gate runs never reaches for one, and it skips with the message
+`nothing answers at ORIGO_TEST_URL` when the target does not answer,
+so the tier runs on a developer's machine without the stack. The stack
+run reads its target from `ORIGO_TEST_URL` and
 `ORIGO_TEST_ADMIN_TOKEN` (spec 002), whose defaults are the ports
 table of spec 013 (`http://localhost:30080`, and a token minted at the
 issuer's host port for the dev subject), and reaches the three stub
@@ -119,7 +124,11 @@ at `http://localhost:30900`, all held by the package as defaults so
 spec 013's `e2e` job sets nothing. The live run reads `ORIGO_LIVE_URL` and
 `ORIGO_LIVE_TOKEN` (spec 002), two repository secrets: the installation
 a release reaches and a token with `admin` on the `conformance-`
-prefix.
+prefix. `ORIGO_LIVE_URL` set selects the live run over the stack
+default: `TestContract` then targets it with `ORIGO_LIVE_TOKEN`, no
+stub endpoints, no `Fault`, and the skip list above, and never reads
+`ORIGO_TEST_URL`, so one test serves both runs and the `live` job sets
+the two secrets and nothing else.
 
 ### The code table
 
@@ -154,10 +163,19 @@ builder is told here.
 
 ### The mutation job
 
-A job in `verify.yml` runs `TestContract` once per capability the node
-controls through git configuration, with `ORIGO_TEST_DROP_CAPABILITY`
-(spec 002) set to that capability's name, and asserts at least one
-subtest fails each time. The variable is read by `internal/config` and
+A job in `verify.yml` runs `TestMutation` of `test/e2e` once per
+capability the node controls through git configuration, with
+`ORIGO_TEST_DROP_CAPABILITY` (spec 002) set to that capability's name.
+`TestMutation` is a wrapper, not a second suite: it starts one node of
+its own from the `ORIGO_TEST_S3_ENDPOINT` family the job exported,
+with the variable in the node's environment, the same way spec 008's
+repair case starts its nodes; runs `conformance.Run` against that node
+with an in-process issuer, authorizer, and sink and no `Fault`; and
+passes only when the run fails and every failed subtest is one that
+asserts the dropped capability (the capability's row of spec 003's
+table, and the fetch or push that uses it), so a suite that fails for
+another reason, or that does not notice the drop, fails the job. With
+the variable unset the test skips. The variable is read by `internal/config` and
 acted on by `internal/repo` when it writes the repository
 configuration of spec 004: `filter` turns `uploadpack.allowFilter` off,
 `allow-tip-sha1-in-want` and `allow-reachable-sha1-in-want` turn
@@ -166,12 +184,12 @@ configuration of spec 004: `filter` turns `uploadpack.allowFilter` off,
 `receive.advertisePushOptions` off. `shallow`, `deepen-since`,
 `deepen-not`, and `report-status-v2` are advertised by git whatever the
 configuration and are not in the mutation set; the suite asserts them
-on every run. Any other value is a start-up error. The job runs against
-one node with MinIO, like the `integration` job of spec 013, because
-the capabilities are per node, under the 20 minute budget spec 013's
-job table gives it: five runs of the suite, so a suite that takes
-more than 4 minutes against one node is a spec change, not a budget
-change.
+on every run. Any other value is a start-up error. The job runs with
+MinIO as a service container, like the `integration` job of spec 013,
+and no stack, because the capabilities are per node and `TestMutation`
+starts the node, under the 20 minute budget spec 013's job table gives
+it: five runs of the suite, so a suite that takes more than 4 minutes
+against one node is a spec change, not a budget change.
 
 | Test variable | Purpose |
 |---|---|
@@ -185,7 +203,7 @@ change.
 flowchart LR
   C[TestContract] --> K[kind stack of spec 013<br/>ORIGO_TEST_URL, stubs, Fault<br/>Skip: none]
   C --> S[test/stubs/origo in-process<br/>MemStore Fault<br/>Skip: none]
-  C --> M[one node with MinIO<br/>ORIGO_TEST_DROP_CAPABILITY<br/>must fail]
+  C --> M[TestMutation of test/e2e: one node it starts with MinIO<br/>ORIGO_TEST_DROP_CAPABILITY<br/>must fail on that capability alone]
   C --> L[ORIGO_LIVE_URL after a release<br/>no stubs, no Fault<br/>Skip: the four-entry list]
 ```
 
@@ -193,7 +211,7 @@ flowchart LR
 |---|---|---|
 | stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired; `TestSameAnswersOnStubAndStack` runs in the same job, because it needs the stack as its second target | every push to `main` and every pull request, inside that job's 30 minute budget |
 | stub | `test/stubs/origo` in-process, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
-| mutation | one node with MinIO, once per capability, 20 minutes (spec 013's job table) | every push |
+| mutation | `TestMutation` of `test/e2e`, which starts one node with MinIO from the `ORIGO_TEST_S3_ENDPOINT` family and runs `conformance.Run` against it, once per capability, 20 minutes (spec 013's job table) | every push |
 | live | the installation `ORIGO_LIVE_URL` names, with `ORIGO_LIVE_TOKEN`, the `conformance-` prefix, and the skip list above | the `live` job of `release.yml`, after spec 017's deploy step and before its publish step, when the secret is set; its report and timings are attached to the release (spec 017) |
 | previous release | the fixture of release N-1 on release N (spec 017, `TestPreviousReleaseFixture`) | in the release pipeline |
 
@@ -222,11 +240,13 @@ assertions beyond the thresholds the owning specs name.
   `TestContract/015/repository_unavailable`).
 - Removing any one git-controlled capability (`filter`,
   `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`, `atomic`,
-  `push-options`) from the server's advertised set fails at least one
-  subtest, and an unknown value refuses start-up, the five runs inside
-  the job's 20 minutes (proposed:
-  `.github/workflows/verify.yml`, the `mutation` job driving
-  `TestContract` with `ORIGO_TEST_DROP_CAPABILITY`; `internal/config`,
+  `push-options`) from the server's advertised set makes
+  `conformance.Run` fail on exactly the subtests that assert that
+  capability and on no other, and an unknown value refuses start-up,
+  the five runs inside the job's 20 minutes (proposed: `test/e2e`,
+  `TestMutation`, which starts the node with `ORIGO_TEST_DROP_CAPABILITY`
+  from the job and skips without it; `.github/workflows/verify.yml`,
+  the `mutation` job running it once per capability; `internal/config`,
   `TestDropCapabilityIsOneOfTheSet`).
 - The contract stub passes `TestContract` with an empty `Skip` list
   (proposed: `test/stubs/origo`, `TestStubConforms`).
