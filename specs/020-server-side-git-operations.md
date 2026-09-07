@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/httpgit/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -117,8 +117,12 @@ moved with `git update-ref`, and `events.Enqueue` (spec 008) writes the
 event. `commits` is bounded by the 30 second budget of spec 009 and the
 merge family by 5 minutes; over budget is 504 `operation_timeout`
 (spec 009) with `details.budget_seconds` 30 or 300, nothing is
-committed, and the loose objects stay unreachable until the next
-compaction removes them.
+committed, and the loose objects stay unreachable in the copy's object
+store until the copy is evicted (spec 005) or rebuilt (spec 004);
+compaction does not prune loose objects (spec 006). A dry run leaves
+nothing at all: its objects go into the temporary object directory,
+which is removed after the response, so no loose object of a dry run
+ever enters the repository's `objects/`.
 
 Concurrent operations on one branch serialize on `expected_head`: the
 second sees a mismatch and retries after reading the branch. Operations
