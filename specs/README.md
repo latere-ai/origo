@@ -59,7 +59,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | validated |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | validated |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | validated |
-| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | drafted |
+| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | validated |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | drafted |
