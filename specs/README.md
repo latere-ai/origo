@@ -26,7 +26,7 @@ stateDiagram-v2
   [*] --> drafted
   vague --> drafted: scoped
   drafted --> validated: review passes
-  validated --> dispatched: work starts
+  validated --> dispatched: every dependency at testing or later
   dispatched --> in_progress: first commit
   in_progress --> testing: implementation lands
   testing --> complete: verified, Outcome written
@@ -37,6 +37,14 @@ stateDiagram-v2
 `in_progress` is written `in-progress` in the frontmatter. A spec at
 `testing` moves to `complete` when every acceptance criterion has a
 passing test in the tree and the Outcome records every divergence.
+
+The dispatch gate is on the dependencies' state, not on `complete`: a
+validated spec is dispatched when every spec in its `depends_on` is at
+`testing` or later. `testing` means the design is built and what
+remains is a criterion another spec owns the test for, which is the
+case for a spec whose criteria name a later spec (003 and 004 do, and
+each says which spec owns each deferred criterion), so waiting for
+`complete` would wait for the dependents themselves.
 
 ## Index
 
@@ -210,6 +218,9 @@ deck and stated here so a reader sees them without the owning spec.
 | `ORIGO_TOKEN_KEY` is required in every mode; `make dev` and the kind overlay generate one at start | 002, 007 | 013, 016, 018 |
 | `ORIGO_GOSSIP_SECRET` is required only when `ORIGO_GOSSIP_PEERS` is set; a single node runs with neither | 002, 005 | 013, 016, 018 |
 | the index object carries `pushed_at`; the read API and `stats` serve it from there | 004 | 003, 009, 019 |
+| `size_bytes` on the index object is what the log holds: the bytes of the listed packs plus the pack bytes of the entries since the last compaction; a `compact` commit sets it to `Entry.PacksBytes`, a push adds its `pack_bytes`; the quota counts it and `stats` serves it (the code accumulates monotonically today, a builder item of 004) | 004 | 003, 006, 012, 019 |
+| `ghcr.io/latere-ai/origo-stubs:<version>` is a release artifact beside `origod`, built from `Dockerfile.stubs`, signed and attested the same way, pinned in the deploy archive's `kind` overlay; the `install-release` job and a first installation run the stub authorizer from it | 017 | 013, 018 |
+| `TestMutation` in `test/e2e` is the mutation job's test: it starts one node with `ORIGO_TEST_DROP_CAPABILITY` from the `ORIGO_TEST_S3_ENDPOINT` family, runs `conformance.Run` against it, and passes only when the run fails on that capability alone; `TestContract` carries the `e2e` tag, skips when nothing answers at `ORIGO_TEST_URL`, and targets `ORIGO_LIVE_URL` when it is set | 021 | 013 |
 | `operation_timeout` is defined by the read API and named by the limits and the server-side operations | 009 | 012, 020 |
 | the kind overlay is a table of rows, each with the spec that needs it; the CI jobs select tests by name prefix (`TestE2E`, `TestCluster`, `TestSlow`) and reach the stack through `ORIGO_TEST_URL`; `up.sh` creates the cluster and applies the overlay, `down.sh` deletes it, `make dev-up` and `make dev-down` call them | 013 | 004, 005, 008, 015, 016, 021 |
 | the kind stack has no ingress controller; its ports table fixes every host port (origod balanced 30080, nodes 1 to 3 public 30180 to 30182 and internal 30190 to 30192 on the StatefulSet `origod-0` to `origod-2`, the stub issuer 30081, authorizer 30082, sink 30083, the TLS source 30084, the slow proxy 30085, MinIO 30900), the defaults of `ORIGO_TEST_URL` and `ORIGO_S3_PUBLIC_ENDPOINT` on the stack; a criterion names a node by its row, "node 1 of the ports table" | 013 | 005, 006, 010, 015, 017, 021 |
@@ -252,7 +263,14 @@ tag, the object-store probe of `tools/spike/condwrite`, and
 `docs/install.md` walked by a maintainer on a fresh cluster),
 `SECURITY.md` in place, and no Latere hostname or value anywhere but
 as a default or an example. Until then the repository is private and
-the deck is written as if it were already public.
+the deck is written as if it were already public. Specs 003 and 004
+stay short of `complete` until then on purpose: their remaining
+criteria are the conformance suite, the code table, and the stub
+(spec 021, spec 013), the cluster-job tests and the packs (specs 013,
+006), and the Spaces probe of the release checklist (spec 017), each
+named on the criterion it owns, so the two specs close with phase 6
+and the dispatch gate above is what lets every phase between build on
+them.
 
 ## Conventions
 
