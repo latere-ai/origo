@@ -19,7 +19,22 @@ committed: the commit log already holds that.
   the tiers that need MinIO.
 - Container images, Kubernetes manifests under `deploy/`, and the release
   pipeline on a `v*` tag.
-- Phase 1 authentication is one static bearer from `ORIGO_DEV_TOKEN`.
+- Authentication and delegation (spec 007): a request carries a JWT from
+  one of `ORIGO_OIDC_ISSUERS` with audience `origo`, a service token may
+  carry `act` to act on behalf of a subject, and every request that names
+  a repository is authorized by the consumer's endpoint at
+  `ORIGO_AUTHORIZER_URL` before the repository is looked up, with the
+  answer cached for its `ttl`. `POST /v1/repos/{id}/tokens` mints a
+  repository-bound `read` or `write` token signed with `ORIGO_TOKEN_KEY`,
+  and `GET /.well-known/jwks.json` serves the key. `ORIGO_DEV_TOKEN` is
+  gone: a node that sets it refuses to start, and `ORIGO_OIDC_ISSUERS`,
+  `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN`, and `ORIGO_TOKEN_KEY`
+  are required. The bootstrap Secret is `origod-auth`. `make dev` is out
+  of service until spec 013 ships the stub binary; `make test-integration`
+  runs the stub issuer and authorizer in-process.
+- Every error response carries the fixed user sentence of its code with
+  the developer reason in `details`, and every response of the public
+  listener, `/readyz` and `/version` included, carries `Origo-Contract`.
 - The write-ahead log (spec 004): entries, immutable index objects
   committed by create-if-absent, the `HEAD` currency check, repository
   metadata, and the sweeper, over an S3 client signed by the standard
