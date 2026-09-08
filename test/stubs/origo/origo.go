@@ -108,7 +108,7 @@ func New(t testing.TB) *Server {
 	// repository API behind the verifier, the three unauthenticated
 	// paths in front, and the contract version on every response.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Metrics: reg, Guard: guard}).Register(app)
+	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Metrics: set, Guard: guard}).Register(app)
 	api.New(api.Options{Cache: cache, Logger: logger, Guard: guard, Signer: signer}).Register(app)
 	presigner, err := lfs.NewPresigner(lfs.PresignerOptions{
 		Endpoint: s.bucket.URL(), Region: s3test.Region, Bucket: Bucket, Key: s3test.Key, Secret: s3test.Secret, PathStyle: true,

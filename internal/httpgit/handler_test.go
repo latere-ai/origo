@@ -82,7 +82,7 @@ func newNode(t *testing.T, store wal.Store) *node {
 		t.Fatal(err)
 	}
 	guard, authz := newGuard(t, logger)
-	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute, Guard: guard})
+	h := New(Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard})
 	mux := http.NewServeMux()
 	h.Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
@@ -597,7 +597,7 @@ func newNodeAt(t *testing.T, store wal.Store, dataDir, gitBin string) *node {
 		t.Fatal(err)
 	}
 	guard, authz := newGuard(t, logger)
-	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute, Guard: guard})
+	h := New(Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard})
 	mux := http.NewServeMux()
 	h.Register(mux)
 	srv := httptest.NewServer(mux)

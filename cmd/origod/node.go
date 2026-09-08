@@ -186,7 +186,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard, Events: n.events, Placement: n.set}).Register(app)
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set}).Register(app)
 	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set}).Register(app)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through

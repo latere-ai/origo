@@ -32,11 +32,12 @@ import (
 	"syscall"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -51,7 +52,7 @@ type Options struct {
 	// Timeout bounds one git subprocess. 5 minutes by default.
 	Timeout time.Duration
 	Logger  *slog.Logger
-	Metrics *metrics.Registry
+	Metrics *metrics.Set
 	// Events enqueues the push event of every committed push (spec
 	// 008); nil, or one with no sink, enqueues nothing.
 	Events *events.Dispatcher
@@ -70,10 +71,10 @@ type Handler struct {
 	logger    *slog.Logger
 
 	events   *events.Dispatcher
-	pushes   *metrics.Counter
-	rejected *metrics.Counter
-	fetches  *metrics.Counter
-	phases   *metrics.Histogram
+	pushes   *pkgmetrics.Counter
+	rejected *pkgmetrics.Counter
+	fetches  *pkgmetrics.Counter
+	phases   *pkgmetrics.Histogram
 
 	// beforeVerdict, when set, sees the quarantine and the forced flags
 	// after they are computed and before the verdict is written; a test
@@ -104,18 +105,11 @@ func New(o Options) *Handler {
 	if h.logger == nil {
 		h.logger = slog.Default()
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	h.pushes = reg.Counter("origo_pushes_total", "pushes acknowledged")
-	h.rejected = reg.Counter("origo_pushes_rejected_total", "pushes refused by the log")
-	h.fetches = reg.Counter("origo_fetches_total", "upload-pack requests served")
-	h.phases = reg.Histogram("origo_push_duration_seconds", "time spent in each phase of a push",
-		[]float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60})
-	for _, c := range []*metrics.Counter{h.pushes, h.rejected, h.fetches} {
-		c.Add(nil, 0) // the series reads 0 before the first event
-	}
+	h.pushes, h.rejected, h.fetches, h.phases = set.Pushes, set.PushesRejected, set.Fetches, set.PushDuration
 	return h
 }
 
