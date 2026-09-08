@@ -7,11 +7,14 @@ spec:
     spec:
       containers:
         - name: origo-stubs
+          # The list replaces the overlay's, so the slow proxy's target
+          # of spec 015 is repeated here.
           args:
             - -issuer-url=http://origo-stubs.origo.svc:8081
             - -authorizer-token=stub-authorizer-token
             - -allow=*
             - -secret=stub-sink-secret
+            - -slowproxy-target=minio.origo.svc:9000
             - -source-token=stub-source-token
             - -ca=/etc/origo-stubs/ca.crt
             - -ca-key=/etc/origo-stubs/ca.key
