@@ -1,11 +1,15 @@
 # The stubs (spec 013's origo-stubs row): one Deployment running the
-# binary with the issuer (8081), the authorizer (8082), and the sink
-# (8083), behind one Service with a fixed clusterIP inside kind's
-# service range, so the nodes' pinned ORIGO_EGRESS_ALLOW entry of the
-# test-source component names an address that never changes, and each
-# control endpoint on its host port of the ports table. The listen
-# addresses are the binary's defaults; the values are the ones
-# origod.yaml sets on the nodes.
+# binary with the issuer (8081), the authorizer (8082), the sink
+# (8083), and the slow proxy of spec 015 in front of MinIO (its control
+# endpoint 8085, its data listener 8086), behind one Service with a
+# fixed clusterIP inside kind's service range, so the nodes' pinned
+# ORIGO_EGRESS_ALLOW entry of the test-source component names an
+# address that never changes, and each control endpoint on its host
+# port of the ports table. The listen addresses are the binary's
+# defaults; the values are the ones origod.yaml sets on the nodes. The
+# data listener has a Service of its own, slowproxy, which is what
+# ORIGO_S3_ENDPOINT on every node names (the slowproxy row of spec
+# 013's overlay table, spec 015's).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,6 +45,7 @@ spec:
             - -authorizer-token=stub-authorizer-token
             - -allow=*
             - -secret=stub-sink-secret
+            - -slowproxy-target=minio.origo.svc:9000
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -53,6 +58,10 @@ spec:
               containerPort: 8082
             - name: sink
               containerPort: 8083
+            - name: slowproxy
+              containerPort: 8085
+            - name: slowproxy-data
+              containerPort: 8086
           readinessProbe:
             httpGet:
               path: /jwks
@@ -93,3 +102,23 @@ spec:
       port: 8083
       targetPort: sink
       nodePort: 30083
+    - name: slowproxy
+      port: 8085
+      targetPort: slowproxy
+      nodePort: 30085
+---
+# The slow proxy's data listener, what ORIGO_S3_ENDPOINT on every node
+# names; in-cluster only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: slowproxy
+  labels:
+    app.kubernetes.io/name: origo-stubs
+spec:
+  selector:
+    app.kubernetes.io/name: origo-stubs
+  ports:
+    - name: slowproxy-data
+      port: 8086
+      targetPort: slowproxy-data

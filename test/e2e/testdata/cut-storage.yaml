@@ -1,8 +1,11 @@
-# Applied with cluster.ApplyManifest: the nodes lose egress to MinIO and
-# keep everything else (the stubs, DNS, each other), so a request that
-# needs the bucket fails and one that does not keeps working. Every
-# other pod in every namespace stays reachable; the one exception is the
-# pod labelled minio. Enforced by Cilium (spec 013's overlay table).
+# Applied with cluster.ApplyManifest: the nodes lose egress to the
+# bucket and keep everything else (the stubs, DNS, each other), so a
+# request that needs the bucket fails and one that does not keeps
+# working. Every other pod in every namespace stays reachable; the
+# exceptions are the pod labelled minio and the slow proxy's data port
+# on the stubs pod, which is the path ORIGO_S3_ENDPOINT names (spec
+# 015); the stubs' other ports stay open. Enforced by Cilium (spec 013's
+# overlay table).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,4 +24,14 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: NotIn
-                values: [minio]
+                values: [minio, origo-stubs]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: origo-stubs
+      ports:
+        - port: 8081
+        - port: 8082
+        - port: 8083
+        - port: 8085
+        - port: 8443

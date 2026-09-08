@@ -64,9 +64,11 @@ spec:
               containerPort: 7946
               protocol: UDP
           env:
-            # The bucket: the MinIO row's fixed values.
+            # The bucket: the MinIO row's fixed values, reached through
+            # the slow proxy of spec 015, delay 0 until a test sets one
+            # on its control endpoint (host port 30085).
             - name: ORIGO_S3_ENDPOINT
-              value: http://minio.origo.svc:9000
+              value: http://slowproxy.origo.svc:8086
             - name: ORIGO_S3_PUBLIC_ENDPOINT
               value: http://localhost:30900
             - name: ORIGO_S3_REGION
@@ -109,10 +111,14 @@ spec:
               value: http://origo-stubs.origo.svc:8083
             - name: ORIGO_EVENTS_SECRET
               value: stub-sink-secret
-            # Stale serving ends after 30 seconds, not 5 minutes, so spec
-            # 015's cluster scenario fits its budget.
+            # Stale serving ends after 30 seconds, not 5 minutes, and a
+            # storage call fails after 2 seconds, not 10, so spec 015's
+            # cluster scenario fits its budget: the read breaker opens
+            # well inside the 30 seconds the warm copy is served stale.
             - name: ORIGO_STALE_MAX
               value: 30s
+            - name: ORIGO_STORAGE_TIMEOUT
+              value: 2s
             - name: ORIGO_TOKEN_KEY
               valueFrom:
                 secretKeyRef:

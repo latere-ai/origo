@@ -36,6 +36,7 @@ const (
 	portAuthorizer = 30082
 	portSink       = 30083
 	portSource     = 30084
+	portSlowProxy  = 30085
 	portMinIO      = 30900
 )
 
@@ -389,7 +390,7 @@ func TestClusterUpScript(t *testing.T) {
 	for p, path := range map[int]string{
 		portBalanced: "/version", portNode1: "/version", portNode1 + 1: "/version", portNode1 + 2: "/version",
 		portNode1Int: "/metrics", portNode1Int + 1: "/metrics", portNode1Int + 2: "/metrics",
-		portIssuer: "/jwks", portAuthorizer: "/requests", portSink: "/deliveries", portMinIO: "/minio/health/live",
+		portIssuer: "/jwks", portAuthorizer: "/requests", portSink: "/deliveries", portSlowProxy: "/", portMinIO: "/minio/health/live",
 	} {
 		if status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d%s", port(p), path)); status != 200 {
 			t.Errorf("port %d%s: %d", port(p), path, status)
@@ -455,7 +456,8 @@ func TestClusterUpScript(t *testing.T) {
 		env[e.Name] = e.Value
 	}
 	for name, want := range map[string]string{
-		"ORIGO_STALE_MAX": "30s", "ORIGO_PUBLIC_URL": "http://localhost:30080", "ORIGO_S3_PUBLIC_ENDPOINT": "http://localhost:30900",
+		"ORIGO_STALE_MAX": "30s", "ORIGO_STORAGE_TIMEOUT": "2s", "ORIGO_PUBLIC_URL": "http://localhost:30080", "ORIGO_S3_PUBLIC_ENDPOINT": "http://localhost:30900",
+		"ORIGO_S3_ENDPOINT":  "http://slowproxy.origo.svc:8086",
 		"ORIGO_OIDC_ISSUERS": "http://origo-stubs.origo.svc:8081", "ORIGO_OIDC_INSECURE_ISSUERS": "http://origo-stubs.origo.svc:8081",
 		"ORIGO_AUTHORIZER_URL": "http://origo-stubs.origo.svc:8082", "ORIGO_AUTHORIZER_TOKEN": "stub-authorizer-token",
 		"ORIGO_EVENTS_URL": "http://origo-stubs.origo.svc:8083", "ORIGO_EVENTS_SECRET": "stub-sink-secret",

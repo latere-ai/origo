@@ -171,6 +171,7 @@ wait_for "port $(port 30081)" curl -fsS "http://localhost:$(port 30081)/jwks"
 wait_for "port $(port 30082)" curl -fsS "http://localhost:$(port 30082)/requests"
 wait_for "port $(port 30083)" curl -fsS "http://localhost:$(port 30083)/deliveries"
 wait_for "port $(port 30084)" curl -fsS --cacert "$out/ca.crt" "https://localhost:$(port 30084)/ca.pem"
+wait_for "port $(port 30085)" curl -fsS "http://localhost:$(port 30085)/"
 wait_for "port $(port 30900)" curl -fsS "http://localhost:$(port 30900)/minio/health/live"
 
 # Every port answering does not mean the nodes hold the issuer's keys:
