@@ -90,7 +90,7 @@ never recorded and are replaced by the names below.
 | `origo_events_delivered_total`, `origo_events_dead_total` | counter | | event delivery (008) |
 | `origo_rate_limited_total` | counter | `limit` (`subject`, `subprocesses`, `repository`) | limits (012), the per-repository limits of 019 and 020 |
 | `origo_storage_ops_total` | counter | `op` (`get`, `put`, `create`, `head`, `delete`, `list`), `result` (`ok`, `not_found`, `exists`, `error`) | the store adapter (015) |
-| `origo_storage_seconds` | histogram, the shared duration buckets | `op` | same |
+| `origo_storage_seconds` | histogram, the shared duration buckets of `pkg/metrics`, 5 ms to 10 s | `op` | same |
 | `origo_storage_breaker_state` | gauge | `class` (`read`, `write`); 0 closed, 1 open, 2 half-open | the breakers (015) |
 | `origo_stale_responses_total` | counter | | responses served with `Origo-Stale` (015) |
 | `origo_log_integrity_errors_total` | counter | | a pack or entry the log names that is missing or fails its digest (015) |
@@ -318,8 +318,10 @@ each as the rule, so a reader finds one answer:
   (`internal/httpgit`, `TestReferenceMovedBetweenAdvertisementAndPush`).
 - The bucket sets of `origo_compaction_seconds` and
   `origo_storage_seconds` were open in the first draft's table and are
-  chosen here: 0.5 s to 10 minutes for a compaction, the shared duration
-  buckets for a storage call. The table above carries both.
+  chosen here: 0.5 s to 10 minutes for a compaction, and for a storage
+  call the shared duration buckets of `pkg/metrics`, 5 ms to 10 s, which
+  `origo_request_duration_seconds` and `origo_authorizer_seconds` also
+  take. The table above carries both ranges.
 - The outbound transport to the issuers and the authorizer is not
   wrapped; the Traces section names the storage transport only.
 
