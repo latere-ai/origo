@@ -5,9 +5,17 @@ for one. You will hear back within three business days, and a fix for a
 high severity issue ships within thirty days. Credit in the release notes
 on request.
 
-The threat model, the trust boundaries, and the control for each threat
-are in [`specs/016-security-and-threat-model.md`](specs/016-security-and-threat-model.md).
-A software bill of materials and build provenance ship with the release
-pipeline of spec 017; until it lands, a release carries neither. The
-quality gate checks dependencies for known vulnerabilities on every
-push.
+What Origo protects, against whom, and how each threat is answered is
+written down in the
+[threat model](specs/016-security-and-threat-model.md), so a reviewer
+can check the design rather than take it on faith. Every request
+carries a token and is authorized before a repository is looked up. A
+server-side fetch of another host reaches only a host the operator
+listed, and never a private, cluster, or loopback address. Git runs
+with a minimal environment, no shell, and its object checks on. The
+pod runs as a non-root user on a read-only root file system with every
+capability dropped.
+
+Dependencies are checked for known vulnerabilities on every push. A
+release will carry a bill of materials and build provenance once the
+release pipeline ships; until then it carries neither.
