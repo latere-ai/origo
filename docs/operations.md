@@ -22,16 +22,18 @@ worth backing up.
 ## Restore a repository
 
 A node that finds a local copy corrupt rebuilds it from the log by
-itself. If an object in the log itself is missing or corrupt, a node
-built with spec 015 reports `origo_log_integrity_errors_total` and
-answers 503 `repository_unavailable` for that repository; until that
-spec lands the node answers 503 `storage_unavailable` and the key is
-in its log line. Either way:
+itself. If an object in the log itself is missing or corrupt, that
+repository alone answers 503 `repository_unavailable` with the object's
+key in `details.key`, `origo_log_integrity_errors_total` counts it, and
+the alert `OrigoLogIntegrity` fires; every other repository is served
+as before, and nothing on any node is removed. To restore it:
 
-1. Find the key in the node's log line.
-2. Restore that object from the bucket's version history, or copy it from
-   another node's warm cache (`/var/lib/origo/repos/<id>.git/objects/pack/`
-   holds the same pack bytes the entry carries).
+1. Find the key: it is in the error's `details.key` and in the node's
+   log line `log integrity error`.
+2. Restore that object from the bucket's version history, or copy it
+   from another node's warm cache
+   (`/var/lib/origo/repos/<id>.git/objects/pack/` holds the same pack
+   bytes the entry or pack object carries).
 3. The next request to the repository materializes it again.
 
 ## Upgrade
@@ -73,13 +75,43 @@ arrive.
 
 ## When the bucket is unhealthy
 
-With spec 015 in place, reads of warm repositories keep working with an
-`Origo-Stale` header for up to five minutes and pushes are refused with
-a message telling the client to retry; the alerts `OrigoBreakerOpen`
-and `OrigoStaleServing` of spec 011 fire. Until then every request
-fails with 503 `storage_unavailable` after the client's retries. In
-both cases there is nothing to do on the Origo side but wait for the
-bucket; when it returns, nodes catch up on their own.
+Every call to the bucket has a deadline, `ORIGO_STORAGE_TIMEOUT` (10
+seconds by default), and a node keeps two breakers, one for reads and
+one for writes. Five failed calls in a row open a breaker; it stays
+open for 30 seconds, then lets one call through as a probe, and closes
+when the probe succeeds. `origo_storage_breaker_state` shows each one
+(0 closed, 1 open, 2 probing) and `OrigoBreakerOpen` fires after a
+minute open.
+
+While the read breaker is open, a repository the node already holds is
+served from its local copy for up to `ORIGO_STALE_MAX` (5 minutes by
+default) after its last successful check against the bucket, with the
+header `Origo-Stale` carrying the seconds since that check, so a
+consumer that must not read stale can refuse the response;
+`origo_stale_responses_total` counts them and `OrigoStaleServing`
+fires. A repository the node does not hold, or one past the bound,
+answers 503 `storage_unavailable` at once with a `Retry-After`.
+
+Pushes are refused while either breaker is open, before the client
+uploads anything: `git push` prints `remote error: storage_unavailable:
+The repository is temporarily unavailable. Nothing was lost. Try again
+in a few minutes.` A push whose pack had already arrived waits up to a
+minute for the write breaker and is refused the same way if it does not
+close. Nothing is queued and nothing is lost: a refused push was never
+recorded.
+
+A replica stays in rotation while its breaker is open, because it
+still serves what it holds and refuses the rest with that message;
+`/readyz` fails only while the bucket is slow or unreachable and the
+breaker has not opened yet. There is nothing to do on the Origo side
+but wait for the bucket: when it answers again, the next probe closes
+the breaker, every repository is checked against the log on its next
+request, and `Origo-Stale` disappears.
+
+To see the bucket's health from a node's side, watch
+`origo_storage_ops_total{result="error"}` against the total and
+`origo_storage_seconds`; `OrigoStorageErrors` fires when more than one
+call in twenty fails for five minutes.
 
 ## Push events
 

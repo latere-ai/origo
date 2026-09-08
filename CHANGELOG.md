@@ -175,4 +175,25 @@ committed: the commit log already holds that.
   in place of the fresh UUID it sent before. The ten alerts are
   `deploy/base/prometheusrule.yaml`, applied beside the base where the
   Prometheus operator is installed.
-
+- Degraded storage (spec 015). Every call to the bucket runs under
+  `ORIGO_STORAGE_TIMEOUT` (10 seconds) and one of two breakers, reads
+  and writes, that open after five failed calls in a row and stay open
+  for 30 seconds before one probe. While the read breaker is open a
+  repository the node holds is served from its local copy with an
+  `Origo-Stale` header, the whole seconds since its last check that
+  answered, for up to `ORIGO_STALE_MAX` (5 minutes); a repository the
+  node does not hold, or one past that bound, answers 503
+  `storage_unavailable` at once with a `Retry-After`. A push is refused
+  before the client uploads a pack, as `remote error:
+  storage_unavailable: ...` from `git push`, and a pack already
+  uploaded waits up to a minute for the write breaker before it is
+  refused in the sideband. A pack or entry the log names that is
+  missing or corrupt makes that repository alone answer 503
+  `repository_unavailable` naming the key, for the operator to restore.
+  `origo_storage_ops_total`, `origo_storage_seconds`,
+  `origo_storage_breaker_state`, `origo_stale_responses_total`, and
+  `origo_log_integrity_errors_total` record it, and the alerts
+  `OrigoBreakerOpen`, `OrigoStaleServing`, and `OrigoLogIntegrity`
+  fire. A replica stays ready while its breaker is open. The kind
+  overlay runs the slow proxy of `origo-stubs` in front of MinIO, with
+  its control endpoint on host port 30085.
