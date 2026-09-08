@@ -112,13 +112,14 @@ spec:
             - name: ORIGO_EVENTS_SECRET
               value: stub-sink-secret
             # Stale serving ends after 30 seconds, not 5 minutes, and a
-            # storage call fails after 2 seconds, not 10, so spec 015's
+            # storage call fails after 5 seconds, not 10, so spec 015's
             # cluster scenario fits its budget: the read breaker opens
-            # well inside the 30 seconds the warm copy is served stale.
+            # inside the 30 seconds the warm copy is served stale, and
+            # the deadline still clears the slow scenarios' load.
             - name: ORIGO_STALE_MAX
               value: 30s
             - name: ORIGO_STORAGE_TIMEOUT
-              value: 2s
+              value: 5s
             - name: ORIGO_TOKEN_KEY
               valueFrom:
                 secretKeyRef:

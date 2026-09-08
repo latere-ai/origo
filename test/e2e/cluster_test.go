@@ -456,7 +456,7 @@ func TestClusterUpScript(t *testing.T) {
 		env[e.Name] = e.Value
 	}
 	for name, want := range map[string]string{
-		"ORIGO_STALE_MAX": "30s", "ORIGO_STORAGE_TIMEOUT": "2s", "ORIGO_PUBLIC_URL": "http://localhost:30080", "ORIGO_S3_PUBLIC_ENDPOINT": "http://localhost:30900",
+		"ORIGO_STALE_MAX": "30s", "ORIGO_STORAGE_TIMEOUT": "5s", "ORIGO_PUBLIC_URL": "http://localhost:30080", "ORIGO_S3_PUBLIC_ENDPOINT": "http://localhost:30900",
 		"ORIGO_S3_ENDPOINT":  "http://slowproxy.origo.svc:8086",
 		"ORIGO_OIDC_ISSUERS": "http://origo-stubs.origo.svc:8081", "ORIGO_OIDC_INSECURE_ISSUERS": "http://origo-stubs.origo.svc:8081",
 		"ORIGO_AUTHORIZER_URL": "http://origo-stubs.origo.svc:8082", "ORIGO_AUTHORIZER_TOKEN": "stub-authorizer-token",

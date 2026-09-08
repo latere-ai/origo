@@ -84,7 +84,7 @@ func podConditions(t *testing.T, name string) string {
 // node's internal host port: the bucket unreachable under
 // cut-storage.yaml, slow under the slow proxy's delay, and partial
 // after a deletion through the MinIO host port. ORIGO_STALE_MAX is 30s
-// and ORIGO_STORAGE_TIMEOUT 2s on the stack's nodes.
+// and ORIGO_STORAGE_TIMEOUT 5s on the stack's nodes.
 func TestClusterDegradedStorage(t *testing.T) {
 	requireCluster(t)
 	s := requireStack(t)
@@ -196,7 +196,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(body, &env)
-		if took := time.Since(started); status != 503 || env.Error.Code != "storage_unavailable" || env.Error.Details["error"] != "breaker open" || took > 5*time.Second {
+		if took := time.Since(started); status != 503 || env.Error.Code != "storage_unavailable" || env.Error.Details["error"] != "breaker open" || took > 3*time.Second {
 			t.Fatalf("cold repository: %d %s after %s", status, body, took)
 		}
 		if nodeMetric(t, node1Int, "origo_stale_responses_total", "") < 1 {
@@ -222,14 +222,14 @@ func TestClusterDegradedStorage(t *testing.T) {
 		// deadline: the check fails after the deadline, one call and one
 		// failure, the breaker stays closed below its threshold.
 		before := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`)
-		if err := slowproxy.Set(ctx, proxy, 5*time.Second); err != nil {
+		if err := slowproxy.Set(ctx, proxy, 8*time.Second); err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = slowproxy.Set(context.Background(), proxy, 0) })
 		started := time.Now()
 		status, _, body := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		took := time.Since(started)
-		if status != 503 || !strings.Contains(string(body), `"storage_unavailable"`) || took < 2*time.Second || took > 15*time.Second {
+		if status != 503 || !strings.Contains(string(body), `"storage_unavailable"`) || took < 5*time.Second || took > 25*time.Second {
 			t.Fatalf("slow bucket: %d %s after %s", status, body, took)
 		}
 		if after := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`); after != before+1 {

@@ -275,14 +275,15 @@ Divergences and interpretations, each kept and the reason:
   Design says; the deadline runs on real time, so the unit test of the
   timeout uses a short real deadline and the fake clock for the
   window and the stale bound.
-- A cancelled call counts as a failure. The Design lists a timeout, a
-  transport error, and a 5xx; a call ended by its caller's context is
-  counted the same, because the readiness probe's listing, which the
-  probe's 2 second budget ends before a 10 second deadline, is the
-  one call a replica out of rotation keeps making, and without it the
-  breaker of an unready replica would never open. A success resets the
-  count, so a client that goes away under a healthy bucket opens
-  nothing.
+- A call the caller's own context ended counts toward neither side of
+  the breaker: the bucket did not fail it. The first stack run of the
+  slow tier showed why: under 200 concurrent clones a busy node's
+  cancelled fetches opened its read breaker and a push through it was
+  refused. The readiness listing, which the probe's 2 second budget
+  would end before the deadline, runs detached under the storage
+  deadline alone and is shared by the probes that arrive while it
+  runs, so it is what opens the breaker of a replica no request
+  reaches, and a probe whose budget ends first reports the wait.
 - Readiness, which the spec leaves open: the `storage` check passes
   while the read breaker is open, once the bucket has answered the
   replica at least once since it started. A replica that serves warm
@@ -346,11 +347,12 @@ Divergences and interpretations, each kept and the reason:
 - The `test-source` component's patch replaces the stubs container's
   argument list, so `-slowproxy-target` is repeated there; the first
   stack run started no proxy and port 30085 never answered.
-- On the stack, `ORIGO_STORAGE_TIMEOUT` is `2s` beside the
+- On the stack, `ORIGO_STORAGE_TIMEOUT` is `5s` beside the
   `ORIGO_STALE_MAX=30s` spec 013's overlay row already set, so the read
   breaker opens in a few seconds and the warm copy is observed stale
   for most of its 30 seconds; at 10 seconds the breaker would open
-  near the bound. `cut-storage.yaml` now also denies the nodes egress
+  near the bound, and at 2 seconds the slow tier's 8-replica load
+  through the proxy exceeded the deadline. `cut-storage.yaml` now also denies the nodes egress
   to the stubs pod's port 8086, the proxy's data listener that
   `ORIGO_S3_ENDPOINT` names, keeping the stubs' other ports open; the
   proxy's data listener has a Service of its own, `slowproxy`, and its
