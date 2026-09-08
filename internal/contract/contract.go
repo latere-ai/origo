@@ -36,6 +36,8 @@ const (
 	CodeStorageUnavailable    = "storage_unavailable"
 	CodeInvalid               = "invalid_request"
 	CodeAuthorizerUnavailable = "authorizer_unavailable" // spec 007
+	CodeBlobTooLarge          = "blob_too_large"         // spec 009
+	CodeOperationTimeout      = "operation_timeout"      // spec 009
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -53,6 +55,8 @@ var sentences = map[string]string{
 	CodeRateLimited:           "Too many requests. Wait and try again.",
 	CodeStorageUnavailable:    "The repository is temporarily unavailable. Nothing was lost. Try again in a few minutes.",
 	CodeAuthorizerUnavailable: "Permissions cannot be checked right now. Nothing was lost. Try again in a few minutes.",
+	CodeBlobTooLarge:          "This file is larger than 50 MiB. Request it in ranges of at most 50 MiB.",
+	CodeOperationTimeout:      "The operation took too long and nothing was changed.",
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence
