@@ -50,7 +50,7 @@ each says which spec owns each deferred criterion), so waiting for
 
 | # | Spec | Effort | Status |
 |---|---|---|---|
-| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | validated |
+| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | testing |
 | [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | complete |
 | [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | testing |
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
@@ -333,7 +333,7 @@ name, or when a spec names something no spec defines.
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 017, 021 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 013, 015, 017, 021 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010 |
-| variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 016 |
+| variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |
 | variable | `ORIGO_CHECK_SELFTEST` | [002](002-repository-scaffold.md) | 018 |
@@ -343,8 +343,8 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013 |
 | variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EGRESS_CA_BUNDLE` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
-| variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 016 |
-| variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 018 |
+| variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 013, 016 |
+| variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 013, 018 |
 | variable | `ORIGO_FAILPOINT` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_GOSSIP_ADDR` | [002](002-repository-scaffold.md) | 005 |
 | variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 008, 013 |
@@ -387,7 +387,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_REGION` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 013, 014, 019, 021 |
+| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 010, 013, 014, 019, 021 |
 | variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018 |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
