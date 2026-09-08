@@ -7,7 +7,8 @@ are one-time: the namespace and the secrets.
 ```sh
 kubectl apply -f deploy/bootstrap/namespace.yaml
 cp deploy/bootstrap/secrets.example.yaml /tmp/origod-secrets.yaml
-# fill in the bucket credentials and the phase 1 bearer, then
+# fill in the bucket credentials, the issuers, the authorizer, and a key
+# from `openssl ecparam -genkey -name prime256v1`, then
 kubectl apply -f /tmp/origod-secrets.yaml
 ```
 

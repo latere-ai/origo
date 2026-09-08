@@ -69,13 +69,14 @@ spec:
                   fieldPath: metadata.name
             - name: ORIGO_GOSSIP_PEERS
               value: origod-gossip
-          # The bucket and the phase 1 bearer come from secrets the
-          # bootstrap step creates once; see deploy/bootstrap/README.md.
+          # The bucket and the identity variables of spec 007 come from
+          # secrets the bootstrap step creates once; see
+          # deploy/bootstrap/README.md.
           envFrom:
             - secretRef:
                 name: origod-s3
             - secretRef:
-                name: origod-dev-token
+                name: origod-auth
           # Liveness touches no dependency. Readiness reports object storage
           # and the disk, so a replica leaves the endpoint list when either
           # goes away.
