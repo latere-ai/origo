@@ -52,6 +52,15 @@ type Options struct {
 	// read request and held across its subprocesses; one of its own,
 	// with the spec's defaults, when nil.
 	Limits *limits.Limits
+	// Egress is the pinned dialer of spec 016 every import and verify
+	// source is checked and fetched through; one that refuses every
+	// host when nil.
+	Egress *Egress
+	// AllowLoopback admits loopback addresses for a host on the egress
+	// list. It is a test seam with no configuration variable: false in
+	// every deployment, set only by a unit test of import or verify that
+	// serves its source in-process.
+	AllowLoopback bool
 }
 
 // Handler serves /v1/repos.
@@ -64,6 +73,7 @@ type Handler struct {
 	events    *events.Dispatcher
 	placement placement.Placer
 	limits    *limits.Limits
+	egress    *Egress
 
 	readTimeout time.Duration
 }
@@ -85,8 +95,19 @@ func New(o Options) *Handler {
 	if bounds == nil {
 		bounds = limits.New(limits.Options{Log: o.Cache.Log(), Logger: logger})
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds}
+	egress := o.Egress
+	if egress == nil {
+		egress = NewEgress(EgressOptions{})
+	}
+	if o.AllowLoopback {
+		egress = egress.withLoopback()
+	}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress}
 }
+
+// Egress is the dialer the handler fetches sources through, for the
+// operations of specs 019 and 014 and their tests.
+func (h *Handler) Egress() *Egress { return h.egress }
 
 // Register mounts the routes.
 func (h *Handler) Register(mux *http.ServeMux) {

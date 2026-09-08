@@ -40,16 +40,17 @@ const (
 )
 
 type harness struct {
-	t      *testing.T
-	store  *wal.MemStore
-	log    *wal.Log
-	cache  *repo.Cache
-	srv    *httptest.Server
-	authz  *authorizer.Server
-	guard  *auth.Guard
-	key    *ecdsa.PrivateKey
-	signer *auth.Signer
-	limits *limits.Limits
+	t       *testing.T
+	store   *wal.MemStore
+	log     *wal.Log
+	cache   *repo.Cache
+	srv     *httptest.Server
+	authz   *authorizer.Server
+	guard   *auth.Guard
+	key     *ecdsa.PrivateKey
+	signer  *auth.Signer
+	limits  *limits.Limits
+	handler *Handler
 
 	mu        sync.Mutex
 	principal auth.Principal
@@ -66,6 +67,15 @@ type harnessConfig struct {
 	sink        *sink.Server
 	placement   placement.Placer
 	limits      *limits.Options
+	egress      *Egress
+	loopback    bool
+}
+
+// withEgress gives the handler the egress rules of spec 016 and, when
+// loopback is set, the AllowLoopback seam that admits an in-process
+// source; the seam is written here and in no file that is not a test.
+func withEgress(e *Egress, loopback bool) harnessOption {
+	return func(c *harnessConfig) { c.egress, c.loopback = e, loopback }
 }
 
 // withSink runs an event dispatcher delivering to the stub sink.
@@ -152,7 +162,8 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		h.limits = limits.New(*cfg.limits)
 	}
 	mux := http.NewServeMux()
-	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits}).Register(mux)
+	h.handler = New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback})
+	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
