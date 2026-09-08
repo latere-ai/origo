@@ -182,7 +182,11 @@ on gossip arriving.
    caller's identity as input.
 7. Everything Origo depends on is an S3 endpoint, an OIDC issuer, and a
    disk. No database, no custom resource, no cloud SDK: the module's
-   direct dependencies are the standard library and `latere.ai/x/pkg`.
+   direct dependencies are the standard library, `latere.ai/x/pkg`, and
+   the OpenTelemetry SDK, which only `internal/tracing` imports (spec
+   011). The `depcheck` gate of `.lateregate.yaml` lists the whole
+   build list of `./cmd/origod` with a reason per upstream root, so a
+   fourth fails the gate.
 
 ## Not in this spec
 
@@ -244,3 +248,14 @@ criterion is spec 013's, which configures `depcheck.packages` in
 `depcheck` gate runs on every push with `./cmd/origod` admitting
 `latere.ai/x/pkg` and, through it, `github.com/google/uuid`, so the
 spec is complete.
+
+The seventh invariant is amended on 2026-09-08, after spec 011 landed:
+the OpenTelemetry SDK is a third direct dependency. The traces, the
+request metrics, and the log bridge go out over OTLP, which no
+standard-library package and no `latere.ai/x/pkg` package provides
+today, and the alternative was a private wire format nothing collects.
+It is confined to `internal/tracing`, a rule spec 011 states, and every
+upstream root it reaches carries a reason in the `depcheck` decision,
+so the invariant's point, that a reader can name everything the node
+links against, still holds. The status does not move: the amendment
+narrows one sentence and changes nothing the criteria assert.

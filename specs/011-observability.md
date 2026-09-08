@@ -26,19 +26,22 @@ deck.
 ## Current state
 
 `cmd/origod` serves the registry on the internal listener and logs one
-JSON line per event through `log/slog` to stdout. `internal/wal`,
-`internal/repo`, and `internal/httpgit` record the twelve phase 1
-metrics below, each registered by the package that records it with an
-`Add(nil, 0)` so the series reads 0 before its first event. There are
+JSON line per event through `log/slog` to stdout. Six packages record
+metrics and each registers its own with an `Add(nil, 0)`, so the series
+reads 0 before its first event: `internal/wal`, `internal/repo`, and
+`internal/httpgit` the twelve phase 1 metrics below, `internal/auth`
+the authorizer histogram (spec 007), `internal/events` the two delivery
+counters (spec 008), and `internal/placement` the gossip, eviction, and
+cache metrics (spec 005). There are
 no traces, no request log line, no PrometheusRule in `deploy/base`, and
 `OTEL_*` is not read: `pkg/otel` is not imported.
 
-One change to the tree, for the builder: registration moves out of the
-recording packages into one place, `internal/metrics/register.go`
-(spec 002's layout), which registers every name in the table below on
-the registry at start-up and hands the handles to the packages that
-record them, so a metric of a spec not built yet still exists at 0 and
-the presence test below needs no fixture. The `internal/metrics` of
+One change to the tree, for the builder: registration moves out of all
+six into one place, `internal/metrics/register.go` (spec 002's layout),
+which registers every name in the table below on the registry at
+start-up and hands the handles to the packages that record them, so a
+metric of a spec not built yet still exists at 0 and the presence test
+below needs no fixture. A package keeps only the recording. The `internal/metrics` of
 phase 1 that moved to `latere.ai/x/pkg/metrics` (spec 002, Outcome)
 was the registry; this is the list of names over it.
 
@@ -110,7 +113,21 @@ standard output, because `Bootstrap` defaults to standard error and the
 node's log lines stay on standard output (spec 002), wraps the public handler in
 `otel.Handler` with `WithRouteTemplate` returning the mux pattern and
 `WithMetricsHook` feeding the two request metrics, and wraps the storage
-transport in `otel.Transport`. One trace per request; a push's spans are
+transport in `otel.Transport`.
+
+`internal/tracing` is the one package in the module that imports
+`go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/trace`. Every
+other package takes the span helpers it needs from `internal/tracing`
+and imports no OpenTelemetry package; `cmd/origod` reaches the SDK
+through `latere.ai/x/pkg/otel` as well. The rule keeps one seam to
+change when `pkg/otel` gains a tracer of its own, and it is what amends
+spec 001's seventh invariant, whose direct dependencies are otherwise
+the standard library and `latere.ai/x/pkg`; the `depcheck` gate of
+`.lateregate.yaml` lists the whole build list of `./cmd/origod` with a
+reason per upstream root, so a further direct dependency fails the
+gate.
+
+One trace per request; a push's spans are
 `receive`, `entry.put`, `index.create`, `apply`, `event.enqueue`; a
 read's are `index.check`, `materialize`, `git.<command>`; every object
 storage call is a child span named by its `op`. Repository id, subject,
@@ -286,11 +303,8 @@ in the table here.
 The OpenTelemetry SDK is on the node's build list from this spec, which
 the Current state above says it would be: `.lateregate.yaml` names it in
 the `depcheck` decision beside `latere.ai/x/pkg`, with one allowance per
-upstream root the OTLP exporters reach. Spec 001's seventh invariant
-says the module's direct dependencies are the standard library and
-`latere.ai/x/pkg`; it now also reaches the SDK, and that sentence is
-spec 001's to amend.
-
-Which packages may import the SDK is not settled by this spec or by the
-decisions table. The narrowest rule is built: `internal/tracing` alone,
-and `cmd/origod` through `latere.ai/x/pkg/otel`.
+upstream root the OTLP exporters reach. Spec 001's seventh invariant is
+amended to name it as the one further direct dependency, and the Traces
+section above states which packages may import it: `internal/tracing`
+alone, and `cmd/origod` through `latere.ai/x/pkg/otel`. The decisions
+table of `specs/README.md` carries the rule.
