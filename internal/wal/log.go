@@ -69,7 +69,25 @@ type Log struct {
 	retries   *pkgmetrics.Counter
 	entryByte *pkgmetrics.Counter
 	headCheck *pkgmetrics.Histogram
+	integrity *pkgmetrics.Counter
 }
+
+// IntegrityError is a single key the log names that is missing or does
+// not hold what the log says it holds (spec 015): a pack the index
+// lists that answers 404, an entry whose length or digest differs from
+// its header, an index object that does not parse. It is corruption in
+// the log, not an outage: the node refuses the repository with 503
+// repository_unavailable naming the key, evicts nothing, and never
+// rebuilds the log from a local copy. An operator restores the object;
+// the next request materializes again.
+type IntegrityError struct {
+	Key string
+	Err error
+}
+
+func (e *IntegrityError) Error() string { return fmt.Sprintf("wal: %s: %v", e.Key, e.Err) }
+
+func (e *IntegrityError) Unwrap() error { return e.Err }
 
 // Failpoint names. The end-to-end suite kills a node at them.
 const (
@@ -105,7 +123,7 @@ func New(o Options) *Log {
 		set = metrics.Register(nil)
 	}
 	l.commits, l.conflicts, l.retries = set.WALCommits, set.WALCommitConflicts, set.WALCommitRetries
-	l.entryByte, l.headCheck = set.WALEntryBytes, set.WALHeadCheck
+	l.entryByte, l.headCheck, l.integrity = set.WALEntryBytes, set.WALHeadCheck, set.LogIntegrityErrors
 	if l.onCommit == nil {
 		l.onCommit = func(string, uint64) {}
 	}
@@ -114,6 +132,24 @@ func New(o Options) *Log {
 
 // Store exposes the store, for the readiness check and the tests.
 func (l *Log) Store() Store { return l.store }
+
+// Breakers is the BreakerStore the log runs on, or nil when the store
+// is not wrapped, which is how a handler reads the breaker state of
+// spec 015: a nil answer is a bucket taken as healthy.
+func (l *Log) Breakers() *BreakerStore {
+	b, _ := l.store.(*BreakerStore)
+	return b
+}
+
+// Integrity records one integrity error of the log (spec 015): the
+// counter and one log line naming the key, for the operator who
+// restores the object. It returns the error wrapped as an
+// IntegrityError, so a caller records and wraps in one call.
+func (l *Log) Integrity(ctx context.Context, key string, err error) error {
+	l.integrity.Inc(nil)
+	l.logger.ErrorContext(ctx, "log integrity error", "key", key, "error", err)
+	return &IntegrityError{Key: key, Err: err}
+}
 
 // Prefix is the key prefix of everything the log writes, which spec
 // 008's event objects sit beside under <prefix>events/.
@@ -130,9 +166,11 @@ func (l *Log) Ping(ctx context.Context) error {
 	return err
 }
 
-// ReadIndex fetches and validates index/<seq>.
+// ReadIndex fetches and validates index/<seq>. An object that does
+// not parse, or carries another sequence, is an IntegrityError.
 func (l *Log) ReadIndex(ctx context.Context, repo string, seq uint64) (*Index, error) {
-	rc, _, err := l.store.Get(ctx, l.key(repo, IndexKey(seq)), "")
+	key := l.key(repo, IndexKey(seq))
+	rc, _, err := l.store.Get(ctx, key, "")
 	if err != nil {
 		return nil, err
 	}
@@ -143,10 +181,10 @@ func (l *Log) ReadIndex(ctx context.Context, repo string, seq uint64) (*Index, e
 	}
 	ix, err := ParseIndex(data)
 	if err != nil {
-		return nil, err
+		return nil, l.Integrity(ctx, key, err)
 	}
 	if ix.Seq != seq {
-		return nil, fmt.Errorf("wal: %s carries seq %d", IndexKey(seq), ix.Seq)
+		return nil, l.Integrity(ctx, key, fmt.Errorf("carries seq %d", ix.Seq))
 	}
 	return ix, nil
 }

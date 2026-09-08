@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"latere.ai/x/pkg/wait"
 )
 
 // MemStore is an in-process Store with exactly the primitives spec 004
@@ -36,6 +38,10 @@ type MemStore struct {
 
 	// Calls counts operations by method name.
 	Calls map[string]int
+
+	// latency is what every operation waits under the caller's context
+	// before it runs, the shape of a slow bucket (spec 015).
+	latency time.Duration
 }
 
 // ErrLostResponse makes MemStore apply a write and then report a
@@ -59,6 +65,16 @@ func (m *MemStore) SetFault(f func(op, key string) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Fault = f
+}
+
+// SetLatency makes every operation wait d under the caller's context
+// before it runs, so a context that ends first fails the operation with
+// its error the way a slow bucket fails a call under the storage
+// deadline of spec 015. Zero clears it.
+func (m *MemStore) SetLatency(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.latency = d
 }
 
 // SetClock replaces the clock that stamps LastModified.
@@ -90,11 +106,16 @@ func (m *MemStore) Keys() []string {
 	return keys
 }
 
-func (m *MemStore) fault(op, key string) error {
+func (m *MemStore) fault(ctx context.Context, op, key string) error {
 	m.mu.Lock()
 	m.Calls[op]++
-	f := m.Fault
+	f, latency := m.Fault, m.latency
 	m.mu.Unlock()
+	if latency > 0 {
+		if err := wait.Sleep(ctx, latency); err != nil {
+			return err
+		}
+	}
 	if f == nil {
 		return nil
 	}
@@ -121,8 +142,8 @@ func (m *MemStore) write(key string, body Body, ifAbsent bool) (string, error) {
 }
 
 // Create implements Store.
-func (m *MemStore) Create(_ context.Context, key string, body Body) (string, error) {
-	err := m.fault("Create", key)
+func (m *MemStore) Create(ctx context.Context, key string, body Body) (string, error) {
+	err := m.fault(ctx, "Create", key)
 	if err != nil && err != ErrLostResponse { //nolint:errorlint // sentinel identity on purpose
 		return "", err
 	}
@@ -134,8 +155,8 @@ func (m *MemStore) Create(_ context.Context, key string, body Body) (string, err
 }
 
 // Put implements Store.
-func (m *MemStore) Put(_ context.Context, key string, body Body) (string, error) {
-	err := m.fault("Put", key)
+func (m *MemStore) Put(ctx context.Context, key string, body Body) (string, error) {
+	err := m.fault(ctx, "Put", key)
 	if err != nil && err != ErrLostResponse { //nolint:errorlint // sentinel identity on purpose
 		return "", err
 	}
@@ -147,8 +168,8 @@ func (m *MemStore) Put(_ context.Context, key string, body Body) (string, error)
 }
 
 // Get implements Store.
-func (m *MemStore) Get(_ context.Context, key, ifNoneMatch string) (io.ReadCloser, Object, error) {
-	if err := m.fault("Get", key); err != nil {
+func (m *MemStore) Get(ctx context.Context, key, ifNoneMatch string) (io.ReadCloser, Object, error) {
+	if err := m.fault(ctx, "Get", key); err != nil {
 		return nil, Object{}, err
 	}
 	m.mu.Lock()
@@ -164,8 +185,8 @@ func (m *MemStore) Get(_ context.Context, key, ifNoneMatch string) (io.ReadClose
 }
 
 // Head implements Store.
-func (m *MemStore) Head(_ context.Context, key string) (Object, error) {
-	if err := m.fault("Head", key); err != nil {
+func (m *MemStore) Head(ctx context.Context, key string) (Object, error) {
+	if err := m.fault(ctx, "Head", key); err != nil {
 		return Object{}, err
 	}
 	m.mu.Lock()
@@ -182,8 +203,8 @@ func (o memObject) object(key string) Object {
 }
 
 // List implements Store.
-func (m *MemStore) List(_ context.Context, opts ListOptions) (ListResult, error) {
-	if err := m.fault("List", opts.Prefix); err != nil {
+func (m *MemStore) List(ctx context.Context, opts ListOptions) (ListResult, error) {
+	if err := m.fault(ctx, "List", opts.Prefix); err != nil {
 		return ListResult{}, err
 	}
 	max := opts.Max
@@ -226,8 +247,8 @@ func (m *MemStore) List(_ context.Context, opts ListOptions) (ListResult, error)
 }
 
 // Delete implements Store.
-func (m *MemStore) Delete(_ context.Context, key string) error {
-	if err := m.fault("Delete", key); err != nil {
+func (m *MemStore) Delete(ctx context.Context, key string) error {
+	if err := m.fault(ctx, "Delete", key); err != nil {
 		return err
 	}
 	m.mu.Lock()
