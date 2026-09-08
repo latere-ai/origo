@@ -455,9 +455,11 @@ Items for other specs:
   015's `repository_unavailable` names.
 - Spec 011: `origo_wal_head_check_seconds` carries `result`;
   `origo_gossip_packets_total`, `origo_evictions_total`,
-  `origo_cache_bytes`, and `origo_cache_repos` are registered by the
+  `origo_cache_bytes`, and `origo_cache_repos` were registered by the
   packages that record them until `internal/metrics/register.go`
-  lands.
+  landed. Done on 2026-09-08 with spec 011: all four are rows of that
+  spec's table, the gossip and eviction counters are handles the
+  packages take, and the evictor binds the two gauges to the cache.
 - `latere.ai/x/pkg`: nothing new was needed; `pkg/cache` is the
   catch-up rate limiter and `pkg/wait` the evictor's ticker.
 

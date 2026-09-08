@@ -1,6 +1,6 @@
 ---
 title: "Observability: metrics, traces, logs, alerts"
-status: validated
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -177,3 +177,120 @@ defaults.
   it, and every alert's metric names are in the table (proposed:
   `tools/specindex` reads the rule file; `verify.yml`, the `specindex`
   job).
+
+## Outcome
+
+Built on 2026-09-08 in eleven commits: `internal/tracing`, the metric
+table in `internal/metrics`, one commit per recording package for the
+move of its registrations, the node's telemetry wiring with the three
+tests, the depcheck decision, the alert rules with the `specindex`
+check, and the documentation.
+
+| Criterion | Test |
+|---|---|
+| every name at 0 on the first scrape, no fixture label is a repository, subject, reference, or path | `cmd/origod`, `TestMetricsVocabulary`; `internal/metrics`, `TestRegisterNamesEveryMetric` reading this file through `runtime.Caller`, and `TestEveryClosedVocabularyReadsZero` |
+| one push produces one trace with the five spans and the repository id as an attribute | `cmd/origod`, `TestPushTrace` against an in-memory OTLP receiver |
+| the request log line carries the listed fields and no credential | `cmd/origod`, `TestRequestLogRedactsCredentials` |
+| `promtool check rules` passes and every alert's metric is in the table | `tools/specindex`, `TestAlertRulesNameDefinedMetrics` and `TestRulesReportsAnUndefinedMetricAndAMalformedFile`; the `specindex` job of `verify.yml`, which installs `promtool` by pinned version and checksum |
+
+The `Set` `internal/metrics` returns is the handles, one field per row,
+and a field whose row is missing or has another type panics at start-up
+rather than reading 0 forever. Each recording package's `Metrics` option
+is that `Set`; a package built without one registers a set of its own,
+so a test that asserts on nothing needs no registry.
+
+Divergences and interpretations, all kept:
+
+- A labelled histogram carries its family and no series before its first
+  observation. `latere.ai/x/pkg/metrics` has no way to create a
+  histogram cell with zero observations, only `Observe`, which would
+  record one; a counter is seeded with an `Add` of 0 per label
+  combination as the design says, and the cross product where a metric
+  has two vocabularies. The pkg item below is the gap.
+- `origo_requests_total` and `origo_request_duration_seconds` carry no
+  series before the first request: `route` is the mux pattern, which has
+  no vocabulary to seed. `TestMetricsVocabulary` asserts presence by
+  name for every metric and a 0 series for every closed vocabulary.
+- The handler is wrapped without `WithRouteTemplate`.
+  `latere.ai/x/pkg/otel` passes that function to the span name formatter,
+  which runs before the mux has matched, so a template returning the
+  pattern would name every root span `<METHOD> ` with an empty route.
+  Without it the same pattern still reaches the metrics hook, which is
+  what the two labels needed.
+- The route the hook and the log line use comes from a details struct the
+  outermost wrapper installs on the request's context and a middleware
+  behind the verifier fills. The verifier and the application mux each
+  hand the next layer a request of their own, so the pattern the
+  outermost wrapper sees is the public mux's catch-all `/`; the same
+  struct carries the repository, subject, and actor, which are known
+  only there. A probe, which passes neither, keeps the hook's own route.
+- The log line is written by a wrapper of `cmd/origod` inside
+  `otel.Handler`, not by `otel.Handler`, which logs nothing.
+- `promtool check rules` reads a Prometheus rules file, not a Kubernetes
+  object: run on `deploy/base/prometheusrule.yaml` it fails on
+  `apiVersion`, `kind`, `metadata`, and `spec`. `tools/specindex -rules`
+  prints the rules document inside the object, and the job checks that.
+  The same flag fails first when an alert names an Origo metric no spec
+  defines; a metric another exporter publishes, which is the autoscaler
+  row, does not start with the prefix and is not checked.
+- `deploy/base/prometheusrule.yaml` is not a resource of the base's
+  kustomization. A PrometheusRule needs the Prometheus operator's
+  CustomResourceDefinition, which Origo does not require and the kind
+  stack does not install, so a base that named it would fail to apply on
+  every installation without that operator. An installation that runs
+  the operator applies the file beside the base, which
+  `docs/operations.md` says.
+- A read's spans, `index.check`, `materialize`, and `git.<command>`, are
+  not built. No criterion names them, and each is an edit in the two
+  packages spec 006 is being built in; the five spans of the write path,
+  which the criterion names, are there.
+- Every object storage call is a child span through `otel.Transport` on
+  the storage transport, named by its HTTP method. A span named by the
+  operation belongs with the store adapter spec 015 builds, which is
+  what owns `origo_storage_ops_total{op}`.
+- The refused push of the vocabulary fixture is a push to a repository
+  that does not exist, answered `repo_not_found`. A push the log refuses
+  cannot be produced with the git client against a single node: git
+  takes the old value of every update from the server's own
+  advertisement, so a stale value never reaches the node; the test that
+  produces one builds the request body itself
+  (`internal/httpgit`, `TestReferenceMovedBetweenAdvertisementAndPush`).
+- The bucket sets of `origo_compaction_seconds` and
+  `origo_storage_seconds` are this spec's choice, which the table left
+  open: 0.5 s to 10 minutes for a compaction, the shared duration
+  buckets for a storage call.
+- The outbound transport to the issuers and the authorizer is not
+  wrapped; the Traces section names the storage transport only.
+
+Both builder items are closed: spec 010's `request_id` is the trace id
+of the request's span, a fresh UUID when nothing traced it, which is the
+common case at the default sampling ratio; spec 005's registrations are
+in the table here.
+
+`latere.ai/x/pkg`, two items:
+
+- `pkg/metrics` has no way to register a labelled histogram's series at
+  zero. `Registry.Histogram` returns a family and `Histogram.Observe` is
+  the only way to create a cell, so a histogram with a label vocabulary
+  cannot read 0 per value before its first observation the way a counter
+  can. An `Init(labels)` on `Histogram`, or a variant of `Histogram`
+  taking the vocabulary, would close it.
+- `pkg/otel` has no tracer. It bootstraps the exporters, wraps a handler,
+  wraps a transport, and reads the ids off a context, but exposes no
+  `Start`, so a consumer that needs a child span imports
+  `go.opentelemetry.io/otel` and `otel/trace` itself and its own
+  dependency gate has to admit them. Origo confines that to
+  `internal/tracing`; a `Start(ctx, name, attrs...)` in `pkg/otel` would
+  keep the SDK behind the library for every consumer.
+
+The OpenTelemetry SDK is on the node's build list from this spec, which
+the Current state above says it would be: `.lateregate.yaml` names it in
+the `depcheck` decision beside `latere.ai/x/pkg`, with one allowance per
+upstream root the OTLP exporters reach. Spec 001's seventh invariant
+says the module's direct dependencies are the standard library and
+`latere.ai/x/pkg`; it now also reaches the SDK, and that sentence is
+spec 001's to amend.
+
+Which packages may import the SDK is not settled by this spec or by the
+decisions table. The narrowest rule is built: `internal/tracing` alone,
+and `cmd/origod` through `latere.ai/x/pkg/otel`.

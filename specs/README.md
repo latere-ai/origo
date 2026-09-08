@@ -60,7 +60,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | complete |
-| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
+| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
@@ -193,7 +193,7 @@ flowchart LR
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 next |
-| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 complete, the 500 MiB round trip green in the `e2e-slow` job; 011, 012, 015 next |
+| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 and 015 next |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
@@ -436,7 +436,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 021 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 010, 013, 015, 017, 021 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021 |
