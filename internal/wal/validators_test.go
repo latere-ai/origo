@@ -6,11 +6,9 @@ package wal
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/latere-ai/origo/internal/gittest"
@@ -35,33 +33,27 @@ func TestValidLabel(t *testing.T) {
 
 // gitOracle runs git once per accepted input against a scratch
 // repository with the protections of spec 016 on, the way the node's
-// repositories are configured.
+// repositories are configured. It lives under the fuzz target's own
+// temporary directory, removed when the target ends.
 type gitOracle struct {
-	once sync.Once
-	dir  string
-	env  []string
+	dir string
+	env []string
 }
 
-var oracle gitOracle
-
-func (o *gitOracle) init(t testing.TB) {
-	o.once.Do(func() {
-		dir, err := os.MkdirTemp("", "origo-oracle-")
-		if err != nil {
-			t.Fatal(err)
+func newOracle(f *testing.F) *gitOracle {
+	f.Helper()
+	dir := f.TempDir()
+	o := &gitOracle{dir: dir, env: gittest.Env(filepath.Join(dir, "home"))}
+	for _, args := range [][]string{
+		{"init", "-q", "."},
+		{"config", "core.protectNTFS", "true"},
+		{"config", "core.protectHFS", "true"},
+	} {
+		if out, err := o.run(args...); err != nil {
+			f.Fatalf("git %v: %v\n%s", args, err, out)
 		}
-		o.dir = dir
-		o.env = gittest.Env(filepath.Join(dir, "home"))
-		for _, args := range [][]string{
-			{"init", "-q", "."},
-			{"config", "core.protectNTFS", "true"},
-			{"config", "core.protectHFS", "true"},
-		} {
-			if _, err := o.run(args...); err != nil {
-				t.Fatal(err)
-			}
-		}
-	})
+	}
+	return o
 }
 
 func (o *gitOracle) run(args ...string) (string, error) {
@@ -99,7 +91,7 @@ func FuzzValidRefName(f *testing.F) {
 	for _, s := range []string{"HEAD", "refs/heads/main", "refs/tags/v1.0", "refs/heads/feature/x-y_z", "refs/heads/a.b", "refs/heads/a..b", "refs/heads/.hidden", "refs/heads/x.lock", "refs/heads/a b", "refs/heads/a~1", "refs/heads/a//b", "refs/heads/@", "refs/heads/a@{b}", "refs/heads/a\x01", "refs/heads/a\\b", "refs/heads/a:b", "refs/heads/a?b", "refs/heads/a*", "refs/heads/a[b", "refs/heads/a/", "refs/heads/-", "refs/heads/a.", "refs/heads/ä", "refs/heads/a/.b"} {
 		f.Add(s)
 	}
-	oracle.init(f)
+	oracle := newOracle(f)
 	f.Fuzz(func(t *testing.T, name string) {
 		if !ValidRefName(name) {
 			return
@@ -118,7 +110,7 @@ func FuzzValidLabel(f *testing.F) {
 	for _, s := range []string{"acme", "app", ".git", ".GIT", "git~1", "GIT~1", ".g\u200cit", ".", "..", "a..b", "a b", "a;b", "a/b", "a\x00b", "ä", "-", "_", strings.Repeat("x", 128)} {
 		f.Add(s)
 	}
-	oracle.init(f)
+	oracle := newOracle(f)
 	f.Fuzz(func(t *testing.T, label string) {
 		if !ValidLabel(label) {
 			return
