@@ -529,6 +529,54 @@ func TestDelayedReaderSurvivesCompaction(t *testing.T) {
 	h.elsewhere()
 }
 
+// TestHolderOfAFoldedSequenceSeesTheNewerIndex is the second half of
+// spec 006's truncation criterion: after a compaction folds the entries
+// and the sweep removes them, every index object of the repository is
+// still in the log, and a node holding one far below compacted_through
+// learns it is behind. The currency check HEAD index/<n+1> answers 200,
+// not the 404 a deleted successor would leave, which is why truncation
+// never removes an index object.
+func TestHolderOfAFoldedSequenceSeesTheNewerIndex(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	held := h.pushes(70)
+	h.warm()
+	if out, _, _, err := h.m.compact(ctx, repoA); err != nil || out != OutcomeOK {
+		t.Fatalf("compact: %s, %v", out, err)
+	}
+	newest := h.newest()
+	if newest.CompactedThrough != 70 {
+		t.Fatalf("compacted_through %d", newest.CompactedThrough)
+	}
+	// Truncation: the folded entries go once they are older than
+	// ORIGO_SWEEP_MIN_AGE, and no index object goes with them.
+	h.now = h.now.Add(2 * time.Hour)
+	rep, err := h.log.Sweep(ctx, repoA, time.Hour)
+	if err != nil || rep.Folded != 70 {
+		t.Fatalf("sweep: %+v, %v", rep, err)
+	}
+	for seq := uint64(0); seq <= newest.Seq; seq++ {
+		if ok, err := h.log.HasIndex(ctx, repoA, seq); err != nil || !ok {
+			t.Fatalf("index/%d is gone after the sweep: %v, %v", seq, ok, err)
+		}
+	}
+	// The holder's check on its own sequence: the successor is there, so
+	// the answer is the newer index and not "current".
+	ix, changed, err := h.log.Newest(ctx, repoA, held.Seq, true)
+	if err != nil || !changed || ix == nil {
+		t.Fatalf("the currency check on a folded sequence: %+v, %v, %v", ix, changed, err)
+	}
+	if ix.Seq != newest.Seq || ix.CompactedThrough != 70 {
+		t.Fatalf("the check answered index %d, compacted_through %d", ix.Seq, ix.CompactedThrough)
+	}
+	// Without the rule the successor would be gone and the same check
+	// would read a 404 as proof of currency; with every index object
+	// kept, only a sequence past the newest answers current.
+	if _, changed, err := h.log.Newest(ctx, repoA, newest.Seq, true); err != nil || changed {
+		t.Fatalf("the newest sequence is not current: %v, %v", changed, err)
+	}
+}
+
 // held is a node holding the repository at the sequence it opened it on.
 type held struct {
 	cache *repo.Cache
