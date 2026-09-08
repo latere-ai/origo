@@ -84,6 +84,11 @@ type Index struct {
 	CompactedThrough uint64            `json:"compacted_through"`
 	SizeBytes        int64             `json:"size_bytes"`
 	DeletedAt        *time.Time        `json:"deleted_at"`
+	// PushedAt is the at of the newest push entry: a push commit sets
+	// it to its own entry's at, every other commit copies it forward,
+	// and index 0 holds null. An index object written before the field
+	// existed has none and reads as null.
+	PushedAt *time.Time `json:"pushed_at"`
 }
 
 // Clone returns a deep copy so a caller mutates its own map.
@@ -96,6 +101,10 @@ func (ix *Index) Clone() *Index {
 	if ix.DeletedAt != nil {
 		t := *ix.DeletedAt
 		c.DeletedAt = &t
+	}
+	if ix.PushedAt != nil {
+		t := *ix.PushedAt
+		c.PushedAt = &t
 	}
 	return &c
 }

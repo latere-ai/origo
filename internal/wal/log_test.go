@@ -47,8 +47,15 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
 	reg := metrics.NewRegistry()
-	l := New(Options{Store: store, Metrics: reg, Now: func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }})
+	// The clock advances one second per call, so the entry's at and the
+	// pushed_at it sets are told apart from the clock of a later commit.
+	var ticks int
+	now := func() time.Time { ticks++; return time.Date(2026, 9, 6, 12, 0, ticks, 0, time.UTC) }
+	l := New(Options{Store: store, Metrics: reg, Now: now})
 	base := createRepo(t, l, repoA)
+	if base.PushedAt != nil {
+		t.Fatalf("index 0 carries pushed_at %v", base.PushedAt)
+	}
 	c, err := l.Commit(ctx, repoA, base, push("refs/heads/main", ZeroSHA, sha(1)), noCatchUp)
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +90,10 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	if h.Seq != 1 || h.Kind != KindPush || h.Subject != "alice" || h.PackBytes != int64(len(data)) || h.PackSHA256 != BytesBody(data).SHA256 || refs[0].New != sha(1) || string(data) != "PACK"+sha(1) {
 		t.Fatalf("entry: %+v %+v %q", h, refs, data)
 	}
+	// A push sets pushed_at to its own entry's at.
+	if c.Index.PushedAt == nil || !c.Index.PushedAt.Equal(h.At) {
+		t.Fatalf("pushed_at %v, entry at %v", c.Index.PushedAt, h.At)
+	}
 	if hint, err := l.Hint(ctx, repoA); err != nil || hint != 1 {
 		t.Fatalf("hint = %d, %v", hint, err)
 	}
@@ -106,6 +117,10 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	c4, err := l.Commit(ctx, repoA, c3.Index, Entry{Kind: KindDelete, Deleted: true}, noCatchUp)
 	if err != nil || c4.Index.DeletedAt == nil {
 		t.Fatalf("delete: %+v, %v", c4, err)
+	}
+	// A delete copies pushed_at forward: the newest push is still c3's.
+	if c4.Index.PushedAt == nil || !c4.Index.PushedAt.Equal(*c3.Index.PushedAt) || c4.Index.DeletedAt.Equal(*c4.Index.PushedAt) {
+		t.Fatalf("delete: pushed_at %v, c3 %v, deleted_at %v", c4.Index.PushedAt, c3.Index.PushedAt, c4.Index.DeletedAt)
 	}
 	c5, err := l.Commit(ctx, repoA, c4.Index, Entry{Kind: KindPush}, noCatchUp)
 	if err != nil || c5.Index.DeletedAt != nil {

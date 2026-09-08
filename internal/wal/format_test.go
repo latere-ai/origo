@@ -155,6 +155,20 @@ func TestParseIndex(t *testing.T) {
 	if ix, err := ParseIndex(empty); err != nil || ix.Refs == nil || ix.DefaultBranch() != "" {
 		t.Fatalf("empty index: %+v, %v", ix, err)
 	}
+	// An index object written before pushed_at existed has no such
+	// field and reads as null; one that carries it round-trips.
+	legacy := bytes.Replace(data, []byte(`,"pushed_at":null`), nil, 1)
+	if bytes.Equal(legacy, data) {
+		t.Fatal("the encoding does not carry pushed_at")
+	}
+	if ix, err := ParseIndex(legacy); err != nil || ix.PushedAt != nil {
+		t.Fatalf("legacy index: %+v, %v", ix, err)
+	}
+	pushedAt := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	pushed, _ := EncodeIndex(&Index{V: 1, PushedAt: &pushedAt})
+	if ix, err := ParseIndex(pushed); err != nil || ix.PushedAt == nil || !ix.PushedAt.Equal(pushedAt) || !ix.Clone().PushedAt.Equal(pushedAt) {
+		t.Fatalf("pushed_at: %+v, %v", ix, err)
+	}
 	mutate := func(f func(*Index)) []byte {
 		ix := validIndex()
 		f(ix)

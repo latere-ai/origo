@@ -344,14 +344,14 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 		if seq > maxSeq {
 			return nil, errors.New("wal: sequence space exhausted")
 		}
-		key, err := l.writeEntry(ctx, repo, seq, e)
+		key, at, err := l.writeEntry(ctx, repo, seq, e)
 		if err != nil {
 			return nil, err
 		}
 		if err := l.failpoint(FailpointBeforeIndex); err != nil {
 			return nil, err
 		}
-		next, err := l.nextIndex(base, seq, key, e)
+		next, err := l.nextIndex(base, seq, key, at, e)
 		if err != nil {
 			return nil, err
 		}
@@ -414,11 +414,12 @@ func (l *Log) checkTransaction(base *Index, refs []RefUpdate) error {
 }
 
 // writeEntry uploads header, transaction, and pack as one object under a
-// fresh nonce and returns the key relative to the repository prefix.
-func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) (string, error) {
+// fresh nonce and returns the key relative to the repository prefix and
+// the header's at, which the index object records for a push.
+func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) (string, time.Time, error) {
 	var nonce [8]byte
 	if _, err := cryptorand.Read(nonce[:]); err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	h := Header{
 		V: Version, Kind: e.Kind, Seq: seq, At: l.now().UTC(), Subject: e.Subject, Actor: e.Actor,
@@ -429,21 +430,21 @@ func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) 
 	}
 	head, err := EncodeEntryHead(h, e.Refs)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	body, err := concatBody(head, e.Pack)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	key := EntryKey(seq, hex.EncodeToString(nonce[:]))
 	if _, err := l.store.Put(ctx, l.key(repo, key), body); err != nil {
-		return "", fmt.Errorf("wal: write entry: %w", err)
+		return "", time.Time{}, fmt.Errorf("wal: write entry: %w", err)
 	}
 	l.entryByte.Add(nil, uint64(body.Size)) //nolint:gosec // a size is never negative
-	return key, nil
+	return key, h.At, nil
 }
 
-func (l *Log) nextIndex(base *Index, seq uint64, key string, e Entry) (*Index, error) {
+func (l *Log) nextIndex(base *Index, seq uint64, key string, at time.Time, e Entry) (*Index, error) {
 	next := base.Clone()
 	next.V = Version
 	next.Seq = seq
@@ -466,9 +467,13 @@ func (l *Log) nextIndex(base *Index, seq uint64, key string, e Entry) (*Index, e
 	}
 	next.Entries = append(next.Entries, ie)
 	next.SizeBytes += e.Pack.Size
+	if e.Kind == KindPush {
+		// The newest push's at; every other kind copies it forward
+		// through Clone.
+		next.PushedAt = &at
+	}
 	switch {
 	case e.Kind == KindDelete:
-		at := l.now().UTC()
 		next.DeletedAt = &at
 	case !e.Deleted:
 		next.DeletedAt = nil
