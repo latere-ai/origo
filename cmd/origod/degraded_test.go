@@ -6,10 +6,14 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/latere-ai/origo/internal/wal"
 )
 
 // TestReadyzStaysReadyWhileTheBreakerIsOpen: every readiness listing
@@ -23,13 +27,9 @@ func TestReadyzStaysReadyWhileTheBreakerIsOpen(t *testing.T) {
 	env := testEnv(t)
 	n, stop := startNode(t, env)
 	_, internal, _ := n.addrs()
-	for i := range 6 {
-		if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
-			t.Fatalf("probe %d of a replica the bucket never answered: %d %q", i+1, code, body)
-		}
-	}
-	if _, text := probe(t, "http://"+internal+"/metrics"); !strings.Contains(text, `origo_storage_breaker_state{class="read"} 1`) {
-		t.Fatal("the breaker did not open")
+	awaitOpenBreaker(t, internal)
+	if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
+		t.Fatalf("probe of a replica the bucket never answered, breaker open: %d %q", code, body)
 	}
 	_ = stop()
 
@@ -47,11 +47,7 @@ func TestReadyzStaysReadyWhileTheBreakerIsOpen(t *testing.T) {
 		t.Fatalf("with the bucket answering: %d %q", code, body)
 	}
 	bucket.Close()
-	for i := range 5 {
-		if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
-			t.Fatalf("probe %d with the breaker closed: %d %q", i+1, code, body)
-		}
-	}
+	awaitOpenBreaker(t, internal)
 	if code, body := probe(t, "http://"+internal+"/readyz"); code != 200 || body != "ok\n" {
 		t.Fatalf("probe with the breaker open: %d %q", code, body)
 	}
@@ -59,11 +55,38 @@ func TestReadyzStaysReadyWhileTheBreakerIsOpen(t *testing.T) {
 	for _, want := range []string{
 		`origo_storage_breaker_state{class="read"} 1`,
 		`origo_storage_breaker_state{class="write"} 0`,
-		`origo_storage_ops_total{op="list",result="error"} 6`,
 		`origo_storage_ops_total{op="list",result="ok"} 1`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("metrics lack %q", want)
+		}
+	}
+	// The threshold-th failure opened it, so at least that many listings
+	// failed; how many probes it took to get there is the machine's.
+	m := regexp.MustCompile(`origo_storage_ops_total\{op="list",result="error"\} (\d+)`).FindStringSubmatch(text)
+	if failed, _ := strconv.Atoi(strings.Join(m[1:], "")); failed < wal.BreakerThreshold {
+		t.Errorf("metrics count %d failed listings, the threshold is %d", failed, wal.BreakerThreshold)
+	}
+}
+
+// awaitOpenBreaker probes /readyz until the read breaker gauge reads
+// open, and fails a probe that is not a 503 with the storage prefix on
+// the way there. Probes and listings are not one to one: a listing runs
+// detached under the storage deadline and every probe that arrives
+// while it runs shares it, so on a loaded machine six probes can be
+// three listings and a count of probes is not a count of failures.
+func awaitOpenBreaker(t *testing.T, internal string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for i := 1; ; i++ {
+		if _, text := probe(t, "http://"+internal+"/metrics"); strings.Contains(text, `origo_storage_breaker_state{class="read"} 1`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the breaker did not open after %d probes", i-1)
+		}
+		if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
+			t.Fatalf("probe %d with the breaker closed: %d %q", i, code, body)
 		}
 	}
 }
