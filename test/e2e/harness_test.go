@@ -174,8 +174,28 @@ type node struct {
 	public   string
 	internal string
 	extra    map[string]string
-	logs     *bytes.Buffer
+	logs     *logBuffer
 	done     chan error
+}
+
+// logBuffer collects one process's stdout and stderr. The goroutine the
+// os/exec copier runs writes it while the test that started the process
+// reads it on a failure path, so both sides hold the mutex.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func freePort(t *testing.T) string {
@@ -195,7 +215,7 @@ func startNode(t *testing.T, s *stack, dataDir string, extra map[string]string) 
 	if dataDir == "" {
 		dataDir = filepath.Join(t.TempDir(), "data")
 	}
-	n := &node{t: t, s: s, dataDir: dataDir, extra: extra, public: freePort(t), internal: freePort(t), logs: &bytes.Buffer{}}
+	n := &node{t: t, s: s, dataDir: dataDir, extra: extra, public: freePort(t), internal: freePort(t), logs: &logBuffer{}}
 	n.start()
 	return n
 }
@@ -351,4 +371,37 @@ func commitFile(t *testing.T, dir, name, content, message string) string {
 	mustGit(t, dir, "add", "--", name)
 	mustGit(t, dir, "commit", "-q", "-m", message)
 	return mustGit(t, dir, "rev-parse", "HEAD")
+}
+
+// TestE2ELogBufferIsReadWhileWritten is the regression for the failure
+// paths of start, which report a node's output while the copier
+// goroutine os/exec runs is still writing it. With a bare bytes.Buffer
+// behind the field, -race reports that write against this read.
+func TestE2ELogBufferIsReadWhileWritten(t *testing.T) {
+	b := &logBuffer{}
+	const lines = 2000
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		for range lines {
+			if _, err := b.Write([]byte("origod: a line\n")); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	for reading := true; reading; {
+		got := strings.Count(b.String(), "\n")
+		select {
+		case <-written:
+			reading = false
+		default:
+			if got > lines {
+				t.Fatalf("lines %d, want at most %d", got, lines)
+			}
+		}
+	}
+	if got := strings.Count(b.String(), "\n"); got != lines {
+		t.Fatalf("lines %d, want %d", got, lines)
+	}
 }
