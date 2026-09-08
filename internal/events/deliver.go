@@ -200,8 +200,9 @@ func (d *Dispatcher) attempt(ctx context.Context, key string) {
 	}
 	obj.Attempts++
 	obj.NextAt = now.Add(Delay(obj.Attempts)).UTC()
-	data, _ := json.Marshal(obj)
-	if _, err := d.store.Put(ctx, key, wal.BytesBody(data)); err != nil {
+	if data, merr := json.Marshal(obj); merr != nil {
+		d.logger.WarnContext(ctx, "event object not encoded", "key", key, "error", merr)
+	} else if _, err := d.store.Put(ctx, key, wal.BytesBody(data)); err != nil {
 		d.logger.WarnContext(ctx, "event object not rewritten", "key", key, "error", err)
 	}
 	d.logger.InfoContext(ctx, "event delivery failed", "key", key, "id", env.ID, "kind", env.Kind, "attempt", obj.Attempts, "status", status, "error", err, "next_at", obj.NextAt)

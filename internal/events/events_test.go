@@ -1004,8 +1004,8 @@ func TestRunDeliversFlushesAndSweeps(t *testing.T) {
 	if days := len(j.days); days != 2 {
 		t.Fatalf("days in memory: %d", days)
 	}
-	j.load(day.Add(24*time.Hour), []string{repoB + " 5"})
-	if lines := j.days[dayOf(day.Add(24*time.Hour))]; len(lines) != 2 || lines[0] != repoB+" 5" || !j.repos[dayOf(day.Add(24*time.Hour))][repoB] {
+	j.load(day.Add(24*time.Hour), []string{repoB + " 5", repoA + " 2"})
+	if lines := j.days[dayOf(day.Add(24*time.Hour))]; len(lines) != 2 || lines[0] != repoB+" 5" || lines[1] != repoA+" 2" || !j.repos[dayOf(day.Add(24*time.Hour))][repoB] {
 		t.Fatalf("loaded lines %v", lines)
 	}
 	j.undo("nowhere")

@@ -497,8 +497,9 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 	wg.Go(func() { d.runRepair(ctx) })
 	wg.Wait()
 	// The lines held in memory outlive the cancelled context on purpose.
-	if err := d.flushJournal(context.WithoutCancel(ctx)); err != nil {
-		d.logger.Warn("event journal not flushed at stop", "node", d.node, "error", err)
+	stopCtx := context.WithoutCancel(ctx)
+	if err := d.flushJournal(stopCtx); err != nil {
+		d.logger.WarnContext(stopCtx, "event journal not flushed at stop", "node", d.node, "error", err)
 	}
 	return ctx.Err()
 }

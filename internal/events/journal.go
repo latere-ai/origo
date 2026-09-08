@@ -53,7 +53,9 @@ func (j *journal) add(now time.Time, repo string, seq uint64) bool {
 }
 
 // load seeds a day with the lines an earlier process wrote, before any
-// line of this process, so the next flush rewrites the whole day.
+// line of this process, so the next flush rewrites the whole day. A
+// line already in memory is one this process flushed before the load
+// read the object back, and is not taken twice.
 func (j *journal) load(day time.Time, lines []string) {
 	if len(lines) == 0 {
 		return
@@ -61,11 +63,21 @@ func (j *journal) load(day time.Time, lines []string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	key := dayOf(day)
-	j.days[key] = append(lines, j.days[key]...)
+	have := map[string]bool{}
+	for _, l := range j.days[key] {
+		have[l] = true
+	}
+	var fresh []string
+	for _, l := range lines {
+		if !have[l] {
+			fresh = append(fresh, l)
+		}
+	}
+	j.days[key] = append(fresh, j.days[key]...)
 	if j.repos[key] == nil {
 		j.repos[key] = map[string]bool{}
 	}
-	for _, l := range lines {
+	for _, l := range fresh {
 		repo, _, _ := strings.Cut(l, " ")
 		j.repos[key][repo] = true
 	}
