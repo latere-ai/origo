@@ -601,28 +601,48 @@ func (h *harness) reader(name string) (held, func()) {
 
 // TestCompactionSkipsWhenNoSlot is spec 012's criterion in this package:
 // a run that waits more than five seconds for a subprocess slot skips
-// and the next sweep retries it.
+// with origo_compactions_total{result="skipped"}, leaves the request
+// object behind, and the next sweep runs it once a slot is free. It is
+// driven through Sweep, the entry point the criterion names, and not
+// through compact.
 func TestCompactionSkipsWhenNoSlot(t *testing.T) {
 	free := &slots{}
 	h := newHarness(t, func(o *Options) { o.Slots = free })
+	ctx := context.Background()
 	h.pushes(65)
-	h.warm()
-	out, _, _, err := h.m.compact(context.Background(), repoA)
-	if err != nil || out != OutcomeSkipped {
-		t.Fatalf("without a slot: %s, %v", out, err)
+	// A node that is not the primary asked for the run; the request is
+	// what a skipped sweep has to leave behind for the next one.
+	if err := h.m.request(ctx, repoA, ReasonThreshold); err != nil {
+		t.Fatal(err)
 	}
+
+	// The first sweep materializes the copy and finds no slot.
+	rep, err := h.m.Sweep(ctx)
+	if err != nil || rep.Requested != 0 {
+		t.Fatalf("the sweep without a slot: %+v, %v", rep, err)
+	}
+	h.wantMetrics(`origo_compactions_total{result="skipped"} 1`, `origo_compactions_total{result="ok"} 0`)
 	if got := h.newest(); got.CompactedThrough != 0 {
 		t.Fatal("a skipped run committed")
 	}
-	free.free = true
-	out, _, _, err = h.m.compact(context.Background(), repoA)
-	if err != nil || out != OutcomeOK {
-		t.Fatalf("with a slot: %s, %v", out, err)
+	if _, err := h.m.ReadRequest(ctx, repoA); err != nil {
+		t.Fatalf("the skipped run dropped the request: %v", err)
 	}
+
+	// A slot frees, and the next sweep runs what the skipped one left.
+	free.free = true
+	rep, err = h.m.Sweep(ctx)
+	if err != nil || rep.Requested != 1 {
+		t.Fatalf("the sweep with a slot: %+v, %v", rep, err)
+	}
+	h.wantMetrics(`origo_compactions_total{result="skipped"} 1`, `origo_compactions_total{result="ok"} 1`)
 	if free.taken < 3 {
 		t.Fatalf("%d slots taken; every git subprocess of the run takes one", free.taken)
 	}
 	if got := h.newest(); got.CompactedThrough != 65 {
 		t.Fatalf("compacted_through %d", got.CompactedThrough)
+	}
+	if _, err := h.m.ReadRequest(ctx, repoA); !errors.Is(err, wal.ErrNotFound) {
+		t.Fatalf("the request survived the run that acted on it: %v", err)
 	}
 }
