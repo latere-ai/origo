@@ -26,6 +26,22 @@ import (
 // live set after one joins (spec 005's membership criterion).
 const placementWindow = 60 * time.Second
 
+// requireNodes skips without the stack and then waits until every
+// node's public port answers, for up to a minute: a pod the previous
+// test replaced is ready before its NodePort routes to it (spec 013's
+// Outcome), and a request in that window is reset or refused.
+func requireNodes(t *testing.T) {
+	t.Helper()
+	requireCluster(t)
+	for i := range 3 {
+		port := portNode1 + i
+		waitUntil(t, fmt.Sprintf("node %d answering", i+1), time.Minute, func() bool {
+			status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/version", port))
+			return status == 200
+		})
+	}
+}
+
 // nodePorts maps a node name of the stack to its public and internal
 // host ports of spec 013's ports table: origod-0 is node 1.
 func nodePorts(t *testing.T, name string) (public, internal int) {
@@ -89,7 +105,7 @@ func preferHeader(t *testing.T, port int, token, id string) string {
 // clone sent to that node's own public host port leaves its
 // origo_repo_materialized_total unchanged.
 func TestClusterPreferredNodeIsWarm(t *testing.T) {
-	requireCluster(t)
+	requireNodes(t)
 	token := adminToken(t)
 	id := createOnStack(t, token, "warm")
 	work := clone(t, repoURL(portBalanced, token, id))
@@ -182,7 +198,7 @@ loop:
 // failed request, and the replacement pod is ready before the test
 // ends.
 func TestClusterNodeRemovalUnderReadLoad(t *testing.T) {
-	requireCluster(t)
+	requireNodes(t)
 	token := adminToken(t)
 	id := createOnStack(t, token, "removal")
 	work := clone(t, repoURL(portBalanced, token, id))
