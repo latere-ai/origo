@@ -350,14 +350,17 @@ Divergences, each kept and the reason:
   spec section says; `compact.Manager.GC` answers what spec 019's
   handler needs (`Ran` with the before and after figures, `Running`
   with `started_at`, or `Primary` on a node that is not the primary).
-- **The 500 push criterion's wait pushes between rounds.** A push whose
-  trigger finds a run in flight schedules none, and that run ends
-  `stale` when the push landed inside it, so a repository can be left
-  with no run scheduled until the next push or the primary's ten minute
-  sweep. `waitForCompaction` pushes once every 30 seconds while it
-  waits, which is what the next push on a live repository does; the
+- **The stack criteria's wait pushes between rounds.** Under a push
+  storm the run in flight when the last push lands is the one that push
+  overtakes, so it ends `stale` and no push after it scheduled
+  anything: the repository is left with no run pending until the
+  primary's ten minute sweep, which is longer than the test's patience.
+  `waitForCompaction` pushes once every 15 seconds while it waits,
+  which is what the next push on a live repository does, and the
   criterion's "after the background run the last threshold crossing
-  scheduled completes" is met either way.
+  scheduled completes" is met either way. The pushes it adds are why
+  the criterion's history check compares the clone against the working
+  copy rather than a count of 500.
 - **The fetch-latency criterion runs on 20 MiB and 200 pushes**, not the
   1 000 pushes of the Design's tuning target, because the `e2e` job's
   30 minute budget already carries the 500 push test. `TestMeasure`

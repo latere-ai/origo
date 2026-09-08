@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,25 +57,32 @@ func newestIndex(t *testing.T, s *stack, id string) *wal.Index {
 	return ix
 }
 
+// pushSeq numbers every commit these tests make, so a second call on
+// the same working directory never writes the content that is already
+// there: git refuses a commit that changes nothing.
+var pushSeq atomic.Int64
+
 // pushCommits makes n commits of size bytes each and pushes each one
 // through port, one push per commit, which is what a busy repository
 // does to the log.
 func pushCommits(t *testing.T, work string, port int, token, id string, n, size int) {
 	t.Helper()
 	url := repoURL(port, token, id)
-	for i := range n {
+	for range n {
+		i := pushSeq.Add(1)
 		commitFile(t, work, "f.txt", strings.Repeat("x", size)+fmt.Sprint(i), fmt.Sprintf("commit %d", i))
 		mustGit(t, work, "push", "-q", url, "HEAD:refs/heads/main")
 	}
 }
 
 // waitForCompaction waits until the newest index lists at most
-// compact.MaxEntries entries. A push whose trigger found a run already
-// in flight schedules nothing, and that run ends stale when the push
-// lands inside it, so the repository can be left with no run scheduled
-// until the next push or the primary's sweep; the wait therefore pushes
-// once more between rounds, which is what the next push on a live
-// repository does.
+// compact.MaxEntries entries. Under a push storm the last run in flight
+// is the one the last push overtook, so it ends stale and no push after
+// it scheduled anything: a repository can be left with no run pending
+// until the primary's ten minute sweep. The wait therefore pushes every
+// 15 seconds, which is what the next push on a live repository does,
+// and the pushes it adds are why the commit count is compared against
+// the working copy rather than a constant.
 func waitForCompaction(t *testing.T, s *stack, work string, port int, token, id string) *wal.Index {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Minute)
@@ -89,7 +98,7 @@ func waitForCompaction(t *testing.T, s *stack, work string, port int, token, id 
 				len(ix.Entries), ix.CompactedThrough, ix.Seq)
 		}
 		time.Sleep(5 * time.Second)
-		if round > 0 && round%6 == 0 {
+		if round > 0 && round%3 == 0 {
 			pushCommits(t, work, port, token, id, 1, 16)
 		}
 	}
@@ -130,8 +139,12 @@ func TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs(t *testing.T) {
 	bare := filepath.Join(t.TempDir(), "node2.git")
 	mustGit(t, t.TempDir(), "clone", "-q", "--bare", repoURL(portNode1+1, token, id), bare)
 	mustGit(t, bare, "fsck", "--connectivity-only", "--no-progress")
-	if got := strings.TrimSpace(mustGit(t, bare, "rev-list", "--count", "HEAD")); got != "500" {
-		t.Fatalf("the clone holds %s commits, want 500", got)
+	if got, want := gittest.RevList(t, bare), gittest.RevList(t, work); got != want {
+		t.Fatalf("the clone through node 2 holds a different history than the pushes made")
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(mustGit(t, bare, "rev-list", "--count", "HEAD")))
+	if err != nil || n < 500 {
+		t.Fatalf("the clone holds %d commits, want at least the 500 pushed: %v", n, err)
 	}
 }
 
