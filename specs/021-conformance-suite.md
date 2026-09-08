@@ -73,7 +73,9 @@ administration operations of spec 019, the server-side operations of
 spec 020 once they exist, and every error code with its sentence. Every
 repository the suite creates carries a slug prefixed `conformance-` and
 is deleted at the end of the run, so a run against a shared installation
-leaves nothing.
+leaves nothing; `Run` deletes by the ids it created and never lists or
+deletes by prefix, so a repository another test pushed beside it, spec
+017's release fixture among them, survives the run.
 
 Cases a target does not support are skipped by a `Skip` list on the
 target, never silently: each skipped case is reported by name. Two
@@ -93,8 +95,15 @@ NetworkPolicy spec 015's cluster scenario uses,
 of spec 013's `test/e2e/cluster` and removed by its cleanup (enforced
 by the Cilium row of spec 013's overlay table), and a delete through
 the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family the job
-exported; the stub run implements it on `wal.MemStore` in-process, and
-a live target has none. The live run's `Skip` list is exactly the table
+exported; the stub run implements it on the `s3test.Server` behind
+the contract stub (spec 013 wires the stub through the S3 adapter to
+`latere.ai/x/pkg/s3/s3test` so the presigned transfers of spec 010
+resolve), `CutStorage` through the server's `Fail` for every request
+until the test ends and `DeleteObject` through the adapter's `Delete`,
+and a live target has none. `test/conformance` imports
+`test/e2e/cluster` only from files under the `e2e` build tag, the
+stack run's `Fault`, so the package a consumer imports, and
+`TestStubConforms` in the unit suite, pull in no `kubectl` helper. The live run's `Skip` list is exactly the table
 below and nothing else; the run prints each entry as skipped, so a
 report with fewer or more skipped names is a failure of the run.
 
@@ -202,7 +211,7 @@ against one node is a spec change, not a budget change.
 ```mermaid
 flowchart LR
   C[TestContract] --> K[kind stack of spec 013<br/>ORIGO_TEST_URL, stubs, Fault<br/>Skip: none]
-  C --> S[test/stubs/origo in-process<br/>MemStore Fault<br/>Skip: none]
+  C --> S[test/stubs/origo in-process<br/>s3test Fault<br/>Skip: none]
   C --> M[TestMutation of test/e2e: one node it starts with MinIO<br/>ORIGO_TEST_DROP_CAPABILITY<br/>must fail on that capability alone]
   C --> L[ORIGO_LIVE_URL after a release<br/>no stubs, no Fault<br/>Skip: the four-entry list]
 ```
@@ -210,7 +219,7 @@ flowchart LR
 | Run | Target | When |
 |---|---|---|
 | stack | the kind stack of spec 013, in its `e2e` job, through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` with the stubs and `Fault` wired; `TestSameAnswersOnStubAndStack` runs in the same job, because it needs the stack as its second target | every push to `main` and every pull request, inside that job's 30 minute budget |
-| stub | `test/stubs/origo` in-process, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
+| stub | `test/stubs/origo` in-process, its bucket the `s3test` server spec 013 wires behind it so the LFS rows run, `TestStubConforms` with an empty `Skip` list | every push, in the unit suite |
 | mutation | `TestMutation` of `test/e2e`, which starts one node with MinIO from the `ORIGO_TEST_S3_ENDPOINT` family and runs `conformance.Run` against it, once per capability, 20 minutes (spec 013's job table) | every push |
 | live | the installation `ORIGO_LIVE_URL` names, with `ORIGO_LIVE_TOKEN`, the `conformance-` prefix, and the skip list above | the `live` job of `release.yml`, after spec 017's deploy step and before its publish step, when the secret is set; its report and timings are attached to the release (spec 017) |
 | previous release | the fixture of release N-1 on release N (spec 017, `TestPreviousReleaseFixture`) | in the release pipeline |
@@ -248,8 +257,10 @@ assertions beyond the thresholds the owning specs name.
   from the job and skips without it; `.github/workflows/verify.yml`,
   the `mutation` job running it once per capability; `internal/config`,
   `TestDropCapabilityIsOneOfTheSet`).
-- The contract stub passes `TestContract` with an empty `Skip` list
-  (proposed: `test/stubs/origo`, `TestStubConforms`).
+- The contract stub passes `TestContract` with an empty `Skip` list,
+  the LFS rows included, because its bucket is the `s3test` server
+  spec 013 wires through the S3 adapter and presigned URLs resolve
+  against it (proposed: `test/stubs/origo`, `TestStubConforms`).
 - A consumer's integration tests written against the stub pass
   unchanged against a live node (spec 003's criterion; proposed:
   `test/conformance`, `TestSameAnswersOnStubAndStack`, which runs one
@@ -265,6 +276,8 @@ assertions beyond the thresholds the owning specs name.
   lower-case sentences spec 003's Outcome lists, and passes once they
   are the table's (proposed: `internal/contract`,
   `TestEveryCodeHasOneSentence`).
-- A run against a shared installation leaves no repository behind:
-  after `TestContract`, `GET /v1/repos/{id}` answers 404 for every id
-  the run created (proposed: `test/conformance`, `TestRunCleansUp`).
+- A run against a shared installation leaves no repository behind and
+  touches no other: after `TestContract`, `GET /v1/repos/{id}` answers
+  404 for every id the run created, and a repository created beside
+  the run under a `conformance-` slug by the test itself still answers
+  200 (proposed: `test/conformance`, `TestRunCleansUp`).
