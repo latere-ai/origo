@@ -28,17 +28,19 @@ import (
 const placementWindow = 60 * time.Second
 
 // requireNodes skips without the stack and then waits until every
-// node's public port answers, for up to a minute: a pod the previous
-// test replaced is ready before its NodePort routes to it (spec 013's
-// Outcome), and a request in that window is reset or refused.
+// node's public and internal ports answer, for up to a minute: a pod
+// the previous test replaced is ready before either NodePort routes
+// to it (spec 013's Outcome), and a request in that window is reset
+// or refused.
 func requireNodes(t *testing.T) {
 	t.Helper()
 	requireCluster(t)
 	for i := range 3 {
-		port := portNode1 + i
-		waitUntil(t, fmt.Sprintf("node %d answering", i+1), time.Minute, func() bool {
-			status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/version", port))
-			return status == 200
+		public, internal := portNode1+i, portNode1Int+i
+		waitUntil(t, fmt.Sprintf("node %d answering on both ports", i+1), time.Minute, func() bool {
+			status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/version", public))
+			metrics, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/metrics", internal))
+			return status == 200 && metrics == 200
 		})
 	}
 }
