@@ -202,9 +202,12 @@ func TestClusterHelperDrivesKubectl(t *testing.T) {
 	if _, ready := statefulSetReplicas(t, "origod"); ready != 3 {
 		t.Fatalf("after DeletePod: %d ready", ready)
 	}
-	if status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/version", portNode1+1)); status != 200 {
-		t.Fatalf("node 2 after its replacement: %d", status)
-	}
+	// The replacement is ready; its NodePort follows once the endpoint
+	// list carries the new pod.
+	waitUntil(t, "node 2 answering after its replacement", time.Minute, func() bool {
+		status, _ := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/version", portNode1+1))
+		return status == 200
+	})
 	// ApplyManifestExpectRefusal returns the refusal text and leaves no
 	// pod behind.
 	if text := cluster.ApplyManifestExpectRefusal(t, filepath.Join(testdata, "privileged-pod.yaml")); !strings.Contains(text, "restricted") {
