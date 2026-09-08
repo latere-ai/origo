@@ -95,7 +95,7 @@ drives, and no dependency beyond the standard library and
 the sink, and the source from flags for `make dev` and as pods in the
 `kind` overlay; `Dockerfile.stubs` packages it as
 `ghcr.io/latere-ai/origo-stubs`, built by `verify.yml` and loaded into
-kind on every push, and published per release beside `origod` with the
+kind on every tag, and published per release beside `origod` with the
 same tag, signed the same way (spec 017's artifact table), because
 spec 018's `install-release` job and an operator's first installation
 run the stub authorizer from it.

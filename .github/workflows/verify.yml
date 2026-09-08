@@ -1,16 +1,21 @@
 # Every push to main and every pull request runs the gate (the shared
-# pipeline of latere-ai/ci), the spec cross-reference test, and the test
-# tiers of spec 013: the integration tier against MinIO, the build of
-# the two candidate images once, the cluster tiers on the kind stack
-# from those images, the up-script check, and the mutation job of spec
-# 021. The fuzz job runs on the weekly schedule and nowhere else. Each
-# job selects its tests by name prefix and nothing else, and no job but
-# build has a docker build step.
+# pipeline of latere-ai/ci), the spec cross-reference test, and the
+# integration tier of spec 013 against MinIO. Every tag runs the cluster
+# tiers: the build of the two candidate images once, the cluster tiers on
+# the kind stack from those images, the up-script check, and the mutation
+# job of spec 021. Those tiers cost about half the minutes of a run and
+# bill on every push while the release is the point where they decide
+# anything, so a tag runs them and a push does not; workflow_dispatch runs
+# them from main on demand. The fuzz job runs on the weekly schedule and
+# nowhere else. Each job selects its tests by name prefix and nothing
+# else, and no job but build has a docker build step.
 name: verify
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
   schedule:
     # Sunday 03:00 UTC: the 40 second run of every fuzz function.
     - cron: '0 3 * * 0'
@@ -28,11 +33,11 @@ env:
 
 jobs:
   gate:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
   specindex:
     name: spec cross-reference table and alert rules
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,7 +71,7 @@ jobs:
   # budget.
   integration:
     name: integration and one-node e2e tiers
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -93,7 +98,7 @@ jobs:
   # with every job that needs them as docker save tarballs.
   build:
     name: build the candidate images
-    if: github.event_name != 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -115,7 +120,7 @@ jobs:
   # The cluster scenarios on the three-node stack.
   e2e:
     name: cluster e2e tier
-    if: github.event_name != 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -146,7 +151,7 @@ jobs:
   # The slow scenarios on the same stack, with git-lfs for spec 010.
   e2e-slow:
     name: slow cluster e2e tier
-    if: github.event_name != 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -179,7 +184,7 @@ jobs:
   # up.sh on a cluster of its own, with the ports offset by 1000.
   up-script:
     name: up.sh creates and down.sh removes a stack
-    if: github.event_name != 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -203,7 +208,7 @@ jobs:
   # it lands the loop runs once with the variable empty.
   mutation:
     name: mutation
-    if: github.event_name != 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
