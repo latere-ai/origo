@@ -32,6 +32,8 @@ const (
 	// CatchUpEvery bounds the catch-ups one repository's announcements
 	// schedule, whatever the datagram rate.
 	CatchUpEvery = time.Second
+	// lookupTimeout bounds one resolution of the DNS form of the peers.
+	lookupTimeout = 5 * time.Second
 	// tagSize is the HMAC-SHA256 in front of every payload.
 	tagSize = sha256.Size
 	// maxDatagram bounds what the read loop accepts.
@@ -266,7 +268,11 @@ func (g *Gossip) Resolve(ctx context.Context) {
 		g.mu.Lock()
 		port := g.port
 		g.mu.Unlock()
-		ips, err := g.lookupIP(ctx, g.name)
+		// A lookup that hangs must not hold the node's start-up or a
+		// heartbeat; the next tick resolves again.
+		lookupCtx, cancel := context.WithTimeout(ctx, lookupTimeout)
+		defer cancel()
+		ips, err := g.lookupIP(lookupCtx, g.name)
 		if err != nil {
 			g.logger.WarnContext(ctx, "gossip peers not resolved", "name", g.name, "error", err)
 			return
