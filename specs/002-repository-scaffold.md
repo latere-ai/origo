@@ -57,7 +57,7 @@ cmd/origod/             main: configuration, listeners, run group, readiness, th
 internal/config/        typed configuration from the environment; every problem in one message
 internal/version/       build identity set by -ldflags
 internal/contract/      the Origo-Contract header and the error codes (spec 003)
-internal/auth/          the phase 1 static bearer; OIDC, the authorizer, delegation (spec 007)
+internal/auth/          the verifier over the issuers and the node's key, the authorizer client, the guard, the signer of repository-bound tokens (spec 007)
 internal/wal/           the write-ahead log: formats, commit, currency check, metadata, sweeper, the Store (spec 004)
 internal/repo/          the local repository cache and the git subprocess wrapper (spec 004, 005)
 internal/httpgit/       smart HTTP: info/refs, upload-pack, receive-pack, the pre-receive hook (spec 003, 004)
@@ -71,7 +71,7 @@ internal/limits/        quotas and rate limits (spec 012)                     --
 internal/metrics/       the one place every metric of spec 011 is registered   -- not yet
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
 test/conformance/       the contract as an importable test package (spec 021) -- not yet
-test/stubs/             the stub issuer, authorizer, event sink, contract stub, source, and slow proxy, importable (spec 007, 013, 015) -- not yet
+test/stubs/             the stub issuer and authorizer (spec 007, built); the event sink, contract stub, source, binary, and slow proxy (spec 013, 015) -- not yet
 tools/smoke/            the post-deploy smoke the release pipeline runs
 tools/spike/            the conditional-write probe; its own module
 tools/specindex/        the cross-reference table of specs/README.md; its own module
@@ -157,7 +157,7 @@ an unknown variable is never an error.
 | `ORIGO_S3_PATH_STYLE` | no | unset | `1` addresses the bucket as a path segment (MinIO, any endpoint by IP) |
 | `ORIGO_S3_PUBLIC_ENDPOINT` | spec 010 | `ORIGO_S3_ENDPOINT` | the bucket endpoint LFS clients reach; presigned URLs are signed against it |
 | `ORIGO_PUBLIC_URL` | yes | none | an absolute URL such as `https://git.example.com`; trailing slash removed; used in clone URLs and event payloads |
-| `ORIGO_DEV_TOKEN` | yes, until spec 007 | none | the phase 1 bearer: the public listener accepts exactly this token; spec 007 removes it and the stub issuer of spec 013 takes its place in `make dev` and `test/e2e` |
+| `ORIGO_DEV_TOKEN` | no; refused from spec 007 | none | the phase 1 bearer the public listener accepted; spec 007 removed it, and a start-up that sets it fails with `ORIGO_DEV_TOKEN is no longer read; remove it` in the one message; the stub issuer of spec 013 takes its place in `make dev` and `test/e2e` |
 | `ORIGO_DATA_DIR` | no | `/var/lib/origo` | the repository cache; `repos/`, `spool/`, and `home/` under it; a local disk, never a network file system |
 | `ORIGO_CACHE_BYTES` | no | 80% of the file system holding `ORIGO_DATA_DIR` | eviction ceiling of the cache (spec 005); a positive integer |
 | `ORIGO_PUBLIC_ADDR`, `ORIGO_INTERNAL_ADDR`, `ORIGO_GOSSIP_ADDR` | no | `:8080`, `:8081`, `:7946` | listen addresses; a test binds `127.0.0.1:0` |
