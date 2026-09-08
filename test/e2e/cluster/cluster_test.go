@@ -66,6 +66,7 @@ func TestEveryFunctionRunsItsCommand(t *testing.T) {
 *"get hpa origod -o json"*) printf '{"status":{"currentReplicas":3,"desiredReplicas":2}}' ;;
 *"get statefulset,deployment -o name"*) printf 'statefulset.apps/origod\ndeployment.apps/minio\n' ;;
 *"get statefulset origod -o json"*) printf '{"spec":{"replicas":3}}' ;;
+*"kube-system get daemonset cilium -o json"*) printf '{"status":{"numberReady":1}}' ;;
 *"apply -f refused.yaml"*) echo 'pods "privileged" is forbidden: violates PodSecurity "restricted:latest"' >&2; exit 1 ;;
 esac
 exit 0
@@ -84,6 +85,9 @@ exit 0
 	if got := string(cluster.Get(t, "statefulset", "origod")); !strings.Contains(got, `"replicas":3`) {
 		t.Fatalf("Get %s", got)
 	}
+	if got := string(cluster.GetIn(t, "kube-system", "daemonset", "cilium")); !strings.Contains(got, `"numberReady":1`) {
+		t.Fatalf("GetIn %s", got)
+	}
 	want := []string{
 		"-n origo get pod origod-1 -o jsonpath={.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}",
 		"-n origo delete pod origod-1 --wait=true",
@@ -97,6 +101,7 @@ exit 0
 		"-n origo rollout status statefulset.apps/origod --timeout=5m0s",
 		"-n origo rollout status deployment.apps/minio --timeout=5m0s",
 		"-n origo get statefulset origod -o json",
+		"-n kube-system get daemonset cilium -o json",
 	}
 	if got := calls(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("calls:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

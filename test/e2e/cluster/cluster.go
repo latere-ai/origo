@@ -29,21 +29,27 @@ const rolloutTimeout = 5 * time.Minute
 
 // run runs kubectl in the namespace and returns stdout, stderr, and the
 // exit error.
-func run(t testing.TB, args ...string) (string, string, error) {
+func run(t testing.TB, namespace string, args ...string) (string, string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), rolloutTimeout+time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", append([]string{"-n", Namespace}, args...)...)
+	cmd := exec.CommandContext(ctx, "kubectl", append([]string{"-n", namespace}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
 }
 
-// must runs kubectl and fails the test on a non-zero exit with stderr.
+// must runs kubectl in the stack's namespace and fails the test on a
+// non-zero exit with stderr.
 func must(t testing.TB, args ...string) string {
 	t.Helper()
-	out, stderr, err := run(t, args...)
+	return mustIn(t, Namespace, args...)
+}
+
+func mustIn(t testing.TB, namespace string, args ...string) string {
+	t.Helper()
+	out, stderr, err := run(t, namespace, args...)
 	if err != nil {
 		t.Fatalf("kubectl %s: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(stderr))
 	}
@@ -74,7 +80,7 @@ func ApplyManifest(t testing.TB, path string) {
 // created, so no cleanup is registered.
 func ApplyManifestExpectRefusal(t testing.TB, path string) string {
 	t.Helper()
-	out, stderr, err := run(t, "apply", "-f", path)
+	out, stderr, err := run(t, Namespace, "apply", "-f", path)
 	if err == nil {
 		must(t, "delete", "-f", path, "--ignore-not-found=true")
 		t.Fatalf("kubectl apply -f %s succeeded, admission did not refuse it\n%s", path, out)
@@ -109,9 +115,17 @@ func Apply(t testing.TB, overlay string) {
 	}
 }
 
-// Get returns the object as JSON, for a test that asserts on what the
-// overlay applied rather than on the stack's behaviour.
+// Get returns the object of the stack's namespace as JSON, for a test
+// that asserts on what the overlay applied rather than on the stack's
+// behaviour.
 func Get(t testing.TB, kind, name string) []byte {
 	t.Helper()
-	return []byte(must(t, "get", kind, name, "-o", "json"))
+	return GetIn(t, Namespace, kind, name)
+}
+
+// GetIn is Get in another namespace, for what up.sh installs beside the
+// overlay (Cilium and metrics-server in kube-system).
+func GetIn(t testing.TB, namespace, kind, name string) []byte {
+	t.Helper()
+	return []byte(mustIn(t, namespace, "get", kind, name, "-o", "json"))
 }

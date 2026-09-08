@@ -14,6 +14,11 @@ spec:
     name: origod
   minReplicas: 2
   maxReplicas: 2
+  # No scale-down window: the two replicas are reached within one
+  # reconcile, not after the controller's 5 minute default.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 0
   metrics:
     - type: Resource
       resource:
