@@ -112,6 +112,10 @@ func New(o Options) *Log {
 // Store exposes the store, for the readiness check and the tests.
 func (l *Log) Store() Store { return l.store }
 
+// Prefix is the key prefix of everything the log writes, which spec
+// 008's event objects sit beside under <prefix>events/.
+func (l *Log) Prefix() string { return l.prefix }
+
 // RepoPrefix is the key prefix of one repository.
 func (l *Log) RepoPrefix(repo string) string { return l.prefix + "repos/" + repo + "/" }
 
