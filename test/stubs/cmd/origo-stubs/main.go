@@ -30,6 +30,7 @@ import (
 	"github.com/latere-ai/origo/test/stubs/authorizer"
 	"github.com/latere-ai/origo/test/stubs/issuer"
 	"github.com/latere-ai/origo/test/stubs/sink"
+	"github.com/latere-ai/origo/test/stubs/slowproxy"
 	"github.com/latere-ai/origo/test/stubs/source"
 )
 
@@ -128,7 +129,8 @@ type stubs struct {
 	sink       *sink.Server
 	source     *source.Server
 	sourceRoot string
-	proxy      *slowproxy
+	proxy      *slowproxy.Proxy
+	proxyData  string
 	listeners  []listener
 }
 
@@ -185,9 +187,9 @@ func build(ctx context.Context, o options) (*stubs, error) {
 		s.listeners = append(s.listeners, listener{name: "source", addr: o.sourceListen, handler: src.Handler(), tls: true})
 	}
 	if o.slowproxyTarget != "" {
-		s.proxy = newSlowproxy(o.slowproxyTarget)
-		s.proxy.dataAddr = o.slowproxyData
-		s.listeners = append(s.listeners, listener{name: "slowproxy", addr: o.slowproxyListen, handler: s.proxy.control()})
+		s.proxy = slowproxy.New(o.slowproxyTarget)
+		s.proxyData = o.slowproxyData
+		s.listeners = append(s.listeners, listener{name: "slowproxy", addr: o.slowproxyListen, handler: s.proxy.Handler()})
 	}
 	return s, nil
 }
@@ -235,7 +237,7 @@ func (s *stubs) serve(ctx context.Context, stdout io.Writer, logger *slog.Logger
 	}
 	var proxyLn net.Listener
 	if s.proxy != nil {
-		ln, err := lc.Listen(ctx, "tcp", s.proxy.dataAddr)
+		ln, err := lc.Listen(ctx, "tcp", s.proxyData)
 		if err != nil {
 			for _, open := range lns {
 				_ = open.Close()
@@ -245,7 +247,7 @@ func (s *stubs) serve(ctx context.Context, stdout io.Writer, logger *slog.Logger
 		proxyLn = ln
 		_, _ = fmt.Fprintf(stdout, "slowproxy data listening on %s\n", ln.Addr())
 		go func() {
-			if err := s.proxy.serve(ctx, ln); err != nil {
+			if err := s.proxy.Serve(ctx, ln); err != nil {
 				failed <- fmt.Errorf("slowproxy data: %w", err)
 			}
 		}()
@@ -262,7 +264,7 @@ func (s *stubs) serve(ctx context.Context, stdout io.Writer, logger *slog.Logger
 	}
 	if proxyLn != nil {
 		_ = proxyLn.Close()
-		s.proxy.close()
+		s.proxy.Close()
 	}
 	return err
 }
