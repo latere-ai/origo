@@ -218,7 +218,7 @@ func dirBytes(dir string) int64 {
 	var total int64
 	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
 		if err != nil || !d.Type().IsRegular() {
-			return nil
+			return nil //nolint:nilerr // an entry that cannot be read is not counted, and the walk goes on
 		}
 		if info, err := d.Info(); err == nil {
 			total += info.Size()
@@ -836,7 +836,7 @@ func (c *Cache) indexPackFile(ctx context.Context, r *Repo, f *os.File) error {
 		return err
 	}
 	for _, ext := range []string{".idx", ".rev", ".pack"} {
-		if err := os.Rename(base+ext, filepath.Join(dir, "pack-"+name+ext)); err != nil && !(ext == ".rev" && errors.Is(err, os.ErrNotExist)) {
+		if err := os.Rename(base+ext, filepath.Join(dir, "pack-"+name+ext)); err != nil && (ext != ".rev" || !errors.Is(err, os.ErrNotExist)) {
 			return err
 		}
 	}

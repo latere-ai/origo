@@ -230,10 +230,10 @@ func (g *Gossip) Run(ctx context.Context) error {
 			if err != nil {
 				return
 			}
-			g.Handle(ctx, buf[:n])
+			_ = g.Handle(ctx, buf[:n]) // a dropped datagram is counted, not reported
 		}
 	}()
-	g.Heartbeat(ctx)
+	g.Heartbeat()
 	ticker := time.NewTicker(HeartbeatEvery)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
@@ -241,7 +241,7 @@ func (g *Gossip) Run(ctx context.Context) error {
 		case <-ctx.Done():
 		case <-ticker.C:
 			g.Resolve(ctx)
-			g.Heartbeat(ctx)
+			g.Heartbeat()
 		}
 	}
 	<-done
@@ -292,8 +292,8 @@ func (g *Gossip) Peers() []string {
 }
 
 // Heartbeat sends one heartbeat to every peer.
-func (g *Gossip) Heartbeat(ctx context.Context) {
-	g.send(ctx, payload{V: version, Node: g.set.Self(), At: g.now().UTC()})
+func (g *Gossip) Heartbeat() {
+	g.send(payload{V: version, Node: g.set.Self(), At: g.now().UTC()})
 }
 
 // Announce sends the announcement of repo at seq AnnounceTimes times,
@@ -309,14 +309,14 @@ func (g *Gossip) Announce(repo string, seq uint64) {
 			if i > 0 {
 				time.Sleep(AnnounceGap)
 			}
-			g.send(context.Background(), payload{V: version, Node: g.set.Self(), Repo: repo, Seq: seq, At: g.now().UTC()})
+			g.send(payload{V: version, Node: g.set.Self(), Repo: repo, Seq: seq, At: g.now().UTC()})
 		}
 	})
 }
 
 // send seals one payload and writes it to every peer, counting each
-// datagram sent.
-func (g *Gossip) send(ctx context.Context, p payload) {
+// datagram sent. It runs outside any request, so it logs without one.
+func (g *Gossip) send(p payload) {
 	if len(g.secret) == 0 {
 		return
 	}
@@ -328,12 +328,12 @@ func (g *Gossip) send(ctx context.Context, p payload) {
 	}
 	datagram, err := Seal(g.secret, p)
 	if err != nil {
-		g.logger.ErrorContext(ctx, "gossip datagram not encoded", "error", err)
+		g.logger.Error("gossip datagram not encoded", "error", err)
 		return
 	}
 	for _, peer := range peers {
 		if _, err := conn.WriteTo(datagram, peer); err != nil {
-			g.logger.WarnContext(ctx, "gossip datagram not sent", "peer", peer.String(), "error", err)
+			g.logger.Warn("gossip datagram not sent", "peer", peer.String(), "error", err)
 			continue
 		}
 		g.packets.Inc(map[string]string{"direction": "sent"})

@@ -201,7 +201,7 @@ func TestCopiesAndHeldFollowTheLifecycle(t *testing.T) {
 	}
 	c1 := h.src.Commit("a.txt", "one", "first")
 	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
-	r, release := h.acquire(false)
+	_, release := h.acquire(false)
 	if seq, ok := h.cache.Held(repoA); !ok || seq != 1 {
 		t.Fatalf("Held = %d %v", seq, ok)
 	}
@@ -219,7 +219,7 @@ func TestCopiesAndHeldFollowTheLifecycle(t *testing.T) {
 	release()
 	clock = clock.Add(time.Hour)
 	// A push through Advance measures the copy and moves the sequence.
-	r, release = h.acquire(true)
+	r, release := h.acquire(true)
 	before := r.bytes.Load()
 	c2 := h.src.Commit("a.txt", "two", "second")
 	ix := h.push("refs/heads/main", c1, c2, h.src.Pack(c2, c1))

@@ -255,8 +255,8 @@ func TestMembershipByHeartbeat(t *testing.T) {
 	// set fills from their next heartbeats, inside one window.
 	start(2)
 	clk.Advance(HeartbeatEvery)
-	gossips[0].Heartbeat(ctx)
-	gossips[1].Heartbeat(ctx)
+	gossips[0].Heartbeat()
+	gossips[1].Heartbeat()
 	waitFor(t, "three nodes agreeing", func() bool {
 		for _, g := range gossips {
 			if !slices.Equal(g.set.Live(), names) {
@@ -273,8 +273,8 @@ func TestMembershipByHeartbeat(t *testing.T) {
 	}
 	// Node 3 goes quiet: 59 seconds later it is live, at 60 it is not.
 	clk.Advance(Window - time.Second)
-	gossips[0].Heartbeat(ctx)
-	gossips[1].Heartbeat(ctx)
+	gossips[0].Heartbeat()
+	gossips[1].Heartbeat()
 	waitFor(t, "nodes 1 and 2 refreshed", func() bool {
 		at, _ := gossips[0].set.LastHeard("origod-1")
 		return at.Equal(clk.Now())
@@ -295,7 +295,7 @@ func TestMembershipByHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alone.Heartbeat(ctx)
+	alone.Heartbeat()
 	alone.Announce(repoA, 1)
 	if got := alone.set.Live(); !slices.Equal(got, []string{"solo"}) {
 		t.Fatalf("alone: %v", got)
