@@ -427,3 +427,66 @@ func submessages(b []byte, want int) [][]byte {
 	}
 	return out
 }
+
+// TestRequestCountersWrapTheResponse covers the two counters the log
+// line reads: the writer forwards the status, the flush, and the real
+// ResponseWriter, and the reader survives a request with no body.
+func TestRequestCountersWrapTheResponse(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := &countingWriter{ResponseWriter: rec, status: http.StatusOK}
+	w.Flush() // writes the implicit 200
+	if _, err := w.Write([]byte("body")); err != nil {
+		t.Fatal(err)
+	}
+	w.WriteHeader(http.StatusTeapot) // after the final status, ignored
+	w.Flush()
+	if w.status != http.StatusOK || w.n != 4 {
+		t.Fatalf("status %d, %d bytes", w.status, w.n)
+	}
+	// An informational status is forwarded and is not the final one.
+	informational := httptest.NewRecorder()
+	early := &countingWriter{ResponseWriter: informational, status: http.StatusOK}
+	early.WriteHeader(http.StatusContinue)
+	early.WriteHeader(http.StatusCreated)
+	if early.status != http.StatusCreated {
+		t.Fatalf("after 100 the status is %d", early.status)
+	}
+	if w.Unwrap() != http.ResponseWriter(rec) {
+		t.Error("the real writer is not reachable")
+	}
+	if !rec.Flushed {
+		t.Error("the flush did not reach the real writer")
+	}
+
+	empty := &countingReader{}
+	if n, err := empty.Read(make([]byte, 4)); n != 0 || err != io.EOF {
+		t.Fatalf("a request with no body read %d, %v", n, err)
+	}
+	if err := empty.Close(); err != nil {
+		t.Fatal(err)
+	}
+	body := &countingReader{from: io.NopCloser(strings.NewReader("four"))}
+	if _, err := io.ReadAll(body); err != nil || body.n != 4 {
+		t.Fatalf("%d bytes, %v", body.n, err)
+	}
+	if err := body.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDetailsAreEmptyOffThePublicListener holds the fallback: a request
+// that never passed the public listener's outermost wrapper, an internal
+// probe, has no details and asks for none.
+func TestDetailsAreEmptyOffThePublicListener(t *testing.T) {
+	if d := detailsFrom(context.Background()); d == nil || d.route != "" || d.repo != "" {
+		t.Fatalf("details off the listener: %+v", d)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/v1/repos/"+repoID, nil)
+	r.SetPathValue("id", repoID)
+	if got := repoOf(r); got != repoID {
+		t.Fatalf("repo %q", got)
+	}
+	if got := routeOf(r); got != "" {
+		t.Fatalf("route of an unmatched request %q", got)
+	}
+}
