@@ -122,7 +122,10 @@ func TestClusterDegradedStorage(t *testing.T) {
 		t.Helper()
 		waitUntil(t, "every node's read breaker closed and the bucket answering", 3*time.Minute, func() bool {
 			for i := range 3 {
-				if nodeMetric(t, portNode1Int+i, "origo_storage_breaker_state", `class="read"`) != 0 {
+				// An unready node answers on neither port; that is a
+				// node to wait for, not a failure.
+				status, body := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/metrics", portNode1Int+i))
+				if status != 200 || parseMetric(t, string(body), "origo_storage_breaker_state", `class="read"`) != 0 {
 					return false
 				}
 				if status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/readyz", portNode1Int+i)); status != 200 {
@@ -164,10 +167,18 @@ func TestClusterDegradedStorage(t *testing.T) {
 			return nodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`) == 1
 		})
 		t.Logf("breaker open; origod-0: %s", podConditions(t, "origod-0"))
-		// The warm repository is served stale with the header and clones.
-		status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+		// Node 1 left the rotation between its second failed readiness
+		// listing and the breaker opening; the next probe the breaker
+		// refuses brings it back. The warm repository is then served
+		// stale with the header and clones.
+		var status int
+		var header http.Header
+		waitUntil(t, "node 1 back in rotation with the stale advertisement", 30*time.Second, func() bool {
+			status, header, _ = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+			return status == 200
+		})
 		age, err := strconv.Atoi(header.Get("Origo-Stale"))
-		if status != 200 || err != nil || age < 0 || age > 30 {
+		if err != nil || age < 0 || age > 30 {
 			t.Fatalf("stale advertisement: %d Origo-Stale %q; origod-0: %s", status, header.Get("Origo-Stale"), podConditions(t, "origod-0"))
 		}
 		stale := filepath.Join(t.TempDir(), "stale")
@@ -179,7 +190,8 @@ func TestClusterDegradedStorage(t *testing.T) {
 		}
 		// A push is refused at info/refs with the ERR pkt-line, no pack
 		// uploaded, and a cold repository answers 503 at once.
-		status, header, body := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-receive-pack", 30*time.Second)
+		var body []byte
+		status, header, body = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-receive-pack", 30*time.Second)
 		if status != 200 || header.Get("Retry-After") == "" || !strings.Contains(string(body), "ERR storage_unavailable: ") {
 			t.Fatalf("push advertisement: %d Retry-After %q %q", status, header.Get("Retry-After"), body)
 		}

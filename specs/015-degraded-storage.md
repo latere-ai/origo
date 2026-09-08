@@ -294,10 +294,12 @@ Divergences and interpretations, each kept and the reason:
   stack run showed: with the proxy not started, three cold nodes went
   ready through the rule alone. The check fails as before while the
   bucket is slow or gone and the breaker is still closed, so a replica
-  is unready for the interval between the first failure and the
-  fifth, at most 25 seconds of probes, then ready again
-  (`TestReadyzStaysReadyWhileTheBreakerIsOpen`). Recorded under Open
-  below.
+  is out of rotation from its second failed probe until the breaker
+  opens, at most about 50 seconds of listings when no request reaches
+  it and a few seconds under traffic, then ready again; the cluster
+  test waits for node 1's return before it asserts the stale
+  responses (`TestReadyzStaysReadyWhileTheBreakerIsOpen`,
+  `TestClusterDegradedStorage`). Recorded under Open below.
 - A refused call counts on `origo_storage_ops_total{result="error"}`
   and is not observed on `origo_storage_seconds`: nothing ran. A 304
   counts as `ok`, the table having no `not_modified` value.
