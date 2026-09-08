@@ -27,7 +27,8 @@ and the pod.
 
 ## Current state
 
-Phase 1 verifies the static bearer of spec 002 in constant time, runs
+Spec 007 verifies every token against the configured issuers and the
+node's own key and asks the authorizer before any lookup; the node runs
 every git subprocess through `internal/repo.Git` with the environment
 below, `core.protectNTFS` and `receive.fsckObjects` on, and a 5 minute
 deadline; the smart HTTP services run in their own process group that is
