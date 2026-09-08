@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -323,6 +324,29 @@ func podSummary(t *testing.T) string {
 	return b.String()
 }
 
+// probeFailure reads the envelope the balanced port answers for the
+// repository's advertisement, for the log of a failed clone or push:
+// git shows the status alone, the envelope carries the code and the
+// developer details. At most a few per load.
+func probeFailure(t *testing.T, token, id, what string, since time.Duration, probes *atomic.Int64) {
+	t.Helper()
+	if probes.Add(1) > 6 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://localhost:%d/r/%s.git/info/refs?service=git-upload-pack", portBalanced, id), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("%s failed %s into the load; the probe: %v", what, since.Round(time.Millisecond), err)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
+	t.Logf("%s failed %s into the load; the probe answers %d Origo-Prefer=%q: %s", what, since.Round(time.Millisecond), resp.StatusCode, resp.Header.Get("Origo-Prefer"), strings.TrimSpace(string(body)))
+}
+
 // readLoadAt runs the synthetic read load of spec 005 at the replica
 // count: 200 clones of the 10 MiB repository through the balanced port
 // with a push every second beside them. It fails on any failed clone
@@ -334,6 +358,8 @@ func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 	stop := make(chan struct{})
 	var pushes, failedPushes int
 	var pushing sync.WaitGroup
+	var probes atomic.Int64
+	started := time.Now()
 	pushing.Go(func() {
 		for i := 0; ; i++ {
 			select {
@@ -345,6 +371,7 @@ func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 			if out, err := git(t, pusher, "push", "-q", "origin", "HEAD:refs/heads/main"); err != nil {
 				failedPushes++
 				t.Errorf("push %d at %d replicas: %v\n%s", i, replicas, err, out)
+				probeFailure(t, token, id, fmt.Sprintf("push %d", i), time.Since(started), &probes)
 			}
 			pushes++
 		}
@@ -354,7 +381,6 @@ func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 8)
 	var failed atomic.Int64
-	started := time.Now()
 	for i := range clones {
 		slots <- struct{}{}
 		wg.Go(func() {
@@ -363,6 +389,7 @@ func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 			if out, err := git(t, root, "clone", "-q", "--bare", repoURL(portBalanced, token, id), dir); err != nil {
 				failed.Add(1)
 				t.Errorf("clone %d at %d replicas: %v\n%s", i, replicas, err, out)
+				probeFailure(t, token, id, fmt.Sprintf("clone %d", i), time.Since(started), &probes)
 			}
 			_ = os.RemoveAll(dir)
 		})
@@ -373,6 +400,9 @@ func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 	pushing.Wait()
 	rate := clones / elapsed.Seconds()
 	t.Logf("MEASURE %d replicas: %d clones of 10 MiB in %s = %.2f clones/s, %d pushes beside them, %d failed", replicas, clones, elapsed.Round(time.Millisecond), rate, pushes, failed.Load()+int64(failedPushes))
+	if failed.Load()+int64(failedPushes) > 0 {
+		t.Logf("pods after the load at %d replicas:\n%s", replicas, podSummary(t))
+	}
 	return rate
 }
 
