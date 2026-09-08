@@ -103,6 +103,10 @@ type node struct {
 	verifier *auth.Verifier
 	signer   *auth.Signer
 	events   *events.Dispatcher
+	// egress is the pinned dialer of spec 016 the import and verify of
+	// specs 019 and 014 fetch through, built from the three egress
+	// variables and never with the loopback seam.
+	egress *api.Egress
 
 	public     http.Handler
 	checks     []readyCheck
@@ -249,7 +253,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// looked up.
 	app := http.NewServeMux()
 	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact, Limits: n.limits}).Register(app)
-	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set, Limits: n.limits}).Register(app)
+	n.egress = api.NewEgress(api.EgressOptions{Allow: cfg.EgressAllow, Pinned: cfg.EgressPinned, ClusterCIDRs: cfg.ClusterCIDRs, Roots: cfg.EgressCA})
+	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set, Limits: n.limits, Egress: n.egress}).Register(app)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through
 	// the node.
