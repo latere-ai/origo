@@ -3,7 +3,7 @@
 
 GO ?= go
 
-.PHONY: build check clean dev fmt hooks test-integration
+.PHONY: build build-stubs check clean dev dev-up dev-down fmt fuzz hooks test-integration test-tiers
 
 # The whole bar. Every gate lives in latere.ai/x/ci-gate, pinned as a tool
 # in go.mod and configured in .lateregate.yaml, so this target is a name for
@@ -36,6 +36,14 @@ build:
 		-o $(OUT_DIR)/$(SERVICE) ./cmd/$(SERVICE)
 	@echo "built $(OUT_DIR)/$(SERVICE)"
 
+# The stub binary of spec 013: the issuer, authorizer, sink, and source
+# `make dev` runs beside MinIO and the kind overlay runs as a pod.
+STUBS := origo-stubs
+build-stubs:
+	@mkdir -p $(OUT_DIR)
+	CGO_ENABLED=0 $(GO) build -trimpath -o $(OUT_DIR)/$(STUBS) ./test/stubs/cmd/$(STUBS)
+	@echo "built $(OUT_DIR)/$(STUBS)"
+
 fmt:
 	gofmt -w $$(git ls-files '*.go')
 
@@ -65,18 +73,33 @@ DEV_COMPOSE_ENV = DEV_PROJECT=$(DEV_PROJECT) DEV_S3_PORT=$(DEV_S3_PORT) \
                   DEV_S3_CONSOLE_PORT=$(DEV_S3_CONSOLE_PORT) DEV_S3_KEY=$(DEV_S3_KEY) \
                   DEV_S3_SECRET=$(DEV_S3_SECRET) DEV_S3_BUCKET=$(DEV_S3_BUCKET)
 
+# The stubs of spec 013 take the four ports after the node's and
+# MinIO's, on the loopback interface, so two checkouts run side by side.
+DEV_ISSUER_PORT ?= $(shell expr $(DEV_PORT_BASE) + 4)
+DEV_AUTHORIZER_PORT ?= $(shell expr $(DEV_PORT_BASE) + 5)
+DEV_SINK_PORT ?= $(shell expr $(DEV_PORT_BASE) + 6)
+DEV_ISSUER_URL = http://localhost:$(DEV_ISSUER_PORT)
+DEV_DIR = $(CURDIR)/$(OUT_DIR)/dev/$(DEV_PROJECT)
+DEV_TOKEN_KEY = $(DEV_DIR)/token-key.pem
+DEV_STUBS_PID = $(DEV_DIR)/stubs.pid
+DEV_STUBS_LOG = $(DEV_DIR)/stubs.log
+DEV_REPO_ID = 0d5e7a1c-6f2b-4c3d-9e8f-1a2b3c4d5e6f
+
 # The node reads the same variables locally as in production; only the
-# values differ. The identity variables of spec 007 (ORIGO_OIDC_ISSUERS,
-# ORIGO_AUTHORIZER_URL, ORIGO_AUTHORIZER_TOKEN, ORIGO_TOKEN_KEY) are set
-# by the form of `make dev` spec 013 builds, which runs the stub issuer
-# and authorizer beside MinIO and generates the key under out/.
+# values differ. The identity variables of spec 007 point at the stub
+# issuer and authorizer `make dev` runs (spec 013), and the key is
+# generated under out/ at the first start.
 DEV_SERVICE_ENV = ORIGO_S3_ENDPOINT=$(DEV_S3_ENDPOINT) ORIGO_S3_REGION=us-east-1 \
                   ORIGO_S3_BUCKET=$(DEV_S3_BUCKET) ORIGO_S3_KEY=$(DEV_S3_KEY) \
                   ORIGO_S3_SECRET=$(DEV_S3_SECRET) ORIGO_S3_PATH_STYLE=1 \
                   ORIGO_DATA_DIR=$(DEV_DATA_DIR) \
                   ORIGO_PUBLIC_URL=http://localhost:$(DEV_PUBLIC_PORT) \
                   ORIGO_PUBLIC_ADDR=:$(DEV_PUBLIC_PORT) ORIGO_INTERNAL_ADDR=:$(DEV_INTERNAL_PORT) \
-                  ORIGO_GOSSIP_ADDR=127.0.0.1:0
+                  ORIGO_GOSSIP_ADDR=127.0.0.1:0 \
+                  ORIGO_OIDC_ISSUERS=$(DEV_ISSUER_URL) ORIGO_OIDC_INSECURE_ISSUERS=$(DEV_ISSUER_URL) \
+                  ORIGO_AUTHORIZER_URL=http://127.0.0.1:$(DEV_AUTHORIZER_PORT) \
+                  ORIGO_AUTHORIZER_TOKEN=stub-authorizer-token \
+                  ORIGO_EVENTS_URL=http://127.0.0.1:$(DEV_SINK_PORT) ORIGO_EVENTS_SECRET=stub-sink-secret
 
 # stack-up starts MinIO and waits for a fact, not a duration: the health
 # endpoint answers and the one-shot container that made the bucket exited.
@@ -92,29 +115,100 @@ define stack-up
 	done
 endef
 
-# One command from a clean clone to a serving node: MinIO with the bucket,
-# then origod in the foreground. Out of service between spec 007 and
-# spec 013: the phase 1 bearer is gone and the node needs an issuer, an
-# authorizer, and a signing key, which the stub binary spec 013 builds
-# (test/stubs/cmd/origo-stubs) provides. Until then the unit suites and
-# `make test-integration` run the stubs in-process.
-dev:
-	@echo "make dev is out of service until spec 013 lands: origod needs the stub issuer and authorizer of test/stubs/cmd/origo-stubs (see specs/007, Current state)" >&2
-	@exit 1
+# stubs-up starts origo-stubs in the background, once per checkout, and
+# waits for the issuer's key set to answer.
+define stubs-up
+	mkdir -p $(DEV_DIR)
+	if ! { [ -f $(DEV_STUBS_PID) ] && kill -0 $$(cat $(DEV_STUBS_PID)) 2>/dev/null; }; then \
+		$(OUT_DIR)/$(STUBS) -issuer-listen 127.0.0.1:$(DEV_ISSUER_PORT) \
+			-authorizer-listen 127.0.0.1:$(DEV_AUTHORIZER_PORT) -sink-listen 127.0.0.1:$(DEV_SINK_PORT) \
+			-issuer-url $(DEV_ISSUER_URL) -authorizer-token stub-authorizer-token \
+			>$(DEV_STUBS_LOG) 2>&1 & echo $$! >$(DEV_STUBS_PID); \
+	fi
+	for i in $$(seq 1 30); do \
+		if curl -sf -o /dev/null "$(DEV_ISSUER_URL)/jwks"; then echo "stubs are ready: issuer $(DEV_ISSUER_URL), authorizer http://127.0.0.1:$(DEV_AUTHORIZER_PORT), sink http://127.0.0.1:$(DEV_SINK_PORT)"; break; fi; \
+		if [ $$i = 30 ]; then echo "origo-stubs did not become ready"; cat $(DEV_STUBS_LOG); exit 1; fi; \
+		sleep 1; \
+	done
+endef
 
-# The tiers that need MinIO beside them, which is why they are here rather
-# than gates: latere-ai/ci's lateregate.yml has no services step, so CI runs
-# the unit tiers and a developer runs this before a push that touches the
-# log. First the store suite the in-process fake also passes, then the
-# end-to-end suite with origod as a subprocess and the real git.
-# ORIGO_E2E_MEASURE=1 adds the measurements spec 004's Outcome records.
+# clone-line waits for the node, mints a token for the dev subject at the
+# stub issuer, creates the repository dev/hello once, and prints the
+# clone line. It runs in the background beside the node.
+define clone-line
+	for i in $$(seq 1 120); do \
+		if curl -sf -o /dev/null "http://127.0.0.1:$(DEV_INTERNAL_PORT)/readyz"; then break; fi; \
+		if [ $$i = 120 ]; then echo "origod did not become ready" >&2; exit 1; fi; \
+		sleep 1; \
+	done; \
+	token=$$(curl -sf -X POST "$(DEV_ISSUER_URL)/mint" -d '{"sub":"dev"}' | sed 's/.*"token":"\([^"]*\)".*/\1/'); \
+	curl -sf -o /dev/null -X POST -H "Authorization: Bearer $$token" -H "Content-Type: application/json" \
+		"http://127.0.0.1:$(DEV_PUBLIC_PORT)/v1/repos" -d '{"id":"$(DEV_REPO_ID)","owner":"dev","slug":"hello"}' || true; \
+	echo "git clone http://x:$$token@localhost:$(DEV_PUBLIC_PORT)/dev/hello.git"
+endef
+
+# One command from a clean clone to a serving node: MinIO with the
+# bucket, the stub issuer, authorizer, and sink beside it, a signing key
+# generated once under out/, then origod in the foreground, with a clone
+# line whose token the stub issuer minted printed once the node is ready.
+dev: build build-stubs
+	@$(stack-up)
+	@$(stubs-up)
+	@test -s $(DEV_TOKEN_KEY) || openssl ecparam -genkey -name prime256v1 -out $(DEV_TOKEN_KEY)
+	@mkdir -p $(DEV_DATA_DIR)
+	@( $(clone-line) ) &
+	$(DEV_SERVICE_ENV) ORIGO_TOKEN_KEY="$$(cat $(DEV_TOKEN_KEY))" $(OUT_DIR)/$(SERVICE)
+
+# The three-node stack the cluster tiers target, in a kind cluster named
+# after the checkout: both images built with the engine, saved as
+# tarballs, and handed to deploy/examples/kind/up.sh. kind follows the
+# engine `make dev` uses.
+KIND_PROVIDER = $(if $(filter podman,$(DEV_ENGINE)),KIND_EXPERIMENTAL_PROVIDER=podman,)
+dev-up:
+	@mkdir -p $(OUT_DIR)/images
+	$(DEV_ENGINE) build -t ghcr.io/latere-ai/origod:candidate .
+	$(DEV_ENGINE) build -f Dockerfile.stubs -t ghcr.io/latere-ai/origo-stubs:candidate .
+	$(DEV_ENGINE) save -o $(OUT_DIR)/images/origod.tar ghcr.io/latere-ai/origod:candidate
+	$(DEV_ENGINE) save -o $(OUT_DIR)/images/origo-stubs.tar ghcr.io/latere-ai/origo-stubs:candidate
+	$(KIND_PROVIDER) deploy/examples/kind/up.sh -name $(DEV_PROJECT) $(OUT_DIR)/images/origod.tar $(OUT_DIR)/images/origo-stubs.tar
+
+# Stops what `make dev` or `make dev-up` started for this checkout: the
+# stubs, the compose stack, and the kind cluster. Each half is a no-op
+# when nothing of it runs; out/ stays in place (`make clean` removes it).
+dev-down:
+	-@if [ -f $(DEV_STUBS_PID) ]; then kill $$(cat $(DEV_STUBS_PID)) 2>/dev/null; rm -f $(DEV_STUBS_PID); echo "stubs stopped"; fi
+	-@$(DEV_COMPOSE_ENV) $(COMPOSE) down --remove-orphans 2>/dev/null
+	-@if command -v kind >/dev/null 2>&1; then $(KIND_PROVIDER) deploy/examples/kind/down.sh -name $(DEV_PROJECT); fi
+
+# The tiers that need a bucket beside them (spec 013): the store suite
+# (integration tag) and the e2e tier's one-node run, the TestE2E prefix,
+# against whatever values of the ORIGO_TEST_S3_* variables the
+# environment carries; the tiers skip when the endpoint is unset. The
+# integration job calls this with its MinIO; a cluster test targets the
+# stack through ORIGO_TEST_URL and is selected by its job's prefix.
+# ORIGO_E2E_MEASURE=1 with -run TestMeasure prints the measurements spec
+# 004's Outcome records.
+test-tiers:
+	$(GO) test -race -count=1 -tags=integration ./internal/wal/...
+	$(GO) test -race -count=1 -timeout 20m -tags=e2e ./test/e2e/... -run 'TestE2E'
+
+# The developer's form: starts compose and runs the same tiers against it.
 TEST_S3_ENV = ORIGO_TEST_S3_ENDPOINT=$(DEV_S3_ENDPOINT) ORIGO_TEST_S3_REGION=us-east-1 \
               ORIGO_TEST_S3_BUCKET=$(DEV_S3_BUCKET) ORIGO_TEST_S3_KEY=$(DEV_S3_KEY) \
               ORIGO_TEST_S3_SECRET=$(DEV_S3_SECRET) ORIGO_TEST_S3_PATH_STYLE=1
 test-integration:
 	@$(stack-up)
-	$(TEST_S3_ENV) $(GO) test -race -count=1 -tags=integration ./internal/wal/...
-	$(TEST_S3_ENV) $(GO) test -race -count=1 -timeout 60m -tags=e2e ./test/e2e/...
+	$(TEST_S3_ENV) $(MAKE) test-tiers
+
+# Every fuzz function in the module for 40 seconds, one package at a
+# time, the list from `go test -list`; the fuzz job runs it weekly.
+fuzz:
+	@for pkg in $$($(GO) list ./...); do \
+		for fn in $$($(GO) test -list '^Fuzz' $$pkg 2>/dev/null | grep '^Fuzz'); do \
+			echo "== $$pkg $$fn"; \
+			$(GO) test -run='^$$' -fuzz="^$$fn$$$$" -fuzztime=40s $$pkg || exit 1; \
+		done; \
+	done
 
 # Stop the stack, remove its volume, and remove the build output and the
 # local repository cache. Local state is disposable.
