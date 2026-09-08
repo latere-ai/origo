@@ -1,6 +1,6 @@
 ---
 title: "Authentication and delegation: issuers, the authorizer, acting on behalf of a subject"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -275,8 +275,9 @@ Every criterion has a passing test in the tree:
 | `ORIGO_DEV_TOKEN` refused with the one message | `internal/config`, `TestDevTokenIsRefused` |
 | `FuzzParseToken` | `internal/auth`, as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013, which is why this spec stays at `testing` |
 
-The spec moves to `complete` when spec 013's `make fuzz` runs the
-fuzz function on the weekly schedule.
+Spec 013 built `make fuzz`, which runs `FuzzParseToken` for 40
+seconds, and the `fuzz` job of `verify.yml` that calls it on the
+weekly schedule, so the spec is complete.
 
 Divergences and interpretations, all kept:
 

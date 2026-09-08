@@ -332,3 +332,9 @@ Divergences from the first draft:
   dispatcher with `check` as its first subcommand, and spec 014's
   `migrate` joins it; this spec keeps the table and the configuration
   rule that every subcommand shares.
+- A defect fixed by spec 013 on 2026-09-08: the storage and outbound
+  transports of `cmd/origod` had no dial timeout, so a bucket or an
+  issuer that drops packets held a request for the operating system's
+  connect timeout times the client's retries. Both now dial with a 10
+  second bound (`cmd/origod`, `TestTransportsBoundTheDial`); spec 015's
+  `ORIGO_STORAGE_TIMEOUT` bounds the whole operation once it lands.

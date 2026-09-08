@@ -50,6 +50,21 @@ committed: the commit log already holds that.
 - Every error response carries the fixed user sentence of its code with
   the developer reason in `details`, and every response of the public
   listener, `/readyz` and `/version` included, carries `Origo-Contract`.
+- Test stubs and the kind overlay (spec 013): `origo-stubs`, one binary
+  running the stub issuer, authorizer, event sink, and a TLS git source
+  with a 5 000-commit fixture, from flags, packaged as
+  `ghcr.io/latere-ai/origo-stubs` by `Dockerfile.stubs`; `test/stubs/origo`,
+  the whole contract in-process for a consumer's tests; the stub
+  authorizer's outage set over HTTP (`PUT /fail`, `POST /hang`,
+  `POST /resume`). `make dev` is back: MinIO, the stubs, a generated
+  `ORIGO_TOKEN_KEY`, the node, and a clone line with a minted token.
+  `deploy/examples/kind` runs MinIO, three nodes, and the stubs in a kind
+  cluster with Cilium and metrics-server on fixed host ports, through
+  `up.sh` and `down.sh` (`make dev-up`, `make dev-down`); `verify.yml`
+  runs the integration, cluster, up-script, mutation, and weekly fuzz
+  jobs from one image build. The node's storage and outbound transports
+  bound each dial to 10 seconds, so a bucket that drops packets answers
+  `storage_unavailable` instead of hanging.
 - The write-ahead log (spec 004): entries, immutable index objects
   committed by create-if-absent, the `HEAD` currency check, repository
   metadata, and the sweeper, over an S3 client signed by the standard

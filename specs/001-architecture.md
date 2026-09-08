@@ -1,6 +1,6 @@
 ---
 title: "Architecture: components, storage model, flows, and invariants"
-status: testing
+status: complete
 track: infra
 depends_on: []
 affects: [cmd/origod/, internal/, deploy/, docs/]
@@ -239,5 +239,8 @@ end-to-end scenarios the first three criteria name. What remains is
 owned elsewhere: the `TestE2E` renames of those scenarios land with
 spec 013, whose job regex selects the prefix, and the `depcheck`
 criterion is spec 013's, which configures `depcheck.packages` in
-`.lateregate.yaml` as part of the test tooling. The spec moves to
-`complete` when that gate runs on every push.
+`.lateregate.yaml` as part of the test tooling. Spec 013 did both on
+2026-09-08: the three scenarios carry the `TestE2E` prefix and the
+`depcheck` gate runs on every push with `./cmd/origod` admitting
+`latere.ai/x/pkg` and, through it, `github.com/google/uuid`, so the
+spec is complete.
