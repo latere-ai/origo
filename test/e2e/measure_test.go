@@ -24,8 +24,9 @@ import (
 // TestMeasure records the three numbers spec 004's Outcome carries:
 // pushes per second one node sustains for 60 seconds with 1 KiB
 // commits, the latency of the HEAD currency check, and the time to
-// materialize a repository of 1000 entries onto an empty disk. It runs
-// only with ORIGO_E2E_MEASURE=1 and prints its results.
+// materialize a repository of 1000 entries onto an empty disk; and
+// spec 009's time to the first byte of the archive of a 1 GiB tree. It
+// runs only with ORIGO_E2E_MEASURE=1 and prints its results.
 func TestMeasure(t *testing.T) {
 	if os.Getenv("ORIGO_E2E_MEASURE") != "1" {
 		t.Skip("ORIGO_E2E_MEASURE is not set")
@@ -34,6 +35,7 @@ func TestMeasure(t *testing.T) {
 	t.Run("pushes per second", func(t *testing.T) { measurePushes(t, s) })
 	t.Run("head currency check", func(t *testing.T) { measureHead(t, s) })
 	t.Run("materialize 1000 entries", func(t *testing.T) { measureMaterialize(t, s) })
+	t.Run("archive 1 GiB tree", func(t *testing.T) { measureArchive(t, s) })
 }
 
 func percentiles(d []time.Duration) (p50, p99 time.Duration) {
