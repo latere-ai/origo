@@ -46,10 +46,11 @@ listing the rows; every JSON envelope of `cmd/origod`,
 `internal/httpgit`, `internal/api`, and `internal/auth` is rendered
 through `contract.Write` with a `contract.Code*` constant, and the one
 `httpjson.Error` literal in the module is inside `internal/contract`.
-The status is not in the table: each call site passes it. Two rows
-of the table have no call site because the spec that produces them is
-not built: `over_quota` and `rate_limited` (spec 012); `ref_not_found`
-gained its call sites with the read API of spec 009. The hook verdicts of a refused push in
+The status is not in the table: each call site passes it. Every row of
+the table has a call site: `ref_not_found` gained its with the read API
+of spec 009, and `over_quota` and `rate_limited` with the limits of
+spec 012, which is at `testing` and therefore inside the call-site rule
+of `TestEveryCodeHasOneSentence`. The hook verdicts of a refused push in
 `internal/httpgit/handler.go` still carry sentences of their own, and
 the `non_fast_forward` verdict carries the reference and a hash (spec
 003's Outcome, the divergence this spec owns). Spec 013's sink,
