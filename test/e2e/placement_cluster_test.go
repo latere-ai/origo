@@ -229,8 +229,12 @@ func tenMiBRepo(t *testing.T, token string) string {
 
 // setReplicas applies the hpa-<n>.yaml fixture and waits until the
 // autoscaler and the StatefulSet report n ready replicas, logging what
-// lags every 30 seconds and the pods on a timeout.
-func setReplicas(t *testing.T, n int) {
+// lags every 30 seconds and the pods on a timeout, and then until the
+// identity path answers through the balanced port for a whole round
+// of requests: a pod is ready on storage and disk before its first
+// fetch of the issuer's keys lands, and a request that reaches it in
+// that window is refused with 401 issuer_unavailable.
+func setReplicas(t *testing.T, token, id string, n int) {
 	t.Helper()
 	cluster.ApplyManifest(t, filepath.Join(repoRoot(t), "test", "e2e", "testdata", fmt.Sprintf("hpa-%d.yaml", n)))
 	started := time.Now()
@@ -240,7 +244,7 @@ func setReplicas(t *testing.T, n int) {
 		spec, ready := statefulSetReplicas(t, "origod")
 		if current == n && desired == n && spec == n && ready == n {
 			t.Logf("%d replicas after %s", n, time.Since(started).Round(time.Second))
-			return
+			break
 		}
 		if time.Since(lastLog) >= 30*time.Second {
 			t.Logf("waiting for %d replicas: autoscaler %d/%d, StatefulSet %d spec %d ready", n, current, desired, spec, ready)
@@ -251,6 +255,14 @@ func setReplicas(t *testing.T, n int) {
 		}
 		time.Sleep(2 * time.Second)
 	}
+	waitUntil(t, fmt.Sprintf("the identity path through every one of %d replicas", n), 2*time.Minute, func() bool {
+		for range 6 * n {
+			if status, _ := stackAPI(t, stackURL(), token, "GET", "/v1/repos/"+id, ""); status != 200 {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 // podSummary lists the origod pods with their phase and readiness.
@@ -301,7 +313,7 @@ func podSummary(t *testing.T) string {
 // or push and returns the clones per second.
 func readLoadAt(t *testing.T, token, id string, replicas int) float64 {
 	t.Helper()
-	setReplicas(t, replicas)
+	setReplicas(t, token, id, replicas)
 	pusher := clone(t, repoURL(portBalanced, token, id))
 	stop := make(chan struct{})
 	var pushes, failedPushes int
