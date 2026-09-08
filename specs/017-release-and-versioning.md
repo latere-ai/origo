@@ -106,7 +106,9 @@ makes. On a `v*` tag:
    021 runs, whose `Run` deletes only the repositories it created and
    never by prefix (spec 021), so the fixture survives the run; then
    `TestPreviousReleaseFixture` below runs against the fixture of the
-   previous release; the harness then reads every
+   previous release, which the job downloads from that release's
+   assets with `gh release download` and names in
+   `ORIGO_PREVIOUS_RELEASE_FIXTURE`; the harness then reads every
    object under the fixture repository's prefix from the stack's MinIO
    through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables, which
    the job exports with the overlay's fixed values (spec 013, the MinIO
@@ -158,6 +160,24 @@ that rewrites a repository's log on first access and is covered by the
 conformance suite against the fixture the previous release attached.
 The fixture is downloaded from that release's assets when the test
 runs and is never committed to the tree.
+
+`TestPreviousReleaseFixture` in `test/conformance` carries the `e2e`
+build tag, like every test that needs a stack. The `e2e` job of spec
+013 downloads `fixture-<version>.tar.gz` of the latest release with
+`gh release download` and passes its path in the variable below; the
+test skips with the message `ORIGO_PREVIOUS_RELEASE_FIXTURE unset`
+when the variable is unset, which is the case on a fork with no
+release and on a developer's machine. Before it starts, the test
+uploads every object of the fixture into the stack's bucket under a
+fresh prefix, `origo/repos/<new id>/` for an id it draws, through the
+S3 client of `latere.ai/x/pkg/s3` against the `ORIGO_TEST_S3_ENDPOINT`
+family the job exported, so the stack's nodes materialize the
+repository from the log the previous release wrote and the fixture
+itself is never modified.
+
+| Variable | Set by | Value |
+|---|---|---|
+| `ORIGO_PREVIOUS_RELEASE_FIXTURE` | the `e2e` job of spec 013's `verify.yml` and the `conformance` step of `release.yml`, both through `gh release download` of the latest release's `fixture-<version>.tar.gz` | the path of the downloaded fixture archive; unset skips `TestPreviousReleaseFixture`, the way `ORIGO_INSTALL_MANIFESTS` (spec 018) gates the install jobs |
 
 ### Upgrade
 
@@ -214,9 +234,12 @@ workflow identity, which is what an outside operator can verify.
   `deploy` job's `if` on the variable).
 - The fixture repository attached to release N-1 materializes and
   serves on release N with identical `rev-list --all`, the fixture
-  downloaded from that release's assets at test time and skipped when
-  no previous release exists (proposed: `test/conformance`,
-  `TestPreviousReleaseFixture`).
+  downloaded from that release's assets by the job with `gh release
+  download` into the path `ORIGO_PREVIOUS_RELEASE_FIXTURE` names,
+  uploaded by the test under a fresh prefix through the S3 client
+  before it clones, and the test skipped when the variable is unset
+  (proposed: `test/conformance`, `TestPreviousReleaseFixture`, under
+  the `e2e` tag).
 - A node reading an index object with `v: 2` answers 503
   `repository_unavailable` with `details.key` for that repository, logs
   the documented line, serves another repository, and stays ready

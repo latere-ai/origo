@@ -210,6 +210,7 @@ one page:
 | spec 014 | `ORIGO_MIGRATE_PARALLEL` | repositories `origod migrate` drives at once |
 | spec 018 | `ORIGO_INSTALL_IMAGE` | the image reference the install document's blocks apply, set by the `install` job of `verify.yml` and the `install-release` job of `release.yml` |
 | spec 018 | `ORIGO_INSTALL_MANIFESTS` | the path of the manifests those blocks apply, set by the same two jobs |
+| spec 017 | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | the path of the previous release's fixture archive `TestPreviousReleaseFixture` uploads and reads, set by the `e2e` job and the release pipeline; unset skips the test |
 
 ### Failpoints
 
