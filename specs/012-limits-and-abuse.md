@@ -47,12 +47,12 @@ spec 010's interim rule ends.
 
 | Limit | Value | Enforced at | Answer |
 |---|---|---|---|
-| repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index as spec 004 defines it (the bytes of the listed packs plus the pack bytes of the entries since the last compaction, so a compaction lowers it and the quota counts what the log holds, not every byte ever pushed) plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` |
+| repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index as spec 004 defines it (the bytes of the listed packs plus the pack bytes of the entries since the last compaction, so a compaction lowers it and the quota counts what the log holds, not every byte ever pushed) plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | on receive-pack the POST answers 200 and the refusal travels as the hook's verdict, so git's own output carries `over_quota: <sentence>` exactly and nothing else, `limit`, `bytes`, and `max` are on the handler's `info` log line, and no entry is written; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` with `details.limit: "repository"`, `bytes`, and `max` |
 | single push | 2 GiB, one entry, one `PUT` (spec 004) | receive-pack, from `Content-Length` when present and while spooling | 413 `over_quota`, `details.limit: "push"` |
-| references | 100 000 commands per push and 100 000 references in the map after it | receive-pack, both before git runs: the commands as the body is parsed, the count after the push from the held index and the commands | 413 `over_quota`, `details.limit: "refs"`, on the command count; the sideband `over_quota` on the count after the push (phase 1 answered 400 `invalid_request` for the command count) |
+| references | 100 000 commands per push and 100 000 references in the map after it | receive-pack, both before git runs: the commands as the body is parsed, the count after the push from the held index and the commands | 413 `over_quota` with `details.limit: "refs"`, `bytes`, and `max` on the command count, answered while the body is parsed and before git runs, where phase 1 answered 400 `invalid_request`; the count after the push is refused the way the size rule is, the POST answering 200 with `over_quota: <sentence>` as the hook's verdict and the figures on the `info` line |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
-| requests per subject | `ORIGO_REQUESTS_PER_MINUTE`, default 600, per minute, a token bucket per effective subject per node, burst the same figure, `0` off; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
-| concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
+| requests per subject | `ORIGO_REQUESTS_PER_MINUTE`, default 600, per minute, a token bucket per effective subject per node, burst the same figure, `0` off; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects; the `kind` overlay of spec 013 sets 6000 and each cluster scenario mints a subject of its own, because those scenarios drive one node harder than any caller of a live installation drives it | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
+| concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before the request's own subprocess starts, one slot per request and not one per subprocess: a helper a request runs while its own subprocess is alive takes no slot of its own, and one slot covers a whole read request, which spec 009 runs as `rev-parse` and then the operation under one budget; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
 | subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) and the `commits` operation, 5 minutes for the merge family (spec 020); 10 minutes for an export (spec 019) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 504 `operation_timeout` (spec 009) on the API, git's own error on the sideband |
 | JSON body | 64 KiB | every `/v1/` route except the operation routes of spec 020, which carry their own 64 MiB limit | 400 `invalid_request` |
 | LFS batch body | 1 MiB | `POST /{repo}/info/lfs/objects/batch` (spec 010) | 400 with the LFS body of spec 010 carrying the `invalid_request` sentence |
@@ -64,6 +64,62 @@ spec 010's interim rule ends.
 | Header | Meaning |
 |---|---|
 | `RateLimit-Limit` | the requests one effective subject may send this node in a minute, the figure `ORIGO_REQUESTS_PER_MINUTE` names, on every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send one request more than the limit against any installation. Absent when the limit is off. |
+
+### Where the bounds live
+
+The limits are the node's, not something a caller opts into:
+`httpgit.New`, `api.New`, and `lfs.New` build the table above over the
+log when they are given none, and a test lowers one figure through an
+option. The measurement of the bytes under `lfs/` is one function,
+`limits.LFSBytes`, behind the 60 second cache, so the push and the LFS
+batch measure the same figure and neither lists the prefix twice in a
+minute; `internal/lfs` calls through it and does not list on its own. A
+push whose `lfs/` sum cannot be read is refused with
+`storage_unavailable`, because a repository that cannot be measured is
+not one a quota was checked against.
+
+The per-subject bucket sits behind the verifier and in front of the
+whole application mux, which is one place for every surface. A
+rate-limited LFS request therefore answers spec 003's envelope and not
+the LFS body shape of spec 010; the status and `Retry-After` are what
+`git-lfs` reads, so the client backs off either way.
+
+### The bound token's quota
+
+A repository-bound token (spec 007) carries no quota claim, so a write
+under one asks the authorizer for the minting subject's figure with the
+token's own `sub` and `act` on the bound repository, cached like any
+allow. The call supplies the figure and decides nothing: the token's
+scope already decided the access. A deny, and an allow that names no
+figure, therefore leave `auth.DefaultQuotaBytes` and write a warning
+rather than refusing a write the scope allows. An authorizer that
+produced no answer is the one exception and fails closed: the write is
+refused with `authorizer_unavailable`, which is spec 007's rule that an
+outage denies. A figure that cannot be read is not a figure to write
+against, and the same outage denies every unbound write on the node, so
+riding it out under a bound token would make the token the way around
+the outage rule.
+
+This last rule is an item for spec 016's builder, who owns
+`internal/auth`: `Guard.quota` today logs the outage and falls back to
+the default, and `Guard.Decide` must propagate the `*Unavailable` on a
+write instead. `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`
+holds it, and the closing block of
+`TestBoundTokenWriteTakesTheMintersQuota`, which asserts the fallback
+today, changes with it.
+
+### What 600 requests a minute buys
+
+One push is two requests, the advertisement and the service call, so
+the default bounds one subject to 300 back-to-back pushes a minute on
+one node. That is above any human client and below a build fleet
+pushing in a loop under one service token: an operator running such a
+fleet raises `ORIGO_REQUESTS_PER_MINUTE`, the way the `kind` overlay
+does. A subject that drives many repositories at once wants a figure of
+its own rather than the node's, which spec 020 carries as a builder
+item: the authorizer's response gains an optional `requests_per_minute`
+(spec 007's table), and a subject the authorizer names a figure for is
+bucketed at it.
 
 `receive.fsckObjects` (on since phase 1) rejects malformed objects on
 the way in; `transfer.fsckObjects` and `core.protectHFS` (spec 016) are
@@ -160,10 +216,13 @@ Divergences and interpretations, each kept and the reason:
   `api.open` takes one slot and releases it with the read lock.
 - **A repository-bound token's authorizer call supplies the figure and
   decides no access.** Spec 007 makes the token's scope the decision
-  and this spec asks only for `quota_bytes`, so a deny, an answer with
-  no figure, and an authorizer that produced no answer all leave
-  `auth.DefaultQuotaBytes` and write a warning rather than refusing a
-  push the scope allows. Spec 007's `TestRepositoryBoundTokenScope` now
+  and this spec asks only for `quota_bytes`, so a deny and an answer
+  with no figure leave `auth.DefaultQuotaBytes` and write a warning
+  rather than refusing a push the scope allows. The build also let an
+  authorizer that produced no answer fall back to that default; the
+  Design now refuses the write with `authorizer_unavailable` instead,
+  which is the one item this spec leaves open in the tree and spec
+  016's builder closes. Spec 007's `TestRepositoryBoundTokenScope` now
   expects the one authorizer call a bound write makes.
 - **The command cap answers 413 before git runs.** The row names the
   code and the limit but no status; 413 is spec 003's status for
@@ -236,22 +295,28 @@ Items this spec closes for another:
 - Spec 006's `compact.Slots` seam is filled: `cmd/origod` passes the
   node's semaphore, so a compaction and a request share one budget.
 
-Open, for whoever needs them settled:
+The three items this Outcome left open are settled and are the
+Design's rules above:
 
-- The Design's Answer column for the reference row names no status and
-  no side for the "references in the map after it" half; this build
-  answers 413 for the command count and the sideband for the count
-  after the push.
-- Whether 600 requests a minute is the right default for git traffic,
-  where one client's loop of pushes is two requests each: the `kind`
-  overlay runs at 6000 because its scenarios exceed 600. Raising the
-  default, bucketing pushes and reads apart, or leaving it to the
-  operator's variable are all open.
-- Whether a repository-bound token's write should be refused while the
-  authorizer is unavailable, rather than falling back to the default
-  quota, is a question for spec 016's threat model: the figure is a
-  limit, not a permission, and refusing would take a build down on an
-  outage that spec 007 lets a bound token ride out.
+- The reference row's second half is refused the way the size rule is:
+  the receive-pack POST answers 200 and the client reads
+  `over_quota: <sentence>` out of git's own output, with the figures on
+  the `info` line. Spec 003 fixes the form of a line that carries a
+  code and gives `non_fast_forward` the same shape, so the reference
+  count needed no new rule.
+- The 600 a minute default stays. It bounds one subject to 300
+  back-to-back pushes a minute, which is above any human client, and an
+  operator running a fleet of tooling under one token raises
+  `ORIGO_REQUESTS_PER_MINUTE`. A subject that drives many repositories
+  wants a figure of its own: spec 007's response gains an optional
+  `requests_per_minute` and spec 020 carries the builder item.
+- A bound token's write during an authorizer outage fails closed with
+  `authorizer_unavailable`, matching spec 007's rule that an outage
+  denies. It is the one thing in the tree the Design states and the
+  code does not: `Guard.quota` in `internal/auth` falls back to the
+  default on an unreachable authorizer, and spec 016's builder, who
+  owns that package, fixes it under
+  `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`.
 
 `latere.ai/x/pkg`: neither a token bucket nor a waiting semaphore is in
 the shared library; the README's items table carries the row.
