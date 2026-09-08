@@ -1,6 +1,6 @@
 ---
 title: "Test stubs and the kind overlay"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -550,11 +550,28 @@ Divergences and interpretations, all kept:
 - Spec 001's `TestE2E` renames and its `depcheck` criterion, and spec
   007's `make fuzz`, are done here, and both specs' Outcomes record it.
 
+- Two races the first stack runs showed, fixed in `up.sh` and the
+  helper test: every host port answering does not mean the nodes hold
+  the issuer's keys, because a node that started before the stubs
+  fetched nothing and retries once a minute (spec 007), so `up.sh` ends
+  by waiting until a token minted at the issuer's host port reaches the
+  authorizer through the nodes, which denies the probe id with 403; and
+  a pod `DeletePod` replaced is ready before its NodePort routes to it,
+  so the test polls node 2 for up to a minute.
+- A second defect found in the tree and fixed at the root, recorded in
+  spec 002's Outcome: the digests pinned for `debian:bookworm-slim` and
+  `minio/mc` were `arm64` manifests, not multi-arch indexes, so the
+  `build` and `integration` jobs failed with `exec format error` on the
+  `amd64` runners until every pin became the index digest.
+
 Verified on this machine against a live stack: `make dev` and
-`TestE2EDevStackClones` on podman compose; the overlay, `up.sh`, and
-`down.sh` on a kind cluster with the default CNI in place of Cilium,
-because a rootless podman machine cannot mount the BPF file system
-Cilium needs. The Cilium row, `cut-storage.yaml`, and the
-`TestClusterUpScript` and `TestClusterHelperDrivesKubectl` runs are
-verified by the `up-script` and `e2e` jobs of `verify.yml` on the
-pushed head.
+`TestE2EDevStackClones` on podman compose, and `make test-integration`
+(the store suite and the `TestE2E` tier). The kind stack could not run
+here: a rootless podman machine cannot mount the BPF file system Cilium
+needs, and the 2 GiB machine starved the API server on a kindnet
+attempt. The overlay, `up.sh`, `down.sh`, the Cilium and
+`metrics-server` rows, `cut-storage.yaml`, `TestClusterUpScript`, and
+`TestClusterHelperDrivesKubectl` are verified by the `up-script`,
+`e2e`, and `e2e-slow` jobs of `verify.yml`, green on `main` at
+`c54c711` (run 34208209981), where `up.sh` brings the stack up in
+about 90 seconds.
