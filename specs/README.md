@@ -268,6 +268,7 @@ deck and stated here so a reader sees them without the owning spec.
 | 012 depends on 006, which builds `internal/compact` where `TestCompactionSkipsWhenNoSlot` lives; the build order is unchanged, 006 is in phase 3 and 012 in phase 4 | 012 | 006 |
 | a code-table row holds every status its spec's Code table lists (`repo_frozen`: 403 on a write, 409 on a second freeze); `contract.Status(code)` answers the first, and the call-site check accepts any status of the row | 021 | 003, 019, 020 |
 | the per-subject request rate is `ORIGO_REQUESTS_PER_MINUTE`, 600 by default, and every response of the surface carries it as `RateLimit-Limit` (the IETF draft field); the `kind` overlay runs at 6000 and each cluster scenario mints a subject of its own, because the scenarios drive one node far harder than any caller of a live installation, and 021's `rate_limited` case reads the header rather than assuming the default | 012 | 002, 013, 003, 021 |
+| the 600 a minute default stays: it bounds one subject to 300 back-to-back pushes a minute, an operator raises `ORIGO_REQUESTS_PER_MINUTE` for a fleet of tooling under one token, and a subject that drives many repositories takes a figure of its own from the authorizer's optional `requests_per_minute`, absent meaning the variable's value | 007 | 012, 020 |
 | the call-site rule of `TestEveryCodeHasOneSentence` is keyed on the spec that produces a code: `producers map[string]string` in the test, `over_quota` and `rate_limited` to 012, `ref_not_found` to 009, every other code to its owner; the test reads `status:` from `specs/<nnn>-*.md` or `specs/.archive/`; 021 depends on 012 | 021 | 003, 009, 012 |
 | the negative fixture is `test/conformance/testdata/negative/bad.go.txt`, outside `internal/contract`, fed to the walk by path; the status rule runs only on a `contract.Code*` identifier, so the fixture yields two findings, lines 16 and 17 | 021 | 003 |
 | a sideband line, `ERR` pkt-line, or hook verdict that carries a code is `<code>: <sentence>` exactly; the reference and the hashes of a refused push go to the handler's `info` log line, never the sideband; `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds it and 021 owns it | 021 | 003, 012, 015, 019 |
@@ -420,6 +421,32 @@ open write breaker refused outside the receive-pack advertisement
 carries no header while the read breaker is closed; the class belongs
 to the refusing call.
 
+The sixteenth round, on 012 at `testing`: 012's Design states as the
+rule what its Outcome recorded as a divergence, so a reader finds one
+answer: a refused push answers 200 on the receive-pack POST and carries
+`over_quota: <sentence>` alone in git's output with `limit`, `bytes`,
+and `max` on the `info` line, the 413 forms carry the same figures in
+`details`, a slot is admission control for the request's own subprocess
+and one slot covers a whole read, the handlers build the table when
+given none, the `lfs/` sum is `limits.LFSBytes` behind the 60 second
+cache with `internal/lfs` calling through it, a push whose sum cannot
+be read is refused, a rate-limited LFS request answers 003's envelope,
+and the `kind` overlay runs at 6000 with a subject per scenario. Its
+three open items are settled and are the Design's rules: the reference
+count after a push is refused the way the size rule is, which 003's
+line form already covered; the 600 a minute default stays, with the
+figure it buys stated and `ORIGO_REQUESTS_PER_MINUTE` as the operator's
+knob; and a bound token's write during an authorizer outage fails
+closed with `authorizer_unavailable`, matching 007's rule that an
+outage denies. That last one is the round's defect: `Guard.quota` in
+`internal/auth` falls back to the default quota when the authorizer is
+unreachable, and 016's builder, who owns the package, closes it under
+`TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`. 007's
+authorizer response gains the optional `requests_per_minute` and 020
+the builder item that reads it. 021's Current state no longer says
+`over_quota` and `rate_limited` have no call site. One decision row is
+new.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -510,7 +537,7 @@ name, or when a spec names something no spec defines.
 <!-- specindex:begin -->
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
-| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 021 |
+| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 021 |
@@ -521,7 +548,7 @@ name, or when a spec names something no spec defines.
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021 |
-| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020, 021 |
+| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 012, 020, 021 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021 |
 | error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021 |
 | error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 015, 019, 020, 021 |
@@ -532,7 +559,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021 |
-| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 010, 013, 015, 017, 021 |
+| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 010, 012, 013, 015, 017, 021 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021 |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
@@ -570,7 +597,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_RELEASE_DEPLOY` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
-| variable | `ORIGO_REQUESTS_PER_MINUTE` | [002](002-repository-scaffold.md) | 012 |
+| variable | `ORIGO_REQUESTS_PER_MINUTE` | [002](002-repository-scaffold.md) | 007, 012, 020 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015 |
 | variable | `ORIGO_S3_KEY` | [002](002-repository-scaffold.md) | - |
