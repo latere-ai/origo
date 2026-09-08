@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSourceBuildsHistoryAndPacks(t *testing.T) {
@@ -131,7 +132,17 @@ func TestFixtureHasEveryShape(t *testing.T) {
 	if !bytes.HasPrefix(pack, []byte("PACK")) || len(pack) < BigBlobSize/2 {
 		t.Fatalf("pack of %d bytes", len(pack))
 	}
-	if a, b := Run(t, f.Dir, nil, "show", "-s", "--format=%cI", f.Root), Run(t, f.Dir, nil, "show", "-s", "--format=%cI", f.Tip); a != "2026-09-06T10:01:00Z" || b <= a {
-		t.Fatalf("dates %s %s", a, b)
+	// Parsed, not compared as text: %cI prints UTC as "Z" from git 2.45 and
+	// as "+00:00" before, and both are the same instant.
+	root, err := time.Parse(time.RFC3339, Run(t, f.Dir, nil, "show", "-s", "--format=%cI", f.Root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tip, err := time.Parse(time.RFC3339, Run(t, f.Dir, nil, "show", "-s", "--format=%cI", f.Tip))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !root.Equal(epoch.Add(time.Minute)) || !tip.After(root) {
+		t.Fatalf("dates %s %s", root, tip)
 	}
 }
