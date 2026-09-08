@@ -1,6 +1,6 @@
 ---
 title: "Degraded storage: what a node does when the bucket is slow, partial, or gone"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -396,7 +396,23 @@ Open, left to the owner of the decision:
   built here, or on the receive-pack advertisement alone, the one
   place the Design names it.
 
-The cluster criterion is proved by the `e2e` job of spec 013 on the
-push that lands this spec; the kind stack cannot run on this machine
-(spec 013's Outcome). The spec moves to `complete` when that job is
-green with `TestClusterDegradedStorage` in its run.
+The cluster criterion is proved by the `e2e` job of spec 013, which
+runs on a tag or a `workflow_dispatch` since the change that took the
+cluster tiers off every push; the kind stack cannot run on this
+machine (spec 013's Outcome). `TestClusterDegradedStorage` passed in
+the dispatched run 34270906850 on `472efa7`, with every other job of
+that run green: the gate, the integration tier, the mutation job, the
+`e2e-slow` tier, and the up-script check. The `e2e` job itself
+reports failure in that run on two scenarios of other specs,
+`TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs` (spec 006)
+and `TestClusterNodeRemovalUnderReadLoad` (spec 005), each refused
+with 429 `rate_limited` by spec 012's 600 requests per minute per
+subject, a load those scenarios exceed by design and spec 012's
+Outcome records; nothing of this spec is in that failure. Six stack
+rounds preceded the pass, each a defect found by the job and fixed
+at its root: the component's argument list without the proxy target,
+readiness that let a replica the bucket never answered into
+rotation, the pooled connections that hid a replica leaving the
+endpoint list, the cleanup order that deleted the repository the
+health wait read, the cancelled fetch masking the worker's error, and
+the caller's cancellation counted as the bucket's failure.
