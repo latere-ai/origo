@@ -332,19 +332,30 @@ func (n *node) publicHandler() http.Handler {
 // listener and binds the gauge to that count, read at every scrape:
 // otel.Handler's metrics hook fires only after a request ends, so it
 // cannot answer how many are running.
+//
+// It is also where the request's details are installed, outermost, so
+// every layer below shares one struct: the route, the repository, and
+// the identity are known only after the verifier and the application mux
+// have run, and each of those hands the next layer a request of its own.
 func (n *node) inFlight(next http.Handler) http.Handler {
 	n.metrics.RequestsInFlight.Bind(func() float64 { return float64(n.inFlightRequests.Load()) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n.inFlightRequests.Add(1)
 		defer n.inFlightRequests.Add(-1)
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), detailsKey{}, &details{})))
 	})
 }
 
 // recordRequest is otel.Handler's metrics hook: the route is the mux
 // pattern the request matched and the status class its bucket, the only
-// two labels of the request series (spec 011).
-func (n *node) recordRequest(_ context.Context, route, _, statusClass string, d time.Duration) {
+// two labels of the request series (spec 011). The route comes from the
+// details the application mux filled, because the pattern the hook sees
+// is the outer mux's catch-all; a path that never reaches the
+// application, a probe or an unmatched request, keeps the hook's own.
+func (n *node) recordRequest(ctx context.Context, route, _, statusClass string, d time.Duration) {
+	if inner := detailsFrom(ctx).route; inner != "" {
+		route = inner
+	}
 	labels := map[string]string{"route": route, "status_class": statusClass}
 	n.metrics.Requests.Inc(labels)
 	n.metrics.RequestDuration.Observe(labels, d.Seconds())
@@ -365,28 +376,41 @@ func (n *node) requestLog(next http.Handler) http.Handler {
 			r.Body = in
 		}
 		out := &countingWriter{ResponseWriter: w, status: http.StatusOK}
-		d := &details{}
-		r = r.WithContext(context.WithValue(r.Context(), detailsKey{}, d))
-		next.ServeHTTP(out, r)
 		ctx := r.Context()
+		d := detailsFrom(ctx)
+		next.ServeHTTP(out, r)
+		route := d.route
+		if route == "" {
+			route = routeOf(r)
+		}
 		n.logger.InfoContext(ctx, "request",
-			"route", routeOf(r), "method", r.Method, "status", out.status,
+			"route", route, "method", r.Method, "status", out.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"repo", d.repo, "subject", d.subject, "actor", d.actor,
 			"bytes_in", in.n, "bytes_out", out.n, "trace_id", tracing.ID(ctx))
 	})
 }
 
-// details are the fields of the log line only the handlers know. The
-// request log installs one and capture, which runs behind the verifier,
-// fills it.
+// details are the fields of the log line and the route label that only
+// the layers below the verifier know. inFlight installs one and capture,
+// which runs behind the verifier, fills it.
 type details struct {
+	route   string
 	repo    string
 	subject string
 	actor   string
 }
 
 type detailsKey struct{}
+
+// detailsFrom answers the request's details, or an empty set for a
+// request that never passed the public listener's outermost wrapper.
+func detailsFrom(ctx context.Context) *details {
+	if d, ok := ctx.Value(detailsKey{}).(*details); ok {
+		return d
+	}
+	return &details{}
+}
 
 // capture records the identity the verifier resolved and the repository
 // the mux matched, and puts the same three on the request's span, where
@@ -396,11 +420,8 @@ func capture(next http.Handler) http.Handler {
 		ctx := r.Context()
 		tracing.Set(ctx, tracing.Subject(auth.Subject(ctx)), tracing.Actor(auth.Actor(ctx)))
 		next.ServeHTTP(w, r)
-		d, _ := ctx.Value(detailsKey{}).(*details)
-		if d == nil {
-			return
-		}
-		d.subject, d.actor, d.repo = auth.Subject(ctx), auth.Actor(ctx), repoOf(r)
+		d := detailsFrom(ctx)
+		d.subject, d.actor, d.repo, d.route = auth.Subject(ctx), auth.Actor(ctx), repoOf(r), routeOf(r)
 		tracing.Set(ctx, tracing.Repo(d.repo))
 	})
 }
@@ -423,7 +444,7 @@ func repoOf(r *http.Request) string {
 		return id
 	}
 	if owner, slug := r.PathValue("owner"), r.PathValue("slug"); owner != "" {
-		return owner + "/" + slug
+		return owner + "/" + strings.TrimSuffix(slug, ".git")
 	}
 	return ""
 }
