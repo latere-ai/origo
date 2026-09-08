@@ -58,9 +58,9 @@ table describes, with `check` as its first subcommand; spec 014's
 
 ### Manifests
 
-`deploy/base` becomes provider-neutral and complete: Namespace,
-ServiceAccount, Deployment with the cache volume, Service, the headless
-gossip Service, the NetworkPolicy on the gossip port (spec 016),
+`deploy/base` becomes provider-neutral and complete: ServiceAccount,
+Deployment with the cache volume, Service, the headless gossip
+Service, the NetworkPolicy on the gossip port (spec 016),
 Ingress without a class, an issuer annotation, or any
 controller-specific annotation (the base's
 `nginx.ingress.kubernetes.io/proxy-body-size: "0"` and
@@ -72,7 +72,12 @@ for their controller, and the install document says so),
 HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
 (spec 011), and a Secret template with every required variable,
 `ORIGO_GOSSIP_SECRET` (spec 005) and `ORIGO_TOKEN_KEY` (spec 007) among
-them. The HorizontalPodAutoscaler scales on CPU only, in the base and
+them. The Namespace is not in the base: it stays in `deploy/bootstrap`
+with the Secret templates, applied by hand once (spec 002's layout),
+because the identity that rolls out a release, the `deploy` job of spec
+017 and an operator's day-to-day `kubectl apply -k`, never creates
+namespaces, and a base that carried one would have every overlay
+either create it or patch it away. The HorizontalPodAutoscaler scales on CPU only, in the base and
 in every example overlay; no overlay installs a metrics adapter, and
 `origo_requests_in_flight` (spec 011) is a dashboard signal, not an
 autoscaler input (spec 005). The
