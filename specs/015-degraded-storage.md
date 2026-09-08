@@ -153,7 +153,11 @@ the same class as a 5xx or an unreachable bucket, and the answer is 503
 `storage_unavailable` with `details.op` and `details.error`.
 `repository_unavailable` says an operator must restore this repository
 before it can be served; `storage_unavailable` says the bucket did not
-give the node what it asked for, which is what happened.
+give the node what it asked for, which is what happened. It increments
+`origo_log_integrity_errors_total` all the same, because a base that is
+in no object the log holds is an integrity error of the log like the
+three above, and the node logs it under the repository, git's message
+naming the object.
 
 It never rebuilds the log from a local copy. An operator restores the
 object from the provider's versioning or from a replica's cache by the
@@ -314,12 +318,15 @@ Divergences and interpretations, each kept and the reason:
   keeps its text until spec 021's `TestRejectLinesAreTheTableSentences`
   lands.
 - A thin pack whose base is in no entry and no pack, spec 005's item,
-  is `storage_unavailable`, not `repository_unavailable`: git refuses
-  the batch and the error is neither an integrity error of the log nor
-  corruption of the copy, so nothing is counted or evicted, and the
-  base pushed later completes the history
+  is `storage_unavailable` with `details.op: "index-pack"` and the
+  git message in `details.error`, not `repository_unavailable`, and
+  counts once on `origo_log_integrity_errors_total`: git refuses the
+  batch (`repo.IsMissingBase`, checked after `IsCorruption` so a
+  damaged local pack that prints the same phrase is still rebuilt),
+  nothing is evicted, and the base pushed later completes the history
   (`TestThinPackWithoutBaseIsStorageUnavailable`, the rule the
-  verifier of this spec fixed).
+  verifier of this spec fixed and the coordinator's decision on the
+  counter).
 - The integrity error covers, beside the three the Design lists, an
   entry the index names that answers 404, one that does not parse, and
   one whose pack is not a version 2 packfile: each is one key the log

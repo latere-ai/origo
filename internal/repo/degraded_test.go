@@ -312,6 +312,9 @@ func TestThinPackWithoutBaseIsStorageUnavailable(t *testing.T) {
 	if !IsMissingBase(err) {
 		t.Fatalf("not read as a missing base: %v", err)
 	}
+	if d := wal.ErrorDetails(err); d["op"] != "index-pack" || d["error"] == "" {
+		t.Fatalf("details %v", d)
+	}
 	if got := d.metric("origo_log_integrity_errors_total"); got != "1" {
 		t.Fatalf("integrity errors %q", got)
 	}

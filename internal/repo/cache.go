@@ -588,7 +588,7 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 			// names no key and the base may still arrive.
 			c.integrity.Inc(nil)
 			c.logger.ErrorContext(ctx, "log integrity error: a thin pack's base is in no entry", "repo", r.ID, "error", err)
-			return err
+			return &wal.OpError{Op: "index-pack", Err: err}
 		}
 		return err
 	}
