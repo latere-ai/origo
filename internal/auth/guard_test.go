@@ -221,3 +221,56 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 		t.Fatal("principal without a context value")
 	}
 }
+
+// TestDecideCarriesTheQuota is what the LFS batch of spec 010 reads:
+// the authorizer's decision behind an allow, and the defaults of spec
+// 007's table for a repository-bound token the authorizer never sees.
+func TestDecideCarriesTheQuota(t *testing.T) {
+	clk := newClock()
+	stub := authorizer.New(t)
+	stub.Allow(authorizer.Rule{Subject: "alice", QuotaBytes: 4096, TTL: 30})
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	g := NewGuard(c, slog.New(slog.DiscardHandler))
+	ctx := context.Background()
+
+	d, err := g.Decide(ctx, Principal{Subject: "alice"}, RepoRef{ID: repoA}, ActionWrite)
+	if err != nil || !d.Allow || d.QuotaBytes != 4096 || d.TTL != 30*time.Second {
+		t.Fatalf("Decide = %+v, %v", d, err)
+	}
+	// A repository-bound token is decided by its own scope, so the
+	// decision it yields is the table's defaults.
+	bound := Principal{Subject: "build", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
+	d, err = g.Decide(ctx, bound, RepoRef{ID: repoA}, ActionWrite)
+	if err != nil || !d.Allow || d.QuotaBytes != DefaultQuotaBytes || d.Replicas != DefaultReplicas || d.TTL != DefaultTTL {
+		t.Fatalf("bound Decide = %+v, %v", d, err)
+	}
+	// Its refusals carry no decision.
+	for _, tc := range []struct {
+		name   string
+		p      Principal
+		repo   RepoRef
+		action Action
+		reason string
+	}{
+		{"another repository", bound, RepoRef{ID: repoB}, ActionWrite, ReasonOtherRepository},
+		{"no id", bound, RepoRef{Owner: "acme", Slug: "app"}, ActionWrite, ReasonOtherRepository},
+		{"scope", Principal{Subject: "build", Bound: &Bound{Repo: repoA, Scope: ScopeRead}}, RepoRef{ID: repoA}, ActionWrite, ReasonScope},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := g.Decide(ctx, tc.p, tc.repo, tc.action)
+			denied, ok := errors.AsType[*Denied](err)
+			if !ok || denied.Reason != tc.reason || d.Allow {
+				t.Fatalf("Decide = %+v, %v", d, err)
+			}
+		})
+	}
+	// A deny and an outage each yield the zero decision.
+	stub.Deny(authorizer.Rule{Subject: "mallory"}, "no")
+	if d, err := g.Decide(ctx, Principal{Subject: "mallory"}, RepoRef{ID: repoA}, ActionRead); d.Allow || err == nil {
+		t.Fatalf("deny = %+v, %v", d, err)
+	}
+	stub.Fail(502)
+	if d, err := g.Decide(ctx, Principal{Subject: "carol"}, RepoRef{ID: repoB}, ActionRead); d.Allow || err == nil {
+		t.Fatalf("outage = %+v, %v", d, err)
+	}
+}

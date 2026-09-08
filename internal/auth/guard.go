@@ -47,23 +47,33 @@ func NewGuard(a Authorizer, logger *slog.Logger) *Guard {
 // allow, a *Denied on a deny, and an *Unavailable when no decision
 // could be made.
 func (g *Guard) Authorize(ctx context.Context, p Principal, repo RepoRef, action Action) error {
+	_, err := g.Decide(ctx, p, repo, action)
+	return err
+}
+
+// Decide is Authorize with the decision behind the allow, for a handler
+// that reads a field of it: the LFS batch reads QuotaBytes (spec 010).
+// A repository-bound token is decided by its own scope and the
+// authorizer never sees it, so the decision it yields carries the
+// defaults of spec 007's table.
+func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Action) (Decision, error) {
 	if b := p.Bound; b != nil {
 		if repo.ID == "" || repo.ID != b.Repo {
-			return &Denied{Subject: p.Subject, Action: action, Reason: ReasonOtherRepository}
+			return Decision{}, &Denied{Subject: p.Subject, Action: action, Reason: ReasonOtherRepository}
 		}
 		if !b.Scope.allows(action) {
-			return &Denied{Subject: p.Subject, Action: action, Reason: ReasonScope}
+			return Decision{}, &Denied{Subject: p.Subject, Action: action, Reason: ReasonScope}
 		}
-		return nil
+		return Decision{Allow: true, TTL: DefaultTTL, Replicas: DefaultReplicas, QuotaBytes: DefaultQuotaBytes}, nil
 	}
 	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: action})
 	if err != nil {
-		return err
+		return Decision{}, err
 	}
 	if !d.Allow {
-		return &Denied{Subject: p.Subject, Action: action, Reason: d.Reason}
+		return Decision{}, &Denied{Subject: p.Subject, Action: action, Reason: d.Reason}
 	}
-	return nil
+	return d, nil
 }
 
 // allows is spec 007's scope rule: read allows read, write allows read
