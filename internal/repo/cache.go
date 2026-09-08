@@ -279,11 +279,14 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 		}
 		c.materialized.Inc(nil)
 	}
-	if fresh || r.Seq < ix.CompactedThrough {
-		for _, p := range ix.Packs {
-			if err := c.fetchPack(ctx, r, p); err != nil {
-				return err
-			}
+	// Every listed pack missing under objects/pack is fetched whatever
+	// the copy holds: a copy that lost a pack file, or one that followed
+	// a compaction whose compacted_through its sequence already passed,
+	// would otherwise be served from an incomplete object store. A pack
+	// on disk costs one stat.
+	for _, p := range ix.Packs {
+		if err := c.fetchPack(ctx, r, p); err != nil {
+			return err
 		}
 	}
 	for _, e := range ix.Entries {

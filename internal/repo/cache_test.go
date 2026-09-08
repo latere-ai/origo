@@ -414,6 +414,57 @@ func TestCompactionPacksAreFetched(t *testing.T) {
 	}
 }
 
+// A copy that is current and above compacted_through loses a pack file;
+// the next apply restores it, because every listed pack missing on disk
+// is fetched whatever the copy holds.
+func TestPacksAreFetchedForACurrentCopy(t *testing.T) {
+	h := newHarness(t)
+	c1 := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
+	name := h.compact(c1)
+	// Built from the compaction pack alone, so that pack is the only
+	// source of objects the copy has.
+	r, release := h.acquire(false)
+	h.verifyPack(r, name)
+	release()
+	packFile, _ := packFiles(r, name)
+	if err := os.Chmod(packFile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(packFile); err != nil {
+		t.Fatal(err)
+	}
+	// Another writer commits a push with no pack. The copy is at 2 with
+	// compacted_through 1, so the pack is fetched only because it is
+	// missing.
+	h.push("refs/tags/v1", wal.ZeroSHA, c1, nil)
+	var packGets int
+	h.store.SetFault(func(op, key string) error {
+		if op == "Get" && strings.Contains(key, "/packs/") {
+			packGets++
+		}
+		return nil
+	})
+	r, release = h.acquire(false)
+	release()
+	if r.Seq != 3 || h.localRef(r, "refs/tags/v1") != c1 {
+		t.Fatalf("after the push: seq %d tag %s", r.Seq, h.localRef(r, "refs/tags/v1"))
+	}
+	h.verifyPack(r, name)
+	if packGets != 2 {
+		t.Fatalf("%d pack GETs to restore the pack, want the .idx and the .pack", packGets)
+	}
+	// With the pack back on disk, a further apply pays no GET for it:
+	// a listed pack the copy holds costs one stat.
+	h.push("refs/tags/v2", wal.ZeroSHA, c1, nil)
+	packGets = 0
+	r, release = h.acquire(false)
+	defer release()
+	if r.Seq != 4 || packGets != 0 {
+		t.Fatalf("after a further push: seq %d, %d pack GETs for a pack on disk", r.Seq, packGets)
+	}
+}
+
 func TestReadersUpgradeAndWritersAdvance(t *testing.T) {
 	h := newHarness(t)
 	c1 := h.src.Commit("a.txt", "one", "first")
