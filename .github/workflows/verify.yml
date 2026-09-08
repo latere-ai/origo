@@ -32,9 +32,17 @@ env:
   MC_IMAGE: docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
 
 jobs:
+  # The gate runs on the org's self-hosted runner: this repository is
+  # private, so hosted minutes are metered, and the runner keeps warm Go
+  # caches between pushes. Removing the two inputs is the fallback to hosted
+  # runners. The jobs below that start a named container on a fixed port
+  # stay hosted until they can share a machine with a second job.
   gate:
     if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
+    with:
+      runs_on: linux-vm
+      test_os: '["linux-vm"]'
   specindex:
     name: spec cross-reference table and alert rules
     if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
