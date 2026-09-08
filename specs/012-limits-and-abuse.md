@@ -5,6 +5,7 @@ track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/004-write-ahead-log.md
+  - specs/006-compaction.md
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
@@ -84,7 +85,8 @@ Connection limits at the ingress. Bandwidth shaping.
   `details.limit: "subprocesses"`, and a compaction started under the
   same two held slots skips with `result="skipped"` and runs on the
   next sweep once a slot is free (proposed: `internal/limits`,
-  `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`).
+  `TestSubprocessCap`; `internal/compact`, which spec 006 builds and
+  this spec therefore depends on, `TestCompactionSkipsWhenNoSlot`).
 - A frozen repository accepts a clone and refuses a push with
   `repo_frozen`: owned by spec 021, whose `TestContract` carries spec
   019's freeze case; this criterion passes when spec 021 lands and
