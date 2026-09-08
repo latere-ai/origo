@@ -201,7 +201,7 @@ Queueing pushes for later commit.
   `ORIGO_STALE_MAX` set to `30s` on the stack's nodes by the overlay
   so the warm clone carries `Origo-Stale` for 30 seconds and answers
   503 after; `test/stubs/slowproxy` for slow, a package this spec
-  builds and the `origo-stubs` component of spec 013 runs: the proxy
+  builds and the `origo-stubs` binary of spec 013 runs: the proxy
   starts only when `-slowproxy-target` (MinIO's Service) is set,
   forwards TCP from its data listener `-slowproxy-data` (default
   `0.0.0.0:8086`, what `ORIGO_S3_ENDPOINT` on every node names) to
