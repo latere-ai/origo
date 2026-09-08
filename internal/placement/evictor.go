@@ -10,9 +10,11 @@ import (
 	"sort"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 )
 
@@ -43,7 +45,7 @@ type EvictorOptions struct {
 	// cache's clock, because the last-acquired times come from there.
 	Now     func() time.Time
 	Logger  *slog.Logger
-	Metrics *metrics.Registry
+	Metrics *metrics.Set
 }
 
 // Evictor keeps the cache under the ceiling, least recently acquired
@@ -53,11 +55,11 @@ type Evictor struct {
 	ceiling   int64
 	now       func() time.Time
 	logger    *slog.Logger
-	evictions *metrics.Counter
+	evictions *pkgmetrics.Counter
 }
 
-// NewEvictor builds the evictor and registers the two gauges and the
-// counter of spec 011's table.
+// NewEvictor builds the evictor and binds the two gauges of spec 011's
+// table to the cache, read at every scrape.
 func NewEvictor(o EvictorOptions) (*Evictor, error) {
 	if o.Cache == nil || o.Ceiling <= 0 {
 		return nil, errors.New("placement: the evictor needs a cache and a positive ceiling")
@@ -69,21 +71,18 @@ func NewEvictor(o EvictorOptions) (*Evictor, error) {
 	if e.logger == nil {
 		e.logger = slog.Default()
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	e.evictions = reg.Counter("origo_evictions_total", "local copies removed by reason")
-	for _, r := range []string{"pressure", "idle"} {
-		e.evictions.Add(map[string]string{"reason": r}, 0)
-	}
-	reg.Gauge("origo_cache_bytes", "bytes held by the local copies", func() []metrics.LabeledValue {
+	e.evictions = set.Evictions
+	set.CacheBytes.Bind(func() float64 {
 		b, _ := e.cache.Stats()
-		return []metrics.LabeledValue{{Value: float64(b)}}
+		return float64(b)
 	})
-	reg.Gauge("origo_cache_repos", "local copies held", func() []metrics.LabeledValue {
+	set.CacheRepos.Bind(func() float64 {
 		_, n := e.cache.Stats()
-		return []metrics.LabeledValue{{Value: float64(n)}}
+		return float64(n)
 	})
 	return e, nil
 }

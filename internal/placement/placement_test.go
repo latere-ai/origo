@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 )
 
 const (
@@ -71,7 +73,7 @@ func (h *fakeHolder) CatchUp(context.Context, string) error {
 	return h.err
 }
 
-func counter(reg *metrics.Registry, name string, labels string) int {
+func counter(reg *pkgmetrics.Registry, name string, labels string) int {
 	var text bytes.Buffer
 	reg.WritePrometheus(&text)
 	for line := range strings.SplitSeq(text.String(), "\n") {
@@ -157,16 +159,16 @@ func TestRendezvousAgreesAcrossNodes(t *testing.T) {
 
 // newGossip starts one gossip on a loopback socket with the peers given
 // as a list and returns it with its address.
-func newGossip(t *testing.T, clk *clock, self string, holder Holder, peers ...string) (*Gossip, string, *metrics.Registry) {
+func newGossip(t *testing.T, clk *clock, self string, holder Holder, peers ...string) (*Gossip, string, *pkgmetrics.Registry) {
 	t.Helper()
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	g, err := NewGossip(GossipOptions{
 		Set: NewSet(self, clk.Now), Secret: secret, Peers: strings.Join(peers, ","), Holder: holder,
-		Now: clk.Now, Logger: slog.New(slog.DiscardHandler), Metrics: reg,
+		Now: clk.Now, Logger: slog.New(slog.DiscardHandler), Metrics: metrics.Register(reg),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,9 +327,9 @@ func TestGossipResolvesTheDNSForm(t *testing.T) {
 	}
 	defer conn.Close()
 	var fail atomic.Bool
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	g, err := NewGossip(GossipOptions{
-		Set: NewSet("origod-0", clk.Now), Secret: secret, Peers: "origod-gossip", Holder: holder, Now: clk.Now, Metrics: reg,
+		Set: NewSet("origod-0", clk.Now), Secret: secret, Peers: "origod-gossip", Holder: holder, Now: clk.Now, Metrics: metrics.Register(reg),
 		Logger: slog.New(slog.DiscardHandler),
 		LookupIP: func(_ context.Context, host string) ([]net.IP, error) {
 			if fail.Load() {
@@ -394,8 +396,8 @@ func TestGossipResolvesTheDNSForm(t *testing.T) {
 func TestGossipDropsABadMAC(t *testing.T) {
 	clk := newClock()
 	holder := &fakeHolder{held: map[string]uint64{repoA: 3}}
-	reg := metrics.NewRegistry()
-	g, err := NewGossip(GossipOptions{Set: NewSet("origod-0", clk.Now), Secret: secret, Peers: "127.0.0.1:1", Holder: holder, Now: clk.Now, Metrics: reg, Logger: slog.New(slog.DiscardHandler)})
+	reg := pkgmetrics.NewRegistry()
+	g, err := NewGossip(GossipOptions{Set: NewSet("origod-0", clk.Now), Secret: secret, Peers: "127.0.0.1:1", Holder: holder, Now: clk.Now, Metrics: metrics.Register(reg), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}

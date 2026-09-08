@@ -148,12 +148,12 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	n.set = placement.NewSet(cfg.NodeName, nil)
 	n.gossip, err = placement.NewGossip(placement.GossipOptions{
 		Set: n.set, Secret: []byte(cfg.GossipSecret), Peers: cfg.GossipPeers,
-		Holder: placement.CacheHolder{Cache: n.cache}, Logger: logger, Metrics: n.reg,
+		Holder: placement.CacheHolder{Cache: n.cache}, Logger: logger, Metrics: n.metrics,
 	})
 	if err != nil {
 		return nil, err
 	}
-	n.evictor, err = placement.NewEvictor(placement.EvictorOptions{Cache: n.cache, Ceiling: cfg.CacheBytes, Logger: logger, Metrics: n.reg})
+	n.evictor, err = placement.NewEvictor(placement.EvictorOptions{Cache: n.cache, Ceiling: cfg.CacheBytes, Logger: logger, Metrics: n.metrics})
 	if err != nil {
 		return nil, err
 	}

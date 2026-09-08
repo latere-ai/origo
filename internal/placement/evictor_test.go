@@ -81,7 +81,7 @@ func (h *cacheHarness) held(id string) bool {
 
 func (h *cacheHarness) evictor(ceiling int64) *Evictor {
 	h.t.Helper()
-	e, err := NewEvictor(EvictorOptions{Cache: h.cache, Ceiling: ceiling, Now: h.clk.Now, Metrics: h.reg, Logger: slog.New(slog.DiscardHandler)})
+	e, err := NewEvictor(EvictorOptions{Cache: h.cache, Ceiling: ceiling, Now: h.clk.Now, Metrics: metrics.Register(h.reg), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		h.t.Fatal(err)
 	}

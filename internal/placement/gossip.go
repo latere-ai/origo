@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/cache"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 )
 
 // The gossip schedule of spec 005.
@@ -112,7 +114,7 @@ type GossipOptions struct {
 	// default.
 	LookupIP func(ctx context.Context, host string) ([]net.IP, error)
 	Logger   *slog.Logger
-	Metrics  *metrics.Registry
+	Metrics  *metrics.Set
 }
 
 // Gossip sends and receives the datagrams of spec 005 on one socket.
@@ -125,7 +127,7 @@ type Gossip struct {
 	now      func() time.Time
 	lookupIP func(context.Context, string) ([]net.IP, error)
 	logger   *slog.Logger
-	packets  *metrics.Counter
+	packets  *pkgmetrics.Counter
 
 	mu    sync.Mutex
 	conn  net.PacketConn
@@ -166,14 +168,11 @@ func NewGossip(o GossipOptions) (*Gossip, error) {
 	if g.logger == nil {
 		g.logger = slog.Default()
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	g.packets = reg.Counter("origo_gossip_packets_total", "gossip datagrams by direction")
-	for _, d := range []string{"sent", "received", "dropped"} {
-		g.packets.Add(map[string]string{"direction": d}, 0)
-	}
+	g.packets = set.GossipPackets
 	g.recent = cache.New[string, struct{}](CatchUpEvery, cache.WithClock[string, struct{}](g.now), cache.WithMaxSize[string, struct{}](65536))
 	return g, nil
 }
