@@ -112,11 +112,11 @@ func TestClusterDegradedStorage(t *testing.T) {
 
 	// Every node loses the bucket under the cut and every node's
 	// readiness listings count toward its breaker, so after a fault the
-	// scenario waits until every node's read breaker is closed and the
-	// bucket answers through each, and leaves the stack that way for
-	// the tests after it. The check reads the repository's metadata,
-	// which materializes nothing, so node 3 stays cold for the partial
-	// case.
+	// scenario waits until every node's read breaker is closed and its
+	// readiness listing answers, and leaves the stack that way for the
+	// tests after it; a closed breaker and a ready replica together
+	// mean the bucket answered the listing. Nothing here materializes
+	// a repository, so node 3 stays cold for the partial case.
 	warm, cold := newID(t), newID(t)
 	waitStackHealthy := func(t *testing.T) {
 		t.Helper()
@@ -125,7 +125,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 				if nodeMetric(t, portNode1Int+i, "origo_storage_breaker_state", `class="read"`) != 0 {
 					return false
 				}
-				if status, _, _ := gitGet(t, fmt.Sprintf("http://localhost:%d", portNode1+i), token, "/v1/repos/"+warm, 30*time.Second); status != 200 {
+				if status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/readyz", portNode1Int+i)); status != 200 {
 					return false
 				}
 			}
