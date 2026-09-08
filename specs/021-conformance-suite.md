@@ -7,7 +7,7 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
   - specs/009-read-api-and-archive.md
-    - specs/010-lfs.md
+  - specs/010-lfs.md
   - specs/012-limits-and-abuse.md
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/015-degraded-storage.md
@@ -38,18 +38,18 @@ live service after a release.
 Nothing of this spec exists. `test/e2e` covers the flows of specs 003
 and 004 against one node with the stub issuer and authorizer of spec
 007 in-process. `internal/contract` holds the codes, the header, and
-the code table as far as spec 007 took it: `sentences`, one user
-sentence per code of specs 003 and 007, read through
+the code table as far as spec 009 took it: `sentences`, one user
+sentence per code of specs 003, 007, and 009, read through
 `contract.Sentence(code)`, `contract.Error(code, details)`, and
 `contract.Write(w, status, code, details)`, and `contract.Codes()`
 listing the rows; every JSON envelope of `cmd/origod`,
 `internal/httpgit`, `internal/api`, and `internal/auth` is rendered
 through `contract.Write` with a `contract.Code*` constant, and the one
 `httpjson.Error` literal in the module is inside `internal/contract`.
-The status is not in the table: each call site passes it. Three rows
+The status is not in the table: each call site passes it. Two rows
 of the table have no call site because the spec that produces them is
-not built: `ref_not_found` (spec 009), `over_quota` and `rate_limited`
-(spec 012). The hook verdicts of a refused push in
+not built: `over_quota` and `rate_limited` (spec 012); `ref_not_found`
+gained its call sites with the read API of spec 009. The hook verdicts of a refused push in
 `internal/httpgit/handler.go` still carry sentences of their own, and
 the `non_fast_forward` verdict carries the reference and a hash (spec
 003's Outcome, the divergence this spec owns). Spec 013's sink,
@@ -182,19 +182,22 @@ the two secrets and nothing else.
 
 `internal/contract` gains the code table as data: code, every status
 the row lists, and the one sentence, for every row of the Code tables
-of spec 003 and of specs 007, 009, 010, 015, and 019, which is every
-code the cross-reference in `specs/README.md` lists except spec 020's;
-spec 020 adds its rows, `invalid_change` and `merge_conflict`, and the
-call sites that send them when it lands, and the rule below that a
+of spec 003 and of specs 007, 009, 010, 015, 019, and 020, which is
+every code the cross-reference in `specs/README.md` lists, the 24 of
+the `producers` table below; spec 020's two rows, `invalid_change` and
+`merge_conflict`, are in the table from the start and spec 020 adds
+the call sites that send them when it lands, and the rule below that a
 row no call site sends is a failure applies to the codes whose
 producing spec (the table below) is at `testing` or later, so the
 table never fails on a code whose handler is not built yet. The table check covers every row without a target: every code
-has one sentence and one status, and every call site passes a code of
+has one sentence and at least one status, and every call site passes a code of
 the table; the suite's cases produce the rows on a target, except the two
 the paragraph above names. Spec 010's three rows are
 rendered in the LFS body shape and through `contract.Sentence`, never
 through `contract.Write`, so for them a `contract.Sentence` call is the
-call site the rule below counts. The table gains the statuses beside the sentence. A row holds every
+call site the rule below counts; the same holds for `non_fast_forward`,
+whose only call site today is the hook verdict of `internal/httpgit`,
+which the sideband rule below turns into a `contract.Sentence` call. The table gains the statuses beside the sentence. A row holds every
 HTTP status the Status column of its spec's Code table lists, in the
 column's order: one for most codes, two for `repo_frozen` (403 on a
 write, 409 on a second freeze, spec 019); a code whose column names
@@ -321,7 +324,8 @@ bucket cut `info/refs` answers 503 before a pack is sent, so
 `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds the
 verdicts. It pushes twice through the handler over the in-memory
 store: once over a reference moved behind the client, and once with
-the store's fault set to fail the entry `Put` after the advertisement,
+the store's fault (`wal.MemStore.SetFault`) set to fail the entry `Put`
+after the advertisement,
 and asserts that git's output carries `remote: <code>: <sentence>`
 for `non_fast_forward` and for `storage_unavailable`, the sentence
 equal to `contract.Sentence` of the code, and that the moved
