@@ -9,9 +9,11 @@ package config
 
 import (
 	"crypto/ecdsa"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -19,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"latere.ai/x/pkg/hostmatch"
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/limits"
@@ -133,6 +137,22 @@ type Config struct {
 	// send this node in a minute; 0 turns the per-subject limit off.
 	MaxGitProcs       int
 	RequestsPerMinute int
+
+	// The egress rules of spec 016 for a server-side fetch (import,
+	// verify). EgressAllow is ORIGO_EGRESS_ALLOW: the hosts a fetch may
+	// reach, exact names or *. wildcards, lower-cased with a trailing
+	// dot removed; empty refuses every source. EgressPinned holds the
+	// address an exact host of the list was pinned to as host=address,
+	// the one form that admits a source inside the cluster. ClusterCIDRs
+	// is ORIGO_CLUSTER_CIDRS, the service and pod ranges a fetch must
+	// never reach beside the well-known refused ranges. EgressCA is the
+	// system roots plus ORIGO_EGRESS_CA_BUNDLE, the certificates the
+	// egress proxy trusts when it dials a source; nil when the variable
+	// is unset, which means the system roots alone.
+	EgressAllow  []string
+	EgressPinned map[string]netip.Addr
+	ClusterCIDRs []netip.Prefix
+	EgressCA     *x509.CertPool
 
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
@@ -252,6 +272,22 @@ func Load(getenv Getenv) (*Config, error) {
 	if cfg.EventsURL != "" && cfg.EventsSecret == "" {
 		problems = append(problems, "ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL")
 	}
+	cfg.EgressAllow, cfg.EgressPinned = egressAllow(getenv("ORIGO_EGRESS_ALLOW"), &problems)
+	for _, raw := range list(getenv("ORIGO_CLUSTER_CIDRS")) {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("ORIGO_CLUSTER_CIDRS: %s is not a CIDR range", raw))
+			continue
+		}
+		cfg.ClusterCIDRs = append(cfg.ClusterCIDRs, p.Masked())
+	}
+	if path := getenv("ORIGO_EGRESS_CA_BUNDLE"); path != "" {
+		pool, err := caBundle(path)
+		if err != nil {
+			problems = append(problems, "ORIGO_EGRESS_CA_BUNDLE: "+err.Error())
+		}
+		cfg.EgressCA = pool
+	}
 	if cfg.NodeName == "" {
 		cfg.NodeName = hostname()
 	}
@@ -272,6 +308,65 @@ func list(raw string) []string {
 		}
 	}
 	return out
+}
+
+// NormalizeHost is the host normalization of the egress rules (spec
+// 016): lower case, no trailing dot, no surrounding space. The list
+// and every host checked against it go through it.
+func NormalizeHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+}
+
+// egressAllow parses ORIGO_EGRESS_ALLOW: comma separated hosts, exact
+// or *. wildcards, an exact host optionally pinned to one IP literal as
+// host=address. A pinned address on a wildcard, one that is not an IP
+// literal, and a host that is neither form are problems.
+func egressAllow(raw string, problems *[]string) ([]string, map[string]netip.Addr) {
+	var hosts []string
+	pinned := map[string]netip.Addr{}
+	for entry := range strings.SplitSeq(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		host, address, hasPin := strings.Cut(entry, "=")
+		host = NormalizeHost(host)
+		if !hostmatch.ValidPattern(host) {
+			*problems = append(*problems, fmt.Sprintf("ORIGO_EGRESS_ALLOW: %s is not a hostname or a *. wildcard", entry))
+			continue
+		}
+		if hasPin {
+			addr, err := netip.ParseAddr(strings.TrimSpace(address))
+			switch {
+			case strings.HasPrefix(host, "*."):
+				*problems = append(*problems, fmt.Sprintf("ORIGO_EGRESS_ALLOW: %s pins an address on a wildcard, which only an exact host may carry", entry))
+				continue
+			case err != nil:
+				*problems = append(*problems, fmt.Sprintf("ORIGO_EGRESS_ALLOW: %s pins %q, which is not an IP literal", entry, address))
+				continue
+			}
+			pinned[host] = addr.Unmap()
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts, pinned
+}
+
+// caBundle reads a PEM file of certificates and returns the system roots
+// with them appended.
+func caBundle(path string) (*x509.CertPool, error) {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, err
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("%s holds no certificate", path)
+	}
+	return pool, nil
 }
 
 // checkIssuer is spec 007's issuer scheme rule: https, or http on a
