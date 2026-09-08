@@ -10,15 +10,57 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
+
+// lockedBuffer is a buffer a subprocess writes to while the test reads it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// freePortBase finds a base whose seven ports, the node's two, MinIO's
+// two, and the stubs' three, are free on this host.
+func freePortBase(t *testing.T) int {
+	t.Helper()
+	for base := 30000; base < 60000; base += 10 {
+		free := true
+		for p := base; p < base+7; p++ {
+			ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+			if err != nil {
+				free = false
+				break
+			}
+			ln.Close()
+		}
+		if free {
+			return base
+		}
+	}
+	t.Fatal("no free port base")
+	return 0
+}
 
 // TestE2EDevStackClones is spec 013's criterion for `make dev`: started
 // in the background with a distinct DEV_PROJECT, it prints within 2
@@ -42,7 +84,9 @@ func TestE2EDevStackClones(t *testing.T) {
 	}
 	root := repoRoot(t)
 	project := fmt.Sprintf("e2e-dev-%d", os.Getpid())
-	makeEnv := append(os.Environ(), "DEV_PROJECT="+project, "DEV_ENGINE="+engine)
+	// A port base of its own, seven free consecutive ports, so the stack
+	// under test collides with no other checkout's stack on the engine.
+	makeEnv := append(os.Environ(), "DEV_PROJECT="+project, "DEV_ENGINE="+engine, "DEV_PORT_BASE="+strconv.Itoa(freePortBase(t)))
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -62,8 +106,8 @@ func TestE2EDevStackClones(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stderr strings.Builder
-	dev.Stderr = &stderr
+	stderr := &lockedBuffer{}
+	dev.Stderr = stderr
 	if err := dev.Start(); err != nil {
 		t.Fatal(err)
 	}
