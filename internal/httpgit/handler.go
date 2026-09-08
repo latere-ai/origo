@@ -36,6 +36,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -50,6 +51,9 @@ type Options struct {
 	Timeout time.Duration
 	Logger  *slog.Logger
 	Metrics *metrics.Registry
+	// Events enqueues the push event of every committed push (spec
+	// 008); nil, or one with no sink, enqueues nothing.
+	Events *events.Dispatcher
 }
 
 // Handler serves the smart HTTP routes.
@@ -60,17 +64,35 @@ type Handler struct {
 	timeout time.Duration
 	logger  *slog.Logger
 
+	events   *events.Dispatcher
 	pushes   *metrics.Counter
 	rejected *metrics.Counter
 	fetches  *metrics.Counter
+	phases   *metrics.Histogram
+
+	// beforeVerdict, when set, sees the quarantine and the forced flags
+	// after they are computed and before the verdict is written; a test
+	// asserts there that the objects are still in quarantine.
+	beforeVerdict func(quarantine string, forced map[string]bool)
 }
+
+// pushPhases are the labels of origo_push_duration_seconds (spec 011):
+// receive is the request until the hook hands over the transaction,
+// entry and index the two writes of the commit, apply the verdict
+// through git's own reference update and the local advance.
+const (
+	phaseReceive = "receive"
+	phaseEntry   = "entry"
+	phaseIndex   = "index"
+	phaseApply   = "apply"
+)
 
 // New builds the handler.
 func New(o Options) *Handler {
 	if o.Guard == nil {
 		panic("httpgit: the handler needs a guard")
 	}
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, timeout: o.Timeout, logger: o.Logger}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, timeout: o.Timeout, logger: o.Logger, events: o.Events}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
 	}
@@ -84,6 +106,8 @@ func New(o Options) *Handler {
 	h.pushes = reg.Counter("origo_pushes_total", "pushes acknowledged")
 	h.rejected = reg.Counter("origo_pushes_rejected_total", "pushes refused by the log")
 	h.fetches = reg.Counter("origo_fetches_total", "upload-pack requests served")
+	h.phases = reg.Histogram("origo_push_duration_seconds", "time spent in each phase of a push",
+		[]float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60})
 	for _, c := range []*metrics.Counter{h.pushes, h.rejected, h.fetches} {
 		c.Add(nil, 0) // the series reads 0 before the first event
 	}
@@ -268,6 +292,7 @@ func requestBody(r *http.Request) (io.Reader, func(), error) {
 // over the transaction, the entry is committed, and only then does the
 // hook let git update the references.
 func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	id, ok := h.resolve(w, r, auth.ActionWrite)
 	if !ok {
 		return
@@ -313,29 +338,45 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type updates struct {
-		refs []wal.RefUpdate
-		ok   bool
-		err  error
+		refs       []wal.RefUpdate
+		quarantine string
+		ok         bool
+		err        error
 	}
 	fromHook := make(chan updates, 1)
 	hookDone := make(chan struct{})
 	go func() {
 		defer close(hookDone)
-		refs, ok, err := ch.readUpdates()
-		fromHook <- updates{refs, ok, err}
+		refs, quarantine, ok, err := ch.readUpdates()
+		fromHook <- updates{refs, quarantine, ok, err}
 	}()
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
 	var committed *wal.Committed
+	var refs []wal.RefUpdate
+	var forced map[string]bool
 	var runErr error
 	select {
 	case u := <-fromHook:
+		h.observe(phaseReceive, started)
+		refs = u.refs
 		verdict := "reject origo: no reference updates"
 		if u.err != nil {
 			verdict = "reject origo: " + u.err.Error()
 		} else if u.ok {
 			committed, verdict = h.commit(r.Context(), id, rp, u.refs, req, spool.Name())
+		}
+		started = time.Now()
+		if committed != nil {
+			h.phases.Observe(map[string]string{"phase": phaseEntry}, committed.EntryDuration.Seconds())
+			h.phases.Observe(map[string]string{"phase": phaseIndex}, committed.IndexDuration.Seconds())
+			// The pushed objects are still in quarantine: the forced
+			// flag needs them and is known before the verdict (spec 008).
+			forced = h.forcedUpdates(r.Context(), rp, u.refs, u.quarantine)
+			if h.beforeVerdict != nil {
+				h.beforeVerdict(u.quarantine, forced)
+			}
 		}
 		if err := ch.writeVerdict(r.Context(), verdict); err != nil {
 			h.logger.WarnContext(r.Context(), "verdict not delivered", "repo", id, "error", err)
@@ -356,9 +397,52 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 				h.logger.ErrorContext(r.Context(), "local sequence not advanced", "repo", id, "error", err)
 			}
 		}
+		h.observe(phaseApply, started)
 		h.pushes.Inc(nil)
-		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()), "actor", auth.Actor(r.Context()))
+		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "forced", len(forced), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()), "actor", auth.Actor(r.Context()))
+		// The entry is in the log whatever git did after the verdict, so
+		// the event is enqueued for it; a failed enqueue is logged by the
+		// dispatcher and the repair sweep covers the push.
+		_ = h.events.Enqueue(r.Context(), id, events.Entry{Header: committed.Header, Refs: refs, Forced: forced})
 	}
+}
+
+// observe records a phase of the push that started at since.
+func (h *Handler) observe(phase string, since time.Time) {
+	h.phases.Observe(map[string]string{"phase": phase}, time.Since(since).Seconds())
+}
+
+// forcedUpdates reports which updates are not fast-forwards: one git
+// merge-base --is-ancestor per update that moves an existing reference
+// to a new object, with the quarantine as an alternate object store
+// because the objects are not yet in the repository. Exit 0 is a
+// fast-forward, 1 is forced; a create, a delete, and HEAD are never
+// forced, and a git failure is logged and reads as not forced.
+func (h *Handler) forcedUpdates(ctx context.Context, rp *repo.Repo, refs []wal.RefUpdate, quarantine string) map[string]bool {
+	forced := map[string]bool{}
+	for _, u := range refs {
+		if u.Ref == "HEAD" || u.Old == wal.ZeroSHA || u.New == wal.ZeroSHA {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(ctx, h.timeout)
+		cmd := h.cache.Git().Command(ctx, rp.Dir, "merge-base", "--is-ancestor", "--end-of-options", u.Old, u.New)
+		if quarantine != "" {
+			cmd.Env = append(cmd.Env, "GIT_ALTERNATE_OBJECT_DIRECTORIES="+quarantine)
+		}
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		cancel()
+		var exit *exec.ExitError
+		switch {
+		case err == nil:
+		case errors.As(err, &exit) && exit.ExitCode() == 1:
+			forced[u.Ref] = true
+		default:
+			h.logger.WarnContext(ctx, "forced flag not computed", "repo", rp.ID, "ref", u.Ref, "error", err, "stderr", stderr.String())
+		}
+	}
+	return forced
 }
 
 // commit writes the entry and creates the index object. It returns the

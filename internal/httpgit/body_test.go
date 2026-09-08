@@ -178,8 +178,8 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 		_ = r.Close()
 		verdict <- string(b)
 	}()
-	refs, ok, err := ch.readUpdates()
-	if err != nil || !ok || len(refs) != 1 || refs[0].New != one {
+	refs, quarantine, ok, err := ch.readUpdates()
+	if err != nil || !ok || quarantine != "" || len(refs) != 1 || refs[0].New != one {
 		t.Fatalf("updates: %+v %v %v", refs, ok, err)
 	}
 	if err := ch.writeVerdict(context.Background(), "reject non_fast_forward: fetch\nfirst"); err != nil {
@@ -193,7 +193,7 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 	defer ch2.close()
 	done := make(chan bool, 1)
 	go func() {
-		_, ok, err := ch2.readUpdates()
+		_, _, ok, err := ch2.readUpdates()
 		done <- ok && err == nil
 	}()
 	time.Sleep(20 * time.Millisecond)
@@ -209,8 +209,20 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 		_, _ = w.WriteString("garbage\n")
 		_ = w.Close()
 	}()
-	if _, _, err := ch3.readUpdates(); err == nil {
+	if _, _, _, err := ch3.readUpdates(); err == nil {
 		t.Fatal("garbage accepted")
+	}
+	// The quarantine line comes first and is not a command; the
+	// transaction follows it.
+	ch4, _ := newHookChannel(dir)
+	defer ch4.close()
+	go func() {
+		w, _ := os.OpenFile(ch4.updates, os.O_WRONLY, 0)
+		_, _ = w.WriteString("quarantine /tmp/q\n" + strings.Repeat("0", 40) + " " + strings.Repeat("a", 40) + " refs/heads/main\n")
+		_ = w.Close()
+	}()
+	if refs, quarantine, ok, err := ch4.readUpdates(); err != nil || !ok || quarantine != "/tmp/q" || len(refs) != 1 || refs[0].Ref != "refs/heads/main" {
+		t.Fatalf("quarantine line: %v %q %v %v", refs, quarantine, ok, err)
 	}
 	// A verdict nobody reads ends with the context.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
@@ -224,7 +236,7 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 	if err := ch3.writeVerdict(context.Background(), "ok"); err == nil {
 		t.Fatal("missing verdict FIFO accepted")
 	}
-	if _, _, err := ch3.readUpdates(); err == nil {
+	if _, _, _, err := ch3.readUpdates(); err == nil {
 		t.Fatal("missing updates FIFO accepted")
 	}
 	if _, err := newHookChannel(dir + "/missing"); err == nil {

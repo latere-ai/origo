@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -30,11 +33,13 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
 	"github.com/latere-ai/origo/test/stubs/issuer"
+	"github.com/latere-ai/origo/test/stubs/sink"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
@@ -751,4 +756,196 @@ func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
 		}
 	}()
 	New(Options{Cache: n.cache})
+}
+
+// pushHistogram reads origo_push_duration_seconds from the registry:
+// the count and the sum per phase.
+func pushHistogram(reg *metrics.Registry) (count map[string]int, sum map[string]float64) {
+	var buf bytes.Buffer
+	reg.WritePrometheus(&buf)
+	re := regexp.MustCompile(`origo_push_duration_seconds_(sum|count)\{phase="(\w+)"\} (\S+)`)
+	count, sum = map[string]int{}, map[string]float64{}
+	for _, m := range re.FindAllStringSubmatch(buf.String(), -1) {
+		v, _ := strconv.ParseFloat(m[3], 64)
+		if m[1] == "count" {
+			count[m[2]] = int(v)
+		} else {
+			sum[m[2]] = v
+		}
+	}
+	return count, sum
+}
+
+// TestPushPhasesAreObserved is spec 008's criterion for the metric of
+// spec 011: origo_push_duration_seconds{phase} observes the four phases
+// of one push, each once, and the sum is within 10% of the push's
+// request duration.
+func TestPushPhasesAreObserved(t *testing.T) {
+	n := newNode(t, wal.NewMemStore())
+	n.create(repoA, "acme", "app")
+	// A server that times the receive-pack request around the handler.
+	var requestTime time.Duration
+	mux := http.NewServeMux()
+	n.h.Register(mux)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "alice"})))
+		if strings.HasSuffix(r.URL.Path, "/git-receive-pack") {
+			requestTime = time.Since(started)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	work := clone(t, srv.URL+"/r/"+repoA+".git")
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, work, "add", "a.txt")
+	mustGit(t, work, "commit", "-q", "-m", "first")
+	if count, _ := pushHistogram(n.reg); len(count) != 0 {
+		t.Fatalf("observations before a push: %v", count)
+	}
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	count, sum := pushHistogram(n.reg)
+	var total float64
+	for _, phase := range []string{phaseReceive, phaseEntry, phaseIndex, phaseApply} {
+		if count[phase] != 1 || sum[phase] <= 0 {
+			t.Errorf("phase %s: %d observations, sum %v", phase, count[phase], sum[phase])
+		}
+		total += sum[phase]
+	}
+	if len(count) != 4 {
+		t.Errorf("phases %v", count)
+	}
+	if ratio := total / requestTime.Seconds(); ratio < 0.9 || ratio > 1.1 {
+		t.Fatalf("phases sum to %.1f%% of the request's %v", ratio*100, requestTime)
+	}
+	// A refused push observes receive and nothing else.
+	mustGit(t, work, "commit", "-q", "--allow-empty", "-m", "second")
+	n.store.(*wal.MemStore).SetFault(func(op, _ string) error {
+		if op == "Put" {
+			return errors.New("bucket down")
+		}
+		return nil
+	})
+	if _, err := git(t, work, "push", "-q", "origin", "HEAD:refs/heads/main"); err == nil {
+		t.Fatal("push landed with the bucket down")
+	}
+	if count, _ = pushHistogram(n.reg); count[phaseReceive] != 2 || count[phaseEntry] != 1 || count[phaseApply] != 1 {
+		t.Fatalf("after a refused push: %v", count)
+	}
+}
+
+// TestForcedFlagIsComputedBeforeTheVerdict is spec 008's criterion: a
+// forced update is reported as such and a fast-forward as not, with the
+// flag computed while the objects are still in quarantine, asserted by
+// a hook that leaves the quarantine in place: the seam that runs before
+// the verdict is written sees the pushed commit only through the
+// quarantine.
+func TestForcedFlagIsComputedBeforeTheVerdict(t *testing.T) {
+	store := wal.NewMemStore()
+	n := newNode(t, store)
+	n.create(repoA, "acme", "app")
+	s := sink.New(t)
+	d, err := events.New(events.Options{Log: n.log, Node: "n1", URL: s.URL(), Secret: s.Secret(), Logger: n.logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := New(Options{Cache: n.cache, Guard: n.h.guard, Events: d}); h.events != d {
+		t.Fatal("Options.Events not kept")
+	}
+	n.h.events = d
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = d.Run(ctx) }()
+
+	repoDir := filepath.Join(n.cache.Dir(), "repos", repoA+".git")
+	var pushed string
+	var seen []map[string]bool
+	catFile := func(sha string, env ...string) error {
+		cmd := exec.CommandContext(ctx, "git", "cat-file", "-e", sha)
+		cmd.Env = append(append(gittest.Env(t.TempDir()), "GIT_DIR="+repoDir), env...)
+		return cmd.Run()
+	}
+	n.h.beforeVerdict = func(quarantine string, forced map[string]bool) {
+		seen = append(seen, forced)
+		// A push without a pack (a delete) has no quarantine; every
+		// other one reports the directory git holds the objects in.
+		if pushed == "" {
+			return
+		}
+		if st, err := os.Stat(quarantine); quarantine == "" || err != nil || !st.IsDir() {
+			t.Errorf("quarantine %q: %v", quarantine, err)
+			return
+		}
+		// The pushed commit is in the quarantine and not in the
+		// repository: the flag was computed before git moved anything.
+		if err := catFile(pushed); err == nil {
+			t.Errorf("%s already in the repository before the verdict", pushed)
+		}
+		if err := catFile(pushed, "GIT_ALTERNATE_OBJECT_DIRECTORIES="+quarantine); err != nil {
+			t.Errorf("%s not in the quarantine %s: %v", pushed, quarantine, err)
+		}
+	}
+
+	work := clone(t, n.url("/r/"+repoA+".git"))
+	commit := func(name, msg string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(work, name), []byte(msg), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, work, "add", name)
+		mustGit(t, work, "commit", "-q", "-m", msg)
+		return strings.TrimSpace(mustGit(t, work, "rev-parse", "HEAD"))
+	}
+	// A create, a fast-forward, a forced update, a create of a branch
+	// and a tag, and a delete.
+	pushed = commit("a.txt", "first")
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	second := commit("b.txt", "second")
+	pushed = second
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	mustGit(t, work, "reset", "-q", "--hard", "HEAD~1")
+	rewritten := commit("c.txt", "rewritten")
+	pushed = rewritten
+	mustGit(t, work, "push", "-q", "--force", "origin", "HEAD:refs/heads/main")
+	mustGit(t, work, "tag", "v1")
+	pushed = ""
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/dev", "refs/tags/v1")
+	mustGit(t, work, "push", "-q", "origin", ":refs/heads/dev")
+	got, ok := s.Wait(repoA, events.KindPush, 5, 20*time.Second)
+	if !ok {
+		t.Fatalf("%d of 5 events delivered", len(got))
+	}
+	want := []map[string]bool{
+		{"refs/heads/main": false}, {"refs/heads/main": false}, {"refs/heads/main": true},
+		{"refs/heads/dev": false, "refs/tags/v1": false}, {"refs/heads/dev": false},
+	}
+	for i, dl := range got {
+		var p events.Push
+		if err := json.Unmarshal(dl.Body, &p); err != nil {
+			t.Fatal(err)
+		}
+		flags := map[string]bool{}
+		for _, u := range p.Updates {
+			flags[u.Ref] = u.Forced
+		}
+		if fmt.Sprint(flags) != fmt.Sprint(want[i]) || p.Seq != uint64(i+1) || p.ID != events.PushID(repoA, p.Seq) || p.Pusher.Sub != "alice" {
+			t.Errorf("event %d: %+v, want forced %v", i+1, p, want[i])
+		}
+		if i == 2 && (p.Updates[0].Before != second || p.Updates[0].After != rewritten) {
+			t.Errorf("forced update %+v, want %s to %s", p.Updates[0], second, rewritten)
+		}
+	}
+	if len(seen) != 5 || !seen[2]["refs/heads/main"] || seen[1]["refs/heads/main"] {
+		t.Fatalf("flags before the verdict: %v", seen)
+	}
+	// A git that cannot answer reads as not forced and is logged.
+	rp, release, err := n.cache.Acquire(ctx, repoA, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if forced := n.h.forcedUpdates(ctx, rp, []wal.RefUpdate{{Ref: "refs/heads/x", Old: strings.Repeat("1", 40), New: strings.Repeat("2", 40)}}, ""); len(forced) != 0 {
+		t.Fatalf("unknown objects read as forced: %v", forced)
+	}
 }

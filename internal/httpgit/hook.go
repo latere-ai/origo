@@ -19,17 +19,19 @@ import (
 
 // preReceiveHook is installed in every materialized repository. It runs
 // inside git receive-pack after the objects are quarantined and checked
-// and before any reference moves: it hands the transaction git resolved
-// to the node over a FIFO, then blocks on a second FIFO for the verdict.
-// The node commits the entry to the log in between, so the push is
-// durable before git's own update and refused before it when the log
-// refuses. Only shell builtins are used: the hook runs wherever /bin/sh
-// runs, with nothing on PATH.
+// and before any reference moves: it reports the quarantine directory
+// and hands the transaction git resolved to the node over a FIFO, then
+// blocks on a second FIFO for the verdict. The node commits the entry
+// to the log in between and reads the pushed objects from the
+// quarantine for the forced flag (spec 008), so the push is durable
+// before git's own update and refused before it when the log refuses.
+// Only shell builtins are used: the hook runs wherever /bin/sh runs,
+// with nothing on PATH.
 const preReceiveHook = `#!/bin/sh
 # Installed by origod (internal/httpgit/hook.go). Do not edit.
 d="$ORIGO_HOOK_DIR"
 [ -n "$d" ] || { echo "origo: pre-receive ran outside origod" >&2; exit 1; }
-{ while IFS= read -r line; do printf '%s\n' "$line"; done; } > "$d/updates"
+{ printf 'quarantine %s\n' "$GIT_QUARANTINE_PATH"; while IFS= read -r line; do printf '%s\n' "$line"; done; } > "$d/updates"
 if read -r verdict < "$d/verdict"; then :; else verdict="reject origo: no verdict"; fi
 case "$verdict" in
   ok) exit 0 ;;
@@ -78,30 +80,38 @@ func newHookChannel(spoolDir string) (*hookChannel, error) {
 
 func (h *hookChannel) close() { _ = os.RemoveAll(h.dir) }
 
-// readUpdates blocks until the hook has written the transaction and
-// returns it. It returns ok false when the FIFO was released without a
-// writer, which is how the node unblocks it once git exited without
-// running the hook.
-func (h *hookChannel) readUpdates() ([]wal.RefUpdate, bool, error) {
+// quarantineLine is the first line the hook writes: the directory git
+// holds the pushed objects in until the verdict.
+const quarantineLine = "quarantine "
+
+// readUpdates blocks until the hook has written the quarantine path and
+// the transaction and returns them. It returns ok false when the FIFO
+// was released without a writer, which is how the node unblocks it once
+// git exited without running the hook.
+func (h *hookChannel) readUpdates() (refs []wal.RefUpdate, quarantine string, ok bool, err error) {
 	f, err := os.OpenFile(h.updates, os.O_RDONLY, 0)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
 	defer func() { _ = f.Close() }()
-	var refs []wal.RefUpdate
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		u, err := parseCommand([]byte(sc.Text()))
+		line := sc.Text()
+		if refs == nil && quarantine == "" && strings.HasPrefix(line, quarantineLine) {
+			quarantine = strings.TrimPrefix(line, quarantineLine)
+			continue
+		}
+		u, err := parseCommand([]byte(line))
 		if err != nil {
-			return nil, true, err
+			return nil, quarantine, true, err
 		}
 		refs = append(refs, u)
 	}
 	if err := sc.Err(); err != nil {
-		return nil, true, err
+		return nil, quarantine, true, err
 	}
-	return refs, len(refs) > 0, nil
+	return refs, quarantine, len(refs) > 0, nil
 }
 
 // release opens the updates FIFO for writing and closes it, so a

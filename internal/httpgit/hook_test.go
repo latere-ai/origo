@@ -25,7 +25,7 @@ func TestDrainReachesAReaderThatOpensLate(t *testing.T) {
 	go func() {
 		defer close(done)
 		time.Sleep(30 * time.Millisecond)
-		if _, ok, err := ch.readUpdates(); ok || err != nil {
+		if _, _, ok, err := ch.readUpdates(); ok || err != nil {
 			t.Errorf("late reader: ok %v, %v", ok, err)
 		}
 	}()
