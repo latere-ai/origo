@@ -66,7 +66,7 @@ internal/gittest/       test support over the real git
 internal/placement/     rendezvous hashing, gossip, eviction (spec 005)      -- not yet
 internal/compact/       compaction (spec 006)                                 -- not yet
 internal/events/        push events (spec 008)                                -- not yet
-internal/lfs/           the LFS batch API (spec 010)                          -- not yet
+internal/lfs/           the LFS batch API and the presigned transfers (spec 010)
 internal/limits/        quotas and rate limits (spec 012)                     -- not yet
 internal/metrics/       the one place every metric of spec 011 is registered   -- not yet
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)

@@ -59,7 +59,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing |
-| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | validated |
+| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | testing |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
@@ -193,7 +193,7 @@ flowchart LR
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 008 complete; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 005, 006 next |
-| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | |
+| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 built, at testing until 013's `e2e-slow` job runs the 500 MiB round trip; 011, 012, 015 next |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
@@ -402,7 +402,7 @@ name, or when a spec names something no spec defines.
 <!-- specindex:begin -->
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
-| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 021 |
+| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 021 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 021 |
@@ -458,7 +458,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | [017](017-release-and-versioning.md) | 002, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 013, 018 |
+| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 010, 013, 018 |
 | variable | `ORIGO_RELEASE_DEPLOY` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
