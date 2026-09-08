@@ -91,12 +91,31 @@ func New(o Options) *Handler {
 }
 
 // Register mounts the routes in both URL forms spec 003 names: the id
-// form /r/<id>.git and the label form /<owner>/<slug>.git.
+// form /r/<id>.git and the label form /<owner>/<slug>.git. The label
+// form is one wildcard route dispatched by byName: a pattern
+// /{owner}/{slug}/info/refs and the read API's /v1/repos/{id}/refs both
+// match /v1/repos/info/refs with neither more specific, which the mux
+// refuses, while every /v1/ route is more specific than the wildcard.
+// The owners r and v1 are reserved for the same reason (spec 003).
 func (h *Handler) Register(mux *http.ServeMux) {
-	for _, prefix := range []string{"/r/{id}", "/{owner}/{slug}"} {
-		mux.HandleFunc("GET "+prefix+"/info/refs", h.infoRefs)
-		mux.HandleFunc("POST "+prefix+"/git-upload-pack", h.uploadPack)
-		mux.HandleFunc("POST "+prefix+"/git-receive-pack", h.receivePack)
+	mux.HandleFunc("GET /r/{id}/info/refs", h.infoRefs)
+	mux.HandleFunc("POST /r/{id}/git-upload-pack", h.uploadPack)
+	mux.HandleFunc("POST /r/{id}/git-receive-pack", h.receivePack)
+	mux.HandleFunc("/{owner}/{slug}/{service...}", h.byName)
+}
+
+// byName dispatches the label form on the method and the service, and
+// answers what the unknown-route handler answers to anything else.
+func (h *Handler) byName(w http.ResponseWriter, r *http.Request) {
+	switch r.Method + " " + r.PathValue("service") {
+	case "GET info/refs":
+		h.infoRefs(w, r)
+	case "POST git-upload-pack":
+		h.uploadPack(w, r)
+	case "POST git-receive-pack":
+		h.receivePack(w, r)
+	default:
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	}
 }
 
