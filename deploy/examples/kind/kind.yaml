@@ -1,0 +1,44 @@
+# The kind cluster of spec 013's stack at port offset 0: one node whose
+# host ports are the ports table, each mapped to the NodePort of the
+# Service named in the table. up.sh renders a copy with PORT_OFFSET
+# added to every hostPort line; spec 018's install job uses this file as
+# it is. The default CNI is off because Cilium enforces NetworkPolicy
+# and kindnet does not.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # origod, all three pods behind one balanced Service
+      - containerPort: 30080
+        hostPort: 30080
+      # node 1 to 3, the public listener
+      - containerPort: 30180
+        hostPort: 30180
+      - containerPort: 30181
+        hostPort: 30181
+      - containerPort: 30182
+        hostPort: 30182
+      # node 1 to 3, the internal listener
+      - containerPort: 30190
+        hostPort: 30190
+      - containerPort: 30191
+        hostPort: 30191
+      - containerPort: 30192
+        hostPort: 30192
+      # the stub issuer, authorizer, sink, source, and the slow proxy
+      - containerPort: 30081
+        hostPort: 30081
+      - containerPort: 30082
+        hostPort: 30082
+      - containerPort: 30083
+        hostPort: 30083
+      - containerPort: 30084
+        hostPort: 30084
+      - containerPort: 30085
+        hostPort: 30085
+      # MinIO
+      - containerPort: 30900
+        hostPort: 30900

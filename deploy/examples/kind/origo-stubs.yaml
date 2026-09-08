@@ -1,0 +1,95 @@
+# The stubs (spec 013's origo-stubs row): one Deployment running the
+# binary with the issuer (8081), the authorizer (8082), and the sink
+# (8083), behind one Service with a fixed clusterIP inside kind's
+# service range, so the nodes' pinned ORIGO_EGRESS_ALLOW entry of the
+# test-source component names an address that never changes, and each
+# control endpoint on its host port of the ports table. The listen
+# addresses are the binary's defaults; the values are the ones
+# origod.yaml sets on the nodes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origo-stubs
+  labels:
+    app.kubernetes.io/name: origo-stubs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: origo-stubs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: origo-stubs
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: origo-stubs
+          image: ghcr.io/latere-ai/origo-stubs:candidate
+          imagePullPolicy: IfNotPresent
+          args:
+            - -issuer-url=http://origo-stubs.origo.svc:8081
+            - -authorizer-token=stub-authorizer-token
+            - -allow=*
+            - -secret=stub-sink-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: issuer
+              containerPort: 8081
+            - name: authorizer
+              containerPort: 8082
+            - name: sink
+              containerPort: 8083
+          readinessProbe:
+            httpGet:
+              path: /jwks
+              port: issuer
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origo-stubs
+  labels:
+    app.kubernetes.io/name: origo-stubs
+spec:
+  type: NodePort
+  clusterIP: 10.96.0.42
+  selector:
+    app.kubernetes.io/name: origo-stubs
+  ports:
+    - name: issuer
+      port: 8081
+      targetPort: issuer
+      nodePort: 30081
+    - name: authorizer
+      port: 8082
+      targetPort: authorizer
+      nodePort: 30082
+    - name: sink
+      port: 8083
+      targetPort: sink
+      nodePort: 30083

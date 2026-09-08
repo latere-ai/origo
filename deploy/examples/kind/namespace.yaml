@@ -1,0 +1,10 @@
+# The stack's namespace with Pod Security admission at restricted (spec
+# 016's row): a pod that asks for more is refused. The production
+# namespace stays in deploy/bootstrap; this overlay is self-contained.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: origo
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted

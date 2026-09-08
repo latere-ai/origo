@@ -1,0 +1,14 @@
+# The source stub as a kustomize component (spec 013's origo-stubs row):
+# up.sh includes it and spec 018's install jobs omit it, so an
+# installation from the overlay alone runs no source. It makes the
+# binary also run the source with its bearer and the CA from the Secret
+# origo-stubs-ca, adds port 8443 to the Service, and gives the nodes the
+# three egress variables of spec 016 and the CA mount, so a stack
+# applied without it carries none of the three and refuses every source.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - path: stubs-source.yaml
+  - path: service-source.yaml
+  - path: origod-egress.yaml

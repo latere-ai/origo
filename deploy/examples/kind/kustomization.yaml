@@ -1,0 +1,32 @@
+# The kind example overlay of spec 013: MinIO, three origod pods as a
+# StatefulSet, and origo-stubs running the issuer, the authorizer, and
+# the sink, in the namespace origo with Pod Security admission at
+# restricted. Every row of the spec's overlay table is a file here. The
+# source stub is the component test-source/, which up.sh includes and
+# spec 018's install jobs omit. The one Secret the overlay does not
+# carry is origod-token-key, which up.sh and the install document
+# generate.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: origo
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - minio.yaml
+  - origod.yaml
+  - hpa.yaml
+  - origo-stubs.yaml
+
+patches:
+  # The base's Deployment is replaced by the StatefulSet with the same
+  # labels, and the stack has no ingress controller.
+  - path: patches/delete-deployment.yaml
+  - path: patches/delete-ingress.yaml
+  # The balanced Service on its host port.
+  - path: patches/service-nodeport.yaml
+
+images:
+  - name: ghcr.io/latere-ai/origod
+    newTag: candidate

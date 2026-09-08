@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origo-stubs
+spec:
+  template:
+    spec:
+      containers:
+        - name: origo-stubs
+          args:
+            - -issuer-url=http://origo-stubs.origo.svc:8081
+            - -authorizer-token=stub-authorizer-token
+            - -allow=*
+            - -secret=stub-sink-secret
+            - -source-token=stub-source-token
+            - -ca=/etc/origo-stubs/ca.crt
+            - -ca-key=/etc/origo-stubs/ca.key
+          ports:
+            - name: source
+              containerPort: 8443
+          volumeMounts:
+            - name: ca
+              mountPath: /etc/origo-stubs
+              readOnly: true
+      volumes:
+        - name: ca
+          secret:
+            secretName: origo-stubs-ca

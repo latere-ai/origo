@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: origo-stubs
+spec:
+  ports:
+    - name: source
+      port: 8443
+      targetPort: source
+      nodePort: 30084

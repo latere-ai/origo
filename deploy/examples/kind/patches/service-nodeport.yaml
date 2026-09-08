@@ -1,0 +1,13 @@
+# The balanced public Service on host port 30080 of the ports table.
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+      nodePort: 30080

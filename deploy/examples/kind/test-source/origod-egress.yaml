@@ -1,0 +1,27 @@
+# The nodes reach the in-cluster source (spec 016): the host pinned to
+# the stubs' Service clusterIP, kind's service and pod ranges, and the
+# CA the source's certificate is signed by.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_EGRESS_ALLOW
+              value: origo-stubs.origo.svc=10.96.0.42
+            - name: ORIGO_CLUSTER_CIDRS
+              value: 10.96.0.0/16,10.244.0.0/16
+            - name: ORIGO_EGRESS_CA_BUNDLE
+              value: /etc/origo/stub-ca.pem
+          volumeMounts:
+            - name: stub-ca
+              mountPath: /etc/origo
+              readOnly: true
+      volumes:
+        - name: stub-ca
+          configMap:
+            name: origo-stub-ca

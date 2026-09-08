@@ -1,0 +1,30 @@
+# The autoscaler named origod on the StatefulSet, on CPU only, held at
+# three replicas so the three host ports of the ports table always
+# answer, with the 60 second scale-down window of spec 005's row. A
+# test that wants another count applies test/e2e/testdata/hpa-<n>.yaml,
+# which replaces this object by name, and cluster.Apply of the overlay
+# restores it. Spec 005 adds the base's autoscaler; this one then
+# becomes a patch of it.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: origod
+  labels:
+    app.kubernetes.io/name: origod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: origod
+  minReplicas: 3
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60
