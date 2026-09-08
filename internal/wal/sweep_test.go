@@ -65,8 +65,9 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 			t.Fatalf("%s survived", k)
 		}
 	}
-	// Folded entries and old index objects go once compaction moved past
-	// them, keeping the newest 64 index objects.
+	// Folded entries go once compaction moved past them; every index
+	// object stays, whatever compacted_through says, so a warm node
+	// holding index n still learns of index n+1 from a HEAD (spec 006).
 	next := c.Index
 	for i := 2; i <= 70; i++ {
 		c, err := l.Commit(ctx, repoA, next, push(fmt.Sprintf("refs/heads/b%d", i), ZeroSHA, sha(i)), noCatchUp)
@@ -81,12 +82,12 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 	}
 	now = now.Add(2 * time.Hour)
 	rep, err = l.Sweep(ctx, repoA, time.Hour)
-	// index/0 to index/71 exist; the newest 64 stay, the 8 below go.
-	if err != nil || rep.Folded != 70 || rep.Indexes != 72-KeepIndexes {
+	if err != nil || rep.Folded != 70 {
 		t.Fatalf("after compaction: %+v, %v", rep, err)
 	}
-	if n := countKeys(store, "/index/0"); n != KeepIndexes {
-		t.Fatalf("%d index objects kept, want %d", n, KeepIndexes)
+	// index/0 to index/71 exist and all 72 stay.
+	if n := countKeys(store, "/index/0"); n != 72 {
+		t.Fatalf("%d index objects kept, want 72", n)
 	}
 	if _, err := store.Head(ctx, l.key(repoA, c2.Key)); err != nil {
 		t.Fatal("the compaction entry was swept")
@@ -134,6 +135,60 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 	}
 }
 
+// TestSweepRemovesUnlistedPacks is spec 006's sweeper rule: a pack the
+// newest index does not list goes once it is older than
+// ORIGO_SWEEP_MIN_AGE, with its .idx, and a listed one is kept whatever
+// its age. The age is what lets a node that started materializing on the
+// previous index finish.
+func TestSweepRemovesUnlistedPacks(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	store.SetClock(clock)
+	l := New(Options{Store: store, Now: clock, Logger: slog.New(slog.DiscardHandler)})
+	base := createRepo(t, l, repoA)
+
+	kept, gone := "packs/"+sha(1)+".pack", "packs/"+sha(2)+".pack"
+	for _, k := range []string{kept, gone, strings.TrimSuffix(kept, ".pack") + ".idx", strings.TrimSuffix(gone, ".pack") + ".idx"} {
+		if _, err := store.Put(ctx, l.key(repoA, k), BytesBody([]byte("pack"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := l.Commit(ctx, repoA, base, Entry{Kind: KindCompact, Packs: []string{kept}, CompactedThrough: 0}, noCatchUp); err != nil {
+		t.Fatal(err)
+	}
+	// Young: nothing goes, so a reader that holds the previous index can
+	// still finish from the pack it names.
+	if rep, err := l.Sweep(ctx, repoA, time.Hour); err != nil || rep.Packs != 0 {
+		t.Fatalf("young packs swept: %+v, %v", rep, err)
+	}
+	now = now.Add(2 * time.Hour)
+	rep, err := l.Sweep(ctx, repoA, time.Hour)
+	if err != nil || rep.Packs != 2 {
+		t.Fatalf("sweep: %+v, %v", rep, err)
+	}
+	for _, k := range []string{kept, strings.TrimSuffix(kept, ".pack") + ".idx"} {
+		if _, err := store.Head(ctx, l.key(repoA, k)); err != nil {
+			t.Fatalf("the newest index lists %s and it was swept", k)
+		}
+	}
+	for _, k := range []string{gone, strings.TrimSuffix(gone, ".pack") + ".idx"} {
+		if _, err := store.Head(ctx, l.key(repoA, k)); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s survived", k)
+		}
+	}
+	store.SetFault(func(op, key string) error {
+		if op == "List" && strings.Contains(key, "/packs/") {
+			return errors.New("pack list refused")
+		}
+		return nil
+	})
+	if _, err := l.Sweep(ctx, repoA, time.Hour); err == nil {
+		t.Fatal("pack listing failure hidden")
+	}
+}
+
 func TestSweepAllVisitsEveryRepositoryAndReportsFailures(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
@@ -175,15 +230,6 @@ func TestSweepAllVisitsEveryRepositoryAndReportsFailures(t *testing.T) {
 	}
 	if err := l.SweepAll(ctx, time.Hour); err == nil || !strings.Contains(err.Error(), "list refused") {
 		t.Fatalf("sweep all: %v", err)
-	}
-	store.Fault = func(op, key string) error {
-		if op == "List" && strings.Contains(key, "/index/") {
-			return errors.New("index list refused")
-		}
-		return nil
-	}
-	if _, err := l.Sweep(ctx, repoA, time.Hour); err == nil {
-		t.Fatal("index listing failure hidden")
 	}
 	store.Fault = func(op, key string) error {
 		if op == "List" {

@@ -12,8 +12,6 @@ import (
 
 // Sweeper rules from spec 004.
 const (
-	// KeepIndexes is how many of the newest index objects are always kept.
-	KeepIndexes = 64
 	// DeleteHold is how long a deleted repository's objects stay so a
 	// consumer can undelete it.
 	DeleteHold = 7 * 24 * time.Hour
@@ -23,16 +21,18 @@ const (
 type SweepReport struct {
 	Orphans  int
 	Folded   int
-	Indexes  int
+	Packs    int
 	Purged   bool
 	Deleted  []string
 	Warnings []string
 }
 
-// Sweep applies the sweeper rules to one repository. minAge is how old an
-// object must be before it is deleted: entries below the newest index
-// that no index names, entries above it, folded entries, and index
-// objects below compacted_through except the newest KeepIndexes. A
+// Sweep applies the sweeper rules to one repository. minAge is how old
+// an object must be before it is deleted: entries below the newest index
+// that no index names, entries above it, folded entries, and packs the
+// newest index does not list. Index objects are never deleted, because a
+// warm node holding index n proves itself current by HEAD index/<n+1>
+// answering 404 and a swept object answers the same (spec 006). A
 // repository whose newest index carries deleted_at older than DeleteHold
 // is removed entirely, including its name.
 func (l *Log) Sweep(ctx context.Context, repo string, minAge time.Duration) (SweepReport, error) {
@@ -81,20 +81,29 @@ func (l *Log) Sweep(ctx context.Context, repo string, minAge time.Duration) (Swe
 		}
 	}
 
-	indexes, err := l.listAll(ctx, l.key(repo, "index/0"))
+	// A pack the newest index does not list is superseded by a
+	// compaction (spec 006) or left by one that lost its round. The age
+	// keeps a node that started materializing on the previous index able
+	// to finish.
+	listed := make(map[string]bool, len(newest.Packs))
+	for _, p := range newest.Packs {
+		listed[p] = true
+	}
+	packs, err := l.listAll(ctx, l.key(repo, "packs/"))
 	if err != nil {
 		return rep, err
 	}
-	keepFrom := uint64(0)
-	if newest.Seq >= KeepIndexes {
-		keepFrom = newest.Seq - KeepIndexes + 1
-	}
-	for _, o := range indexes {
-		seq, ok := ParseIndexKey(o.Key[len(l.RepoPrefix(repo)):])
-		if ok && seq < newest.CompactedThrough && seq < keepFrom && old(o) {
-			rep.Indexes++
-			del(o.Key)
+	for _, o := range packs {
+		rel := o.Key[len(l.RepoPrefix(repo)):]
+		// The index lists the .pack object; its .idx goes with it.
+		if base, ok := strings.CutSuffix(rel, ".idx"); ok {
+			rel = base + ".pack"
 		}
+		if listed[rel] || !old(o) {
+			continue
+		}
+		rep.Packs++
+		del(o.Key)
 	}
 	return rep, nil
 }
@@ -185,7 +194,7 @@ func (l *Log) SweepAll(ctx context.Context, minAge time.Duration) error {
 			continue
 		}
 		if len(rep.Deleted) > 0 || len(rep.Warnings) > 0 {
-			l.logger.InfoContext(ctx, "swept", "repo", id, "orphans", rep.Orphans, "folded", rep.Folded, "indexes", rep.Indexes, "purged", rep.Purged, "warnings", len(rep.Warnings))
+			l.logger.InfoContext(ctx, "swept", "repo", id, "orphans", rep.Orphans, "folded", rep.Folded, "packs", rep.Packs, "purged", rep.Purged, "warnings", len(rep.Warnings))
 		}
 	}
 	return errors.Join(errs...)
