@@ -60,6 +60,16 @@ type Options struct {
 	// Placement answers Origo-Prefer (spec 005); the node's live set.
 	// Nil writes no header.
 	Placement placement.Placer
+	// Compaction sees the index of every push this node commits and
+	// schedules a compaction when a threshold is crossed (spec 006);
+	// nil triggers nothing.
+	Compaction Compactor
+}
+
+// Compactor is spec 006's after-push trigger. It returns before the
+// compaction starts, so a push is never held by one.
+type Compactor interface {
+	After(id string, ix *wal.Index)
 }
 
 // Handler serves the smart HTTP routes.
@@ -72,6 +82,7 @@ type Handler struct {
 	logger    *slog.Logger
 
 	events   *events.Dispatcher
+	compact  Compactor
 	pushes   *pkgmetrics.Counter
 	rejected *pkgmetrics.Counter
 	fetches  *pkgmetrics.Counter
@@ -99,7 +110,7 @@ func New(o Options) *Handler {
 	if o.Guard == nil {
 		panic("httpgit: the handler needs a guard")
 	}
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, logger: o.Logger, events: o.Events}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, logger: o.Logger, events: o.Events, compact: o.Compaction}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
 	}
@@ -429,6 +440,13 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		// the event is enqueued for it; a failed enqueue is logged by the
 		// dispatcher and the repair sweep covers the push.
 		_ = h.events.Enqueue(r.Context(), id, events.Entry{Header: committed.Header, Refs: refs, Forced: forced})
+		// The compaction trigger (spec 006) checks the thresholds
+		// against the index this push produced and returns; the run, or
+		// the request object on a node that is not the primary, happens
+		// in the background.
+		if h.compact != nil {
+			h.compact.After(id, committed.Index)
+		}
 	}
 }
 

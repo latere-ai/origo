@@ -17,9 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -123,9 +124,12 @@ type Options struct {
 	Deadline time.Duration
 	// Now is the clock the request objects and the sweep run on. The
 	// wall clock by default.
-	Now     func() time.Time
-	Logger  *slog.Logger
-	Metrics *metrics.Registry
+	Now    func() time.Time
+	Logger *slog.Logger
+	// Metrics holds the two handles compaction records through,
+	// registered by internal/metrics (spec 011). A set of its own by
+	// default.
+	Metrics *metrics.Set
 }
 
 // Manager owns the compaction of every repository this node is the
@@ -143,8 +147,8 @@ type Manager struct {
 	now       func() time.Time
 	logger    *slog.Logger
 
-	runs     *metrics.Counter
-	duration *metrics.Histogram
+	runs     *pkgmetrics.Counter
+	duration *pkgmetrics.Histogram
 
 	mu       sync.Mutex
 	inflight map[string]*run
@@ -169,7 +173,7 @@ type run struct {
 	err     error
 }
 
-// New builds the manager and registers the two series of spec 011.
+// New builds the manager over the two series of spec 011's table.
 func New(o Options) (*Manager, error) {
 	if o.Cache == nil || o.Placement == nil {
 		return nil, errors.New("compact: a cache and a placer are required")
@@ -199,16 +203,11 @@ func New(o Options) (*Manager, error) {
 	// with that timeout.
 	g := o.Cache.Git()
 	m.git = &repo.Git{Bin: g.Bin, Home: g.Home, Timeout: m.deadline}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	m.runs = reg.Counter("origo_compactions_total", "compaction runs by result")
-	for _, r := range []Outcome{OutcomeOK, OutcomeStale, OutcomeError, OutcomeSkipped} {
-		m.runs.Add(map[string]string{"result": string(r)}, 0)
-	}
-	m.duration = reg.Histogram("origo_compaction_seconds", "time one compaction run took",
-		[]float64{0.1, 0.5, 1, 5, 10, 30, 60, 300, 900, 1800})
+	m.runs, m.duration = set.Compactions, set.CompactionSeconds
 	return m, nil
 }
 

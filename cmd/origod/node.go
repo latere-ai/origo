@@ -24,6 +24,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/compact"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
@@ -84,6 +85,9 @@ type node struct {
 	set     *placement.Set
 	gossip  *placement.Gossip
 	evictor *placement.Evictor
+
+	// Compaction (spec 006): the trigger after a push and the sweep.
+	compact *compact.Manager
 
 	// exit ends the process at an injected failpoint. os.Exit outside
 	// tests: the end-to-end suite kills a node between the entry write
@@ -172,6 +176,18 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	}
 	n.background = append(n.background, n.gossip.Run, n.evictor.Run)
 
+	// Compaction (spec 006): the primary of a repository is the first
+	// name its placement answers, so the manager reads the same live set
+	// the header does; every other node writes a request object and this
+	// node's sweep picks up the ones it is the primary of.
+	n.compact, err = compact.New(compact.Options{
+		Cache: n.cache, Placement: n.set, Node: cfg.NodeName, Logger: logger, Metrics: n.metrics,
+	})
+	if err != nil {
+		return nil, err
+	}
+	n.background = append(n.background, n.compact.Run)
+
 	// Identity (spec 007): the verifier over the configured issuers and
 	// the node's own key, the authorizer client, and the signer of
 	// repository-bound tokens. The verifier's loop fetches the issuers'
@@ -199,7 +215,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set}).Register(app)
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact}).Register(app)
 	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set}).Register(app)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through

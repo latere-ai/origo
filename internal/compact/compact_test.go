@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/gittest"
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -54,7 +55,7 @@ type harness struct {
 	t     *testing.T
 	dir   string
 	store *wal.MemStore
-	reg   *metrics.Registry
+	reg   *pkgmetrics.Registry
 	log   *wal.Log
 	cache *repo.Cache
 	m     *Manager
@@ -66,7 +67,7 @@ type harness struct {
 
 func newHarness(t *testing.T, opts ...func(*Options)) *harness {
 	t.Helper()
-	h := &harness{t: t, store: wal.NewMemStore(), reg: metrics.NewRegistry(), now: time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)}
+	h := &harness{t: t, store: wal.NewMemStore(), reg: pkgmetrics.NewRegistry(), now: time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)}
 	h.store.SetClock(func() time.Time { return h.now })
 	h.log = wal.New(wal.Options{Store: h.store, Now: func() time.Time { return h.now }, Logger: slog.New(slog.DiscardHandler)})
 	h.dir = filepath.Join(t.TempDir(), "data")
@@ -78,7 +79,7 @@ func newHarness(t *testing.T, opts ...func(*Options)) *harness {
 	o := Options{
 		Cache: cache, Placement: placer{nodeA}, Node: nodeA,
 		Now: func() time.Time { return h.now }, Logger: slog.New(slog.DiscardHandler),
-		Metrics: h.reg, GCWait: 2 * time.Second,
+		Metrics: metrics.Register(h.reg), GCWait: 2 * time.Second,
 	}
 	for _, f := range opts {
 		f(&o)
