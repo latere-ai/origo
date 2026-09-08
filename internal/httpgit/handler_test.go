@@ -952,3 +952,62 @@ func TestForcedFlagIsComputedBeforeTheVerdict(t *testing.T) {
 		t.Fatalf("unknown objects read as forced: %v", forced)
 	}
 }
+
+// seenCompactor records the trigger of spec 006.
+type seenCompactor struct {
+	mu   sync.Mutex
+	seen []uint64
+}
+
+func (c *seenCompactor) After(_ string, ix *wal.Index) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.seen = append(c.seen, ix.Seq)
+}
+
+// TestPushTriggersTheCompactionCheck: every acknowledged push hands the
+// index it committed to the compaction trigger of spec 006, and a push
+// git refuses hands over nothing.
+func TestPushTriggersTheCompactionCheck(t *testing.T) {
+	store := wal.NewMemStore()
+	n := newNode(t, store)
+	n.create(repoA, "acme", "app")
+	c := &seenCompactor{}
+	if h := New(Options{Cache: n.cache, Guard: n.h.guard, Compaction: c}); h.compact != c {
+		t.Fatal("Options.Compaction not kept")
+	}
+	n.h.compact = c
+
+	work := clone(t, n.url("/r/"+repoA+".git"))
+	for i := range 2 {
+		if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte(strings.Repeat("x", i+1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, work, "add", "a.txt")
+		mustGit(t, work, "commit", "-q", "-m", "commit")
+		mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	}
+	c.mu.Lock()
+	seen := append([]uint64(nil), c.seen...)
+	c.mu.Unlock()
+	if len(seen) != 2 || seen[0] != 1 || seen[1] != 2 {
+		t.Fatalf("the trigger saw %v, want the sequence of each push", seen)
+	}
+	// A push the log refuses never reaches the trigger.
+	stale := clone(t, n.url("/r/"+repoA+".git"))
+	mustGit(t, work, "commit", "-q", "--allow-empty", "-m", "third")
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	if err := os.WriteFile(filepath.Join(stale, "b.txt"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, stale, "add", "b.txt")
+	mustGit(t, stale, "commit", "-q", "-m", "racing")
+	if out, err := git(t, stale, "push", "-q", "origin", "HEAD:refs/heads/main"); err == nil {
+		t.Fatalf("a non-fast-forward push was accepted: %s", out)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.seen) != 3 {
+		t.Fatalf("the trigger saw %v after a refused push", c.seen)
+	}
+}
