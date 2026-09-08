@@ -61,20 +61,22 @@ DEV_S3_SECRET ?= minioadmin
 DEV_S3_BUCKET ?= origo
 DEV_S3_ENDPOINT ?= http://127.0.0.1:$(DEV_S3_PORT)
 DEV_DATA_DIR ?= $(CURDIR)/$(OUT_DIR)/data
-DEV_TOKEN ?= dev-token
 DEV_COMPOSE_ENV = DEV_PROJECT=$(DEV_PROJECT) DEV_S3_PORT=$(DEV_S3_PORT) \
                   DEV_S3_CONSOLE_PORT=$(DEV_S3_CONSOLE_PORT) DEV_S3_KEY=$(DEV_S3_KEY) \
                   DEV_S3_SECRET=$(DEV_S3_SECRET) DEV_S3_BUCKET=$(DEV_S3_BUCKET)
 
 # The node reads the same variables locally as in production; only the
-# values differ. ORIGO_DEV_TOKEN is the phase 1 bearer (spec 002, Outcome).
+# values differ. The identity variables of spec 007 (ORIGO_OIDC_ISSUERS,
+# ORIGO_AUTHORIZER_URL, ORIGO_AUTHORIZER_TOKEN, ORIGO_TOKEN_KEY) are set
+# by the form of `make dev` spec 013 builds, which runs the stub issuer
+# and authorizer beside MinIO and generates the key under out/.
 DEV_SERVICE_ENV = ORIGO_S3_ENDPOINT=$(DEV_S3_ENDPOINT) ORIGO_S3_REGION=us-east-1 \
                   ORIGO_S3_BUCKET=$(DEV_S3_BUCKET) ORIGO_S3_KEY=$(DEV_S3_KEY) \
                   ORIGO_S3_SECRET=$(DEV_S3_SECRET) ORIGO_S3_PATH_STYLE=1 \
                   ORIGO_DATA_DIR=$(DEV_DATA_DIR) \
                   ORIGO_PUBLIC_URL=http://localhost:$(DEV_PUBLIC_PORT) \
                   ORIGO_PUBLIC_ADDR=:$(DEV_PUBLIC_PORT) ORIGO_INTERNAL_ADDR=:$(DEV_INTERNAL_PORT) \
-                  ORIGO_GOSSIP_ADDR=127.0.0.1:0 ORIGO_DEV_TOKEN=$(DEV_TOKEN)
+                  ORIGO_GOSSIP_ADDR=127.0.0.1:0
 
 # stack-up starts MinIO and waits for a fact, not a duration: the health
 # endpoint answers and the one-shot container that made the bucket exited.
@@ -91,12 +93,14 @@ define stack-up
 endef
 
 # One command from a clean clone to a serving node: MinIO with the bucket,
-# then origod in the foreground.
-dev: build
-	@$(stack-up)
-	@echo "origod on http://localhost:$(DEV_PUBLIC_PORT), probes on http://localhost:$(DEV_INTERNAL_PORT)"
-	@echo "clone with: git clone http://x:$(DEV_TOKEN)@localhost:$(DEV_PUBLIC_PORT)/r/<id>.git"
-	@env $(DEV_SERVICE_ENV) $(OUT_DIR)/$(SERVICE)
+# then origod in the foreground. Out of service between spec 007 and
+# spec 013: the phase 1 bearer is gone and the node needs an issuer, an
+# authorizer, and a signing key, which the stub binary spec 013 builds
+# (test/stubs/cmd/origo-stubs) provides. Until then the unit suites and
+# `make test-integration` run the stubs in-process.
+dev:
+	@echo "make dev is out of service until spec 013 lands: origod needs the stub issuer and authorizer of test/stubs/cmd/origo-stubs (see specs/007, Current state)" >&2
+	@exit 1
 
 # The tiers that need MinIO beside them, which is why they are here rather
 # than gates: latere-ai/ci's lateregate.yml has no services step, so CI runs
