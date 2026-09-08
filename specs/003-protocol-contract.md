@@ -285,5 +285,8 @@ Divergence to fix, owned by spec 021's code-table test:
 - The sideband for a refused commit is `storage_unavailable: the push
   was not recorded, retry`, and for a moved reference
   `non_fast_forward: <ref> moved to <sha> since you fetched; fetch
-  first`; both become the table's sentences, the reference and the
-  hashes moving to the developer detail.
+  first`; both become the table's sentences exactly, `<code>: <sentence>`
+  and nothing appended, and the reference and the hashes go to the
+  handler's `info` log line for the rejected push, never the sideband
+  (spec 021, `TestRejectLinesAreTheTableSentences` in
+  `internal/httpgit`).
