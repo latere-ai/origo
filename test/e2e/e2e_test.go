@@ -18,10 +18,10 @@ import (
 	"github.com/latere-ai/origo/internal/wal"
 )
 
-// TestPushThenCloneFromAnEmptyDisk is the phase 1 exit criterion: a
+// TestE2EPushThenCloneFromAnEmptyDisk is the phase 1 exit criterion: a
 // repository that exists only in the bucket is cloned by a node with an
 // empty disk, and the clone's history equals the pushed history.
-func TestPushThenCloneFromAnEmptyDisk(t *testing.T) {
+func TestE2EPushThenCloneFromAnEmptyDisk(t *testing.T) {
 	s := requireStack(t)
 	n := startNode(t, s, "", nil)
 	id := newID(t)
@@ -69,11 +69,11 @@ func TestPushThenCloneFromAnEmptyDisk(t *testing.T) {
 	}
 }
 
-// TestConcurrentPushesToDifferentBranchesOnTwoNodes: two nodes accept
+// TestE2EConcurrentPushesToDifferentBranchesOnTwoNodes: two nodes accept
 // pushes to different branches of one repository at the same time; both
 // land, the newest index has both, and every sequence has one index
 // object.
-func TestConcurrentPushesToDifferentBranchesOnTwoNodes(t *testing.T) {
+func TestE2EConcurrentPushesToDifferentBranchesOnTwoNodes(t *testing.T) {
 	s := requireStack(t)
 	a := startNode(t, s, "", nil)
 	b := startNode(t, s, "", nil)
@@ -117,10 +117,10 @@ func TestConcurrentPushesToDifferentBranchesOnTwoNodes(t *testing.T) {
 	}
 }
 
-// TestKillMidPush kills the node between the entry write and the index
+// TestE2EKillMidPush kills the node between the entry write and the index
 // commit: the client sees a failure, nothing is visible, the orphaned
 // entry is swept, and a retry lands.
-func TestKillMidPush(t *testing.T) {
+func TestE2EKillMidPush(t *testing.T) {
 	s := requireStack(t)
 	n := startNode(t, s, "", map[string]string{"ORIGO_FAILPOINT": wal.FailpointBeforeIndex})
 	id := newID(t)
