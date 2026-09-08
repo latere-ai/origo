@@ -110,7 +110,7 @@ cluster`, not with `up.sh`, because an operator has a cluster and no
 script, and installs Cilium as the one step `up.sh` also takes, at the
 chart version `deploy/examples/kind/versions.env` pins (spec 013's
 overlay table), because `kind.yaml` disables the default CNI (spec 013)
-and an operator's cluster comes with one; downloads the `candidate-images` artifact the `e2e` job of
+and an operator's cluster comes with one; downloads the `candidate-images` artifact the `build` job of
 spec 013 uploaded (`actions/upload-artifact` there,
 `actions/download-artifact` here, the two `docker save` tarballs of
 `origod` and `origo-stubs`) and loads both with `kind load
@@ -191,7 +191,7 @@ binary artifact of spec 017.
   on a tag, and `TestContract` (spec 021) passes against it both ways
   (proposed: `.github/workflows/verify.yml`, the
   `install` job, 20 minutes, creating the cluster from `kind.yaml`,
-  loading the `candidate-images` artifact of spec 013's `e2e` job, and
+  loading the `candidate-images` artifact of spec 013's `build` job, and
   walking `docs/install.md` with `ORIGO_INSTALL_IMAGE` and
   `ORIGO_INSTALL_MANIFESTS` set to the candidate build;
   `.github/workflows/release.yml`, the `install-release` job after
