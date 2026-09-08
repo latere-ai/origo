@@ -384,9 +384,6 @@ func TestGossipResolvesTheDNSForm(t *testing.T) {
 			t.Errorf("parsePeers(%q) = %v %q, want %s", raw, entries, name, want)
 		}
 	}
-	if PortOf(":7946") != 7946 || PortOf("nope") != 0 {
-		t.Fatal("PortOf")
-	}
 }
 
 // TestGossipDropsABadMAC is spec 005's authentication of membership: a

@@ -26,6 +26,7 @@ import (
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/lfs"
+	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -69,6 +70,12 @@ type node struct {
 	reg    *metrics.Registry
 	log    *wal.Log
 	cache  *repo.Cache
+
+	// Placement (spec 005): the live set, the gossip over the socket run
+	// opens, and the evictor.
+	set     *placement.Set
+	gossip  *placement.Gossip
+	evictor *placement.Evictor
 
 	// exit ends the process at an injected failpoint. os.Exit outside
 	// tests: the end-to-end suite kills a node between the entry write
@@ -115,6 +122,10 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	n.log = wal.New(wal.Options{
 		Store: store, Prefix: config.Prefix, Metrics: n.reg, Logger: logger,
 		Failpoint: n.failpoint,
+		// Every index object this node creates is announced to the
+		// peers (spec 005); the gossip is built below, after the cache
+		// it needs, and no commit runs before run has bound it.
+		OnCommit: func(repo string, seq uint64) { n.gossip.Announce(repo, seq) },
 	})
 	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.reg})
 	if err != nil {
@@ -125,6 +136,23 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		readyCheck{name: "disk", fn: n.diskWritable},
 	)
 	n.background = append(n.background, n.sweep)
+
+	// Placement (spec 005): the node's own name is always in the live
+	// set; the peers, when any, feed it over gossip under the secret;
+	// the evictor keeps the cache under ORIGO_CACHE_BYTES.
+	n.set = placement.NewSet(cfg.NodeName, nil)
+	n.gossip, err = placement.NewGossip(placement.GossipOptions{
+		Set: n.set, Secret: []byte(cfg.GossipSecret), Peers: cfg.GossipPeers,
+		Holder: placement.CacheHolder{Cache: n.cache}, Logger: logger, Metrics: n.reg,
+	})
+	if err != nil {
+		return nil, err
+	}
+	n.evictor, err = placement.NewEvictor(placement.EvictorOptions{Cache: n.cache, Ceiling: cfg.CacheBytes, Logger: logger, Metrics: n.reg})
+	if err != nil {
+		return nil, err
+	}
+	n.background = append(n.background, n.gossip.Run, n.evictor.Run)
 
 	// Identity (spec 007): the verifier over the configured issuers and
 	// the node's own key, the authorizer client, and the signer of
@@ -153,8 +181,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard, Events: n.events}).Register(app)
-	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events}).Register(app)
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard, Events: n.events, Placement: n.set}).Register(app)
+	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set}).Register(app)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through
 	// the node.
@@ -312,6 +340,10 @@ func (n *node) run(ctx context.Context) error {
 	n.mu.Lock()
 	n.publicAddr, n.internalAddr, n.gossipAddr = publicLn.Addr().String(), internalLn.Addr().String(), gossip.LocalAddr().String()
 	n.mu.Unlock()
+	// The gossip loop is a background loop below; the socket is bound
+	// and the peers resolved here, before anything is served, so the
+	// first commit's announcement has somewhere to go.
+	n.gossip.Bind(ctx, gossip)
 
 	publicSrv := &http.Server{Handler: n.publicHandler(), ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
 	internalSrv := &http.Server{Handler: n.internalHandler(), ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
@@ -322,7 +354,6 @@ func (n *node) run(ctx context.Context) error {
 
 	bgCtx, cancelBackground := context.WithCancel(context.WithoutCancel(ctx))
 	var bg sync.WaitGroup
-	bg.Go(func() { readGossip(gossip) })
 	for _, loop := range n.background {
 		bg.Go(func() {
 			if err := loop(bgCtx); err != nil && !errors.Is(err, context.Canceled) {
@@ -331,7 +362,7 @@ func (n *node) run(ctx context.Context) error {
 		})
 	}
 
-	n.logger.InfoContext(ctx, "serving", "public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "version", versionpkg.String())
+	n.logger.InfoContext(ctx, "serving", "public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "peers", n.gossip.Peers(), "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "cache_bytes", n.cfg.CacheBytes, "version", versionpkg.String())
 	close(n.started)
 
 	var runErr error
@@ -364,18 +395,6 @@ func serveHTTP(srv *http.Server, ln net.Listener, name string) error {
 		return nil
 	}
 	return fmt.Errorf("%s listener: %w", name, err)
-}
-
-// readGossip drains the gossip socket until it closes. Spec 005 gives the
-// datagrams a meaning; until then a peer that announces a sequence is
-// simply not listened to, and the port answers so a manifest can open it.
-func readGossip(conn net.PacketConn) {
-	buf := make([]byte, 1500)
-	for {
-		if _, _, err := conn.ReadFrom(buf); err != nil {
-			return
-		}
-	}
 }
 
 // addrs reports the bound listener addresses once run has opened them.

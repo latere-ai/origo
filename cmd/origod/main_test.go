@@ -341,6 +341,9 @@ func TestBackgroundLoopsStopWithTheNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
 	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -420,6 +423,9 @@ func TestFailpointExitsTheProcess(t *testing.T) {
 	env["ORIGO_FAILPOINT"] = "commit.before-index"
 	cfg, err := config.Load(getenv(env))
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
 	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
@@ -674,5 +680,86 @@ func TestEventsLoopRunsWithTheSink(t *testing.T) {
 	}
 	if lists.Load() != before {
 		t.Fatalf("the dispatcher swept with events off: %d listings", lists.Load()-before)
+	}
+}
+
+// TestGossipWiresTwoNodes is spec 005's wiring in the node: two nodes
+// with each other as peers under one secret hear each other's
+// heartbeats, the live set of each names both, Origo-Prefer on the
+// public surface names the preferred nodes, and a node with peers and
+// no secret refuses to start in the one message.
+func TestGossipWiresTwoNodes(t *testing.T) {
+	envA, id := newEnv(t)
+	envA["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
+	envA["ORIGO_S3_PATH_STYLE"] = "1"
+	envA["ORIGO_NODE_NAME"] = "origod-0"
+	envA["ORIGO_GOSSIP_SECRET"] = strings.Repeat("s", 32)
+	// B's socket is bound first so A's peer list can name it.
+	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addrB := udp.LocalAddr().String()
+	_ = udp.Close()
+	envA["ORIGO_GOSSIP_PEERS"] = addrB
+	a, stopA := startNode(t, envA)
+	defer func() { _ = stopA() }()
+	publicA, internalA, gossipA := a.addrs()
+
+	envB, _ := newEnv(t)
+	envB["ORIGO_S3_ENDPOINT"] = envA["ORIGO_S3_ENDPOINT"]
+	envB["ORIGO_S3_PATH_STYLE"] = "1"
+	envB["ORIGO_NODE_NAME"] = "origod-1"
+	envB["ORIGO_GOSSIP_SECRET"] = envA["ORIGO_GOSSIP_SECRET"]
+	envB["ORIGO_GOSSIP_ADDR"] = addrB
+	envB["ORIGO_GOSSIP_PEERS"] = gossipA
+	envB["ORIGO_OIDC_ISSUERS"] = envA["ORIGO_OIDC_ISSUERS"]
+	envB["ORIGO_AUTHORIZER_URL"] = envA["ORIGO_AUTHORIZER_URL"]
+	envB["ORIGO_AUTHORIZER_TOKEN"] = envA["ORIGO_AUTHORIZER_TOKEN"]
+	b, stopB := startNode(t, envB)
+	defer func() { _ = stopB() }()
+	_, internalB, _ := b.addrs()
+
+	// B's heartbeat at start reaches A; A heard B and B sent.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, metricsA := probe(t, "http://"+internalA+"/metrics")
+		if strings.Contains(metricsA, `origo_gossip_packets_total{direction="received"} 1`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("A received nothing:\n%s", metricsA)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, metricsB := probe(t, "http://"+internalB+"/metrics"); !strings.Contains(metricsB, `origo_gossip_packets_total{direction="sent"} 1`) {
+		t.Fatalf("B sent nothing:\n%s", metricsB)
+	}
+	if live := a.set.Live(); strings.Join(live, ",") != "origod-0,origod-1" {
+		t.Fatalf("A's live set %v", live)
+	}
+	// The header names the preferred node of a repository, on the 404
+	// the fake bucket's empty listing produces as on any status.
+	client := &http.Client{Transport: &http.Transport{}}
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://"+publicA+"/r/0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f.git/info/refs?service=git-upload-pack", nil)
+	req.Header.Set("Authorization", "Bearer "+id.token())
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 404 || resp.Header.Get("Origo-Prefer") != a.set.Prefer("0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", 1)[0] {
+		t.Fatalf("Origo-Prefer: %d %q", resp.StatusCode, resp.Header.Get("Origo-Prefer"))
+	}
+	// The eviction gauges are served at 0 with nothing cached.
+	if _, metricsA := probe(t, "http://"+internalA+"/metrics"); !strings.Contains(metricsA, "origo_cache_repos 0\n") || !strings.Contains(metricsA, `origo_evictions_total{reason="pressure"} 0`) {
+		t.Fatalf("eviction metrics:\n%s", metricsA)
+	}
+	// Peers without the secret is a configuration problem.
+	envC := testEnv(t)
+	envC["ORIGO_GOSSIP_PEERS"] = "origod-gossip"
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), nil, getenv(envC), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "missing ORIGO_GOSSIP_SECRET") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 }

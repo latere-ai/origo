@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -407,15 +406,4 @@ func (g *Gossip) Port() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.port
-}
-
-// PortOf reads the port of a listen address such as ":7946", 0 when
-// it has none.
-func PortOf(addr string) int {
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return 0
-	}
-	n, _ := strconv.Atoi(port)
-	return n
 }
