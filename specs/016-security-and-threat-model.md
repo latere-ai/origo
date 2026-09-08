@@ -41,6 +41,18 @@ environment, and the NetworkPolicy on the gossip port (`deploy/base`
 carries none; this spec adds it, and specs 005, 013, and 018 name it
 as this spec's).
 
+One item for the builder, from spec 012, in `internal/auth`: a write
+under a repository-bound token asks the authorizer for the minter's
+`quota_bytes`, and `Guard.quota` today logs an unreachable authorizer
+and falls back to `auth.DefaultQuotaBytes`, so a bound token writes
+through an outage that denies every other write on the node.
+`Guard.Decide` propagates the `*Unavailable` on a write instead, the
+write is refused with `authorizer_unavailable`, and a deny or an allow
+that names no figure still leaves the default because the token's scope
+already decided the access. `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`
+holds it; the closing block of `TestBoundTokenWriteTakesTheMintersQuota`
+asserts the fallback today and changes with it.
+
 ## Design
 
 ### Assets
