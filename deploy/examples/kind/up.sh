@@ -176,13 +176,19 @@ wait_for "port $(port 30900)" curl -fsS "http://localhost:$(port 30900)/minio/he
 # Every port answering does not mean the nodes hold the issuer's keys:
 # a node that started before the stubs fetched nothing and retries once
 # a minute (spec 007). The stack is up when a token minted at the
-# issuer's host port reaches the authorizer, which denies the probe id.
+# issuer's host port reaches the authorizer through every node, which
+# denies the probe id: each node's own port is checked, because the
+# balanced port answers from whichever node has the keys first, and a
+# test that names a node, or deletes the one that answered, would find
+# the others still without them.
 token=$(curl -fsS -X POST "http://localhost:$(port 30081)/mint" -d '{"sub":"dev"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
 identity_ready() {
-	[ "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
-		"http://localhost:$(port 30080)/v1/repos/00000000-0000-0000-0000-000000000001")" = 403 ]
+	for p in 30080 30180 30181 30182; do
+		[ "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+			"http://localhost:$(port $p)/v1/repos/00000000-0000-0000-0000-000000000001")" = 403 ] || return 1
+	done
 }
-wait_for "the identity path" identity_ready
+wait_for "the identity path on every node" identity_ready
 
 # 8. The CA on the runner, so a test trusts the source's host port, and
 # the name of this cluster as the current one, so cluster.Apply of a test

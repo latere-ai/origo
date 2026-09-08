@@ -558,6 +558,13 @@ Divergences and interpretations, all kept:
   authorizer through the nodes, which denies the probe id with 403; and
   a pod `DeletePod` replaced is ready before its NodePort routes to it,
   so the test polls node 2 for up to a minute.
+- A third race, found by spec 005's cluster run and fixed in `up.sh`:
+  the identity wait checked the balanced port, which answers from
+  whichever node fetched the issuer's keys first, so a test that names
+  a node, or `TestClusterHelperDrivesKubectl` deleting the one node
+  that had them, found the others answering `issuer_unavailable` for
+  up to a minute. The wait now holds for the balanced port and each of
+  the three node ports.
 - A second defect found in the tree and fixed at the root, recorded in
   spec 002's Outcome: the digests pinned for `debian:bookworm-slim` and
   `minio/mc` were `arm64` manifests, not multi-arch indexes, so the
