@@ -43,7 +43,7 @@ func TestValidRefName(t *testing.T) {
 			t.Errorf("%q refused", ok)
 		}
 	}
-	for _, bad := range []string{"", "main", "refs/", "refs/heads/", "refs/heads/a..b", "refs/heads/.hidden", "refs/heads/x.lock", "refs/heads/a b", "refs/heads/a~1", "refs/heads/a//b", "refs/heads/@", "refs/heads/a@{b}", "refs/heads/a\x01", "refs/heads/a\\b", "refs/heads/a:b", "refs/heads/a?b", "refs/heads/a*", "refs/heads/a[b"} {
+	for _, bad := range []string{"", "main", "refs/", "refs/heads/", "refs/heads/a..b", "refs/heads/.hidden", "refs/heads/x.lock", "refs/heads/a b", "refs/heads/a~1", "refs/heads/a//b", "refs/heads/@", "refs/heads/a@{b}", "refs/heads/a\x01", "refs/heads/a\\b", "refs/heads/a:b", "refs/heads/a?b", "refs/heads/a*", "refs/heads/a[b", "refs/heads/a.", "refs/heads/a./b", "refs/heads/\xee"} {
 		if ValidRefName(bad) {
 			t.Errorf("%q accepted", bad)
 		}

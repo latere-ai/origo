@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Version is the format version every header and index object carries.
@@ -190,10 +191,15 @@ func ParseIndexKey(key string) (uint64, bool) {
 }
 
 // ValidRefName reports whether name is a reference git accepts: HEAD, or
-// a fully qualified name under refs/ that passes git's own rules.
+// a fully qualified name under refs/ that passes git's own rules. One
+// rule is Origo's: the name is valid UTF-8, because the index object
+// carries it as JSON, which cannot hold a byte sequence that is not.
 func ValidRefName(name string) bool {
 	if name == "HEAD" {
 		return true
+	}
+	if !utf8.ValidString(name) {
+		return false
 	}
 	if !strings.HasPrefix(name, "refs/") || strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".lock") {
 		return false
@@ -207,7 +213,7 @@ func ValidRefName(name string) bool {
 		}
 	}
 	for comp := range strings.SplitSeq(name, "/") {
-		if comp == "" || strings.HasPrefix(comp, ".") || comp == "@" {
+		if comp == "" || strings.HasPrefix(comp, ".") || strings.HasSuffix(comp, ".") || comp == "@" {
 			return false
 		}
 	}
