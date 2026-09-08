@@ -89,6 +89,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.RepairInterval != DefaultRepairInterval || cfg.RepairUnheard != DefaultRepairUnheard {
 		t.Fatalf("repair defaults not applied: %+v", cfg)
 	}
+	if cfg.StorageTimeout != DefaultStorageTimeout || cfg.StaleMax != DefaultStaleMax {
+		t.Fatalf("degraded-storage defaults not applied: %+v", cfg)
+	}
 	if cfg.NodeName != "node-1" {
 		t.Fatalf("NodeName = %q", cfg.NodeName)
 	}
@@ -125,6 +128,8 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_GOSSIP_ADDR"] = "127.0.0.1:2"
 	m["ORIGO_SWEEP_INTERVAL"] = "1s"
 	m["ORIGO_SWEEP_MIN_AGE"] = "0s"
+	m["ORIGO_STORAGE_TIMEOUT"] = "2s"
+	m["ORIGO_STALE_MAX"] = "30s"
 	m["ORIGO_FAILPOINT"] = "commit.before-index"
 	m["ORIGO_REPAIR_INTERVAL"] = "10s"
 	m["ORIGO_REPAIR_UNHEARD"] = "5s"
@@ -159,6 +164,27 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	}
 	if cfg.RepairInterval != 10*time.Second || cfg.RepairUnheard != 5*time.Second {
 		t.Fatalf("repair values: %+v", cfg)
+	}
+	if cfg.StorageTimeout != 2*time.Second || cfg.StaleMax != 30*time.Second {
+		t.Fatalf("degraded-storage values: %+v", cfg)
+	}
+}
+
+// TestStorageTimeoutMustBeAboveZero: a zero deadline would fail every
+// storage operation at once, so it is a problem in the one message
+// beside a malformed value (spec 015).
+func TestStorageTimeoutMustBeAboveZero(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_STORAGE_TIMEOUT"] = "0"
+	m["ORIGO_STALE_MAX"] = "soon"
+	_, err := Load(env(m))
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	for _, want := range []string{"ORIGO_STORAGE_TIMEOUT must be above zero", "ORIGO_STALE_MAX must be a duration"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message lacks %q: %v", want, err)
+		}
 	}
 }
 

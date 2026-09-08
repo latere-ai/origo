@@ -35,6 +35,11 @@ const (
 	// a node must be unheard before its journals are repaired.
 	DefaultRepairInterval = 10 * time.Minute
 	DefaultRepairUnheard  = 5 * time.Minute
+	// The degraded-storage values of spec 015: the deadline of one
+	// object storage operation and how long a warm repository is served
+	// from the local copy while the read breaker is open.
+	DefaultStorageTimeout = 10 * time.Second
+	DefaultStaleMax       = 5 * time.Minute
 	// MinGossipSecretBytes is the shortest ORIGO_GOSSIP_SECRET accepted
 	// (spec 002): the key of an HMAC-SHA256 is at least its output size.
 	MinGossipSecretBytes = 32
@@ -112,6 +117,14 @@ type Config struct {
 	// defaults are the spec's values.
 	SweepInterval time.Duration
 	SweepMinAge   time.Duration
+
+	// StorageTimeout is ORIGO_STORAGE_TIMEOUT (spec 015), the deadline of
+	// one object storage operation; StaleMax is ORIGO_STALE_MAX, how long
+	// a warm repository is served from the local copy while the read
+	// breaker is open, measured from its last currency check that
+	// answered.
+	StorageTimeout time.Duration
+	StaleMax       time.Duration
 
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
@@ -205,6 +218,11 @@ func Load(getenv Getenv) (*Config, error) {
 	cfg.SweepMinAge = duration(getenv, "ORIGO_SWEEP_MIN_AGE", DefaultSweepMinAge, &problems)
 	cfg.RepairInterval = duration(getenv, "ORIGO_REPAIR_INTERVAL", DefaultRepairInterval, &problems)
 	cfg.RepairUnheard = duration(getenv, "ORIGO_REPAIR_UNHEARD", DefaultRepairUnheard, &problems)
+	cfg.StorageTimeout = duration(getenv, "ORIGO_STORAGE_TIMEOUT", DefaultStorageTimeout, &problems)
+	cfg.StaleMax = duration(getenv, "ORIGO_STALE_MAX", DefaultStaleMax, &problems)
+	if cfg.StorageTimeout == 0 {
+		problems = append(problems, "ORIGO_STORAGE_TIMEOUT must be above zero")
+	}
 	if cfg.EventsURL != "" && cfg.EventsSecret == "" {
 		problems = append(problems, "ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL")
 	}
