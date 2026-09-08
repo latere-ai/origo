@@ -1,11 +1,11 @@
 ---
 title: "Compaction: primary-only repacks and log truncation"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/005-placement-and-replication.md
-affects: [internal/compact/, internal/wal/, internal/repo/, internal/httpgit/, test/e2e/]
+affects: [internal/compact/, internal/wal/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -275,3 +275,118 @@ request and response shape, rate limit, and event (spec 019).
   in the `e2e` job of spec 013; the fixture is sized so the test fits
   that job's budget, and `TestMeasure` under `ORIGO_E2E_MEASURE=1`
   prints the same figures for a 1 GiB fixture without asserting them).
+
+## Outcome
+
+Built on 2026-09-08 in six commits: the `pack_bytes` row and the
+sweeper rules on the log, `internal/compact` with the procedure, the
+request objects and the sweep, the trigger on the receive path, the node
+wiring, and the tests.
+
+| Criterion | Test |
+|---|---|
+| 500 pushes through node 1 leave at most 64 entries and at most 6 packs, and a clone through node 2 passes `git fsck` | `test/e2e`, `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs` (`e2e` job); `internal/compact`, `TestThresholdFoldsEntries` for the unit half |
+| a push between step 1 and step 5 aborts the run with `result="stale"`, is in the newest index, and the next run folds it | `internal/compact`, `TestPushDuringCompactionIsPreserved` |
+| the trigger returns before the run, a second trigger starts none, a `gc` answers `running` with the start time, and a clone during the repack succeeds | `internal/compact`, `TestTriggerIsBackgroundAndSingle`, `TestGcOnThePrimaryRunsAndReportsFigures`; `internal/httpgit`, `TestPushTriggersTheCompactionCheck` |
+| a `gc` on a node that is not the primary writes `origo/gc/<id>`, answers with the primary, and the primary's sweep compacts and deletes the request | `internal/compact`, `TestGcRequestIsPickedUpByThePrimary` |
+| 65 pushes through a node that is not the primary leave `origo/gc/<id>` with `reason: "threshold"`, and the primary, holding no copy, materializes and folds them | `internal/compact`, `TestPushOnANonPrimaryRequestsCompaction` |
+| a node that read the previous index materializes after the compaction while the entries are younger than `ORIGO_SWEEP_MIN_AGE` | `internal/compact`, `TestDelayedReaderSurvivesCompaction` |
+| a pack no index lists is swept after `ORIGO_SWEEP_MIN_AGE` and a listed one is kept, and no index object is ever swept | `internal/wal`, `TestSweepRemovesUnlistedPacks`, `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames` |
+| fetch latency after many pushes is within 25% of its latency after 10 | `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat` (`e2e` job); `TestMeasure` under `ORIGO_E2E_MEASURE=1` for the 1 GiB fixture |
+| a run that waits more than 5 seconds for a subprocess slot skips (spec 012) | `internal/compact`, `TestCompactionSkipsWhenNoSlot` |
+
+The Truncation section was written against the rule this builder
+implemented, so the design and the tree agree: truncation removes the
+folded entries and the packs no index lists, and an index object is
+never removed. That closes spec 005's open item, the 404 currency check
+under a swept index object. `internal/wal/sweep.go` lost its index
+rule, the `Indexes` count of `SweepReport`, and the two assertions on
+it, and spec 004's Sweeper table carries the same rows.
+
+Divergences, each kept and the reason:
+
+- **The index row carries `pack_bytes`, which the byte threshold
+  sums.** The index object carried no such figure: `size_bytes` is that
+  sum plus the listed packs and cannot be split back into the two, and
+  reading each entry's header to sum them would cost one `GET` per
+  entry on every push. `wal.IndexEntry.PackBytes` and
+  `Index.EntriesBytes` are new; the field is omitted on a row with no
+  pack and an index object written before it existed reads as 0, so
+  nothing in the tree has to be rewritten. Spec 004's Outcome records
+  it.
+- **The pack set of a run is what the multi-pack index names.** Step 4
+  says "every pack now under `objects/pack/` that the held index does
+  not list", which after a repack without `-d` is every superseded pack
+  as well: `git repack` leaves them on disk on purpose. The
+  multi-pack index the same repack wrote names exactly the packs it
+  left current, the new ones and the large ones the geometric roll-up
+  left alone, so the run reads its `PNAM` chunk (`internal/compact/midx.go`).
+  A pack the held index already lists is carried into the new list
+  without being uploaded again, which is what keeps the list small over
+  many runs (`TestASecondRunCarriesTheLargePackForward`).
+- **A run that fails the connectivity check evicts the copy after it
+  releases the read lock.** Step 3 says the copy "is evicted for
+  rebuild"; evicting takes the write lock, so doing it inside step 3
+  deadlocks against the read lock the run holds. The run releases
+  first and evicts then, which is the same outcome one lock ordering
+  later (`TestRunFailuresAreCountedAndReported`).
+- **A request object for a repository the log no longer holds is
+  deleted by any node's sweep**, beside the 24 hour rule the Design
+  gives. A purge (spec 004) removes the repository and leaves the
+  request under `origo/gc/`, where it would fail one run per sweep for
+  a whole day (`TestSweepReportsStoreFailures`).
+- **Step 6 is a warning, not a failure.** The log is already correct
+  when the commit returns, so a failed pack swap on disk leaves the
+  copy holding packs the index does not list, which the next run's
+  repack folds and this step then removes. Answering the caller an
+  error would say the compaction did not happen.
+- **The subprocess semaphore is the `compact.Slots` seam.** Spec 012
+  owns `ORIGO_MAX_GIT_PROCS` and has not landed, so the manager takes a
+  slot through an interface a node passes nil for today;
+  `TestCompactionSkipsWhenNoSlot` drives it with a semaphore that
+  grants nothing, and spec 012 wires the real one.
+- **`GC` is a method, not an endpoint.** The endpoint's shape, its rate
+  limit, and the `compacted` event are spec 019's, as the Not in this
+  spec section says; `compact.Manager.GC` answers what spec 019's
+  handler needs (`Ran` with the before and after figures, `Running`
+  with `started_at`, or `Primary` on a node that is not the primary).
+- **The 500 push criterion's wait pushes between rounds.** A push whose
+  trigger finds a run in flight schedules none, and that run ends
+  `stale` when the push landed inside it, so a repository can be left
+  with no run scheduled until the next push or the primary's ten minute
+  sweep. `waitForCompaction` pushes once every 30 seconds while it
+  waits, which is what the next push on a live repository does; the
+  criterion's "after the background run the last threshold crossing
+  scheduled completes" is met either way.
+- **The fetch-latency criterion runs on 20 MiB and 200 pushes**, not the
+  1 000 pushes of the Design's tuning target, because the `e2e` job's
+  30 minute budget already carries the 500 push test. `TestMeasure`
+  runs the same routine on a 1 GiB fixture and 1 000 pushes and asserts
+  nothing, which the criterion names.
+
+One item this spec closes for another:
+
+- Spec 004's ninth criterion needed the packs a compaction produces;
+  they exist now, and `TestSlowMaterializeTenThousandEntries` stays
+  spec 004's to write in spec 013's `e2e-slow` job. Spec 004's Outcome
+  records it.
+
+Items for other specs:
+
+- Spec 012: `compact.Slots` is the seam for `ORIGO_MAX_GIT_PROCS`, and
+  `TestCompactionSkipsWhenNoSlot` is in `internal/compact` as the
+  decisions table says.
+- Spec 019: `compact.Manager.GC`, `compact.Figures`, and
+  `compact.Manager.Primary` are what the `gc` endpoint and `stats`
+  need; `compacted_at` is the `at` of the newest `compact` entry the
+  index names.
+- Spec 011: nothing. `origo_compactions_total{result}` and
+  `origo_compaction_seconds` were already in `internal/metrics`, so
+  `internal/compact` records through the `metrics.Set` handles and
+  registers no series of its own.
+- `latere.ai/x/pkg`: nothing new was needed. `pkg/wait` is the sweep's
+  ticker; the multi-pack index parser is git's own format and belongs
+  in this repository, not in a generic package.
+
+The two stack criteria are proved by the `e2e` job of spec 013; the
+kind stack cannot run on this machine.

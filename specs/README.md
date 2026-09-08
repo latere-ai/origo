@@ -55,7 +55,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | testing |
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | complete |
-| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | validated |
+| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | testing |
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing |
@@ -192,7 +192,7 @@ flowchart LR
 |---|---|---|---|
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
-| 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 next |
+| 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 built, at testing until its two cluster tests are green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 and 015 next |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
@@ -493,7 +493,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
 | variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 021 |
-| variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 009, 012 |
+| variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
@@ -562,7 +562,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_wal_commits_total` | [011](011-observability.md) | 004 |
 | metric | `origo_wal_entry_bytes_total` | [011](011-observability.md) | - |
 | metric | `origo_wal_head_check_seconds` | [011](011-observability.md) | 004, 005 |
-| event | `compacted` | [019](019-repository-administration.md) | - |
+| event | `compacted` | [019](019-repository-administration.md) | 006 |
 | event | `deleted` | [019](019-repository-administration.md) | - |
 | event | `frozen` | [019](019-repository-administration.md) | - |
 | event | `imported` | [019](019-repository-administration.md) | 014, 021 |

@@ -300,6 +300,7 @@ deletes, once an object is older than `ORIGO_SWEEP_MIN_AGE`:
 |---|---|
 | an entry with `seq` at or below `compacted_through` of the newest index | folded by compaction |
 | an entry with `seq` above the newest index, or one the newest index does not name | an orphan |
+| a pack under `packs/` the newest index does not list | superseded by a compaction (spec 006) or left by one that lost its round; the `.idx` goes with the `.pack` |
 | an index object | never, whatever `compacted_through` says (spec 006, Truncation) |
 | everything under the repository, and its name | the newest index carries `deleted_at` older than the 7 day hold; the age rule does not apply |
 
@@ -308,10 +309,11 @@ index/<n+1>` and a 404 means current: a warm node holding `index/<n>`
 below a truncation point would read the 404 left by a deleted
 `index/<n+1>` as proof its copy was current and serve stale references.
 One small object per push, bounded by 1 MiB, is the cheaper side of
-that trade. `internal/wal/sweep.go` deletes index objects below
-`compacted_through` today, which nothing reaches while
-`compacted_through` is 0; spec 006 removes the rule with the `Indexes`
-count of `SweepReport`, and owns the criterion.
+that trade. Spec 006 removed the rule from `internal/wal/sweep.go`
+with the `Indexes` count of `SweepReport`, and owns the criterion.
+
+A reader that holds a swept sequence is below `compacted_through` and
+rebuilds from packs, which is step 2 of materialization.
 
 ### Deletion
 
@@ -497,6 +499,28 @@ own commit with a test that fails without it:
   second `GET` of the index it had read. The index the check read is
   applied as it is when the copy did not move while the reader waited
   (`TestReaderUpgradeAppliesTheIndexItRead`).
+
+Two changes spec 006 made to this spec's Design when compaction
+landed on 2026-09-08, both recorded in its Outcome:
+
+- The sweeper no longer deletes index objects, and deletes the packs
+  no index lists instead. The rule "an index object below
+  `compacted_through` and below the newest 64" was unsound once
+  `compacted_through` moved, which is what spec 006's Truncation
+  section states and this spec's Sweeper table now carries
+  (`TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`,
+  `TestSweepRemovesUnlistedPacks`).
+- The index row carries `pack_bytes`, which compaction's byte
+  threshold sums. `size_bytes` is the listed packs plus that sum and
+  cannot be split back into the two, so the figure the threshold reads
+  had no source; the field is absent on a row with no pack and on an
+  index object written before it existed, which reads as 0
+  (`TestParseIndex`).
+
+The ninth criterion's fixture is now buildable: a compaction produces
+the packs it names, `internal/compact`. The test
+`TestSlowMaterializeTenThousandEntries` is still to be written and
+stays this spec's, in spec 013's `e2e-slow` job.
 
 The materialization budget of spec 005 replaced the per-entry
 `index-pack` and `update-ref` of step 3 with concurrent fetches and one

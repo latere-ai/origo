@@ -127,6 +127,21 @@ committed: the commit log already holds that.
 - `make test-integration` runs the store suite against MinIO and the
   end-to-end suite: push, wipe the disk, clone; two nodes pushing
   different branches at once; a node killed mid-push.
+- Compaction (spec 006): a repository that receives many pushes no
+  longer serves fetches from thousands of small packs. One node, the
+  first the placement header names, repacks it into a few geometrically
+  sized packs, uploads them, and records the result as one log entry, so
+  every other node downloads packs instead of repacking. It runs in the
+  background after a push that crosses 64 entries, 256 MiB of pack
+  bytes in them, or a 512 KiB index object, and never delays a push. A
+  push that lands while a repack runs wins and the compaction is
+  retried; nothing is ever lost to one. A node that is not the
+  repository's compaction node records the need instead, and the node
+  that owns it acts within ten minutes. Once the packs hold the
+  history, the folded entries and the packs they replaced are deleted
+  after `ORIGO_SWEEP_MIN_AGE`, so a repository's storage stays
+  proportional to its content rather than to how often it is pushed to.
+
 - Three defects of the write-ahead log (spec 004) are fixed. A pack
   produced by compaction or an import is written on disk as
   `pack-<hash>.pack`, the name git reads; it was written under the log
