@@ -110,8 +110,35 @@ func TestClusterDegradedStorage(t *testing.T) {
 		s.cleanup(t, id)
 	}
 
-	// Warm on node 1: a push and a clone through it, consistent.
+	// Every node loses the bucket under the cut and every node's
+	// readiness listings count toward its breaker, so after a fault the
+	// scenario waits until every node's read breaker is closed and the
+	// bucket answers through each, and leaves the stack that way for
+	// the tests after it. The check reads the repository's metadata,
+	// which materializes nothing, so node 3 stays cold for the partial
+	// case.
 	warm, cold := newID(t), newID(t)
+	waitStackHealthy := func(t *testing.T) {
+		t.Helper()
+		waitUntil(t, "every node's read breaker closed and the bucket answering", 3*time.Minute, func() bool {
+			for i := range 3 {
+				if nodeMetric(t, portNode1Int+i, "origo_storage_breaker_state", `class="read"`) != 0 {
+					return false
+				}
+				if status, _, _ := gitGet(t, fmt.Sprintf("http://localhost:%d", portNode1+i), token, "/v1/repos/"+warm, 30*time.Second); status != 200 {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	t.Cleanup(func() {
+		if !t.Failed() {
+			waitStackHealthy(t)
+		}
+	})
+
+	// Warm on node 1: a push and a clone through it, consistent.
 	create(node1, warm, "warm-"+warm[:8])
 	create(node1, cold, "cold-"+cold[:8])
 	work := clone(t, nodeURL(node1, warm))
@@ -187,6 +214,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 		status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		return status == 200 && header.Get("Origo-Stale") == ""
 	})
+	waitStackHealthy(t)
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 
 	t.Run("slow", func(t *testing.T) {
@@ -217,6 +245,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 			status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 			return status == 200 && header.Get("Origo-Stale") == ""
 		})
+		waitStackHealthy(t)
 	})
 
 	t.Run("partial", func(t *testing.T) {
