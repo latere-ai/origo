@@ -289,10 +289,11 @@ func TestMissingPackIsAnIntegrityError(t *testing.T) {
 
 // TestThinPackWithoutBaseIsStorageUnavailable holds the rule of spec
 // 015 for a thin pack whose base is in no entry and no pack: git
-// refuses the batch, the error is neither an integrity error of the
-// log nor corruption of the copy, so the handlers answer 503
-// storage_unavailable, nothing is evicted, and the integrity counter
-// stays at 0.
+// refuses the batch, the error is neither an IntegrityError nor
+// corruption of the copy, so the handlers answer 503
+// storage_unavailable and nothing is evicted, and it is counted once
+// on origo_log_integrity_errors_total as the integrity error of the
+// log it is.
 func TestThinPackWithoutBaseIsStorageUnavailable(t *testing.T) {
 	d := newDegraded(t, time.Minute)
 	ctx := context.Background()
@@ -308,7 +309,10 @@ func TestThinPackWithoutBaseIsStorageUnavailable(t *testing.T) {
 	if errors.As(err, &ie) || errors.Is(err, ErrCorrupt) || errors.Is(err, wal.ErrStorageOpen) {
 		t.Fatalf("classified as integrity, corruption, or the breaker: %v", err)
 	}
-	if got := d.metric("origo_log_integrity_errors_total"); got != "0" {
+	if !IsMissingBase(err) {
+		t.Fatalf("not read as a missing base: %v", err)
+	}
+	if got := d.metric("origo_log_integrity_errors_total"); got != "1" {
 		t.Fatalf("integrity errors %q", got)
 	}
 	if got := d.metric("origo_repo_rebuilt_total"); got != "0" {

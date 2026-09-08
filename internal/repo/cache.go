@@ -580,6 +580,16 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 			c.evict(r)
 			return fmt.Errorf("%w: %w", ErrCorrupt, err)
 		}
+		if IsMissingBase(err) {
+			// A thin pack whose base is in no entry and no pack, with
+			// the copy itself sound: an integrity error of the log like
+			// a missing pack, counted as one, and answered
+			// storage_unavailable (spec 015), because git's refusal
+			// names no key and the base may still arrive.
+			c.integrity.Inc(nil)
+			c.logger.ErrorContext(ctx, "log integrity error: a thin pack's base is in no entry", "repo", r.ID, "error", err)
+			return err
+		}
 		return err
 	}
 	if err := c.reconcileRefs(ctx, r, ix); err != nil {

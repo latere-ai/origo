@@ -107,3 +107,24 @@ func IsCorruption(err error) bool {
 	}
 	return false
 }
+
+// missingBaseMarkers are the phrases index-pack prints when a thin pack
+// names a base object the repository does not hold: the base is in no
+// entry and no pack (spec 015).
+var missingBaseMarkers = []string{"did not receive expected object", "unresolved delta"}
+
+// IsMissingBase reports whether err is index-pack refusing a thin pack
+// whose base is in no entry.
+func IsMissingBase(err error) bool {
+	var ge *Error
+	if !errors.As(err, &ge) {
+		return false
+	}
+	msg := strings.ToLower(ge.Stderr)
+	for _, m := range missingBaseMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
