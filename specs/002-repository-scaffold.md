@@ -110,7 +110,7 @@ listener and path by path on the public one.
 | Method | Path | Body |
 |---|---|---|
 | GET | `/livez` | 200 `ok`, touches no dependency |
-| GET | `/readyz` | 200 `ok` when every check passes; 503 `not ready: <check>: <error>` otherwise, and `not ready: draining` during shutdown; text, the developer register |
+| GET | `/readyz` | 200 `ok` when every check passes; 503 `not ready: <check>: <error>` otherwise, and `not ready: draining` during shutdown; text, the developer register. The `storage` check passes while a storage breaker is open, once the bucket has answered this replica at least once since it started, because such a node still serves warm repositories stale and refuses writes with a code, and taking it out of rotation would lose those reads (spec 015) |
 | GET | `/version` | `{"version","commit","build_time"}` from `internal/version`, set by `-ldflags` |
 | GET | `/metrics` | the `latere.ai/x/pkg/metrics` registry in the Prometheus text format |
 

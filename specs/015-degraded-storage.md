@@ -50,40 +50,70 @@ does for the other breaker; the wrapper passes its own clock through.
 ### Deadline per operation
 
 Every `Store` call in `internal/wal` runs under a context deadline of
-`ORIGO_STORAGE_TIMEOUT` (default 10 seconds) per attempt, so the three
-attempts of `DefaultRetry` take about 30 seconds: three attempts of 10
-seconds and two pauses of 50 and 100 milliseconds, jitter subtracted.
-A timeout is a failure toward the breaker.
+`ORIGO_STORAGE_TIMEOUT` (default 10 seconds) for the whole call, not
+per attempt: `pkg/s3` runs the three attempts of `DefaultRetry` under
+the one context it is given and `retry.Policy` has no per-attempt
+deadline, so a slow bucket fails a call after `ORIGO_STORAGE_TIMEOUT`
+however many attempts fitted inside it. A per-attempt deadline is an
+item for `latere.ai/x/pkg` below. A timeout is a failure toward the
+breaker.
+
+A `Get` is the one call bounded to the arrival of the object's
+headers; its body is read afterwards under the caller's own context,
+because an entry of up to 2 GiB cannot be read inside any per-call
+deadline, and the request's own git deadline bounds that read.
 
 ### Breaker per operation class
 
-`internal/wal` wraps the `Store` in two `circuitbreaker.Breaker` from
-`latere.ai/x/pkg/circuitbreaker`, each `circuitbreaker.New(5,
-30*time.Second, circuitbreaker.WithClock(clock.Now))`: one for reads
-(`Get`, `Head`, `List`) and one for writes (`Put`, `Create`, `Delete`),
-so a write-side outage does not stop reads the cache can answer. The
-wrapper, `wal.BreakerStore`, takes a clock, an interface with one
+`internal/wal` wraps the `Store` in two breakers of its own, each with
+the threshold 5 and the open window 30 seconds: one for reads (`Get`,
+`Head`, `List`) and one for writes (`Put`, `Create`, `Delete`), so a
+write-side outage does not stop reads the cache can answer. The
+breaker is local, in `internal/wal/breaker.go`, with the semantics of
+`latere.ai/x/pkg/circuitbreaker` and a clock function, because that
+package reads `time.Now` and takes no clock option, the item the
+Current state records; `circuitbreaker.State` is still the package's
+type and the gauge's values, and the comment on the local breaker
+names its home.
+
+The wrapper, `wal.BreakerStore`, takes a clock, an interface with one
 method `Now() time.Time`, defaulting to `time.Now`, and passes it to
 both breakers, so every duration in this spec runs under a fake clock
 in the suite. The wrapper calls `Allow` before every `Store` call and
 refuses at once with `wal.ErrStorageOpen` when it answers false, which
 the handlers map to 503 `storage_unavailable` with `details.op` and
 `details.error: "breaker open"`; after the call it records one success
-or one failure. One `Store` call is one count
-whatever `pkg/s3` did inside it: its three attempts under
+or one failure.
+
+One `Store` call is one count whatever `pkg/s3` did inside it: its three attempts under
 `DefaultRetry` are one failure when the last attempt fails, and a
 timeout, a transport error, and a 5xx are failures, while a 404, a
-412, and a 304 are successes. The breaker does what the package does:
-it opens on the 5th consecutive failure, stays open for 30 seconds,
+412, and a 304 are successes. The local breaker does what the package
+does: it opens on the 5th consecutive failure, stays open for 30 seconds,
 then `Allow` admits one probe and answers false to everyone else until
 the probe reports; a success closes the breaker and a failure reopens
 it for another 30 seconds. There is no doubling.
-`origo_storage_breaker_state{class}` reports the package's `State`: 0
+`origo_storage_breaker_state{class}` reports `circuitbreaker.State`: 0
 closed, 1 open, 2 half-open, and `OrigoBreakerOpen` (spec 011) fires.
+
+A call the caller's own context ended counts toward neither side of
+the breaker: the bucket did not fail it. Only a failure the wrapper's
+own deadline or the store itself produced counts, so the cancelled
+fetches of a busy node cannot open its read breaker.
+
+`origo_storage_ops_total{op,result}` is recorded on every call, a
+refusal under an open breaker included, which counts
+`result="error"`; `origo_storage_seconds{op}` is observed only on a
+call that ran, so a refusal is counted and not timed. A 304 counts
+`result="ok"`, the label vocabulary having no `not_modified` value.
+
 The wrapper records the time it saw the breaker open so it can send
 `Retry-After` as the whole seconds of the 30 that remain, at least 1.
-`origo_storage_ops_total{op,result}` and `origo_storage_seconds{op}`
-are recorded on every call.
+`Retry-After` is on every refusal a breaker produced, not on the
+receive-pack advertisement alone: the 503 `storage_unavailable` of the
+git routes and of the JSON API carries it too, with the remaining open
+interval of the breaker that refused. Spec 003's header table defines
+it.
 
 ### Reads while degraded
 
@@ -124,21 +154,27 @@ the breaker's remaining open time in whole seconds, and a body of the
 storage_unavailable: <the sentence of spec 003>` pkt-line. Git prints
 `fatal: remote error: storage_unavailable: …` and sends no pack; a 503
 would show the user only the status. A pack already spooled when the
-breaker opens waits for the breaker: the commit polls `Allow` on the
+breaker opens waits for the breaker: the commit polls `Admits` on the
 write breaker every 500 ms for at most 60 seconds, runs as the probe
-the first time `Allow` answers true, and is refused with the same line
+the first time it answers true, and is refused with the same line
 in the sideband when the 60 seconds pass with no admission or the
 probe fails; the entry, if written, is an orphan the sweeper removes.
 The hook of spec 004 holds git's verdict FIFO for that minute, which
-is inside the 5 minute deadline of `receive-pack`.
+is inside the 5 minute deadline of `receive-pack`. The poll asks
+`Admits`, which reports whether the open window has passed without
+taking the probe slot, and the commit's first write is then the probe;
+polling `Allow` would take the slot and refuse the commit's own write.
 
 ### Partial failure
 
 A single key failing is corruption in the log, not an outage: a 404 for
-a pack the index names, an entry whose length or `pack_sha256` differs
-from the header, an index object that does not parse. The node
-increments `origo_log_integrity_errors_total`, logs the key, evicts
-nothing, and refuses the repository:
+a pack the index names, a 404 for an entry the index names, an entry
+whose length or `pack_sha256` differs from the header, an entry that
+does not parse, an entry whose pack is not a version 2 packfile, and
+an index object that does not parse. Each is one key the log names
+that does not hold what the log says. The node increments
+`origo_log_integrity_errors_total`, logs the key as the bucket names
+it, the full object key, evicts nothing, and refuses the repository:
 
 | Code | Status | Message | Details |
 |---|---|---|---|
@@ -150,7 +186,8 @@ holds, which fails materialization with git's `did not receive expected
 object` (spec 005, the materialization budget). The base is missing
 from the objects the log stores, so the inconsistency is storage-side,
 the same class as a 5xx or an unreachable bucket, and the answer is 503
-`storage_unavailable` with `details.op` and `details.error`.
+`storage_unavailable` with `details.op: "index-pack"` and git's message
+in `details.error`.
 `repository_unavailable` says an operator must restore this repository
 before it can be served; `storage_unavailable` says the bucket did not
 give the node what it asked for, which is what happened. It increments
@@ -162,6 +199,26 @@ naming the object.
 It never rebuilds the log from a local copy. An operator restores the
 object from the provider's versioning or from a replica's cache by the
 procedure in `docs/operations.md`; the next request materializes again.
+
+### Readiness
+
+`/readyz` (spec 002) stays ready while the write breaker is open, and
+while the read breaker is open once the bucket has answered this
+replica at least once since it started. The node still serves its warm
+repositories stale and refuses every write with a code and a
+`Retry-After`, which is the degraded design working; a not-ready node
+would leave the Service's rotation and lose those reads for no gain.
+A replica the bucket has never answered has nothing warm to serve and
+stays unready until a probe succeeds. The `storage` check fails as
+before while the bucket is slow or gone and the breaker is still
+closed, so a replica is out of rotation from its second failed probe
+until the breaker opens.
+
+The readiness listing runs detached from the probe's 2 second budget,
+under the storage deadline alone, and is shared by the probes that
+arrive while it runs, so the listing is what counts toward the breaker
+of a replica no request reaches, and a probe whose own budget ends
+first reports the wait.
 
 ### Recovery
 
@@ -217,9 +274,10 @@ Queueing pushes for later commit.
   `cluster.ApplyManifest` of spec 013's `test/e2e/cluster` and removed
   by its cleanup, enforced because the stack's CNI is Cilium (a row of
   spec 013's overlay table; kindnet enforces no policy), with
-  `ORIGO_STALE_MAX` set to `30s` on the stack's nodes by the overlay
-  so the warm clone carries `Origo-Stale` for 30 seconds and answers
-  503 after; `test/stubs/slowproxy` for slow, a package this spec
+  `ORIGO_STALE_MAX` set to `30s` and `ORIGO_STORAGE_TIMEOUT` to `5s` on
+  the stack's nodes by the overlay, so the read breaker opens in a few
+  seconds and the warm clone carries `Origo-Stale` for most of its 30
+  seconds and answers 503 after; `test/stubs/slowproxy` for slow, a package this spec
   builds and the `origo-stubs` binary of spec 013 runs: the proxy
   starts only when `-slowproxy-target` (MinIO's Service) is set,
   forwards TCP from its data listener `-slowproxy-data` (default
@@ -252,7 +310,9 @@ the overlay, the cluster test, and the documentation.
 | the variables, the wiring, readiness | `internal/config`, `TestLoadAppliesDefaults`, `TestLoadReadsEveryOptionalValue`, `TestStorageTimeoutMustBeAboveZero`; `cmd/origod`, `TestReadyzStaysReadyWhileTheBreakerIsOpen`, `TestStorageTimeoutBoundsTheReadinessListing` |
 | the proxy | `test/stubs/slowproxy`, `TestProxyHoldsTheFirstBytesForTheDelay`, `TestSettingTheDelayClosesPooledConnections`, `TestControlRefusesABadDelayAndSetReportsIt`, `TestProxyEndsWithAnUnreachableTargetAndOnClose`; `test/stubs/cmd/origo-stubs`, `TestRunsEveryStubFromFlags` |
 
-Divergences and interpretations, each kept and the reason:
+Divergences from the first draft and interpretations, each kept,
+with the reason; the Design above states each as the rule, so a
+reader finds one answer:
 
 - The deadline is per call, not per attempt. `pkg/s3` runs its three
   attempts under the one context it is given and `retry.Policy` has no
@@ -299,7 +359,8 @@ Divergences and interpretations, each kept and the reason:
   it and a few seconds under traffic, then ready again; the cluster
   test waits for node 1's return before it asserts the stale
   responses (`TestReadyzStaysReadyWhileTheBreakerIsOpen`,
-  `TestClusterDegradedStorage`). Recorded under Open below.
+  `TestClusterDegradedStorage`). The Design's Readiness section states
+  the rule.
 - A refused call counts on `origo_storage_ops_total{result="error"}`
   and is not observed on `origo_storage_seconds`: nothing ran. A 304
   counts as `ok`, the table having no `not_modified` value.
@@ -386,15 +447,26 @@ entry read as `context canceled`
   applied to each attempt's context, would make "10 seconds per
   attempt" expressible from outside the client.
 
-Open, left to the owner of the decision:
+Both open items are settled by the fifteenth review round and are the
+Design's rules above:
 
-- Readiness under an open breaker, above: built as ready-while-open
-  with the reasoning given; the alternative, unready until the bucket
-  answers, keeps a partitioned replica out of rotation at the cost of
-  no stale serving through a Service. Spec 002 owns `/readyz`.
-- Whether a `Retry-After` belongs on every 503 the breaker refuses,
-  built here, or on the receive-pack advertisement alone, the one
-  place the Design names it.
+- Readiness stays ready while the write breaker is open, and while the
+  read breaker is open once the bucket has answered the replica at
+  least once since it started, because the node still serves stale
+  reads and refuses writes with a code, and a not-ready node would
+  leave the Service's rotation and lose those reads. Spec 002 owns
+  `/readyz` and its probe row names this spec as the reason.
+- `Retry-After` is on every breaker-refused 503, on the git routes and
+  on the JSON API alike, not on the receive-pack advertisement alone.
+  Spec 003's header table defines the header, with the limits of spec
+  012 and the breakers of this spec as its senders. The
+  receive-pack advertisement passes the class that refused; every
+  other call site asks the read breaker's window whatever class
+  refused, so a write the open write breaker refused outside the
+  advertisement carries no header while the read breaker is closed.
+  The class belongs to the refusing call, and the fix is a builder
+  item of spec 012, whose round owns `internal/httpgit` and
+  `internal/api`.
 
 The cluster criterion is proved by the `e2e` job of spec 013, which
 runs on a tag or a `workflow_dispatch` since the change that took the
@@ -408,7 +480,10 @@ reports failure in that run on two scenarios of other specs,
 and `TestClusterNodeRemovalUnderReadLoad` (spec 005), each refused
 with 429 `rate_limited` by spec 012's 600 requests per minute per
 subject, a load those scenarios exceed by design and spec 012's
-Outcome records; nothing of this spec is in that failure. Six stack
+Outcome records; nothing of this spec is in that failure. Spec 012 is
+fixing that limit, and the next green dispatched run is spec 012's to
+cite: this spec's stack sentence keeps run 34270906850 as the run that
+proved its own criterion. Six stack
 rounds preceded the pass, each a defect found by the job and fixed
 at its root: the component's argument list without the proxy target,
 readiness that let a replica the bucket never answered into
