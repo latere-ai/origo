@@ -68,7 +68,11 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 		}
 		d := Decision{Allow: true, TTL: DefaultTTL, Replicas: DefaultReplicas, QuotaBytes: DefaultQuotaBytes}
 		if action == ActionWrite {
-			d.QuotaBytes = g.quota(ctx, p, repo)
+			quota, err := g.quota(ctx, p, repo)
+			if err != nil {
+				return Decision{}, err
+			}
+			d.QuotaBytes = quota
 		}
 		return d, nil
 	}
@@ -89,20 +93,26 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 // uploads are held to the figure its minter's pushes are.
 //
 // The call decides no access: the scope already allowed the write. A
-// deny, an answer with no figure, or an authorizer that produced no
-// answer therefore falls back to the default rather than refusing a
-// build that the token entitles, and the fallback is logged.
-func (g *Guard) quota(ctx context.Context, p Principal, repo RepoRef) int64 {
+// deny, or an answer with no figure, therefore falls back to the
+// default rather than refusing a write the token entitles, and the
+// fallback is logged. An authorizer that produced no answer is the one
+// exception and fails closed, the *Unavailable returned for the write
+// to be refused with authorizer_unavailable (spec 012): a figure that
+// cannot be read is not a figure to write against, and the same outage
+// denies every unbound write on the node, so riding it out under a
+// bound token would make the token the way around spec 007's outage
+// rule.
+func (g *Guard) quota(ctx context.Context, p Principal, repo RepoRef) (int64, error) {
 	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: ActionWrite})
 	switch {
 	case err != nil:
-		g.logger.WarnContext(ctx, "bound token quota not read", "repo", repo.ID, "subject", p.Subject, "error", err)
+		return 0, err
 	case !d.Allow:
 		g.logger.WarnContext(ctx, "bound token quota not read", "repo", repo.ID, "subject", p.Subject, "reason", d.Reason)
 	case d.QuotaBytes > 0:
-		return d.QuotaBytes
+		return d.QuotaBytes, nil
 	}
-	return DefaultQuotaBytes
+	return DefaultQuotaBytes, nil
 }
 
 // allows is spec 007's scope rule: read allows read, write allows read

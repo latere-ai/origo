@@ -347,12 +347,57 @@ func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 	if len(stub.Requests()) != 1 {
 		t.Fatalf("a bound read asked the authorizer: %+v", stub.Requests())
 	}
-	// An authorizer that produces no answer leaves the default, because
-	// the scope, not the authorizer, decides a bound token's access.
-	stub.Fail(503)
+	// A deny, and an allow with no figure, leave the default: the scope,
+	// not the authorizer, decides a bound token's access.
+	stub.Deny(authorizer.Rule{Subject: "ci", Repo: repoB, Action: "write"}, "not the minter")
 	other := Principal{Subject: "ci", Bound: &Bound{Repo: repoB, Scope: ScopeWrite}}
 	d, err = g.Decide(context.Background(), other, RepoRef{ID: repoB}, ActionWrite)
 	if err != nil || d.QuotaBytes != DefaultQuotaBytes {
-		t.Fatalf("outage: %+v %v", d, err)
+		t.Fatalf("deny: %+v %v", d, err)
+	}
+	// An authorizer that produces no answer is the one exception: the
+	// write fails closed, TestBoundTokenWriteFailsClosedDuringAuthorizerOutage.
+	// A repository the cache has no answer for, so the outage is asked.
+	const repoC = "2b3c4d5e-6f70-4a8b-9c0d-1e2f3a4b5c6e"
+	stub.Fail(503)
+	third := Principal{Subject: "ci", Bound: &Bound{Repo: repoC, Scope: ScopeWrite}}
+	if _, err := g.Decide(context.Background(), third, RepoRef{ID: repoC}, ActionWrite); !errors.As(err, new(*Unavailable)) {
+		t.Fatalf("outage: %v", err)
+	}
+}
+
+// TestBoundTokenWriteFailsClosedDuringAuthorizerOutage is spec 012's
+// rule, fixed by spec 016's build: a bound token's write during an
+// authorizer outage is refused with authorizer_unavailable, the way
+// every unbound write on the node is, and never falls back to the
+// default quota; a read under the same token still answers, because it
+// asks nothing; and the write is allowed again once the authorizer
+// answers.
+func TestBoundTokenWriteFailsClosedDuringAuthorizerOutage(t *testing.T) {
+	clk := newClock()
+	stub := authorizer.New(t)
+	stub.SetRules(authorizer.Rule{Subject: "ci", Repo: repoA, Action: "write", Allow: true, QuotaBytes: 4096})
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	g := NewGuard(c, slog.New(slog.DiscardHandler))
+	bound := Principal{Subject: "ci", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
+	ctx := context.Background()
+
+	stub.Fail(503)
+	_, err := g.Decide(ctx, bound, RepoRef{ID: repoA}, ActionWrite)
+	var u *Unavailable
+	if !errors.As(err, &u) || u.Status != 503 {
+		t.Fatalf("write during the outage: %v", err)
+	}
+	req := httptest.NewRequest("POST", "/", nil).WithContext(WithPrincipal(ctx, bound))
+	rec := httptest.NewRecorder()
+	if _, ok := g.Admit(rec, req, RepoRef{ID: repoA}, ActionWrite); ok || rec.Code != 503 || !strings.Contains(rec.Body.String(), contract.CodeAuthorizerUnavailable) {
+		t.Fatalf("Admit during the outage: %v %d %s", ok, rec.Code, rec.Body)
+	}
+	if d, err := g.Decide(ctx, bound, RepoRef{ID: repoA}, ActionRead); err != nil || !d.Allow {
+		t.Fatalf("read during the outage: %+v %v", d, err)
+	}
+	stub.Fail(0)
+	if d, err := g.Decide(ctx, bound, RepoRef{ID: repoA}, ActionWrite); err != nil || d.QuotaBytes != 4096 {
+		t.Fatalf("write after the outage: %+v %v", d, err)
 	}
 }
