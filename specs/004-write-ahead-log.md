@@ -62,11 +62,11 @@ Defects against the Design found by review, for the builder:
   `packs/<hash>.pack` in the log is `pack-<hash>.pack` on disk.
   `TestCompactionPacksAreFetched` accepts either file name, which is
   why it passes.
-- The index object carries no `pushed_at`: `wal.Index` has no such
-  field and `Log.nextIndex` sets none. The Index object section below
-  defines it, `ParseIndex` accepts its absence, and `nextIndex` sets it
-  as the section says, so `GET /v1/repos/{id}` (spec 009) and `stats`
-  (spec 019) read one field instead of the newest entry's header.
+- Fixed by spec 009 on 2026-09-08: the index object carried no
+  `pushed_at`. `wal.Index` carries it, `Log.nextIndex` sets it as the
+  Index object section below says, and `ParseIndex` accepts its
+  absence, so `GET /v1/repos/{id}` (spec 009) and `stats` (spec 019)
+  read one field instead of the newest entry's header.
 - `size_bytes` accumulates monotonically: `Log.nextIndex` does
   `next.SizeBytes += e.Pack.Size` for every kind, a `compact` entry
   included, so the figure never falls after a compaction and counts
@@ -162,8 +162,9 @@ and spec 012's quota, spec 019's `stats`, and `GET /v1/repos/{id}`
 sets it to its own entry's `at`, every other commit copies it forward,
 and `index/000000000000` holds null. An index object written before
 the field existed has none; a reader treats a missing `pushed_at` as
-the object's own entry's `at` when the object names an entry and as
-null when it does not, so the value never needs a second read. Each
+null, because the object's own entry's `at` is in the entry's header
+and reading it would be the second read this sentence rules out, and
+no such object exists outside test buckets. Each
 index object carries the whole reference map, so a reader needs exactly
 one of them. The parser refuses an unknown field, a version other than
 1, an entry list out of order or outside `(compacted_through, seq]`, a
@@ -399,17 +400,17 @@ ninth wait for the jobs of spec 013 and the packs of spec 006, which is
 why the spec stays at testing, and the tenth is a release checklist
 item of spec 017. Spec 013 renames the end-to-end tests with the
 `TestE2E` prefix its job regex selects; the names above are the renamed
-ones. The four defects the Current state records are fixed under this
-spec before it moves on: `TestCommitWritesOneEntryAndOneIndex` gains
-the assertion that a `compact` entry sets `size_bytes` to
-`Entry.PacksBytes` and a following push adds its `pack_bytes` to that,
-`TestCompactionPacksAreFetched` gains the
-assertion that the fetched files are named `pack-<hash>.pack` and that
-`git verify-pack` reads them, a new `TestPacksAreFetchedForACurrentCopy`
-removes a pack file from a current copy and asserts the next apply
-restores it, and `TestParseIndex` gains a case for an index object
-without `pushed_at` and `TestCommitWritesOneEntryAndOneIndex` asserts
-the field a push sets and a delete copies forward.
+ones. Three of the four defects the Current state records are open and are
+builder items of this spec, no other spec builds them, fixed before it
+moves on: `TestCommitWritesOneEntryAndOneIndex` gains the assertion
+that a `compact` entry sets `size_bytes` to `Entry.PacksBytes` and a
+following push adds its `pack_bytes` to that (the `size_bytes`
+defect), `TestCompactionPacksAreFetched` gains the assertion that the
+fetched files are named `pack-<hash>.pack` and that `git verify-pack`
+reads them (the pack file name defect), and a new
+`TestPacksAreFetchedForACurrentCopy` removes a pack file from a
+current copy and asserts the next apply restores it (the pack fetch
+condition defect). The fourth, `pushed_at`, is fixed, below.
 
 Measurements, one node on an Apple silicon laptop against MinIO in a
 podman virtual machine (`test/e2e`, `TestMeasure` with
@@ -430,13 +431,15 @@ Materialization is bound by two git subprocesses per entry, about 35 ms
 each here. Spec 005 sets the budget and the two changes that meet it;
 compaction (spec 006) is what removes the entry count from the path.
 
-Of the four defects, the third was fixed by spec 009 on 2026-09-08:
+The `pushed_at` defect was fixed by spec 009 on 2026-09-08:
 `wal.Index` carries `pushed_at`, a `push` commit sets it to its own
 entry's `at`, every other commit copies it forward, index 0 holds
 null, and `ParseIndex` accepts its absence, which reads as null
 (`TestCommitWritesOneEntryAndOneIndex`, `TestParseIndex`). A `delete`
-records the same `at` as its entry's header. The other three remain
-builder items of this spec.
+records the same `at` as its entry's header. So the spec is at
+`testing` on: the three defects above (this spec), the eighth and
+ninth criteria (spec 013's jobs and spec 006's packs), and the tenth
+(spec 017's release checklist).
 
 Divergences from the first draft, all kept and now in the Design:
 
