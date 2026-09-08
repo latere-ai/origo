@@ -7,7 +7,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha1" //nolint:gosec // the packfile trailer git defines
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -72,13 +74,13 @@ type Cache struct {
 	workers   int
 	now       func() time.Time
 	logger    *slog.Logger
+	// maxBatchEntries and maxBatchBytes are the batch bounds of
+	// applyEntries, the constants below; a test lowers them.
+	maxBatchEntries int
+	maxBatchBytes   int64
 
 	mu    sync.Mutex
 	repos map[string]*Repo
-
-	// thinRetries counts index-pack runs repeated after every lower
-	// entry landed, for the test of the thin-pack retry.
-	thinRetries atomic.Int64
 
 	materialized *metrics.Counter
 	applied      *metrics.Counter
@@ -174,6 +176,7 @@ func New(o Options) (*Cache, error) {
 	c := &Cache{
 		dir: o.Dir, log: o.Log, git: &Git{Bin: path, Home: home, Timeout: timeout},
 		fsckEvery: fsckEvery, workers: workers, now: now, logger: logger, repos: map[string]*Repo{},
+		maxBatchEntries: MaxBatchEntries, maxBatchBytes: MaxBatchBytes,
 		materialized: reg.Counter("origo_repo_materialized_total", "repositories built from the log onto an empty disk"),
 		applied:      reg.Counter("origo_repo_entries_applied_total", "log entries applied to local copies"),
 		rebuilt:      reg.Counter("origo_repo_rebuilt_total", "local copies removed as corrupt and rebuilt"),
@@ -495,93 +498,6 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 	return nil
 }
 
-// applyEntries fetches and indexes the entries with concurrent workers
-// (spec 005, materialization budget): each worker takes the next entry
-// in sequence order, and the reference transactions are not applied
-// per entry, because reconcileRefs sets the whole map once at the end.
-// A thin pack whose base is in a lower entry that has not landed yet
-// fails its index-pack; the worker then waits until every lower entry
-// has landed and runs it once more, and a failure after that is
-// corruption. The first error stops every worker.
-func (c *Cache) applyEntries(ctx context.Context, r *Repo, entries []wal.IndexEntry) error {
-	if len(entries) == 0 {
-		return nil
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var (
-		mu       sync.Mutex
-		cond     = sync.NewCond(&mu)
-		landed   = make([]bool, len(entries))
-		firstErr error
-	)
-	fail := func(err error) {
-		mu.Lock()
-		if firstErr == nil {
-			firstErr = err
-		}
-		mu.Unlock()
-		cancel()
-		cond.Broadcast()
-	}
-	// lowerLanded blocks until every entry before position i has
-	// landed, or a worker failed.
-	lowerLanded := func(i int) error {
-		mu.Lock()
-		defer mu.Unlock()
-		for {
-			if firstErr != nil {
-				return firstErr
-			}
-			done := true
-			for _, ok := range landed[:i] {
-				if !ok {
-					done = false
-					break
-				}
-			}
-			if done {
-				return nil
-			}
-			cond.Wait()
-		}
-	}
-	next := make(chan int)
-	var wg sync.WaitGroup
-	for range min(c.workers, len(entries)) {
-		wg.Go(func() {
-			for i := range next {
-				if err := c.applyEntry(ctx, r, entries[i], func() error { return lowerLanded(i) }); err != nil {
-					fail(err)
-					return
-				}
-				mu.Lock()
-				landed[i] = true
-				mu.Unlock()
-				cond.Broadcast()
-				c.applied.Inc(nil)
-			}
-		})
-	}
-	for i := range entries {
-		select {
-		case next <- i:
-		case <-ctx.Done():
-		}
-		if ctx.Err() != nil {
-			break
-		}
-	}
-	close(next)
-	wg.Wait()
-	mu.Lock()
-	defer mu.Unlock()
-	if firstErr != nil {
-		return firstErr
-	}
-	return ctx.Err()
-}
-
 func (c *Cache) initBare(ctx context.Context, r *Repo) error {
 	if err := os.RemoveAll(r.Dir); err != nil {
 		return err
@@ -636,70 +552,246 @@ func (c *Cache) fetchPack(ctx context.Context, r *Repo, key string) error {
 	return nil
 }
 
-// applyEntry fetches one entry, verifies its pack, and indexes the pack
-// into the object store. Its reference transaction is not applied:
-// Apply reconciles the whole map once. lowerLanded waits for every
-// lower entry, for the retry of a thin pack.
-func (c *Cache) applyEntry(ctx context.Context, r *Repo, e wal.IndexEntry, lowerLanded func() error) error {
+// Batch bounds of applyEntries: consecutive entries whose packs are
+// joined into one pack for one index-pack run.
+const (
+	// MaxBatchEntries is the most entries one index-pack run takes.
+	MaxBatchEntries = 256
+	// MaxBatchBytes is the most pack bytes one index-pack run takes.
+	MaxBatchBytes = 256 << 20
+)
+
+// spooled is one fetched entry: its pack on disk, verified against
+// the entry's length and digest, or the error that stopped it.
+type spooled struct {
+	path  string
+	size  int64
+	count uint32
+	err   error
+}
+
+// applyEntries brings the entries into the object store (spec 005,
+// materialization budget). Workers, 4 by default, each take the next
+// entry in sequence order, download it, verify its length and
+// pack_sha256, and spool the pack. One indexer consumes the spooled
+// packs in sequence order, joining consecutive ones into a single pack
+// for one index-pack --fix-thin --strict run, at most MaxBatchEntries
+// or MaxBatchBytes per run: a pack from one push is thin against the
+// pushes before it, so indexing in order means every base is in the
+// batch or already in the store, and one subprocess lands many
+// entries. The reference transactions are not applied per entry;
+// reconcileRefs sets the whole map once. The first error stops every
+// worker and the indexer.
+func (c *Cache) applyEntries(ctx context.Context, r *Repo, entries []wal.IndexEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		mu    sync.Mutex
+		cond  = sync.NewCond(&mu)
+		ready = make([]*spooled, len(entries))
+	)
+	defer func() {
+		for _, sp := range ready {
+			if sp != nil && sp.path != "" {
+				_ = os.Remove(sp.path)
+			}
+		}
+	}()
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range min(c.workers, len(entries)) {
+		wg.Go(func() {
+			for i := range next {
+				sp := c.spoolEntry(ctx, r, entries[i])
+				mu.Lock()
+				ready[i] = sp
+				mu.Unlock()
+				cond.Broadcast()
+				if sp.err != nil {
+					cancel()
+					return
+				}
+			}
+		})
+	}
+	go func() {
+		defer close(next)
+		for i := range entries {
+			select {
+			case next <- i:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	// The indexer: wait until the batch window from position i is
+	// spooled, or a worker failed, then index the window as one pack.
+	err := func() error {
+		for i := 0; i < len(entries); {
+			end := min(i+c.maxBatchEntries, len(entries))
+			mu.Lock()
+			for ctx.Err() == nil && !spooledThrough(ready, i, end) {
+				cond.Wait()
+			}
+			var batch []*spooled
+			var bytes int64
+			j := i
+			for ; j < end && ready[j] != nil && ready[j].err == nil; j++ {
+				if ready[j].path == "" {
+					continue
+				}
+				if len(batch) > 0 && bytes+ready[j].size > c.maxBatchBytes {
+					break
+				}
+				batch = append(batch, ready[j])
+				bytes += ready[j].size
+			}
+			if j == i {
+				err := ctx.Err()
+				if ready[i] != nil && ready[i].err != nil {
+					err = ready[i].err
+				}
+				mu.Unlock()
+				return err
+			}
+			mu.Unlock()
+			if len(batch) > 0 {
+				if err := c.indexBatch(ctx, r, batch); err != nil {
+					return err
+				}
+			}
+			for _, sp := range batch {
+				_ = os.Remove(sp.path)
+				sp.path = ""
+			}
+			c.applied.Add(nil, uint64(j-i)) //nolint:gosec // a count is never negative
+			i = j
+		}
+		return nil
+	}()
+	cancel()
+	cond.Broadcast()
+	wg.Wait()
+	return err
+}
+
+// spooledThrough reports whether every position in [from, to) is spooled.
+func spooledThrough(ready []*spooled, from, to int) bool {
+	for _, sp := range ready[from:to] {
+		if sp == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// spoolEntry fetches one entry, checks its header against the index
+// row, and spools its pack with its length and digest verified. An
+// entry with no pack spools nothing.
+func (c *Cache) spoolEntry(ctx context.Context, r *Repo, e wal.IndexEntry) *spooled {
 	rc, _, err := c.log.Store().Get(ctx, c.log.RepoPrefix(r.ID)+e.Key, "")
 	if err != nil {
-		return fmt.Errorf("repo: entry %s: %w", e.Key, err)
+		return &spooled{err: fmt.Errorf("repo: entry %s: %w", e.Key, err)}
 	}
 	defer func() { _ = rc.Close() }()
 	h, _, pack, err := wal.ReadEntryHead(rc)
 	if err != nil {
-		return err
+		return &spooled{err: err}
 	}
 	if h.Seq != e.Seq || h.Kind != e.Kind {
-		return fmt.Errorf("repo: entry %s carries seq %d kind %s", e.Key, h.Seq, h.Kind)
+		return &spooled{err: fmt.Errorf("repo: entry %s carries seq %d kind %s", e.Key, h.Seq, h.Kind)}
 	}
 	if h.PackBytes == 0 {
-		return nil
+		return &spooled{}
 	}
-	return c.indexPack(ctx, r, pack, h.PackBytes, h.PackSHA256, lowerLanded)
-}
-
-// missingBase is what index-pack prints when a thin pack needs an
-// object the store does not hold yet.
-const missingBase = "did not receive expected object"
-
-// indexPack spools the pack, checks its digest, and runs index-pack with
-// --fix-thin so a thin pack from a push completes against the local
-// objects. Git writes the completed pack, its index, and its reverse
-// index beside a path in the spool, and the three are renamed into
-// objects/pack under the content name git printed, index first, so no
-// worker of another entry sees a pack without its index and a failed
-// run leaves nothing but a file in the spool. A run that lacks a base
-// is repeated once after every lower entry landed.
-func (c *Cache) indexPack(ctx context.Context, r *Repo, pack io.Reader, size int64, sum string, lowerLanded func() error) error {
 	f, err := os.CreateTemp(c.SpoolDir(), "entry-*.pack")
 	if err != nil {
-		return err
+		return &spooled{err: err}
 	}
-	defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }()
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(pack, size+1))
+	sp := &spooled{path: f.Name(), size: h.PackBytes}
+	fail := func(err error) *spooled {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return &spooled{err: err}
+	}
+	sum := sha256.New()
+	n, err := io.Copy(io.MultiWriter(f, sum), io.LimitReader(pack, h.PackBytes+1))
+	if err != nil {
+		return fail(err)
+	}
+	if n != h.PackBytes || hex.EncodeToString(sum.Sum(nil)) != h.PackSHA256 {
+		return fail(fmt.Errorf("repo: pack of %d bytes with digest %s does not match the entry (%d bytes, %s)", n, hex.EncodeToString(sum.Sum(nil)), h.PackBytes, h.PackSHA256))
+	}
+	var head [packHeaderSize]byte
+	if _, err := f.ReadAt(head[:], 0); err != nil || string(head[:4]) != "PACK" || binary.BigEndian.Uint32(head[4:8]) != 2 || n < packHeaderSize+packTrailerSize {
+		return fail(fmt.Errorf("repo: entry %s: the pack is not a version 2 packfile", e.Key))
+	}
+	sp.count = binary.BigEndian.Uint32(head[8:12])
+	if err := f.Close(); err != nil {
+		return fail(err)
+	}
+	return sp
+}
+
+// The packfile framing: a 12 byte header (PACK, version 2, the object
+// count) and a 20 byte SHA-1 trailer over everything before it. The
+// objects between are self-delimiting, an OFS_DELTA offset is relative
+// to its own object, and a REF_DELTA base is named by hash, so the
+// bodies of consecutive packs joined under one header and one trailer
+// are one pack, which index-pack reads like any other.
+const (
+	packHeaderSize  = 12
+	packTrailerSize = 20
+)
+
+// indexBatch joins the spooled packs into one pack in the spool and
+// indexes it into the object store.
+func (c *Cache) indexBatch(ctx context.Context, r *Repo, batch []*spooled) error {
+	joined, err := os.CreateTemp(c.SpoolDir(), "batch-*.pack")
 	if err != nil {
 		return err
 	}
-	if n != size || hex.EncodeToString(h.Sum(nil)) != sum {
-		return fmt.Errorf("repo: pack of %d bytes with digest %s does not match the entry (%d bytes, %s)", n, hex.EncodeToString(h.Sum(nil)), size, sum)
+	defer func() { _ = joined.Close(); _ = os.Remove(joined.Name()) }()
+	var count uint32
+	for _, sp := range batch {
+		count += sp.count
 	}
-	err = c.indexOnce(ctx, r, f)
-	var ge *Error
-	if errors.As(err, &ge) && strings.Contains(ge.Stderr, missingBase) {
-		if err := lowerLanded(); err != nil {
+	var head [packHeaderSize]byte
+	copy(head[:4], "PACK")
+	binary.BigEndian.PutUint32(head[4:8], 2)
+	binary.BigEndian.PutUint32(head[8:12], count)
+	sum := sha1.New() //nolint:gosec // the pack trailer git defines
+	out := io.MultiWriter(joined, sum)
+	if _, err := out.Write(head[:]); err != nil {
+		return err
+	}
+	for _, sp := range batch {
+		f, err := os.Open(sp.path)
+		if err != nil {
 			return err
 		}
-		c.thinRetries.Add(1)
-		err = c.indexOnce(ctx, r, f)
+		_, err = io.Copy(out, io.NewSectionReader(f, packHeaderSize, sp.size-packHeaderSize-packTrailerSize))
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
 	}
-	return err
+	if _, err := joined.Write(sum.Sum(nil)); err != nil {
+		return err
+	}
+	return c.indexPackFile(ctx, r, joined)
 }
 
-// indexOnce runs index-pack over the spooled pack once and moves the
-// result into objects/pack.
-func (c *Cache) indexOnce(ctx context.Context, r *Repo, f *os.File) error {
+// indexPackFile runs index-pack over a spooled pack and moves the
+// result into objects/pack. Git writes the completed pack, its index,
+// and its reverse index beside a path in the spool, and the three are
+// renamed into objects/pack under the content name git printed, index
+// first, so no reader sees a pack without its index, and a failed run
+// leaves nothing but a file in the spool, which is removed.
+func (c *Cache) indexPackFile(ctx context.Context, r *Repo, f *os.File) error {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}

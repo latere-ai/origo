@@ -20,12 +20,15 @@ import (
 
 // TestConcurrentWorkersApplyThinEntries is spec 005's materialization
 // budget in the small: 24 entries, each a thin pack whose base is in
-// the previous entry, applied by 4 workers onto an empty disk. A worker
-// that indexes an entry before its base landed fails once and lands on
-// the retry; the references are set once at the end; the result equals
-// the source and passes fsck; every entry is counted once.
+// the previous entry, applied by 4 workers onto an empty disk. The
+// workers fetch and spool concurrently; the indexer joins consecutive
+// packs, here at most 5 per batch, and indexes each batch in sequence
+// order, so a thin pack's base is in its batch or already in the
+// store; the references are set once at the end; the result equals the
+// source and passes fsck; every entry is counted once.
 func TestConcurrentWorkersApplyThinEntries(t *testing.T) {
 	h := newHarness(t, func(o *Options) { o.Workers = 4 })
+	h.cache.maxBatchEntries = 5
 	const n = 24
 	prev := ""
 	for i := range n {
@@ -49,17 +52,14 @@ func TestConcurrentWorkersApplyThinEntries(t *testing.T) {
 	if _, err := h.cache.Git().Run(context.Background(), r.Dir, nil, "fsck", "--strict", "--no-progress"); err != nil {
 		t.Fatal(err)
 	}
-	if h.cache.thinRetries.Load() == 0 {
-		t.Fatal("no thin pack was retried: the workers ran in sequence")
-	}
 	if got := h.cache.applied.Value(nil); got != n+1 {
 		t.Fatalf("applied %d entries, want %d", got, n+1)
 	}
-	// Every pack is named by git's checksum, nothing is left in the
-	// spool, and each entry's pack is one file.
+	// 24 packs in batches of 5 are 5 packs on disk, each named by git's
+	// checksum with its index, and nothing is left in the spool.
 	packs, _ := filepath.Glob(filepath.Join(r.Dir, "objects", "pack", "pack-*.pack"))
-	if len(packs) != n {
-		t.Fatalf("%d packs on disk, want %d", len(packs), n)
+	if len(packs) != 5 {
+		t.Fatalf("%d packs on disk, want 5", len(packs))
 	}
 	for _, p := range packs {
 		if _, err := os.Stat(strings.TrimSuffix(p, ".pack") + ".idx"); err != nil {
@@ -69,15 +69,37 @@ func TestConcurrentWorkersApplyThinEntries(t *testing.T) {
 	if left, _ := os.ReadDir(h.cache.SpoolDir()); len(left) != 0 {
 		t.Fatalf("the spool holds %d files after the apply", len(left))
 	}
-	// A thin pack whose base never lands fails after the retry and
-	// leaves nothing in the spool.
+	release()
+	// The byte bound splits a batch too: two more entries over a bound
+	// smaller than their sum are two packs.
+	h.cache.maxBatchBytes = 1
+	for i := range 2 {
+		c := h.src.Commit("g.txt", fmt.Sprintf("more %d", i), fmt.Sprintf("m%d", i))
+		h.push("refs/heads/main", prev, c, h.src.Pack(c, prev))
+		prev = c
+	}
+	r, release = h.acquire(false)
+	packs, _ = filepath.Glob(filepath.Join(r.Dir, "objects", "pack", "pack-*.pack"))
+	if len(packs) != 7 || h.localRef(r, "refs/heads/main") != prev {
+		t.Fatalf("%d packs on disk after the byte-bound apply, want 7", len(packs))
+	}
+	release()
+	// A pack that is not a packfile is refused before git sees it.
+	h.push("refs/heads/junk", wal.ZeroSHA, prev, []byte("not a pack at all, though long enough to hold a header and a trailer"))
+	if _, _, err := h.cache.Acquire(context.Background(), repoA, false); err == nil || !strings.Contains(err.Error(), "not a version 2 packfile") {
+		t.Fatalf("junk pack: %v", err)
+	}
+	_ = h.store.Delete(context.Background(), h.log.RepoPrefix(repoA)+h.held.Entry)
+	_ = h.store.Delete(context.Background(), h.log.RepoPrefix(repoA)+wal.IndexKey(h.held.Seq))
+	h.held, _, _ = h.log.Newest(context.Background(), repoA, 0, false)
+	// A thin pack whose base is in no entry fails, and leaves nothing
+	// in the spool.
 	other := gittest.NewSource(t)
 	o1 := other.Commit("g.txt", "g", "g1")
 	o2 := other.Commit("g.txt", "gg", "g2")
 	h.push("refs/heads/other", wal.ZeroSHA, o2, other.Pack(o2, o1))
-	release()
 	_, _, err := h.cache.Acquire(context.Background(), repoA, false)
-	if err == nil || !strings.Contains(err.Error(), missingBase) {
+	if err == nil || !strings.Contains(err.Error(), "did not receive expected object") {
 		t.Fatalf("thin pack with no base: %v", err)
 	}
 	if left, _ := os.ReadDir(h.cache.SpoolDir()); len(left) != 0 {
