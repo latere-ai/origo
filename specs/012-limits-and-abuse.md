@@ -137,11 +137,11 @@ Connection limits at the ingress. Bandwidth shaping.
 ## Acceptance criteria
 
 - A push that would take `size_bytes` plus the LFS bytes past
-  `quota_bytes` is refused in the sideband with `over_quota`, no entry
-  is written, and `details.bytes` and `max` name the sizes; the LFS
-  bytes count, asserted with an object under `lfs/` sized to make the
-  difference (proposed: `internal/httpgit`,
-  `TestPushOverQuotaWritesNothing`).
+  `quota_bytes` is refused with `over_quota` in git's own output, no
+  entry is written, and the `bytes` and `max` of the handler's `info`
+  line name the sizes; the LFS bytes count, asserted with an object
+  under `lfs/` sized to make the difference (proposed:
+  `internal/httpgit`, `TestPushOverQuotaWritesNothing`).
 - A push whose `Content-Length` or spooled body exceeds 2 GiB is 413
   `over_quota` with `details.limit: "push"`, with the spool stopped at
   the limit (proposed: `internal/httpgit`, `TestPushOverTwoGiBIsRefused`,
