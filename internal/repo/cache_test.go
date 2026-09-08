@@ -325,45 +325,88 @@ func TestApplyRefusesABadEntry(t *testing.T) {
 	}
 }
 
-func TestCompactionPacksAreFetched(t *testing.T) {
-	h := newHarness(t)
+// compact builds a pack holding want with its .idx the way compaction
+// would, stores both under the log's pack keys, and commits a compact
+// entry that lists the pack and folds every entry so far. It returns the
+// hash git named the pack by.
+func (h *harness) compact(want string) string {
+	h.t.Helper()
 	ctx := context.Background()
-	c1 := h.src.Commit("a.txt", "one", "first")
-	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
-	// Build a pack with its .idx the way compaction would, and store both.
-	pack := h.src.Pack(c1)
-	tmp := t.TempDir()
+	pack := h.src.Pack(want)
+	tmp := h.t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmp, "p.pack"), pack, 0o644); err != nil {
-		t.Fatal(err)
+		h.t.Fatal(err)
 	}
-	name := strings.TrimSpace(gittest.Run(t, tmp, nil, "index-pack", filepath.Join(tmp, "p.pack")))
+	name := strings.TrimSpace(gittest.Run(h.t, tmp, nil, "index-pack", filepath.Join(tmp, "p.pack")))
 	name = strings.TrimPrefix(name, "pack\t")
 	idx, _ := os.ReadFile(filepath.Join(tmp, "p.idx"))
 	key := "packs/" + name + ".pack"
 	_, _ = h.store.Put(ctx, h.log.RepoPrefix(repoA)+key, wal.BytesBody(pack))
 	_, _ = h.store.Put(ctx, h.log.RepoPrefix(repoA)+strings.TrimSuffix(key, ".pack")+".idx", wal.BytesBody(idx))
-	c, err := h.log.Commit(ctx, repoA, h.held, wal.Entry{Kind: wal.KindCompact, Packs: []string{key}, CompactedThrough: 1}, func(context.Context, *wal.Index) error { return nil })
+	e := wal.Entry{Kind: wal.KindCompact, Packs: []string{key}, PacksBytes: int64(len(pack)), CompactedThrough: h.held.Seq}
+	c, err := h.log.Commit(ctx, repoA, h.held, e, func(context.Context, *wal.Index) error { return nil })
 	if err != nil {
-		t.Fatal(err)
+		h.t.Fatal(err)
 	}
 	h.held = c.Index
-	r, release := h.acquire(false)
-	if _, err := os.Stat(filepath.Join(r.Dir, "objects", "pack", "pack-"+name+".pack")); err != nil {
-		if _, err := os.Stat(filepath.Join(r.Dir, "objects", "pack", name+".pack")); err != nil {
-			t.Fatalf("compaction pack not on disk: %v", err)
+	return name
+}
+
+// packFiles returns the paths of the fetched pack and its .idx, named
+// the way git reads them: pack-<hash>.pack and pack-<hash>.idx.
+func packFiles(r *Repo, name string) (pack, idx string) {
+	dir := filepath.Join(r.Dir, "objects", "pack")
+	return filepath.Join(dir, "pack-"+name+".pack"), filepath.Join(dir, "pack-"+name+".idx")
+}
+
+// verifyPack fails the test unless git reads the pack under its name.
+func (h *harness) verifyPack(r *Repo, name string) {
+	h.t.Helper()
+	pack, idx := packFiles(r, name)
+	for _, f := range []string{pack, idx} {
+		if _, err := os.Stat(f); err != nil {
+			h.t.Fatalf("fetched pack: %v", err)
 		}
+	}
+	if _, err := h.cache.Git().Run(context.Background(), r.Dir, nil, "verify-pack", idx); err != nil {
+		h.t.Fatalf("git does not read the fetched pack: %v", err)
+	}
+	if _, err := h.cache.Git().Run(context.Background(), r.Dir, nil, "fsck", "--connectivity-only", "--no-progress"); err != nil {
+		h.t.Fatalf("fsck after the fetch: %v", err)
+	}
+}
+
+func TestCompactionPacksAreFetched(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	c1 := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
+	name := h.compact(c1)
+	key := "packs/" + name + ".pack"
+	r, release := h.acquire(false)
+	// The file is named the way git reads it, and only that way: the
+	// log key's base name is not a file git opens.
+	h.verifyPack(r, name)
+	if _, err := os.Stat(filepath.Join(r.Dir, "objects", "pack", name+".pack")); err == nil {
+		t.Fatalf("pack written under the log key's base name %s.pack", name)
 	}
 	if h.localRef(r, "refs/heads/main") != c1 {
 		t.Fatal("refs not reconciled from the index")
 	}
 	release()
-	// A fresh node builds from the packs alone and a missing pack fails.
+	// A fresh node builds from the packs alone: the compaction pack is
+	// its only source of objects, so fsck passes only when git reads it.
 	h.cache.Evict(repoA)
 	r, release = h.acquire(false)
 	if r.Seq != 2 || h.localRef(r, "refs/heads/main") != c1 {
 		t.Fatalf("from packs: seq %d ref %s", r.Seq, h.localRef(r, "refs/heads/main"))
 	}
+	h.verifyPack(r, name)
+	if packs, _ := filepath.Glob(filepath.Join(r.Dir, "objects", "pack", "*.pack")); len(packs) != 1 {
+		t.Fatalf("packs on a copy built from the compaction pack alone: %v", packs)
+	}
 	release()
+	// A missing pack fails the materialization.
 	h.cache.Evict(repoA)
 	_ = h.store.Delete(ctx, h.log.RepoPrefix(repoA)+strings.TrimSuffix(key, ".pack")+".idx")
 	if _, _, err := h.cache.Acquire(ctx, repoA, false); err == nil || !strings.Contains(err.Error(), "pack") {

@@ -341,23 +341,22 @@ func (c *Cache) initBare(ctx context.Context, r *Repo) error {
 	return nil
 }
 
-// fetchPack downloads a compaction pack and its index into objects/pack.
+// fetchPack downloads one pack the index lists and its .idx into
+// objects/pack under the name git reads, wal.PackFile of the key. The
+// .idx lands first so git never sees a pack without one. A pack already
+// on disk under that name is not fetched again, so a current copy pays
+// one stat per listed pack.
 func (c *Cache) fetchPack(ctx context.Context, r *Repo, key string) error {
-	name := filepath.Base(key)
-	dst := filepath.Join(r.Dir, "objects", "pack", name)
-	if _, err := os.Stat(dst); err == nil {
+	dir := filepath.Join(r.Dir, "objects", "pack")
+	if _, err := os.Stat(filepath.Join(dir, wal.PackFile(key))); err == nil {
 		return nil
 	}
-	for _, suffix := range []string{".idx", ""} {
-		k := strings.TrimSuffix(key, ".pack") + suffix
-		if suffix == "" {
-			k = key
-		}
+	for _, k := range []string{strings.TrimSuffix(key, ".pack") + ".idx", key} {
 		rc, _, err := c.log.Store().Get(ctx, c.log.RepoPrefix(r.ID)+k, "")
 		if err != nil {
 			return fmt.Errorf("repo: pack %s: %w", k, err)
 		}
-		err = writeAtomic(filepath.Join(r.Dir, "objects", "pack", filepath.Base(k)), rc)
+		err = writeAtomic(filepath.Join(dir, wal.PackFile(k)), rc)
 		_ = rc.Close()
 		if err != nil {
 			return err

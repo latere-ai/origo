@@ -131,6 +131,13 @@ func EntryKey(seq uint64, nonce string) string {
 // LatestKey is the hint object's key.
 const LatestKey = "index/latest"
 
+// PackFile maps a pack object of the log to the file git reads under
+// objects/pack: packs/<hash>.pack is pack-<hash>.pack, and packs/<hash>.idx
+// is pack-<hash>.idx. The hash is the one git put in the file name, so a
+// pack keeps one name everywhere; every spec that moves a pack uses this
+// mapping.
+func PackFile(key string) string { return "pack-" + strings.TrimPrefix(key, "packs/") }
+
 var (
 	entryKeyRe = regexp.MustCompile(`^wal/(\d{12})\.([0-9a-f]{16})\.entry$`)
 	indexKeyRe = regexp.MustCompile(`^index/(\d{12})$`)

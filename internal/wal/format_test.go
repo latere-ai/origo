@@ -288,3 +288,17 @@ func FuzzParseIndex(f *testing.F) {
 		}
 	})
 }
+
+// The mapping of spec 004's Objects table: a pack keeps one name in the
+// log and on disk, the hash git put in its file name.
+func TestPackFileMapsTheLogKeyToTheFileGitReads(t *testing.T) {
+	hash := sha(7)
+	for key, want := range map[string]string{
+		"packs/" + hash + ".pack": "pack-" + hash + ".pack",
+		"packs/" + hash + ".idx":  "pack-" + hash + ".idx",
+	} {
+		if got := PackFile(key); got != want {
+			t.Errorf("PackFile(%q) = %q, want %q", key, got, want)
+		}
+	}
+}
