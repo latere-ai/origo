@@ -36,6 +36,17 @@ committed: the commit log already holds that.
   kept-alive connection before reading the request (net/http's `server
   closed idle connection`), the same as a refused or reset connection;
   it was answered `authorizer_unavailable` before.
+- The read API (spec 009), under `/v1/repos/{id}` with the `read`
+  action: `refs`, `commits` with exact cursor paging, `commits/{sha}`
+  with its stats and trailers, `compare/{base}...{head}` as a diff cut
+  at 1 MiB on a file boundary, `tree/{sha}` in pages, `blob/{sha}` with
+  `Range`, and `archive/{sha}.tar.gz` streamed as git produces it. A
+  full reference name goes in `?ref=`, `?base=`, or `?head=` with the
+  segment `-`. Every response carries `Origo-Commit` and an `ETag` of
+  the index sequence, so `If-None-Match` answers 304 without git;
+  `Origo-Truncated` marks a cut. A subprocess past 30 seconds is 504
+  `operation_timeout`, a blob over 50 MiB asked for whole is 413
+  `blob_too_large`. `GET /v1/repos/{id}` gains `pushed_at`.
 - Every error response carries the fixed user sentence of its code with
   the developer reason in `details`, and every response of the public
   listener, `/readyz` and `/version` included, carries `Origo-Contract`.

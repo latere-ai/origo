@@ -430,6 +430,14 @@ Materialization is bound by two git subprocesses per entry, about 35 ms
 each here. Spec 005 sets the budget and the two changes that meet it;
 compaction (spec 006) is what removes the entry count from the path.
 
+Of the four defects, the third was fixed by spec 009 on 2026-09-08:
+`wal.Index` carries `pushed_at`, a `push` commit sets it to its own
+entry's `at`, every other commit copies it forward, index 0 holds
+null, and `ParseIndex` accepts its absence, which reads as null
+(`TestCommitWritesOneEntryAndOneIndex`, `TestParseIndex`). A `delete`
+records the same `at` as its entry's header. The other three remain
+builder items of this spec.
+
 Divergences from the first draft, all kept and now in the Design:
 
 - `index/000000000000` is created with the repository so a writer always

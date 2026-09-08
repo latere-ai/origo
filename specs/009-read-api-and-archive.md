@@ -1,6 +1,6 @@
 ---
 title: "Read API and archive: refs, log, diff, tree, blob, tarball"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/gittest/, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-08
 author: changkun
 ---
 
@@ -175,3 +175,83 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
   with `Range: bytes=0-1023` (proposed: `internal/api`, `TestBlobRange`).
 - A second request with `If-None-Match` equal to the `ETag` answers 304
   and runs no git subprocess (proposed: `internal/api`, `TestETagRevalidates`).
+
+## Outcome
+
+Built on 2026-09-08 in `internal/api` (`read.go`, `path.go`), with the
+fixture in `internal/gittest` (`fixture.go`), `pushed_at` on the index
+object in `internal/wal`, and the end-to-end tests in `test/e2e`.
+Every criterion has a test in the tree; two run only under the jobs of
+spec 013, which is why the spec is at `testing`.
+
+| Criterion | Test |
+|---|---|
+| golden bodies over the fixture, the 60 MiB blob by digest | `internal/api`, `TestReadEndpointsGolden`; the expectations under `internal/api/testdata/golden/`, rewritten with `go test ./internal/api -run Golden -args -update` |
+| the archive's digest on two nodes and after a rebuild | `internal/api`, `TestArchiveIsReproducible`; `test/e2e`, `TestE2EReadAPI` compares two nodes |
+| `compare` over 5 MiB cut at a file boundary under a second | `internal/api`, `TestCompareTruncates` |
+| the archive of a 200 MiB tree sends its first byte within 200 ms | `test/e2e`, `TestE2EArchiveStreams`, under the `e2e` tag; runs under spec 013's `integration` job, which selects `TestE2E`; `TestMeasure` prints the figure for a 1 GiB tree |
+| paging exact over 100 commits and 5 001 entries, a cursor outside the walk 400, the empty repository | `internal/api`, `TestPagingIsExact`, `TestCommitsOnAnEmptyRepository` |
+| three trailers in order | `internal/api`, `TestTrailersKeepOrderAndDuplicates` |
+| option values refused before any subprocess, the placeholder form | `internal/api`, `TestPathGrammarRefusesOptions`, over a git binary that records every invocation |
+| the path table and the fuzz against `git update-index` | `internal/api`, `TestPathRules`, `FuzzValidPath` as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013 |
+| a held `compare` is 504 with the budget, no subprocess left | `internal/api`, `TestReadDeadlineIsOperationTimeout`, holding `git diff` and a child of it past a one second budget |
+| the 60 MiB blob 413 whole and 206 in a range | `internal/api`, `TestBlobRange` |
+| `If-None-Match` answers 304 with no subprocess | `internal/api`, `TestETagRevalidates` |
+
+Every endpoint runs against a built `origod` with the stub issuer and
+authorizer in `test/e2e`, `TestE2EReadAPI`, and every read route is in
+the route sweep of spec 007 (`cmd/origod`, `TestEveryRouteRequiresAToken`).
+
+Divergences and interpretations, all kept:
+
+- `Origo-Commit` peels a tag: `commits`, `commits/{sha}`, and the
+  archive resolve `<name>^{commit}`, `tree` and `compare` resolve
+  `<name>^{}` so a tree id stays a tree, and `blob` resolves
+  `<name>^{blob}`, so a name of another type is 404 `ref_not_found`.
+  `refs` has no `{sha}` and carries no `Origo-Commit`.
+- A request runs two subprocesses in sequence, `rev-parse --verify` for
+  the name and then the operation, under one 30 second budget
+  (`api.DefaultReadTimeout`, the `ReadTimeout` option lowers it), so an
+  unresolvable name is told from a failed operation. Trailers come from
+  `%(trailers:only,unfold)` in the format of the same `rev-list` or
+  `show`, git's own trailer parser as `interpret-trailers --parse`
+  runs it, so a page is one subprocess rather than one per commit.
+- `commits/{sha}` runs `git show --numstat -M --diff-merges=first-parent`
+  so a merge's stats are against its first parent on every git version.
+- `details.operation` names the endpoint: `refs`, `commits` for both
+  log endpoints, `compare`, `tree`, `blob`, `archive`; the segment of
+  the template would be `{sha}`. `details.budget_seconds` is the budget
+  in force, one in the test, and the default of 30 is asserted beside it.
+- `?prefix=` on `refs` is a prefix: git lists the directory of the
+  prefix and the node filters the names, ending the stream at the
+  page past the cap, because a `for-each-ref` pattern matches a whole
+  name or a directory and `refs/tags/v1` would list nothing.
+- On a repository with no commit every `ref` of the `commits` list
+  answers the empty page, not only the default `HEAD`; the rule is
+  "no reference besides `HEAD` in the index", read without git.
+- `blob` honours one `bytes=` range in the three forms; another form
+  is 400 `invalid_request` with `details.reason: "range"`, and a range
+  past the end is 416 with `Content-Range: bytes */<size>` and the
+  same envelope. The archive answers `Content-Disposition` with
+  `<slug>-<7 hex>.tar.gz`, and a name not ending in `.tar.gz` is 400
+  `invalid_request` with `details.reason: "archive"`.
+- `tree` accepts `recursive` as `0`, `1`, `true`, or `false`; a
+  `?path=` that names a file lists nothing. `since` and `until` reach
+  git normalized to UTC.
+- The per-node subprocess cap `ORIGO_MAX_GIT_PROCS` is spec 012's
+  semaphore and is not built here; a read runs under the 30 second
+  budget alone until that spec lands.
+- `pushed_at` (spec 004): an index object written before the field
+  existed reads as null. The rule that it reads as the object's own
+  entry's `at` needs a second read of the entry, which the same
+  sentence rules out, and no such object exists outside test buckets.
+- The label form of smart HTTP (`/{owner}/{slug}/info/refs`) became one
+  wildcard route in `internal/httpgit` dispatched on the method and
+  the service, because the mux refuses it beside
+  `/v1/repos/{id}/refs`: both match `/v1/repos/info/refs` and neither
+  is more specific. The reserved owner `v1` of spec 003 is what keeps
+  the two apart on the wire; the answers are unchanged.
+
+Deferred to spec 013's jobs: `TestE2EArchiveStreams` on every push,
+and the 40 second `FuzzValidPath` run. The spec moves to `complete`
+when both run there.
