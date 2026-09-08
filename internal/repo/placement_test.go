@@ -313,3 +313,41 @@ func TestReaderUpgradeAppliesTheIndexItRead(t *testing.T) {
 		t.Fatal("a deleted copy is held")
 	}
 }
+
+// TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry: two pushes
+// from one base each add a file with the same content, so both packs
+// carry the same blob; the joined pack is refused by index-pack, the
+// batch is indexed one pack at a time, and the copy holds both
+// branches and passes fsck.
+func TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry(t *testing.T) {
+	h := newHarness(t)
+	base := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, base, h.src.Pack(base))
+	h.src.Branch("left")
+	left := h.src.Commit("x.txt", "the same content", "left")
+	h.src.Checkout("main")
+	h.src.Branch("right")
+	right := h.src.Commit("y.txt", "the same content", "right")
+	// Each pack is thin against the base, as a push's pack is, and
+	// each carries the shared blob because neither client knew of the
+	// other's push.
+	h.push("refs/heads/left", wal.ZeroSHA, left, h.src.Pack(left, base))
+	h.push("refs/heads/right", wal.ZeroSHA, right, h.src.Pack(right, base))
+	r, release := h.acquire(false)
+	defer release()
+	if h.localRef(r, "refs/heads/left") != left || h.localRef(r, "refs/heads/right") != right {
+		t.Fatalf("branches: left %s right %s", h.localRef(r, "refs/heads/left"), h.localRef(r, "refs/heads/right"))
+	}
+	if _, err := h.cache.Git().Run(context.Background(), r.Dir, nil, "fsck", "--strict", "--no-progress"); err != nil {
+		t.Fatal(err)
+	}
+	if h.cache.batchSplits.Load() != 1 {
+		t.Fatalf("batch splits %d, want 1: the joined pack with a duplicate object was not refused", h.cache.batchSplits.Load())
+	}
+	if got := h.cache.applied.Value(nil); got != 3 {
+		t.Fatalf("applied %d entries, want 3", got)
+	}
+	if left, _ := os.ReadDir(h.cache.SpoolDir()); len(left) != 0 {
+		t.Fatalf("the spool holds %d files after the apply", len(left))
+	}
+}

@@ -367,7 +367,13 @@ Divergences, each kept and the reason:
   in the batch or already in the store, there is no retry, and a cold
   copy of 1 000 pushes holds 4 packs, not 1 000, which every later git
   command opens. `TestConcurrentWorkersApplyThinEntries` keeps its name
-  and asserts the batching with a test-set bound of 5 per batch.
+  and asserts the batching with a test-set bound of 5 per batch. Two
+  entries can carry one object (the 8-replica load on the stack found
+  it: `REF_DELTA already resolved (duplicate base)`), which
+  `index-pack --strict` refuses in one pack; a joined batch that is
+  refused is indexed one pack at a time in sequence order, each with
+  `--fix-thin`, which is what one run per entry produces
+  (`TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry`).
 - The `Origo-Prefer` header on a refused request: on the id form the
   header is present on a 403 with k = 1, because the id is the path's;
   on the name form it is absent on a 403 whether or not the name

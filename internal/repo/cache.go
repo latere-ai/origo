@@ -78,6 +78,9 @@ type Cache struct {
 	// applyEntries, the constants below; a test lowers them.
 	maxBatchEntries int
 	maxBatchBytes   int64
+	// batchSplits counts the joined packs indexed one pack at a time,
+	// for the test of that path.
+	batchSplits atomic.Int64
 
 	mu    sync.Mutex
 	repos map[string]*Repo
@@ -764,8 +767,36 @@ const (
 )
 
 // indexBatch joins the spooled packs into one pack in the spool and
-// indexes it into the object store.
+// indexes it into the object store. Git puts no object twice in one
+// pack, but two entries can carry the same object (two clients pushing
+// one blob, a pack built against a stale advertisement), and a joined
+// pack with a duplicate is refused by index-pack --strict; a batch of
+// several packs that fails is then indexed one pack at a time in
+// sequence order, each with --fix-thin, which is what one run per
+// entry would have done, and a pack that still fails is the error.
 func (c *Cache) indexBatch(ctx context.Context, r *Repo, batch []*spooled) error {
+	err := c.indexJoined(ctx, r, batch)
+	if err == nil || len(batch) == 1 {
+		return err
+	}
+	c.logger.WarnContext(ctx, "joined pack refused, indexing its packs one by one", "repo", r.ID, "packs", len(batch), "error", err)
+	c.batchSplits.Add(1)
+	for _, sp := range batch {
+		f, err := os.Open(sp.path)
+		if err != nil {
+			return err
+		}
+		err = c.indexPackFile(ctx, r, f)
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// indexJoined indexes the spooled packs as one pack.
+func (c *Cache) indexJoined(ctx context.Context, r *Repo, batch []*spooled) error {
 	joined, err := os.CreateTemp(c.SpoolDir(), "batch-*.pack")
 	if err != nil {
 		return err
