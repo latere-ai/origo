@@ -1,0 +1,44 @@
+# The gossip port is reachable from the origod pods alone (spec 016):
+# a datagram from anywhere else never reaches the node, on top of the
+# HMAC every datagram must carry (spec 005). One ingress rule, one
+# port, one peer. A NetworkPolicy restricts everything it does not
+# admit for the pods it selects, so the listeners of spec 002 are
+# admitted by the second policy below; the two are additive.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: origod-gossip
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: origod
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: origod
+      ports:
+        - port: 7946
+          protocol: UDP
+---
+# The public listener, reached through the ingress controller, and the
+# internal listener, reached by the probes and the metrics scrape, are
+# open to every peer; the bearer of spec 007 is the control there.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: origod-http
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: origod
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
