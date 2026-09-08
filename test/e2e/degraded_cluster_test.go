@@ -23,16 +23,22 @@ import (
 	"github.com/latere-ai/origo/test/stubs/slowproxy"
 )
 
-// gitGet fetches a smart HTTP path of a node with the bearer and
-// returns the status, the headers, and the body, 0 when nothing
-// answered inside the timeout.
+// freshClient opens a new connection per request, so every request
+// of the degraded scenario is routed the way a client's would be: a
+// pooled connection survives a pod leaving the endpoint list, a fresh
+// one does not.
+var freshClient = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+
+// gitGet fetches a smart HTTP path of a node with the bearer over a
+// fresh connection and returns the status, the headers, and the body,
+// 0 when nothing answered inside the timeout.
 func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int, http.Header, []byte) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", base+path, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := freshClient.Do(req)
 	if err != nil {
 		return 0, nil, nil
 	}
@@ -41,14 +47,36 @@ func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int,
 	return resp.StatusCode, resp.Header, body
 }
 
-// nodeMetric reads one series from a node's internal host port.
+// nodeMetric reads one series from a node's internal host port over a
+// fresh connection.
 func nodeMetric(t *testing.T, internalPort int, name, labels string) float64 {
 	t.Helper()
-	status, body := httpGet(http.DefaultClient, fmt.Sprintf("http://localhost:%d/metrics", internalPort))
+	status, body := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/metrics", internalPort))
 	if status != 200 {
 		t.Fatalf("metrics on %d: %d", internalPort, status)
 	}
 	return parseMetric(t, string(body), name, labels)
+}
+
+// podConditions reports a pod's status conditions, for the log line
+// of a failure that looks like a pod leaving the endpoint list.
+func podConditions(t *testing.T, name string) string {
+	t.Helper()
+	var pod struct {
+		Status struct {
+			Conditions []struct {
+				Type   string `json:"type"`
+				Status string `json:"status"`
+				Reason string `json:"reason"`
+			} `json:"conditions"`
+		} `json:"status"`
+	}
+	_ = json.Unmarshal(cluster.Get(t, "pod", name), &pod)
+	var out []string
+	for _, c := range pod.Status.Conditions {
+		out = append(out, fmt.Sprintf("%s=%s %s", c.Type, c.Status, c.Reason))
+	}
+	return strings.Join(out, ", ")
 }
 
 // TestClusterDegradedStorage is spec 015's cluster criterion, through
@@ -96,23 +124,29 @@ func TestClusterDegradedStorage(t *testing.T) {
 
 	t.Run("unreachable", func(t *testing.T) {
 		cluster.ApplyManifest(t, filepath.Join(testdata, "cut-storage.yaml"))
-		// Five concurrent checks fail at the storage deadline and open
-		// node 1's read breaker.
-		var wg sync.WaitGroup
-		for range 6 {
-			wg.Go(func() { gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", time.Minute) })
-		}
-		wg.Wait()
-		waitUntil(t, "node 1's read breaker open", time.Minute, func() bool {
+		// Bursts of six concurrent checks, each failing at the storage
+		// deadline once the policy is enforced, open node 1's read
+		// breaker; a burst before enforcement answers and counts
+		// nothing, so the bursts repeat until the gauge reads open.
+		waitUntil(t, "node 1's read breaker open", 2*time.Minute, func() bool {
+			var wg sync.WaitGroup
+			for range 6 {
+				wg.Go(func() { gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", time.Minute) })
+			}
+			wg.Wait()
 			return nodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`) == 1
 		})
+		t.Logf("breaker open; origod-0: %s", podConditions(t, "origod-0"))
 		// The warm repository is served stale with the header and clones.
 		status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		age, err := strconv.Atoi(header.Get("Origo-Stale"))
 		if status != 200 || err != nil || age < 0 || age > 30 {
-			t.Fatalf("stale advertisement: %d Origo-Stale %q", status, header.Get("Origo-Stale"))
+			t.Fatalf("stale advertisement: %d Origo-Stale %q; origod-0: %s", status, header.Get("Origo-Stale"), podConditions(t, "origod-0"))
 		}
-		stale := clone(t, nodeURL(node1, warm))
+		stale := filepath.Join(t.TempDir(), "stale")
+		if out, err := git(t, t.TempDir(), "clone", "-q", nodeURL(node1, warm), stale); err != nil {
+			t.Fatalf("stale clone: %v\n%s\norigod-0: %s", err, out, podConditions(t, "origod-0"))
+		}
 		if mustGit(t, stale, "rev-parse", "HEAD") != c1 {
 			t.Fatal("the stale clone is not the copy")
 		}
