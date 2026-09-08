@@ -219,15 +219,71 @@ func tenMiBRepo(t *testing.T, token string) string {
 }
 
 // setReplicas applies the hpa-<n>.yaml fixture and waits until the
-// autoscaler and the StatefulSet report n ready replicas.
+// autoscaler and the StatefulSet report n ready replicas, logging what
+// lags every 30 seconds and the pods on a timeout.
 func setReplicas(t *testing.T, n int) {
 	t.Helper()
 	cluster.ApplyManifest(t, filepath.Join(repoRoot(t), "test", "e2e", "testdata", fmt.Sprintf("hpa-%d.yaml", n)))
-	waitUntil(t, fmt.Sprintf("%d replicas", n), 5*time.Minute, func() bool {
+	started := time.Now()
+	lastLog := started
+	for {
 		current, desired := cluster.HPAStatus(t, "origod")
 		spec, ready := statefulSetReplicas(t, "origod")
-		return current == n && desired == n && spec == n && ready == n
-	})
+		if current == n && desired == n && spec == n && ready == n {
+			t.Logf("%d replicas after %s", n, time.Since(started).Round(time.Second))
+			return
+		}
+		if time.Since(lastLog) >= 30*time.Second {
+			t.Logf("waiting for %d replicas: autoscaler %d/%d, StatefulSet %d spec %d ready", n, current, desired, spec, ready)
+			lastLog = time.Now()
+		}
+		if time.Since(started) > 5*time.Minute {
+			t.Fatalf("%d replicas: not within 5 minutes; autoscaler %d/%d, StatefulSet %d spec %d ready; pods:\n%s", n, current, desired, spec, ready, podSummary(t))
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// podSummary lists the origod pods with their phase and readiness.
+func podSummary(t *testing.T) string {
+	t.Helper()
+	var pods struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Status struct {
+				Phase      string `json:"phase"`
+				Conditions []struct {
+					Type    string `json:"type"`
+					Status  string `json:"status"`
+					Reason  string `json:"reason"`
+					Message string `json:"message"`
+				} `json:"conditions"`
+				ContainerStatuses []struct {
+					Ready        bool `json:"ready"`
+					RestartCount int  `json:"restartCount"`
+				} `json:"containerStatuses"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(cluster.Get(t, "pods", "-l app.kubernetes.io/name=origod"), &pods); err != nil {
+		return err.Error()
+	}
+	var b strings.Builder
+	for _, p := range pods.Items {
+		fmt.Fprintf(&b, "%s %s", p.Metadata.Name, p.Status.Phase)
+		for _, c := range p.Status.ContainerStatuses {
+			fmt.Fprintf(&b, " ready=%v restarts=%d", c.Ready, c.RestartCount)
+		}
+		for _, c := range p.Status.Conditions {
+			if c.Status != "True" {
+				fmt.Fprintf(&b, " %s=%s(%s %s)", c.Type, c.Status, c.Reason, c.Message)
+			}
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // readLoadAt runs the synthetic read load of spec 005 at the replica
