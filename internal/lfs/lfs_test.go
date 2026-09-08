@@ -846,3 +846,16 @@ func TestDefaultsAreTheSpecValues(t *testing.T) {
 		t.Error("the default logger is not set")
 	}
 }
+
+// TestWriteFallsBackToAnEmptyObject: a body that cannot be marshalled
+// still leaves the client on the LFS shape.
+func TestWriteFallsBackToAnEmptyObject(t *testing.T) {
+	rec := httptest.NewRecorder()
+	write(rec, http.StatusOK, make(chan int))
+	if got := strings.TrimSpace(rec.Body.String()); got != "{}" {
+		t.Fatalf("body %q", got)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != MediaType {
+		t.Errorf("Content-Type %q", ct)
+	}
+}

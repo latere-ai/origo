@@ -179,9 +179,16 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, code 
 func requestID(*http.Request) string { return uuid.NewString() }
 
 func write(w http.ResponseWriter, status int, body any) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		// Every body this package sends is a struct of strings, numbers,
+		// and maps of them. An empty object keeps a client that somehow
+		// reaches this on the LFS shape rather than on no body at all.
+		raw = []byte("{}")
+	}
 	w.Header().Set("Content-Type", MediaType)
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(raw, '\n'))
 }
 
 // locks answers every path under locks, whatever the method: 501 with
