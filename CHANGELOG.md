@@ -50,6 +50,17 @@ committed: the commit log already holds that.
 - Every error response carries the fixed user sentence of its code with
   the developer reason in `details`, and every response of the public
   listener, `/readyz` and `/version` included, carries `Origo-Contract`.
+- Git LFS (spec 010): `POST /{repo}/info/lfs/objects/batch` answers
+  presigned URLs on the bucket, so object bytes never pass through a
+  node. An upload URL pins `Content-Length` and
+  `Content-Type: application/octet-stream`, and the upload is complete
+  when `POST /{repo}/info/lfs/verify` has checked the stored size; a
+  download is served only for a verified object. An upload batch past
+  the authorizer's `quota_bytes`, the bytes under `lfs/` counted, is
+  refused. `ORIGO_S3_PUBLIC_ENDPOINT` is the bucket endpoint LFS
+  clients reach and defaults to `ORIGO_S3_ENDPOINT`. Locking is not
+  supported and every path under `info/lfs/locks` says so. These
+  endpoints answer in the LFS body shape, not the error envelope.
 - Test stubs and the kind overlay (spec 013): `origo-stubs`, one binary
   running the stub issuer, authorizer, event sink, and a TLS git source
   with a 5 000-commit fixture, from flags, packaged as
