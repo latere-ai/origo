@@ -322,7 +322,7 @@ Divergences and interpretations, all kept:
 - The stub issuer has one control path beyond spec 013's table, a POST
   to /resume, and both stubs a `Resume` method, so a test ends an
   outage without restarting the stub. The `-fail`, `-hang`,
-  `-allow`, `-token`, and `-key` flags of the table are the binary's,
+  `-allow`, `-authorizer-token`, and `-key` flags of the table are the binary's,
   which spec 013 builds; the packages expose them as options
   (`WithToken`, `WithAllow`, `WithKey`, `WithRS256`, `WithIssuer`,
   `WithClock`) and methods (`Fail`, `Hang`).
