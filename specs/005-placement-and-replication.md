@@ -412,6 +412,15 @@ Divergences, each kept and the reason:
 - The base's `HorizontalPodAutoscaler` names the Deployment; the
   overlay's patch names the StatefulSet. `deploy/prod` therefore
   carries the autoscaler at 2 to 32.
+- The kind overlay's pods request 50m CPU, not the base's 250m: the
+  first stack run left `origod-3` unschedulable, `Insufficient cpu`,
+  on the runner's one kind node, so neither 4 nor 8 replicas could
+  exist there. The autoscaler's 70% target is of that request, which
+  is what the clone load drives past.
+- `TestClusterPreferredNodeIsWarm` reads the three headers until they
+  agree, for up to the 60 seconds of the membership criterion, because
+  the test before it replaces two pods and a node that joined a second
+  earlier has not heard the others yet.
 
 Two defects found in existing code, fixed at the root with a failing
 test each and recorded in spec 004's Outcome: a warm copy whose bucket
