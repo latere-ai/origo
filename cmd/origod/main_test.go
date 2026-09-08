@@ -6,7 +6,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
@@ -21,24 +26,61 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/httpjson"
+
+	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
+	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"github.com/latere-ai/origo/test/stubs/issuer"
 )
+
+// identity is the stub issuer and authorizer a node under test is
+// configured with, and the key it signs with.
+type identity struct {
+	issuer *issuer.Server
+	authz  *authorizer.Server
+	key    *ecdsa.PrivateKey
+}
+
+// token mints a token the node accepts.
+func (id *identity) token() string { return id.issuer.Mint(issuer.Claims{Sub: "dev"}) }
+
+// newEnv is a complete configuration against the stubs, with an
+// unreachable bucket unless a test replaces it.
+func newEnv(t *testing.T) (map[string]string, *identity) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := &identity{issuer: issuer.New(t), authz: authorizer.New(t), key: key}
+	return map[string]string{
+		"ORIGO_S3_ENDPOINT":      "http://127.0.0.1:1",
+		"ORIGO_S3_REGION":        "us-east-1",
+		"ORIGO_S3_BUCKET":        "origo",
+		"ORIGO_S3_KEY":           "k",
+		"ORIGO_S3_SECRET":        "s",
+		"ORIGO_PUBLIC_URL":       "http://127.0.0.1",
+		"ORIGO_OIDC_ISSUERS":     id.issuer.URL(),
+		"ORIGO_AUTHORIZER_URL":   id.authz.URL(),
+		"ORIGO_AUTHORIZER_TOKEN": id.authz.Token(),
+		"ORIGO_TOKEN_KEY":        string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})),
+		"ORIGO_DATA_DIR":         t.TempDir(),
+		"ORIGO_PUBLIC_ADDR":      "127.0.0.1:0",
+		"ORIGO_INTERNAL_ADDR":    "127.0.0.1:0",
+		"ORIGO_GOSSIP_ADDR":      "127.0.0.1:0",
+	}, id
+}
 
 func testEnv(t *testing.T) map[string]string {
 	t.Helper()
-	return map[string]string{
-		"ORIGO_S3_ENDPOINT":   "http://127.0.0.1:1",
-		"ORIGO_S3_REGION":     "us-east-1",
-		"ORIGO_S3_BUCKET":     "origo",
-		"ORIGO_S3_KEY":        "k",
-		"ORIGO_S3_SECRET":     "s",
-		"ORIGO_PUBLIC_URL":    "http://127.0.0.1",
-		"ORIGO_DEV_TOKEN":     "dev",
-		"ORIGO_DATA_DIR":      t.TempDir(),
-		"ORIGO_PUBLIC_ADDR":   "127.0.0.1:0",
-		"ORIGO_INTERNAL_ADDR": "127.0.0.1:0",
-		"ORIGO_GOSSIP_ADDR":   "127.0.0.1:0",
-	}
+	env, _ := newEnv(t)
+	return env
 }
 
 func getenv(m map[string]string) config.Getenv {
@@ -67,7 +109,7 @@ func TestMissingConfigurationIsOneMessage(t *testing.T) {
 	if code := run(context.Background(), nil, getenv(nil), &out, &errOut); code != 1 {
 		t.Fatalf("exit %d", code)
 	}
-	if got := errOut.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "missing ORIGO_S3_BUCKET") || !strings.Contains(got, "missing ORIGO_DEV_TOKEN") {
+	if got := errOut.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "missing ORIGO_S3_BUCKET") || !strings.Contains(got, "missing ORIGO_TOKEN_KEY") || !strings.Contains(got, "missing ORIGO_OIDC_ISSUERS") {
 		t.Fatalf("stderr = %q", got)
 	}
 }
@@ -173,7 +215,7 @@ func probe(t *testing.T, url string) (int, string) {
 }
 
 func TestInternalListenerServesProbes(t *testing.T) {
-	env := testEnv(t)
+	env, id := newEnv(t)
 	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
 	env["ORIGO_S3_PATH_STYLE"] = "1"
 	n, stop := startNode(t, env)
@@ -189,6 +231,9 @@ func TestInternalListenerServesProbes(t *testing.T) {
 	}
 	if code, body := get(t, "http://"+public+"/version"); code != 200 || body["version"] != "dev" {
 		t.Fatalf("public version: %d %v", code, body)
+	}
+	if code, body := get(t, "http://"+public+"/.well-known/jwks.json"); code != 200 || body["keys"] == nil {
+		t.Fatalf("public jwks: %d %v", code, body)
 	}
 	if code, _ := get(t, "http://"+public+"/livez"); code != 401 {
 		t.Fatalf("public livez without a token: %d", code)
@@ -206,7 +251,7 @@ func TestInternalListenerServesProbes(t *testing.T) {
 		t.Fatalf("without token: %d %v", resp.StatusCode, resp.Header)
 	}
 	req, _ = http.NewRequestWithContext(context.Background(), "POST", "http://"+public+"/v1/repos", strings.NewReader(`{"id":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","owner":"acme","slug":"app"}`))
-	req.Header.Set("Authorization", "Bearer dev")
+	req.Header.Set("Authorization", "Bearer "+id.token())
 	resp, err = app.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -214,18 +259,24 @@ func TestInternalListenerServesProbes(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 503 {
 		// The fake bucket answers every request with an empty listing,
-		// so the create's read-back fails: the route is reached.
+		// so the create's read-back fails: the route is reached, after
+		// the authorizer allowed it.
 		t.Fatalf("with token: %d", resp.StatusCode)
 	}
+	if reqs := id.authz.Requests(); len(reqs) != 1 || reqs[0].Subject != "dev" || reqs[0].Action != "admin" || reqs[0].Repo.Slug != "app" {
+		t.Fatalf("authorizer: %+v", reqs)
+	}
 	req, _ = http.NewRequestWithContext(context.Background(), "GET", "http://"+public+"/nope", nil)
-	req.SetBasicAuth("x", "dev")
+	req.SetBasicAuth("x", id.token())
 	resp, err = app.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var envelope httpjson.ErrorEnvelope
+	_ = json.NewDecoder(resp.Body).Decode(&envelope)
 	resp.Body.Close()
-	if resp.StatusCode != 404 {
-		t.Fatalf("unknown route: %d", resp.StatusCode)
+	if resp.StatusCode != 400 || envelope.Error.Code != contract.CodeInvalid || envelope.Error.Details["reason"] != "no such route" {
+		t.Fatalf("unknown route: %d %+v", resp.StatusCode, envelope.Error)
 	}
 	if code, body := probe(t, base+"/readyz"); code != 200 || body != "ok\n" {
 		t.Fatalf("readyz: %d %q", code, body)
@@ -422,6 +473,97 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+// TestEveryRouteRequiresAToken is the route sweep of spec 007: every
+// route of the public listener runs the verifier, refusing a missing
+// token, a token for another audience, and an expired one with the
+// row's reason, while the three unauthenticated paths answer without
+// one; and every response of the listener carries Origo-Contract.
+func TestEveryRouteRequiresAToken(t *testing.T) {
+	env, id := newEnv(t)
+	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
+	env["ORIGO_S3_PATH_STYLE"] = "1"
+	n, stop := startNode(t, env)
+	defer func() { _ = stop() }()
+	public, _, _ := n.addrs()
+	const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	routes := []struct{ method, path string }{
+		{"GET", "/r/" + repoA + ".git/info/refs?service=git-upload-pack"},
+		{"GET", "/r/" + repoA + ".git/info/refs?service=git-receive-pack"},
+		{"POST", "/r/" + repoA + ".git/git-upload-pack"},
+		{"POST", "/r/" + repoA + ".git/git-receive-pack"},
+		{"GET", "/acme/app.git/info/refs?service=git-upload-pack"},
+		{"POST", "/acme/app.git/git-upload-pack"},
+		{"POST", "/acme/app.git/git-receive-pack"},
+		{"POST", "/v1/repos"},
+		{"GET", "/v1/repos/" + repoA},
+		{"PATCH", "/v1/repos/" + repoA},
+		{"DELETE", "/v1/repos/" + repoA},
+		{"POST", "/v1/repos/" + repoA + "/undelete"},
+		{"POST", "/v1/repos/" + repoA + "/tokens"},
+		{"GET", "/nope"},
+		{"GET", "/livez"},
+		{"GET", "/metrics"},
+	}
+	now := time.Now()
+	tokens := []struct{ reason, token string }{
+		{auth.ReasonMissing, ""},
+		{auth.ReasonAudience, id.issuer.Mint(issuer.Claims{Aud: issuer.StringList{"other"}})},
+		{auth.ReasonExpired, id.issuer.Mint(issuer.Claims{Exp: now.Add(-2 * time.Minute).Unix()})},
+	}
+	client := &http.Client{Transport: &http.Transport{}}
+	for _, r := range routes {
+		for _, tok := range tokens {
+			req, _ := http.NewRequestWithContext(context.Background(), r.method, "http://"+public+r.path, strings.NewReader("{}"))
+			if tok.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tok.token)
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var env httpjson.ErrorEnvelope
+			_ = json.NewDecoder(resp.Body).Decode(&env)
+			resp.Body.Close()
+			if resp.StatusCode != 401 || env.Error.Code != contract.CodeUnauthenticated || env.Error.Details["reason"] != tok.reason || resp.Header.Get("WWW-Authenticate") != `Basic realm="origo"` || resp.Header.Get(contract.Header) != contract.Version {
+				t.Errorf("%s %s with %s: %d %+v %v", r.method, r.path, tok.reason, resp.StatusCode, env.Error, resp.Header)
+			}
+		}
+	}
+	if len(id.authz.Requests()) != 0 {
+		t.Fatal("a refused request reached the authorizer")
+	}
+	// The unauthenticated paths of the contract, each stamped as well.
+	for _, path := range []string{"/readyz", "/version", "/.well-known/jwks.json"} {
+		resp, err := client.Get("http://" + public + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 || resp.Header.Get(contract.Header) != contract.Version {
+			t.Errorf("%s: %d %v", path, resp.StatusCode, resp.Header)
+		}
+	}
+	// A token the node minted itself is accepted on the route its scope
+	// allows and refused on the others by scope, not by the verifier.
+	signer := auth.NewSigner(id.key, env["ORIGO_PUBLIC_URL"], nil)
+	bound, _, err := signer.Mint(auth.Principal{Subject: "ci"}, repoA, auth.ScopeRead, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://"+public+"/v1/repos/"+repoA+"/tokens", strings.NewReader(`{"scope":"read","ttl":60}`))
+	req.Header.Set("Authorization", "Bearer "+bound)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env2 httpjson.ErrorEnvelope
+	_ = json.NewDecoder(resp.Body).Decode(&env2)
+	resp.Body.Close()
+	if resp.StatusCode != 403 || env2.Error.Details["reason"] != auth.ReasonScope {
+		t.Fatalf("bound token on admin: %d %+v", resp.StatusCode, env2.Error)
+	}
 }
 
 func TestRunStopsOnSignalContext(t *testing.T) {

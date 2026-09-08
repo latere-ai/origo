@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/health"
-	"latere.ai/x/pkg/httpjson"
 	"latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
@@ -67,6 +66,9 @@ type node struct {
 	// and the index commit this way.
 	exit func(int)
 
+	verifier *auth.Verifier
+	signer   *auth.Signer
+
 	public     http.Handler
 	checks     []readyCheck
 	background []func(context.Context) error
@@ -114,20 +116,50 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	)
 	n.background = append(n.background, n.sweep)
 
-	// The application surface: smart HTTP and the repository API behind
-	// the phase 1 bearer, every response stamped with the contract
-	// version.
-	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg}).Register(app)
-	api.New(n.cache, logger).Register(app)
-	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "no such route"})
+	// Identity (spec 007): the verifier over the configured issuers and
+	// the node's own key, the authorizer client, and the signer of
+	// repository-bound tokens. The verifier's loop fetches the issuers'
+	// keys at start and keeps them fresh.
+	authClient := &http.Client{Transport: outboundTransport()}
+	n.verifier, err = auth.NewVerifier(auth.VerifierOptions{
+		Issuers: cfg.OIDCIssuers, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
+		Client: authClient, Logger: logger,
 	})
-	guard := &auth.StaticBearer{Token: cfg.DevToken, Deny: func(w http.ResponseWriter, _ *http.Request, code, message string) {
-		httpjson.WriteError(w, http.StatusUnauthorized, httpjson.Error{Code: code, Message: message})
-	}}
-	n.public = contract.Middleware(guard.Middleware(app))
+	if err != nil {
+		return nil, err
+	}
+	authorizer, err := auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: authClient, Metrics: n.reg})
+	if err != nil {
+		return nil, err
+	}
+	guard := auth.NewGuard(authorizer, logger)
+	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), nil)
+	n.background = append(n.background, n.verifier.Run)
+
+	// The application surface: smart HTTP and the repository API behind
+	// the verifier, every request authorized before its repository is
+	// looked up.
+	app := http.NewServeMux()
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard}).Register(app)
+	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer}).Register(app)
+	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
+	})
+	n.public = n.verifier.Middleware(app)
 	return n, nil
+}
+
+// outboundTransport is the transport the calls to the issuers and the
+// authorizer go through: pooled connections with a header deadline, and
+// no proxy from the environment on a path that carries a bearer.
+func outboundTransport() *http.Transport {
+	return &http.Transport{
+		MaxIdleConns:          16,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+	}
 }
 
 // storageTransport is the transport every request to object storage
@@ -200,17 +232,20 @@ func (n *node) metricsHandler() http.Handler {
 	})
 }
 
-// publicHandler serves the application surface with /readyz and /version
-// in front of it. The two probes are public as well as internal so the
-// release smoke reaches them through the ingress; /livez and /metrics stay
-// internal.
+// publicHandler serves the application surface with the three
+// unauthenticated paths in front of it: /readyz and /version, public as
+// well as internal so the release smoke reaches them through the
+// ingress, and the key set of spec 007. /livez and /metrics stay
+// internal. Every response of the listener carries the contract
+// version (spec 003).
 func (n *node) publicHandler() http.Handler {
 	probes := n.internalHandler()
 	mux := http.NewServeMux()
 	mux.Handle("GET /readyz", probes)
 	mux.Handle("GET /version", probes)
+	mux.Handle("GET /.well-known/jwks.json", n.signer.JWKS())
 	mux.Handle("/", n.public)
-	return mux
+	return contract.Middleware(mux)
 }
 
 // ready runs every check. During the drain window the answer is not
