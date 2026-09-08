@@ -252,8 +252,8 @@ delegation and `act`, `POST /v1/repos/{id}/tokens`, and `GET
 records: every response of the public listener carries
 `Origo-Contract`, `/readyz` and `/version` included, and
 `unauthenticated` carries `details.reason` (`cmd/origod`,
-`TestEveryRouteRequiresAToken`). Not yet served: the read operations
-of spec 009, push events of spec 008, and the conformance suite of
+`TestEveryRouteRequiresAToken`). The read operations of spec 009 and
+the push events of spec 008 are served; not yet: the conformance suite of
 spec 021, which is what the first two acceptance criteria require.
 
 Divergences recorded against the first draft, all kept:

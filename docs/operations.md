@@ -63,6 +63,22 @@ fails with 503 `storage_unavailable` after the client's retries. In
 both cases there is nothing to do on the Origo side but wait for the
 bucket; when it returns, nodes catch up on their own.
 
+## Push events
+
+With `ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` set, every push is
+one signed `POST` to that URL, retried for 24 hours on a sink that
+fails (1 s, 10 s, 1 min, 10 min, then hourly). After the 24 hours the
+event sits under `origo/events/dead/<repo>/` in the bucket and
+`origo_events_dead_total` counts it; to retry a dead event, move its
+object back under `origo/events/<repo>/` and a node's repair sweep
+delivers it within `ORIGO_REPAIR_INTERVAL`. A node that dies between
+a push and its delivery is covered by the other nodes: the sweep reads
+the dead node's journal under `origo/events/nodes/<node>/` once it has
+been unheard for `ORIGO_REPAIR_UNHEARD` and rebuilds the event from
+the log, so a sink sees an event more than once at worst and keys on
+its `id`. Nothing under `origo/events/` needs a backup: a pending
+event is rebuilt from the log, and a dead one is kept for the operator.
+
 ## Dashboards and alerts
 
 Spec 011 adds the PrometheusRule to `deploy/base`; until it lands there

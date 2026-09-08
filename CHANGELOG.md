@@ -58,6 +58,24 @@ committed: the commit log already holds that.
   authorizer's outage set over HTTP (`PUT /fail`, `POST /hang`,
   `POST /resume`). `make dev` is back: MinIO, the stubs, a generated
   `ORIGO_TOKEN_KEY`, the node, and a clone line with a minted token.
+- Push events (spec 008): with `ORIGO_EVENTS_URL` and
+  `ORIGO_EVENTS_SECRET` set, every acknowledged push is one signed
+  `POST` to the sink with `Origo-Signature` (HMAC-SHA256 over the
+  body), `Origo-Event`, and `Origo-Delivery`, delivered at least once
+  with an `id` that is the same however often it is delivered, so a
+  consumer deduplicates on it. A push made on behalf of a user carries
+  `pusher.sub` and `pusher.actor`; a forced update is marked `forced`;
+  `git push -o origo.event=off` sends nothing for that push; a
+  `default_branch` change is one event with the single `HEAD` update.
+  A sink that fails is retried at 1 s, 10 s, 1 min, 10 min, then
+  hourly for 24 hours, after which the event sits under
+  `origo/events/dead/` and `origo_events_dead_total` counts it; an
+  operator moves the object back under `origo/events/<repo>/` to
+  retry it. A node that dies between the push and the delivery is
+  covered by every other node's repair sweep (`ORIGO_REPAIR_INTERVAL`,
+  `ORIGO_REPAIR_UNHEARD`). The URL without the secret refuses to
+  start. `origo_push_duration_seconds{phase}` reports the four phases
+  of a push.
   `deploy/examples/kind` runs MinIO, three nodes, and the stubs in a kind
   cluster with Cilium and metrics-server on fixed host ports, through
   `up.sh` and `down.sh` (`make dev-up`, `make dev-down`); `verify.yml`

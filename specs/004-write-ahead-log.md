@@ -37,7 +37,7 @@ hook (`hook.go`) and commits it before git's own update. `cmd/origod`
 runs the sweeper loop. The hook in the tree writes the transaction
 only: the `quarantine` line of the hook protocol below and the step that
 reads the quarantined objects with `GIT_ALTERNATE_OBJECT_DIRECTORIES`
-are not built and land with spec 008, their only consumer. The spike in
+were built by spec 008, their only consumer, on 2026-09-08. The spike in
 [docs/spikes/2026-09-06-conditional-writes.md](../docs/spikes/2026-09-06-conditional-writes.md)
 is the evidence for the commit primitive: `PUT If-None-Match: *` is
 honoured by MinIO and DigitalOcean Spaces and documented by AWS, `PUT
@@ -77,7 +77,7 @@ Defects against the Design found by review, all four fixed on
 
 Not a defect, for the reader: `origo_push_duration_seconds{phase}` of
 spec 011's table is attributed to the receive path this spec built,
-and phase 1 does not record it. The builder of spec 008, who changes
+and phase 1 did not record it. The builder of spec 008, who changed
 the receive path for the `forced` flag and the enqueue, records it;
 spec 008's Current state and affects say so.
 

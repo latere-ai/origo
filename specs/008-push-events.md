@@ -1,6 +1,6 @@
 ---
 title: "Push events: signed webhooks per reference update"
-status: validated
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -24,13 +24,16 @@ never polls.
 
 ## Current state
 
-Spec 003 fixes the payload. `internal/httpgit` records the client's push
-options in the entry header (`push_options`), so `origo.event=off` is
-already in the log. `ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` are read
-by `internal/config` and unused; `ORIGO_REPAIR_UNHEARD` and
-`ORIGO_REPAIR_INTERVAL` are not read. `internal/events` does not exist.
+Built on 2026-09-08 as the Design describes; the Outcome lists the
+tests and the interpretations. Before it, spec 003 fixed the payload,
+`internal/httpgit` recorded the client's push options in the entry
+header (`push_options`), so `origo.event=off` was already in the log,
+`ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` were read by
+`internal/config` and unused, `ORIGO_REPAIR_UNHEARD` and
+`ORIGO_REPAIR_INTERVAL` were not read, and `internal/events` did not
+exist.
 
-Two items for the builder beyond the package. The receive path in
+Two items were for the builder beyond the package. The receive path in
 `internal/httpgit`, in this spec's affects, records
 `origo_push_duration_seconds{phase}` of spec 011 (`receive`, `entry`,
 `index`, `apply`), which phase 1 attributed to spec 004 and never
@@ -285,3 +288,90 @@ moves an object back under `origo/events/<repo>/` to retry it.
   the flag computed while the objects are still in quarantine, asserted
   by a hook that leaves the quarantine in place (proposed:
   `internal/httpgit`, `TestForcedFlagIsComputedBeforeTheVerdict`).
+
+## Outcome
+
+Built on 2026-09-08 in seven steps: `wal.Committed` carrying the
+entry header and the two commit-phase durations, the configuration
+rule and the two repair durations, `internal/events`, the receive
+path, the repository API, the node wiring, and the stack test. Every
+criterion has a passing test in the tree; the stack criterion runs in
+the `e2e-slow` job of spec 013 and also against a bare MinIO with an
+in-process sink, which is how it was verified on this machine.
+
+| Criterion | Test |
+|---|---|
+| 1 000 pushes, one delivered event each, signed, `Origo-Event: push`, `Origo-Delivery` equal to the body's `id` | `internal/events`, `TestThousandPushesOneEventEach` |
+| the retry schedule on a fake clock, the dead-letter object and `origo_events_dead_total` 24 hours after `at` | `internal/events`, `TestRetryScheduleAndDeadLetter` |
+| a node killed at `events.before-enqueue` on its second push, repaired by another node's sweep with the entry's transaction and the UUID v5, the journal naming the repository once | `test/e2e`, `TestSlowEventRepairAfterKill`, in the `e2e-slow` job |
+| `Emit` idempotent for one `at`, two events for two `at` values, the same schedule and dead-letter move, step 1 delivering or deleting a pending `a-<id>.json` | `internal/events`, `TestEmitIsIdempotent`, `TestEmittedEventsRetryAndRepairLikePushes` |
+| the four phases of `origo_push_duration_seconds`, each once, within 10% of the request | `internal/httpgit`, `TestPushPhasesAreObserved` |
+| the sweep reads only unheard nodes' journals and only their repositories' indexes | `internal/events`, `TestRepairReadsOnlyDeadJournals` |
+| one id for the enqueue and the repair, two for two entries, equal to the UUID v5 the test computes | `internal/events`, `TestEventIDIsDeterministic` |
+| `pusher.sub` and `pusher.actor` from `act` and `sub`, `actor` empty without `act` | `internal/events`, `TestPusherCarriesSubjectAndActor` |
+| no `push` event for an undelete from either path, `undeleted` once; the `default_branch` change as one `HEAD` update with `kind_detail` | `internal/events`, `TestUndeleteEmitsNoPushEvent`, `TestDefaultBranchChangeIsAHeadUpdate`; the wiring in `internal/api`, `TestLifecycleEventsAreEmitted` |
+| the URL without the secret fails the start-up with the one message | `internal/config`, `TestEventsURLNeedsTheSecret` |
+| `origo.event=off` suppresses that push alone, from the enqueue and from the sweep | `internal/events`, `TestEventOffSuppressesOnlyThatPush` |
+| `forced` computed while the objects are in quarantine, a fast-forward not forced | `internal/httpgit`, `TestForcedFlagIsComputedBeforeTheVerdict` |
+
+The dispatcher runs on the node when `ORIGO_EVENTS_URL` is set
+(`cmd/origod`, `TestEventsLoopRunsWithTheSink`). Coverage: `internal/events`
+95%, `internal/httpgit` 94%, `internal/api` 93%, `internal/config`
+100%, `cmd/origod` 94%.
+
+Divergences and interpretations, all kept:
+
+- `Enqueue(ctx, repo, entry)` takes `events.Entry{Header, Refs,
+  Forced}`: the committed header, which `wal.Committed` now carries so
+  no caller reads the entry back, the transaction, and the references
+  the receive path found forced. `Emit(ctx, repo, kind, at, pusher,
+  extra)` takes `at` and `pusher` as arguments rather than inside a
+  payload, because the id is derived from `at` and every kind carries
+  the same `pusher`; `at` is kept to the second in UTC, the precision
+  the id is derived from, so the payload's `at` and the id agree.
+- The live set is the `events.Membership` interface (`LastHeard(node)`),
+  nil until spec 005 wires its set: every other node then counts as
+  never heard since this node started, which the Repair section names,
+  so a two-node harness repairs without gossip.
+- A node loads its own journals of today and yesterday into memory at
+  start-up before it runs the start-up repair, so a restart under the
+  same name keeps the lines an earlier process wrote; the Design's
+  "rewritten whole from the in-memory copy" would otherwise drop them
+  on the first flush, and a push younger than the one-minute lag at
+  start-up would lose its only cover. A line already in memory is not
+  taken twice.
+- The repair sweep writes a rebuilt event by create-if-absent, so two
+  sweeps over one entry produce one object, and it skips an entry whose
+  event sits under `dead/`, because rebuilding it would move it back to
+  `dead/` on every sweep after the window; the operator's replay is a
+  move out of `dead/` as the Not in this spec section says.
+- Step 1 skips a listed object modified within the lag without reading
+  it, since `next_at` is never before the write; every other pending
+  object costs one read per sweep.
+- The stack test restarts the first node under its name and data
+  directory with the failpoint for the second push, because a
+  failpoint of spec 002 has no count and would end the first push.
+- A push without a pack (a delete alone) runs no quarantine in git and
+  the hook reports an empty path; no update of such a push needs the
+  objects.
+- The `apply` phase spans the forced computation, the verdict, git's
+  own reference update, and the local advance; the enqueue falls
+  outside the four phases, and the refused push observes `receive`
+  alone.
+- `TestThousandPushesOneEventEach` commits its entries through
+  `Log.Commit` and enqueues them the way the receive path does, because
+  a thousand `git push` processes do not fit the unit suite; the
+  receive path's own enqueue is asserted by the `forced` test.
+- The dispatcher's default HTTP client sets an explicit transport of
+  the node's outbound shape; `pkg/otel`'s instrumented client would
+  put the OpenTelemetry SDK on the node's build list, which spec 001's
+  dependency rule refuses.
+- Deliveries are one at a time per node, the one loop the Design
+  names; a sink that answers slowly bounds the rate at one delivery per
+  round trip. Recorded as open below.
+
+No criterion is deferred. Open, for a later spec if a consumer needs
+it: concurrent deliveries with the per-repository cursor serialised,
+and a cursor advance for a trailing `origo.event=off` entry, which the
+sweep otherwise re-reads on every pass for a dead node's repository
+until a later push is delivered.
