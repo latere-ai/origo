@@ -98,7 +98,10 @@ makes. On a `v*` tag:
    materials from the module graph and each image, attached with
    `attest-sbom`; provenance with `attest-build-provenance`; the deploy
    archive from `deploy/base` and `deploy/examples` with both images
-   pinned.
+   pinned; and the two `linux/amd64` images as `docker save` tarballs
+   in the artifact `candidate-images`, the shape spec 013's `build`
+   job uploads, so step 2 hands them to `up.sh` the way the `e2e` job
+   does.
 2. `conformance`: the `e2e` job of spec 013 against the candidate
    image. The fixture harness of this spec pushes the fixture
    repository through the stack first, under a slug outside the
@@ -247,8 +250,9 @@ workflow identity, which is what an outside operator can verify.
 - Both Dockerfiles name `debian:trixie-slim` by one digest and the
   built image answers `git --version` with 2.47 or newer, so `origod
   check` passes its `git` line inside the image (proposed: `verify.yml`,
-  the `e2e` job's image build step running `git --version` in the
-  candidate image, and a test in `cmd/origod`,
+  spec 013's `build` job running `git --version` in the candidate image
+  it built, the one job with a `docker build` step, and step 1 of
+  `release.yml` the same way; and a test in `cmd/origod`,
   `TestDockerfilesShareOneRuntimeStage`, comparing the two files'
   runtime stages byte for byte through a test-only constant resolved
   from its own source file).
