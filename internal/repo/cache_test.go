@@ -656,3 +656,28 @@ func TestGitErrorsAndCorruptionMarkers(t *testing.T) {
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+
+// TestWorkerErrorIsNotMaskedByTheCancelledIndexer: a worker's failure
+// cancels the indexer, which may be running git on an earlier batch;
+// the caller sees the worker's error, not the cancelled run. Two
+// entries, the second one gone from the log.
+func TestWorkerErrorIsNotMaskedByTheCancelledIndexer(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	c1 := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
+	c2 := h.src.Commit("b.txt", "two", "second")
+	ix := h.push("refs/heads/main", c1, c2, h.src.Pack(c2, c1))
+	if err := h.store.Delete(ctx, h.log.RepoPrefix(repoA)+ix.Entry); err != nil {
+		t.Fatal(err)
+	}
+	for range 20 {
+		_, _, err := h.cache.Acquire(ctx, repoA, false)
+		if err == nil {
+			t.Fatal("materialized without the second entry")
+		}
+		if errors.Is(err, context.Canceled) || !errors.Is(err, wal.ErrNotFound) {
+			t.Fatalf("the worker's error is masked: %v", err)
+		}
+	}
+}
