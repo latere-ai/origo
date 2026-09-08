@@ -7,7 +7,7 @@ depends_on:
   - specs/005-placement-and-replication.md
   - specs/011-observability.md
   - specs/013-test-stubs-and-kind-overlay.md
-affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/e2e/, docs/operations.md]
+affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/stubs/cmd/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -200,10 +200,15 @@ Queueing pushes for later commit.
   spec 013's overlay table; kindnet enforces no policy), with
   `ORIGO_STALE_MAX` set to `30s` on the stack's nodes by the overlay
   so the warm clone carries `Origo-Stale` for 30 seconds and answers
-  503 after; `test/stubs/slowproxy` for slow (a small Go program that
-  forwards TCP to MinIO and holds each connection's first bytes for
-  the delay a control endpoint sets; a row of spec 013's overlay table,
-  its control endpoint on that table's host port); and a deletion
+  503 after; `test/stubs/slowproxy` for slow, a package this spec
+  builds and the `origo-stubs` component of spec 013 runs: the proxy
+  starts only when `-slowproxy-target` (MinIO's Service) is set,
+  forwards TCP from its data listener `-slowproxy-data` (default
+  `0.0.0.0:8086`, what `ORIGO_S3_ENDPOINT` on every node names) to
+  the target, and holds each connection's first bytes for the delay
+  its control endpoint `-slowproxy-listen` sets (host port 30085 of
+  spec 013's ports table); the `slowproxy` row of spec 013's overlay
+  table is this spec's; and a deletion
   through the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family
   the job exported for partial, inside the `e2e` job of spec 013
   (proposed: `test/e2e`, `TestClusterDegradedStorage`).
