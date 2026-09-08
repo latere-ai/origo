@@ -51,11 +51,23 @@ func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int,
 // fresh connection.
 func nodeMetric(t *testing.T, internalPort int, name, labels string) float64 {
 	t.Helper()
+	v, ok := tryNodeMetric(t, internalPort, name, labels)
+	if !ok {
+		t.Fatalf("metrics on %d: nothing answered", internalPort)
+	}
+	return v
+}
+
+// tryNodeMetric is nodeMetric for a wait: a node out of rotation
+// answers on neither host port, which is a reason to wait, not to
+// fail.
+func tryNodeMetric(t *testing.T, internalPort int, name, labels string) (float64, bool) {
+	t.Helper()
 	status, body := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/metrics", internalPort))
 	if status != 200 {
-		t.Fatalf("metrics on %d: %d", internalPort, status)
+		return 0, false
 	}
-	return parseMetric(t, string(body), name, labels)
+	return parseMetric(t, string(body), name, labels), true
 }
 
 // podConditions reports a pod's status conditions, for the log line
@@ -122,10 +134,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 		t.Helper()
 		waitUntil(t, "every node's read breaker closed and the bucket answering", 3*time.Minute, func() bool {
 			for i := range 3 {
-				// An unready node answers on neither port; that is a
-				// node to wait for, not a failure.
-				status, body := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/metrics", portNode1Int+i))
-				if status != 200 || parseMetric(t, string(body), "origo_storage_breaker_state", `class="read"`) != 0 {
+				if v, ok := tryNodeMetric(t, portNode1Int+i, "origo_storage_breaker_state", `class="read"`); !ok || v != 0 {
 					return false
 				}
 				if status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/readyz", portNode1Int+i)); status != 200 {
@@ -164,7 +173,8 @@ func TestClusterDegradedStorage(t *testing.T) {
 				wg.Go(func() { gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", time.Minute) })
 			}
 			wg.Wait()
-			return nodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`) == 1
+			v, ok := tryNodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`)
+			return ok && v == 1
 		})
 		t.Logf("breaker open; origod-0: %s", podConditions(t, "origod-0"))
 		// Node 1 left the rotation between its second failed readiness
