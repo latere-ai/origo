@@ -182,6 +182,12 @@ Divergences and interpretations, each kept and the reason:
   neither lists twice in a minute. `internal/lfs` calls through it and
   spec 010's `TestQuotaCountsEveryPageOfTheListing` still holds the
   paging.
+- **A rate-limited LFS request answers spec 003's envelope, not the
+  LFS body.** The bucket sits behind the verifier and in front of the
+  whole application mux, which is one place for every surface; spec
+  010's Outcome records the same reading for the 401. The status and
+  `Retry-After` are what `git-lfs` reads, so the client backs off
+  either way.
 - **A push whose `lfs/` sum cannot be read is refused.** The
   measurement is a storage read, and a repository that cannot be
   measured is not one a quota was checked against
