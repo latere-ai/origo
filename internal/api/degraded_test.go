@@ -22,7 +22,7 @@ import (
 func TestReadAPIServesStaleAndRepositoryUnavailable(t *testing.T) {
 	var bs *wal.BreakerStore
 	h := newHarness(t, withWrap(func(s wal.Store) wal.Store {
-		bs = wal.NewBreakerStore(wal.BreakerOptions{Store: s, Threshold: 1, OpenFor: 50 * time.Millisecond})
+		bs = wal.NewBreakerStore(wal.BreakerOptions{Store: s, Threshold: 1, OpenFor: 3 * time.Second})
 		return bs
 	}))
 	f := loadFixture(t)
@@ -57,7 +57,7 @@ func TestReadAPIServesStaleAndRepositoryUnavailable(t *testing.T) {
 	}
 	// The bucket returns and the window passes: consistent again.
 	h.store.SetFault(nil)
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(3100 * time.Millisecond)
 	if r := h.get("/v1/repos/" + repoA + "/refs"); r.status != 200 || r.header.Get(contract.HeaderStale) != "" {
 		t.Fatalf("after recovery: %d %q", r.status, r.header.Get(contract.HeaderStale))
 	}

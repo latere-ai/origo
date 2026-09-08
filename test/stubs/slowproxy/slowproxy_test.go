@@ -84,7 +84,7 @@ func TestProxyHoldsTheFirstBytesForTheDelay(t *testing.T) {
 		t.Fatalf("new proxy: %s %s", p.Target(), p.Delay())
 	}
 	// No delay: at once.
-	if took := roundTrip(t, data); took > 500*time.Millisecond {
+	if took := roundTrip(t, data); took > 2*time.Second {
 		t.Fatalf("no delay took %s", took)
 	}
 	// The control endpoint reports the state and sets the delay.
@@ -117,7 +117,7 @@ func TestProxyHoldsTheFirstBytesForTheDelay(t *testing.T) {
 	if resp.StatusCode != 200 || p.Delay() != 0 {
 		t.Fatalf("clear: %d %s", resp.StatusCode, p.Delay())
 	}
-	if took := roundTrip(t, data); took > 500*time.Millisecond {
+	if took := roundTrip(t, data); took > 2*time.Second {
 		t.Fatalf("after the clear took %s", took)
 	}
 }

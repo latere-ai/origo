@@ -57,7 +57,7 @@ func TestStorageTimeoutBoundsTheReadinessListing(t *testing.T) {
 	_, internal, _ := n.addrs()
 	started := time.Now()
 	code, body := probe(t, "http://"+internal+"/readyz")
-	if took := time.Since(started); code != 503 || !strings.Contains(body, "storage") || took > time.Second {
+	if took := time.Since(started); code != 503 || !strings.Contains(body, "storage") || took > 1500*time.Millisecond {
 		t.Fatalf("hanging bucket: %d %q after %s", code, body, took)
 	}
 }

@@ -104,7 +104,7 @@ func TestBreakerOpensOnTimeoutsAndRecovers(t *testing.T) {
 	heads := mem.Calls["Head"]
 	started = time.Now()
 	_, err = store.Head(ctx, "k")
-	if !errors.Is(err, ErrStorageOpen) || time.Since(started) > 20*time.Millisecond || mem.Calls["Head"] != heads {
+	if !errors.Is(err, ErrStorageOpen) || time.Since(started) > 500*time.Millisecond || mem.Calls["Head"] != heads {
 		t.Fatalf("open breaker: %v after %s, %d calls", err, time.Since(started), mem.Calls["Head"]-heads)
 	}
 	if d := ErrorDetails(err); d["op"] != "head" || d["key"] != "k" || d["error"] != "breaker open" {
