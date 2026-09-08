@@ -113,6 +113,11 @@ type node struct {
 
 	drainDelay time.Duration
 	draining   atomic.Bool
+	// storageSeen is set by the first readiness listing the bucket
+	// answered: an open breaker keeps a replica ready only after that
+	// (spec 015), so a replica that never reached the bucket, one
+	// started against a wrong endpoint, is never in rotation.
+	storageSeen atomic.Bool
 
 	mu           sync.Mutex
 	publicAddr   string
@@ -295,17 +300,22 @@ func (n *node) sweep(ctx context.Context) error {
 
 // storageReady is the storage check of readiness: one listing under
 // the prefix through the breaker store. A read breaker that is open
-// (spec 015) is not a reason to leave the rotation: the node serves
-// warm repositories stale and refuses writes with a message that says
-// to retry, and a replica out of the endpoint list would show a client
-// neither; the listing that the breaker refuses is the one that opened
-// it, so the failure is already counted and the alert already fires.
-// A listing that fails while the breaker is closed, the bucket slow or
-// gone before five calls have failed, makes the replica unready as
-// before, and every such listing counts toward the breaker.
+// (spec 015) is not a reason to leave the rotation once the bucket has
+// answered this replica: the node serves warm repositories stale and
+// refuses writes with a message that says to retry, and a replica out
+// of the endpoint list would show a client neither; the listing that
+// the breaker refuses is the one that opened it, so the failure is
+// already counted and the alert already fires. A replica whose bucket
+// never answered has nothing warm and stays unready until a probe
+// succeeds. A listing that fails while the breaker is closed, the
+// bucket slow or gone before five calls have failed, makes the replica
+// unready as before, and every such listing counts toward the breaker.
 func (n *node) storageReady(ctx context.Context) error {
 	err := n.log.Ping(ctx)
-	if errors.Is(err, wal.ErrStorageOpen) {
+	switch {
+	case err == nil:
+		n.storageSeen.Store(true)
+	case errors.Is(err, wal.ErrStorageOpen) && n.storageSeen.Load():
 		return nil
 	}
 	return err

@@ -284,13 +284,17 @@ Divergences and interpretations, each kept and the reason:
   count, so a client that goes away under a healthy bucket opens
   nothing.
 - Readiness, which the spec leaves open: the `storage` check passes
-  while the read breaker is open. A replica that serves warm
+  while the read breaker is open, once the bucket has answered the
+  replica at least once since it started. A replica that serves warm
   repositories stale and refuses writes with the retry sentence is
   serving the degraded design; out of the endpoint list a client would
-  see neither. The check fails as before while the bucket is slow or
-  gone and the breaker is still closed, so a replica is unready for
-  the interval between the first failure and the fifth, at most 25
-  seconds of probes, then ready again
+  see neither. A replica the bucket never answered has nothing warm
+  and stays unready until a probe succeeds, which is what the first
+  stack run showed: with the proxy not started, three cold nodes went
+  ready through the rule alone. The check fails as before while the
+  bucket is slow or gone and the breaker is still closed, so a replica
+  is unready for the interval between the first failure and the
+  fifth, at most 25 seconds of probes, then ready again
   (`TestReadyzStaysReadyWhileTheBreakerIsOpen`). Recorded under Open
   below.
 - A refused call counts on `origo_storage_ops_total{result="error"}`
@@ -339,6 +343,9 @@ Divergences and interpretations, each kept and the reason:
   state, a PUT of `/delay` with a body `{"delay": "5s"}` sets the
   delay, and a DELETE of `/delay` clears it; the package's `Set`
   drives it from a test.
+- The `test-source` component's patch replaces the stubs container's
+  argument list, so `-slowproxy-target` is repeated there; the first
+  stack run started no proxy and port 30085 never answered.
 - On the stack, `ORIGO_STORAGE_TIMEOUT` is `2s` beside the
   `ORIGO_STALE_MAX=30s` spec 013's overlay row already set, so the read
   breaker opens in a few seconds and the warm copy is observed stale

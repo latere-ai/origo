@@ -102,8 +102,9 @@ recorded.
 
 A replica stays in rotation while its breaker is open, because it
 still serves what it holds and refuses the rest with that message;
-`/readyz` fails only while the bucket is slow or unreachable and the
-breaker has not opened yet. There is nothing to do on the Origo side
+`/readyz` fails while the bucket is slow or unreachable and the breaker
+has not opened yet, and on a replica the bucket has never answered
+since it started, which has nothing to serve. There is nothing to do on the Origo side
 but wait for the bucket: when it answers again, the next probe closes
 the breaker, every repository is checked against the log on its next
 request, and `Origo-Stale` disappears.
