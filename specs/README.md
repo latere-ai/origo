@@ -38,6 +38,12 @@ stateDiagram-v2
 `testing` moves to `complete` when every acceptance criterion has a
 passing test in the tree and the Outcome records every divergence.
 
+An Outcome's stack-proof sentence cites the dispatched or tag run id
+that proved the spec's cluster criterion, and is not refreshed
+afterwards: the run is the evidence for that criterion on that commit,
+not a claim about the newest run, so a later verifier reads it as
+history and does not ask for a fresh one.
+
 The dispatch gate is on the dependencies' state, not on `complete`: a
 validated spec is dispatched when every spec in its `depends_on` is at
 `testing` or later. `testing` means the design is built and what
@@ -235,6 +241,8 @@ deck and stated here so a reader sees them without the owning spec.
 | the autoscaler scales on CPU only, in the base and in every example overlay; `origo_requests_in_flight` is a dashboard signal | 005 | 011, 018, `docs/operations.md` |
 | the `integration` job is 25 minutes, the two cluster jobs 30, the mutation job 20; the 500 and 1 000 push tests and the 5 000-commit import run in the `e2e` job, the 500 MiB LFS round trip in `e2e-slow`, which installs `git-lfs`; the `specindex` job installs and runs `promtool` | 013 | 006, 010, 011, 019, 021 |
 | a write under an open read breaker is refused at once with `storage_unavailable`; stale serving is for reads only | 015 | 003, 019, 020 |
+| `/readyz` stays ready while a storage breaker is open, once the bucket has answered that replica at least once since it started: the node serves warm repositories stale and refuses writes with a code, and a not-ready node would leave the Service's rotation and lose those reads. A replica the bucket never answered stays unready. 002 owns `/readyz` and its probe row names 015 as the reason | 015 | 002, 005, 018 |
+| `Retry-After` is on every refusal that names a wait, in whole seconds and at least 1: a 429 `rate_limited` from 012's limits and a 503 `storage_unavailable` a storage breaker refused, on the git routes and the JSON API alike, valued at the refusing breaker's remaining open interval; 003's header table defines it | 003 | 012, 015, 019, 020 |
 | the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the source stub's CA, while git talks plain HTTP to the proxy; `transfer.fsckObjects` is a `-c` argument, not a `GIT_CONFIG_*` key | 016 | 002, 013, 014, 019 |
 | the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify`; a host named in `ORIGO_EGRESS_ALLOW` as `host=address` may resolve to exactly that address inside `ORIGO_CLUSTER_CIDRS` and to no other, which is how the stack's nodes reach the in-cluster source stub at its fixed `clusterIP` | 016 | 013, 014, 019 |
 | the three LFS sentences are the codes `lfs_object_mismatch`, `lfs_object_not_stored`, and `lfs_locks_unsupported`, rendered through `contract.Sentence` in the LFS body shape; 021's code table holds them | 010 | 003, 021 |
@@ -384,6 +392,34 @@ does not name. A read's three spans are decided: they are 009's to build
 now that `internal/tracing` exists, and 009 carries the builder item and
 the criterion `TestReadTrace`, staying at `testing`.
 
+The fifteenth round, on 015 at `complete`: 015's Design states as the
+rule what its Outcome recorded as a divergence, so a reader finds one
+answer: the deadline bounds the whole `Store` call and not each
+attempt, a `Get` is bounded to the arrival of the object's headers and
+its body read under the caller's context, the breaker is local in
+`internal/wal/breaker.go` with the package's semantics and its `State`,
+a call the caller's own context ended counts toward neither side, a
+refusal is counted on `origo_storage_ops_total` and not timed on
+`origo_storage_seconds`, a 304 counts `result="ok"`, the spooled
+push's wait polls `Admits` and not `Allow`, the integrity list carries
+all six keys the tests cover, the missing thin-pack base is
+`storage_unavailable` with `op: "index-pack"`, and the stack row sets
+`ORIGO_STORAGE_TIMEOUT=5s` beside `ORIGO_STALE_MAX=30s`. Its two open
+items are settled and are the Design's rules: readiness stays ready
+under an open breaker once the bucket has answered the replica, with a
+`### Readiness` section of its own and a sentence in 002's probe row,
+and `Retry-After` is on every breaker-refused 503, which 003's header
+table now defines with 012 and 015 as its senders. Two decision rows
+and the two `latere.ai/x/pkg` items above are new, the lifecycle
+section states the stack-proof convention, and 015's Outcome records
+that the next green dispatched run is 012's to cite. One fix is left
+to 012's builder, which owns `internal/httpgit` and `internal/api`
+this round: `api.storageError` and `httpgit.Handler.retryAfter` ask
+`RetryAfter(wal.ClassRead)` whatever class refused, so a write the
+open write breaker refused outside the receive-pack advertisement
+carries no header while the read breaker is closed; the class belongs
+to the refusing call.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -406,6 +442,8 @@ carried to that module's own queue; the workaround stays until it lands.
 |---|---|---|
 | `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
 | Neither a token bucket nor a semaphore a caller can wait on with a deadline is in the library. A rate limiter keyed on a caller, refilling at a rate with a burst and evicting an idle key, and a counting semaphore whose `Acquire(ctx, d)` reports whether a slot came free, are both generic and both wanted by any service that admits work | 012 | `internal/limits` holds both, with the values of spec 012's table; the metrics label, the `Retry-After` rendering, and the `lfs/` sum beside them are Origo's own |
+| `pkg/circuitbreaker` has no clock option: `New(threshold, openDuration)` reads `time.Now`, so its open window cannot be advanced in a test. `WithClock(func() time.Time)` as an `Option` on `New`, the way `BackoffConfig.Now` already works for the other breaker, would close it | 015 | `internal/wal/breaker.go` holds a breaker with the package's semantics and a clock function; `circuitbreaker.State` is still the package's type and the gauge's values |
+| `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do` passes one context to every attempt, so "10 seconds per attempt" cannot be expressed from outside the client. A `Timeout` on `retry.Policy`, applied to each attempt's context, would close it | 015 | `wal.BreakerStore` bounds the whole call with `ORIGO_STORAGE_TIMEOUT`, so a slow bucket fails a call after that deadline however many attempts fitted inside it |
 | `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library | 011 | `internal/tracing` is the one importer, the decision row above |
 
 ## Open source readiness
