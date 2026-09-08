@@ -184,6 +184,7 @@ Every response, success or error, carries `Origo-Contract`.
 | Header | Meaning |
 |---|---|
 | `Origo-Contract` | the contract version, `1`; on every response of the public listener |
+| `Retry-After` | on a refusal that names a time to wait, in whole seconds and at least 1: a 429 `rate_limited` from the limits of spec 012, and a 503 `storage_unavailable` a storage breaker of spec 015 refused, whose value is the remaining open interval of the breaker that refused. It is on every such refusal, on the git routes and on the JSON API alike |
 
 Headers other specs add, listed here so a consumer reads them from the
 contract; each is defined by the spec named:
