@@ -80,7 +80,7 @@ func (f *fakeT) Helper()               {}
 
 func TestFixtureHasEveryShape(t *testing.T) {
 	f := NewFixture(t, "")
-	if f.Refs["HEAD"] != "ref: refs/heads/main" || f.Refs["refs/heads/main"] != f.Tip || f.Refs["refs/tags/v1.0"] != f.TagV1 || f.Refs["refs/tags/latest"] != f.Tip || f.Refs["refs/heads/big"] != f.Big || f.Refs["refs/heads/large"] != f.Large {
+	if f.Refs["HEAD"] != "ref: refs/heads/main" || f.Refs["refs/heads/main"] != f.Tip || f.Refs["refs/tags/v1.0"] != f.TagV1 || f.Refs["refs/tags/latest"] != f.Tip || f.Refs["refs/heads/big"] != f.Big || f.Refs["refs/heads/large"] != f.Large || f.Refs["refs/heads/topic/x"] != f.Merge {
 		t.Fatalf("refs: %v", f.Refs)
 	}
 	// Merges have two parents, the rename is detected, the binary file

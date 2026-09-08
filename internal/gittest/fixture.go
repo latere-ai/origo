@@ -13,7 +13,8 @@ import (
 
 // Fixture is the history the read API of spec 009 is tested against:
 // merges, a rename, a binary file, a commit with trailers, an annotated
-// and a lightweight tag, more than 100 commits on main with a merge
+// and a lightweight tag, a branch topic/x whose name has a slash, more
+// than 100 commits on main with a merge
 // whose parents interleave in rev-list order, a directory of 5 001
 // entries, a 5 MiB change on the branch large, and a 60 MiB blob on the
 // branch big. Every commit id is fixed by the Source's clock, so a
@@ -82,6 +83,8 @@ func NewFixture(t testing.TB, dir string) *Fixture {
 	src.Commit("feat/two.txt", "two\n", "Feature two")
 	src.Checkout("main")
 	f.Merge = src.Merge("feature", "Merge feature")
+	// A branch with a slash in its name, which only ?ref= can name.
+	Run(t, src.Dir, nil, "branch", "topic/x", f.Merge)
 
 	// Fifty commits on side interleaved in time with fifty on main, so
 	// rev-list alternates between the two parents of the merge.
