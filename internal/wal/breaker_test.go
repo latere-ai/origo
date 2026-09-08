@@ -291,6 +291,35 @@ func TestBreakerStoreResultsAndBodies(t *testing.T) {
 	NewBreakerStore(BreakerOptions{})
 }
 
+// TestCallerCancellationIsNotCounted: a call the caller's context ended
+// is counted on the ops counter and not toward the breaker, while one
+// the wrapper's own deadline ended is.
+func TestCallerCancellationIsNotCounted(t *testing.T) {
+	mem := NewMemStore()
+	reg := pkgmetrics.NewRegistry()
+	store := NewBreakerStore(BreakerOptions{Store: mem, Threshold: 1, Timeout: 50 * time.Millisecond, Metrics: metrics.Register(reg)})
+	mem.SetLatency(time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := store.Head(ctx, "k"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancelled by the caller: %v", err)
+	}
+	if store.State(ClassRead) != circuitbreaker.Closed {
+		t.Fatal("the caller's cancellation opened the breaker")
+	}
+	if _, err := store.Head(context.Background(), "k"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ended by the deadline: %v", err)
+	}
+	if store.State(ClassRead) != circuitbreaker.Open {
+		t.Fatal("the wrapper's deadline did not count")
+	}
+	var text bytes.Buffer
+	reg.WritePrometheus(&text)
+	if !strings.Contains(text.String(), `origo_storage_ops_total{op="head",result="error"} 2`) {
+		t.Fatalf("metrics:\n%s", text.String())
+	}
+}
+
 // TestWaitPollsTheWriteBreaker covers Wait: admitted at once when the
 // breaker is closed, admitted once the window passes under the fake
 // clock, refused with ErrStorageOpen when the limit passes first, and

@@ -310,13 +310,17 @@ func (b *BreakerStore) Wait(ctx context.Context, c Class, poll, limit time.Durat
 // call runs one Store call of op on key under the class's breaker: the
 // gate, the deadline, the span, the count, and the timing. fn receives
 // the context to send under and reports the call's error, which
-// classify turns into the result label and the breaker's verdict.
+// classify turns into the result label and the breaker's verdict. A
+// call the caller's own context ended is neither a success nor a
+// failure toward the breaker: the bucket did not fail it, and a client
+// that went away says nothing about the bucket.
 func (b *BreakerStore) call(ctx context.Context, c Class, op, key string, fn func(context.Context) error) error {
 	br := b.breaker(c)
 	if !br.Allow() {
 		b.ops.Inc(map[string]string{"op": op, "result": "error"})
 		return &OpError{Op: op, Key: key, Err: ErrStorageOpen}
 	}
+	parent := ctx
 	ctx, end := tracing.Start(ctx, op)
 	defer end()
 	started := time.Now()
@@ -328,7 +332,9 @@ func (b *BreakerStore) call(ctx context.Context, c Class, op, key string, fn fun
 		br.RecordSuccess()
 		return err
 	}
-	br.RecordFailure()
+	if parent.Err() == nil {
+		br.RecordFailure()
+	}
 	return &OpError{Op: op, Key: key, Err: err}
 }
 
