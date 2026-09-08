@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1
+#
+# The test stubs of spec 013 in one image, ghcr.io/latere-ai/origo-stubs:
+# the issuer, the authorizer, the sink, the source, and the slow proxy of
+# spec 015, run from flags by test/stubs/cmd/origo-stubs. The kind
+# overlay runs it beside origod; spec 018's install job and an operator's
+# first installation run the stub authorizer from it. Built like
+# Dockerfile: the binary is compiled inside the image, and the runtime
+# stage is the same Debian slim with git, which the source stub needs
+# for git http-backend.
+
+# >>> shared runtime base <<<
+# origod runs git as a subprocess, so the runtime is a minimal Debian with
+# git rather than the static distroless base the Latere template uses. The
+# base is pinned by digest: a tag can be moved by its owner, which turns the
+# base into a mutable input.
+ARG RUNTIME_BASE=docker.io/library/debian:bookworm-slim@sha256:6bd27d44e6c32a66bbd72d7cb2b76a8ae3497ec2e5274a81abd1b37f6013fa1f
+# >>> end shared runtime base <<<
+
+ARG BUILDER_BASE=docker.io/library/golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
+
+FROM --platform=${BUILDPLATFORM} ${BUILDER_BASE} AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG SOURCE_DATE_EPOCH=0
+
+ENV CGO_ENABLED=0 \
+    GOFLAGS=-mod=readonly \
+    GOTOOLCHAIN=local
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+        -trimpath -buildvcs=false \
+        -ldflags "-s -w -buildid=" \
+        -o /out/origo-stubs ./test/stubs/cmd/origo-stubs
+
+FROM ${RUNTIME_BASE} AS runtime
+
+COPY --from=build --chown=65532:65532 /out/origo-stubs /app
+
+# git serves the source stub's repositories through git http-backend.
+# The source unpacks its fixture under /tmp, which a pod mounts writable.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+USER 65532:65532
+WORKDIR /
+EXPOSE 8081 8082 8083 8085 8086 8443
+ENTRYPOINT ["/app"]
