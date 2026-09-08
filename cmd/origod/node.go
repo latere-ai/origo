@@ -132,7 +132,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		// it needs, and no commit runs before run has bound it.
 		OnCommit: func(repo string, seq uint64) { n.gossip.Announce(repo, seq) },
 	})
-	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.reg})
+	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.metrics})
 	if err != nil {
 		return nil, err
 	}

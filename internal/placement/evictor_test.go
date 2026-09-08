@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/repo"
@@ -30,7 +32,7 @@ type cacheHarness struct {
 	cache *repo.Cache
 	src   *gittest.Source
 	ids   []string
-	reg   *metrics.Registry
+	reg   *pkgmetrics.Registry
 }
 
 func newCacheHarness(t *testing.T, n int) *cacheHarness {
@@ -38,8 +40,8 @@ func newCacheHarness(t *testing.T, n int) *cacheHarness {
 	clk := newClock()
 	store := wal.NewMemStore()
 	l := wal.New(wal.Options{Store: store, Logger: slog.New(slog.DiscardHandler)})
-	reg := metrics.NewRegistry()
-	c, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: slog.New(slog.DiscardHandler), Now: clk.Now, Metrics: reg})
+	reg := pkgmetrics.NewRegistry()
+	c, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: slog.New(slog.DiscardHandler), Now: clk.Now, Metrics: metrics.Register(reg)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +214,7 @@ func TestIdleEviction(t *testing.T) {
 	}
 }
 
-func metricsText(reg *metrics.Registry) string {
+func metricsText(reg *pkgmetrics.Registry) string {
 	var text bytes.Buffer
 	reg.WritePrometheus(&text)
 	return text.String()

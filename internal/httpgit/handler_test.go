@@ -29,12 +29,13 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/gittest"
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
@@ -54,7 +55,7 @@ type node struct {
 	cache  *repo.Cache
 	h      *Handler
 	srv    *httptest.Server
-	reg    *metrics.Registry
+	reg    *pkgmetrics.Registry
 	logger *slog.Logger
 	authz  *authorizer.Server
 }
@@ -73,9 +74,10 @@ func newGuard(t *testing.T, logger *slog.Logger) (*auth.Guard, *authorizer.Serve
 func newNode(t *testing.T, store wal.Store) *node {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	reg := metrics.NewRegistry()
-	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: reg})
-	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, Metrics: reg})
+	reg := pkgmetrics.NewRegistry()
+	set := metrics.Register(reg)
+	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: set})
+	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, Metrics: set})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,9 +589,10 @@ func (s *gittestSource) thinPack(want, have string) []byte {
 func newNodeAt(t *testing.T, store wal.Store, dataDir, gitBin string) *node {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	reg := metrics.NewRegistry()
-	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: reg})
-	cache, err := repo.New(repo.Options{Dir: dataDir, Log: l, Logger: logger, Metrics: reg, GitBin: gitBin})
+	reg := pkgmetrics.NewRegistry()
+	set := metrics.Register(reg)
+	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: set})
+	cache, err := repo.New(repo.Options{Dir: dataDir, Log: l, Logger: logger, Metrics: set, GitBin: gitBin})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +763,7 @@ func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
 
 // pushHistogram reads origo_push_duration_seconds from the registry:
 // the count and the sum per phase.
-func pushHistogram(reg *metrics.Registry) (count map[string]int, sum map[string]float64) {
+func pushHistogram(reg *pkgmetrics.Registry) (count map[string]int, sum map[string]float64) {
 	var buf bytes.Buffer
 	reg.WritePrometheus(&buf)
 	re := regexp.MustCompile(`origo_push_duration_seconds_(sum|count)\{phase="(\w+)"\} (\S+)`)

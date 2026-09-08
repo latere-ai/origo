@@ -77,7 +77,7 @@ func New(t testing.TB) *Server {
 	}
 	s.store = store
 	s.log = wal.New(wal.Options{Store: store, Prefix: config.Prefix, Metrics: set, Logger: logger})
-	cache, err := repo.New(repo.Options{Dir: t.TempDir(), Log: s.log, Logger: logger, Metrics: reg})
+	cache, err := repo.New(repo.Options{Dir: t.TempDir(), Log: s.log, Logger: logger, Metrics: set})
 	if err != nil {
 		t.Fatal(err)
 	}

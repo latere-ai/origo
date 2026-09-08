@@ -24,8 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -59,7 +60,7 @@ type Options struct {
 	// which the evictor of spec 005 ranks by. The wall clock by default.
 	Now     func() time.Time
 	Logger  *slog.Logger
-	Metrics *metrics.Registry
+	Metrics *metrics.Set
 }
 
 // DefaultWorkers is the number of concurrent entry workers of Apply.
@@ -85,10 +86,10 @@ type Cache struct {
 	mu    sync.Mutex
 	repos map[string]*Repo
 
-	materialized *metrics.Counter
-	applied      *metrics.Counter
-	rebuilt      *metrics.Counter
-	materialize  *metrics.Histogram
+	materialized *pkgmetrics.Counter
+	applied      *pkgmetrics.Counter
+	rebuilt      *pkgmetrics.Counter
+	materialize  *pkgmetrics.Histogram
 }
 
 // Repo is one materialized repository. Seq and Index describe the state
@@ -160,9 +161,9 @@ func New(o Options) (*Cache, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
 	fsckEvery := o.FsckEvery
 	if fsckEvery == 0 {
@@ -180,13 +181,8 @@ func New(o Options) (*Cache, error) {
 		dir: o.Dir, log: o.Log, git: &Git{Bin: path, Home: home, Timeout: timeout},
 		fsckEvery: fsckEvery, workers: workers, now: now, logger: logger, repos: map[string]*Repo{},
 		maxBatchEntries: MaxBatchEntries, maxBatchBytes: MaxBatchBytes,
-		materialized: reg.Counter("origo_repo_materialized_total", "repositories built from the log onto an empty disk"),
-		applied:      reg.Counter("origo_repo_entries_applied_total", "log entries applied to local copies"),
-		rebuilt:      reg.Counter("origo_repo_rebuilt_total", "local copies removed as corrupt and rebuilt"),
-		materialize:  reg.Histogram("origo_repo_materialize_seconds", "time to bring a local copy current", []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60}),
-	}
-	for _, m := range []*metrics.Counter{c.materialized, c.applied, c.rebuilt} {
-		m.Add(nil, 0) // the series reads 0 before the first event
+		materialized: set.RepoMaterialized, applied: set.RepoEntriesApplied,
+		rebuilt: set.RepoRebuilt, materialize: set.RepoMaterialize,
 	}
 	if err := c.load(); err != nil {
 		return nil, err
