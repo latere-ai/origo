@@ -152,10 +152,16 @@ func pathValue(r *http.Request) (string, error) {
 // open is the prologue of every read: authorize the read on the id the
 // path names, validate what the request carries before any subprocess
 // can start, open the repository under a read lock current with the
-// log, and answer 304 to a revalidation without running git. It
-// reports whether the handler goes on; the release runs when the
-// request is done. The handler then bounds its subprocesses with
-// budget, so a catch-up of the copy is not charged to the read.
+// log, answer 304 to a revalidation without running git, and take one
+// slot of the node's subprocess semaphore (spec 012). It reports
+// whether the handler goes on; the release runs when the request is
+// done. The handler then bounds its subprocesses with budget, so a
+// catch-up of the copy is not charged to the read.
+//
+// One slot covers the whole read, not one per subprocess: a read runs
+// rev-parse and then its operation in sequence under one budget (spec
+// 009), and taking the slot again between them would refuse a request
+// that had already begun.
 func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, validate func() error) (*readRequest, func(), bool) {
 	id := r.PathValue("id")
 	if !h.admit(w, r, id, auth.ActionRead) {
@@ -189,7 +195,12 @@ func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, valida
 		w.WriteHeader(http.StatusNotModified)
 		return nil, nil, false
 	}
-	return &readRequest{h: h, w: w, id: id, repo: rp, op: op}, release, true
+	slot, ok := h.limits.Slot(w, r)
+	if !ok {
+		release()
+		return nil, nil, false
+	}
+	return &readRequest{h: h, w: w, id: id, repo: rp, op: op}, func() { slot(); release() }, true
 }
 
 // etagMatches reports whether an If-None-Match header names the tag.

@@ -24,6 +24,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -47,6 +48,9 @@ type Options struct {
 	// undeleted event of an undelete (spec 008); nil, or one with no
 	// sink, sends nothing.
 	Events *events.Dispatcher
+	// Limits holds the subprocess semaphore of spec 012, taken once per
+	// read request and held across its subprocesses; nil takes none.
+	Limits *limits.Limits
 }
 
 // Handler serves /v1/repos.
@@ -58,6 +62,7 @@ type Handler struct {
 	signer    *auth.Signer
 	events    *events.Dispatcher
 	placement placement.Placer
+	limits    *limits.Limits
 
 	readTimeout time.Duration
 }
@@ -75,7 +80,7 @@ func New(o Options) *Handler {
 	if timeout == 0 {
 		timeout = DefaultReadTimeout
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: o.Limits}
 }
 
 // Register mounts the routes.

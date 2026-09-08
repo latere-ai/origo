@@ -30,6 +30,7 @@ import (
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/lfs"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
@@ -88,6 +89,11 @@ type node struct {
 
 	// Compaction (spec 006): the trigger after a push and the sweep.
 	compact *compact.Manager
+
+	// Limits (spec 012): the per-subject rate limit in front of the
+	// application surface, the semaphore every git subprocess of the
+	// node takes a slot of, and the repository quota rule.
+	limits *limits.Limits
 
 	// exit ends the process at an injected failpoint. os.Exit outside
 	// tests: the end-to-end suite kills a node between the entry write
@@ -189,12 +195,20 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	}
 	n.background = append(n.background, n.gossip.Run, n.evictor.Run)
 
+	// Limits (spec 012) are built before the packages that enforce
+	// them: one semaphore for the handlers and compaction, one bucket
+	// table for the listener, one cached lfs/ sum for the quota.
+	n.limits = limits.New(limits.Options{
+		MaxGitProcs: cfg.MaxGitProcs, Log: n.log, Metrics: n.metrics, Logger: logger,
+	})
+
 	// Compaction (spec 006): the primary of a repository is the first
 	// name its placement answers, so the manager reads the same live set
 	// the header does; every other node writes a request object and this
 	// node's sweep picks up the ones it is the primary of.
 	n.compact, err = compact.New(compact.Options{
 		Cache: n.cache, Placement: n.set, Node: cfg.NodeName, Logger: logger, Metrics: n.metrics,
+		Slots: n.limits.Slots(),
 	})
 	if err != nil {
 		return nil, err
@@ -228,8 +242,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact}).Register(app)
-	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set}).Register(app)
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact, Limits: n.limits}).Register(app)
+	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set, Limits: n.limits}).Register(app)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through
 	// the node.
@@ -240,11 +254,14 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	lfs.New(lfs.Options{Log: n.log, Guard: guard, Presigner: presigner, Logger: logger}).Register(app)
+	lfs.New(lfs.Options{Log: n.log, Guard: guard, Presigner: presigner, Logger: logger, Limits: n.limits}).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})
-	n.public = n.verifier.Middleware(capture(app))
+	// The rate limit of spec 012 sits behind the verifier, so it counts
+	// against the effective subject the token named, and in front of
+	// every route of the application surface.
+	n.public = n.verifier.Middleware(n.limits.Middleware(capture(app)))
 	return n, nil
 }
 

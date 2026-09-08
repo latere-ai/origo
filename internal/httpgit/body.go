@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -30,15 +31,25 @@ type receiveRequest struct {
 	PackSize   int64
 }
 
-// maxCommands bounds one push's reference updates.
-const maxCommands = 100000
+// errTooLarge is a push body past the single-push limit of spec 012,
+// and errTooManyCommands one past the reference cap. Both are
+// over_quota with a limit of their own, not a malformed request.
+var (
+	errTooLarge        = errors.New("the push is larger than the limit")
+	errTooManyCommands = errors.New("the push carries more commands than the limit")
+)
 
 // spoolBody copies the request body to a file under dir, inflating a
 // gzip body as git sends for large pushes, and returns the file open at
 // its start. The caller removes it. Spooling every body, however small,
 // keeps one path: the pack has to be re-read for the entry after git
 // consumed it, and a file is re-readable where a socket is not.
-func spoolBody(r *http.Request, dir string) (*os.File, error) {
+//
+// The copy stops one byte past max (spec 012's single-push limit), so a
+// client that sends more writes no more than that to the disk; a
+// declared Content-Length over the limit is refused before a byte is
+// read, which the caller does.
+func spoolBody(r *http.Request, dir string, max int64) (*os.File, error) {
 	body := io.Reader(r.Body)
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		gz, err := gzip.NewReader(r.Body)
@@ -52,7 +63,11 @@ func spoolBody(r *http.Request, dir string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := io.Copy(f, body); err != nil {
+	n, err := io.Copy(f, io.LimitReader(body, max+1))
+	if err == nil && n > max {
+		err = errTooLarge
+	}
+	if err != nil {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 		return nil, err
@@ -95,8 +110,8 @@ func parseReceive(r io.ReadSeeker) (*receiveRequest, error) {
 			return nil, err
 		}
 		req.Commands = append(req.Commands, update)
-		if len(req.Commands) > maxCommands {
-			return nil, fmt.Errorf("receive-pack: more than %d commands", maxCommands)
+		if len(req.Commands) > limits.MaxRefs {
+			return nil, errTooManyCommands
 		}
 	}
 	hasOptions := false
@@ -118,8 +133,8 @@ func parseReceive(r io.ReadSeeker) (*receiveRequest, error) {
 				return nil, errors.New("receive-pack options: unexpected delimiter")
 			}
 			req.Options = append(req.Options, strings.TrimSuffix(string(line), "\n"))
-			if len(req.Options) > 1000 {
-				return nil, errors.New("receive-pack: more than 1000 push options")
+			if len(req.Options) > limits.MaxPushOptions {
+				return nil, fmt.Errorf("receive-pack: more than %d push options", limits.MaxPushOptions)
 			}
 		}
 	}

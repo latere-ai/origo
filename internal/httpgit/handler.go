@@ -38,6 +38,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
@@ -69,6 +70,10 @@ type Options struct {
 	// for admission while it waits (spec 015); DefaultBreakerPoll when
 	// zero. A test lowers it.
 	BreakerPoll time.Duration
+	// Limits holds the subprocess semaphore, the single-push bound, and
+	// the repository quota rule (spec 012); one of its own over the
+	// log, with the spec's defaults, when nil.
+	Limits *limits.Limits
 }
 
 // Compactor is spec 006's after-push trigger. It returns before the
@@ -97,6 +102,7 @@ type Handler struct {
 
 	events   *events.Dispatcher
 	compact  Compactor
+	limits   *limits.Limits
 	pushes   *pkgmetrics.Counter
 	rejected *pkgmetrics.Counter
 	fetches  *pkgmetrics.Counter
@@ -128,7 +134,7 @@ func New(o Options) *Handler {
 	if o.Guard == nil {
 		panic("httpgit: the handler needs a guard")
 	}
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, breakerPoll: o.BreakerPoll, logger: o.Logger, events: o.Events, compact: o.Compaction}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, breakerPoll: o.BreakerPoll, logger: o.Logger, events: o.Events, compact: o.Compaction, limits: o.Limits}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
 	}
@@ -189,6 +195,13 @@ func (h *Handler) byName(w http.ResponseWriter, r *http.Request) {
 // in the name form it is set once the name resolved and the guard
 // allowed, so a refused caller learns nothing about the name.
 func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Action) (string, bool) {
+	id, _, ok := h.decide(w, r, action)
+	return id, ok
+}
+
+// decide is resolve with the authorizer's decision behind the allow,
+// for the push path, which reads quota_bytes off it (spec 012).
+func (h *Handler) decide(w http.ResponseWriter, r *http.Request, action auth.Action) (string, auth.Decision, bool) {
 	var ref auth.RepoRef
 	if id := r.PathValue("id"); id != "" {
 		ref.ID = strings.TrimSuffix(id, ".git")
@@ -198,20 +211,20 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Ac
 		id, err := h.log.Resolve(r.Context(), ref.Owner, ref.Slug)
 		if err != nil && !errors.Is(err, wal.ErrNotFound) {
 			h.storageError(w, r, err)
-			return "", false
+			return "", auth.Decision{}, false
 		}
 		ref.ID = id
 	}
 	d, ok := h.guard.Admit(w, r, ref, action)
 	if !ok {
-		return "", false
+		return "", auth.Decision{}, false
 	}
 	if ref.ID == "" {
 		contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"owner": ref.Owner, "slug": ref.Slug})
-		return "", false
+		return "", auth.Decision{}, false
 	}
 	placement.SetHeader(w.Header(), h.placement, ref.ID, d.Replicas)
-	return ref.ID, true
+	return ref.ID, d, true
 }
 
 // acquire opens the repository for the request and maps the refusals.
@@ -337,6 +350,11 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(contract.HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
 	}
 	rp := l.Repo
+	slot, ok := h.limits.Slot(w, r)
+	if !ok {
+		return
+	}
+	defer slot()
 	cmd, cancel := h.gitCommand(r.Context(), r, rp, strings.TrimPrefix(service, "git-"), "--stateless-rpc", "--advertise-refs", rp.Dir)
 	defer cancel()
 	var out, stderr bytes.Buffer
@@ -370,6 +388,11 @@ func (h *Handler) uploadPack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer closeBody()
+	slot, ok := h.limits.Slot(w, r)
+	if !ok {
+		return
+	}
+	defer slot()
 	cmd, cancel := h.gitCommand(r.Context(), r, rp, "upload-pack", "--stateless-rpc", rp.Dir)
 	defer cancel()
 	var stderr bytes.Buffer
@@ -402,7 +425,7 @@ func requestBody(r *http.Request) (io.Reader, func(), error) {
 // hook let git update the references.
 func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
-	id, ok := h.resolve(w, r, auth.ActionWrite)
+	id, decision, ok := h.decide(w, r, auth.ActionWrite)
 	if !ok {
 		return
 	}
@@ -424,15 +447,41 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	spool, err := spoolBody(r, h.cache.SpoolDir())
+	maxPush := h.limits.MaxPush()
+	if r.ContentLength > maxPush {
+		h.tooLarge(w, r, id, r.ContentLength, maxPush)
+		return
+	}
+	spool, err := spoolBody(r, h.cache.SpoolDir(), maxPush)
 	if err != nil {
+		if errors.Is(err, errTooLarge) {
+			h.tooLarge(w, r, id, maxPush+1, maxPush)
+			return
+		}
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": err.Error()})
 		return
 	}
 	defer func() { _ = spool.Close(); _ = os.Remove(spool.Name()) }()
 	req, err := parseReceive(spool)
 	if err != nil {
+		if errors.Is(err, errTooManyCommands) {
+			h.logger.InfoContext(r.Context(), "push refused", "repo", id, "limit", limits.LimitRefs, "bytes", limits.MaxRefs+1, "max", limits.MaxRefs, "subject", auth.Subject(r.Context()))
+			contract.Write(w, http.StatusRequestEntityTooLarge, contract.CodeOverQuota, map[string]any{
+				"limit": limits.LimitRefs, "bytes": limits.MaxRefs + 1, "max": limits.MaxRefs,
+			})
+			return
+		}
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": err.Error()})
+		return
+	}
+	// The repository size rule of spec 012, measured before git runs:
+	// what the log holds plus the bytes under lfs/ plus this pack, and
+	// the references the index would hold after the push. A refusal
+	// travels as the hook's verdict, so the client reads the code and
+	// the sentence in the sideband and no entry is written.
+	refusal, err := h.overQuota(r.Context(), id, rp, req, decision.QuotaBytes)
+	if err != nil {
+		h.storageError(w, r, err)
 		return
 	}
 	if err := installHook(rp.Dir); err != nil {
@@ -445,6 +494,12 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer ch.close()
+
+	slot, ok := h.limits.Slot(w, r)
+	if !ok {
+		return
+	}
+	defer slot()
 
 	cmd, cancel := h.gitCommand(r.Context(), r, rp, "receive-pack", "--stateless-rpc", rp.Dir)
 	defer cancel()
@@ -482,9 +537,13 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		endReceiveOnce()
 		refs = u.refs
 		verdict := "reject origo: no reference updates"
-		if u.err != nil {
+		switch {
+		case u.err != nil:
 			verdict = "reject origo: " + u.err.Error()
-		} else if u.ok {
+		case u.ok && refusal != nil:
+			refusal.log(r.Context(), h.logger, id, auth.Subject(r.Context()))
+			verdict = "reject " + contract.CodeOverQuota + ": " + contract.Sentence(contract.CodeOverQuota)
+		case u.ok:
 			committed, verdict = h.commit(r.Context(), id, rp, u.refs, req, spool.Name())
 		}
 		started = time.Now()

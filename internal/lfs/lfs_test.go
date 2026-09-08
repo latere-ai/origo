@@ -515,8 +515,7 @@ func TestQuotaCountsEveryPageOfTheListing(t *testing.T) {
 // handlerBytes sums lfs/ the way the quota rule does.
 func (e *env) handlerBytes() (int64, error) {
 	h := New(Options{Log: e.log, Guard: auth.NewGuard(e.authz, slog.New(slog.DiscardHandler)), Presigner: stubPresigner{}})
-	r := httptest.NewRequest("POST", batchPath, nil).WithContext(e.t.Context())
-	return h.lfsBytes(r, testRepo)
+	return h.limits.LFSBytes(e.t.Context(), testRepo)
 }
 
 // stubPresigner signs nothing; it is for a test that never reads a URL.

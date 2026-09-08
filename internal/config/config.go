@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/limits"
 )
 
 // Defaults for the optional variables.
@@ -126,6 +127,10 @@ type Config struct {
 	StorageTimeout time.Duration
 	StaleMax       time.Duration
 
+	// MaxGitProcs is ORIGO_MAX_GIT_PROCS: the git subprocesses this node
+	// runs at once (spec 012).
+	MaxGitProcs int
+
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
 	Failpoint string
@@ -197,6 +202,15 @@ func Load(getenv Getenv) (*Config, error) {
 			problems = append(problems, "ORIGO_TOKEN_KEY must be a PEM-encoded ECDSA P-256 private key: "+err.Error())
 		}
 		cfg.TokenKey = key
+	}
+	cfg.MaxGitProcs = limits.DefaultMaxGitProcs
+	if raw := getenv("ORIGO_MAX_GIT_PROCS"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			problems = append(problems, "ORIGO_MAX_GIT_PROCS must be a positive integer")
+		} else {
+			cfg.MaxGitProcs = n
+		}
 	}
 	if raw := getenv("ORIGO_CACHE_BYTES"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)

@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/latere-ai/origo/internal/limits"
 )
 
 func receiveBody(t *testing.T, caps string, options []string, pack string, refs ...string) []byte {
@@ -80,7 +82,7 @@ func TestParseReceiveFindsCommandsOptionsAndThePack(t *testing.T) {
 		"options delim": append(receiveBody(t, "push-options", nil, "", zero+" "+one+" refs/heads/main"), []byte("0001")...),
 		"short pack":    receiveBody(t, "", nil, "PACK", zero+" "+one+" refs/heads/main"),
 		"too many": func() []byte {
-			refs := make([]string, maxCommands+1)
+			refs := make([]string, limits.MaxRefs+1)
 			for i := range refs {
 				refs[i] = zero + " " + one + " refs/heads/b" + itoa(i)
 			}
@@ -91,7 +93,7 @@ func TestParseReceiveFindsCommandsOptionsAndThePack(t *testing.T) {
 			t.Errorf("%s accepted", name)
 		}
 	}
-	many := make([]string, 1001)
+	many := make([]string, limits.MaxPushOptions+1)
 	for i := range many {
 		many[i] = "o=" + itoa(i)
 	}
@@ -120,7 +122,7 @@ func TestSpoolBodyHandlesGzipAndFailures(t *testing.T) {
 	_ = w.Close()
 	req := httptest.NewRequest("POST", "/", &gz)
 	req.Header.Set("Content-Encoding", "gzip")
-	f, err := spoolBody(req, dir)
+	f, err := spoolBody(req, dir, limits.MaxPushBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,14 +133,14 @@ func TestSpoolBodyHandlesGzipAndFailures(t *testing.T) {
 	}
 	req = httptest.NewRequest("POST", "/", strings.NewReader("not gzip"))
 	req.Header.Set("Content-Encoding", "gzip")
-	if _, err := spoolBody(req, dir); err == nil {
+	if _, err := spoolBody(req, dir, limits.MaxPushBytes); err == nil {
 		t.Fatal("bad gzip accepted")
 	}
 	req = httptest.NewRequest("POST", "/", brokenSeeker{Reader: &failingReader{}})
-	if _, err := spoolBody(req, dir); err == nil {
+	if _, err := spoolBody(req, dir, limits.MaxPushBytes); err == nil {
 		t.Fatal("failed read accepted")
 	}
-	if _, err := spoolBody(httptest.NewRequest("POST", "/", strings.NewReader("x")), dir+"/missing"); err == nil {
+	if _, err := spoolBody(httptest.NewRequest("POST", "/", strings.NewReader("x")), dir+"/missing", limits.MaxPushBytes); err == nil {
 		t.Fatal("missing spool directory accepted")
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {

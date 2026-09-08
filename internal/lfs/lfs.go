@@ -29,6 +29,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/tracing"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -49,8 +50,6 @@ const (
 	DocumentationURL = "https://github.com/latere-ai/origo/blob/main/specs/010-lfs.md"
 	// BasicTransfer is the one transfer adapter this spec serves.
 	BasicTransfer = "basic"
-	// listPage is the page size of the lfs/ listing the quota rule sums.
-	listPage = 1000
 )
 
 // Presigner signs the transfer URLs. It is pkg/s3's client, built
@@ -71,6 +70,9 @@ type Options struct {
 	// Presigner signs the transfer URLs; required.
 	Presigner Presigner
 	Logger    *slog.Logger
+	// Limits holds the repository quota rule and the cached sum of the
+	// bytes under lfs/ (spec 012); one of its own over the log when nil.
+	Limits *limits.Limits
 	// Now is the clock the verified marker is stamped with.
 	Now func() time.Time
 }
@@ -82,6 +84,7 @@ type Handler struct {
 	guard     *auth.Guard
 	presigner Presigner
 	logger    *slog.Logger
+	limits    *limits.Limits
 	now       func() time.Time
 }
 
@@ -90,7 +93,10 @@ func New(o Options) *Handler {
 	if o.Log == nil || o.Guard == nil || o.Presigner == nil {
 		panic("lfs: the handler needs a log, a guard, and a presigner")
 	}
-	h := &Handler{log: o.Log, store: o.Log.Store(), guard: o.Guard, presigner: o.Presigner, logger: o.Logger, now: o.Now}
+	h := &Handler{log: o.Log, store: o.Log.Store(), guard: o.Guard, presigner: o.Presigner, logger: o.Logger, limits: o.Limits, now: o.Now}
+	if h.limits == nil {
+		h.limits = limits.New(limits.Options{Log: o.Log, Logger: o.Logger})
+	}
 	if h.logger == nil {
 		h.logger = slog.Default()
 	}
@@ -497,61 +503,23 @@ func verifyHeader(r *http.Request) map[string]string {
 // quota_bytes. An object the store holds is in the lfs/ sum already
 // and adds nothing.
 func (h *Handler) withinQuota(w http.ResponseWriter, r *http.Request, id string, size int64, d auth.Decision, objects []requestObject, held map[string]bool) bool {
-	stored, err := h.lfsBytes(r, id)
+	var addition int64
+	for _, o := range objects {
+		if o.Size > 0 && !held[o.OID] {
+			addition += o.Size
+		}
+	}
+	q, err := h.limits.Measure(r.Context(), id, size, addition, d.QuotaBytes)
 	if err != nil {
 		h.storageError(w, r, "list", err)
 		return false
 	}
-	total := size + stored
-	for _, o := range objects {
-		if o.Size > 0 && !held[o.OID] {
-			total += o.Size
-		}
-	}
-	if total <= d.QuotaBytes {
+	if !q.Over() {
 		return true
 	}
-	h.logger.InfoContext(r.Context(), "lfs batch over quota", "repo", id, "bytes", total, "max", d.QuotaBytes)
+	h.logger.InfoContext(r.Context(), "lfs batch over quota", "repo", id, "limit", limits.LimitRepository, "bytes", q.Bytes, "max", q.Max)
 	h.fail(w, r, http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
 	return false
-}
-
-// lfsBytes sums the objects under lfs/. The delimiter groups
-// lfs/verified/ into a prefix, so the markers are listed once as a
-// prefix rather than one key each.
-func (h *Handler) lfsBytes(r *http.Request, id string) (int64, error) {
-	prefix := h.log.RepoPrefix(id) + "lfs/"
-	var (
-		total int64
-		after string
-	)
-	for {
-		res, err := h.store.List(r.Context(), wal.ListOptions{Prefix: prefix, StartAfter: after, Max: listPage, Delimiter: "/"})
-		if err != nil {
-			return 0, err
-		}
-		for _, o := range res.Objects {
-			total += o.Size
-		}
-		if !res.Truncated {
-			return total, nil
-		}
-		next := after
-		if n := len(res.Objects); n > 0 {
-			next = res.Objects[n-1].Key
-		}
-		// A page may be all prefixes; continue after the last of them,
-		// the way wal.Log.Repos does.
-		for _, p := range res.Prefixes {
-			if p+"~" > next {
-				next = p + "~"
-			}
-		}
-		if next == after {
-			return total, nil
-		}
-		after = next
-	}
 }
 
 type verifyRequest struct {

@@ -95,9 +95,12 @@ func TestRepositoryBoundTokenScope(t *testing.T) {
 		}
 	}
 	if len(stub.Requests()) != 0 {
-		t.Fatal("a repository-bound token asked the authorizer")
+		t.Fatal("a repository-bound token asked the authorizer for a read")
 	}
-	// write allows read and write on A, and not admin.
+	// write allows read and write on A, and not admin. A write asks the
+	// authorizer once for the minting subject's quota_bytes (spec 012);
+	// the answer decides no access, so this stub's deny leaves the
+	// default figure and the push goes on.
 	write, _, _ := signer.Mint(Principal{Subject: "ci"}, repoA, ScopeWrite, time.Minute)
 	if code, _, _ := do(t, h, "POST", "/r/"+repoA+".git/git-receive-pack", write); code != 204 {
 		t.Fatalf("write on A: %d", code)
@@ -120,8 +123,10 @@ func TestRepositoryBoundTokenScope(t *testing.T) {
 	if code != 403 || e.Details["reason"] != "the authorizer must not be asked" || e.Details["action"] != "read" || e.Details["subject"] != "alice" {
 		t.Fatalf("authorizer deny: %d %+v", code, e)
 	}
-	if len(stub.Requests()) != 1 {
-		t.Fatal("the issuer's token did not ask the authorizer")
+	// Two calls: the bound token's write asked for its quota figure
+	// (spec 012), and the issuer's token asked for the decision.
+	if len(stub.Requests()) != 2 {
+		t.Fatalf("%d authorizer calls, want the quota call and the decision", len(stub.Requests()))
 	}
 	// A bound token with an unknown scope allows nothing.
 	if err := g.Authorize(context.Background(), Principal{Subject: "x", Bound: &Bound{Repo: repoA, Scope: "admin"}}, RepoRef{ID: repoA}, ActionRead); err == nil {
@@ -309,5 +314,45 @@ func TestDecideCarriesTheReplicas(t *testing.T) {
 	rec = httptest.NewRecorder()
 	if _, ok := g.Admit(rec, req, RepoRef{ID: repoA}, ActionRead); ok || rec.Code != 403 {
 		t.Fatalf("Admit of a deny: %v %d", ok, rec.Code)
+	}
+}
+
+// TestBoundTokenWriteTakesTheMintersQuota is spec 012's end to spec
+// 010's interim rule: a repository-bound token carries no quota claim,
+// so a write asks the authorizer for the minting subject's figure with
+// the token's own subject and actor, and reads it off the allow. A read
+// asks nothing, and an authorizer that gives no figure leaves the
+// default rather than refusing a write the scope allows.
+func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
+	clk := newClock()
+	stub := authorizer.New(t)
+	stub.SetRules(authorizer.Rule{Subject: "ci", Repo: repoA, Action: "write", Allow: true, QuotaBytes: 4096})
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	g := NewGuard(c, slog.New(slog.DiscardHandler))
+	bound := Principal{Subject: "ci", Actor: "svc", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
+
+	d, err := g.Decide(context.Background(), bound, RepoRef{ID: repoA}, ActionWrite)
+	if err != nil || d.QuotaBytes != 4096 {
+		t.Fatalf("write: %+v %v", d, err)
+	}
+	seen := stub.Requests()
+	if len(seen) != 1 || seen[0].Subject != "ci" || seen[0].Actor != "svc" || seen[0].Action != "write" || seen[0].Repo.ID != repoA {
+		t.Fatalf("the quota call: %+v", seen)
+	}
+	// The read path asks nothing and keeps the default.
+	d, err = g.Decide(context.Background(), bound, RepoRef{ID: repoA}, ActionRead)
+	if err != nil || d.QuotaBytes != DefaultQuotaBytes {
+		t.Fatalf("read: %+v %v", d, err)
+	}
+	if len(stub.Requests()) != 1 {
+		t.Fatalf("a bound read asked the authorizer: %+v", stub.Requests())
+	}
+	// An authorizer that produces no answer leaves the default, because
+	// the scope, not the authorizer, decides a bound token's access.
+	stub.Fail(503)
+	other := Principal{Subject: "ci", Bound: &Bound{Repo: repoB, Scope: ScopeWrite}}
+	d, err = g.Decide(context.Background(), other, RepoRef{ID: repoB}, ActionWrite)
+	if err != nil || d.QuotaBytes != DefaultQuotaBytes {
+		t.Fatalf("outage: %+v %v", d, err)
 	}
 }

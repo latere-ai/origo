@@ -54,9 +54,10 @@ func (g *Guard) Authorize(ctx context.Context, p Principal, repo RepoRef, action
 // Decide is Authorize with the decision behind the allow, for a handler
 // that reads a field of it: the LFS batch reads QuotaBytes (spec 010),
 // the Origo-Prefer header reads Replicas (spec 005). A repository-bound
-// token is decided by its own scope and the authorizer never sees it,
-// so the decision it yields carries the defaults of spec 007's table,
-// which is k = 1 for placement.
+// token is decided by its own scope and the authorizer never sees that
+// decision, so what it yields carries the defaults of spec 007's table,
+// which is k = 1 for placement; on a write it carries the minting
+// subject's quota_bytes, which spec 012 asks the authorizer for.
 func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Action) (Decision, error) {
 	if b := p.Bound; b != nil {
 		if repo.ID == "" || repo.ID != b.Repo {
@@ -65,7 +66,11 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 		if !b.Scope.allows(action) {
 			return Decision{}, &Denied{Subject: p.Subject, Action: action, Reason: ReasonScope}
 		}
-		return Decision{Allow: true, TTL: DefaultTTL, Replicas: DefaultReplicas, QuotaBytes: DefaultQuotaBytes}, nil
+		d := Decision{Allow: true, TTL: DefaultTTL, Replicas: DefaultReplicas, QuotaBytes: DefaultQuotaBytes}
+		if action == ActionWrite {
+			d.QuotaBytes = g.quota(ctx, p, repo)
+		}
+		return d, nil
 	}
 	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: action})
 	if err != nil {
@@ -75,6 +80,29 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 		return Decision{}, &Denied{Subject: p.Subject, Action: action, Reason: d.Reason}
 	}
 	return d, nil
+}
+
+// quota is spec 012's rule for a repository-bound token's writes: the
+// token carries no quota claim, so the figure is the minting subject's,
+// asked of the authorizer with the token's own subject and actor on the
+// bound repository and cached like any other allow, and a bound token's
+// uploads are held to the figure its minter's pushes are.
+//
+// The call decides no access: the scope already allowed the write. A
+// deny, an answer with no figure, or an authorizer that produced no
+// answer therefore falls back to the default rather than refusing a
+// build that the token entitles, and the fallback is logged.
+func (g *Guard) quota(ctx context.Context, p Principal, repo RepoRef) int64 {
+	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: ActionWrite})
+	switch {
+	case err != nil:
+		g.logger.WarnContext(ctx, "bound token quota not read", "repo", repo.ID, "subject", p.Subject, "error", err)
+	case !d.Allow:
+		g.logger.WarnContext(ctx, "bound token quota not read", "repo", repo.ID, "subject", p.Subject, "reason", d.Reason)
+	case d.QuotaBytes > 0:
+		return d.QuotaBytes
+	}
+	return DefaultQuotaBytes
 }
 
 // allows is spec 007's scope rule: read allows read, write allows read
