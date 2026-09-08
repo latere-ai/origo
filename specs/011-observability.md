@@ -150,10 +150,10 @@ One trace per request. A push's spans are `receive`, `entry.put`,
 `index.create`, `apply`, `event.enqueue`, and this spec builds them. A
 read's are `index.check`, `materialize`, `git.<command>`, which spec
 009 builds on the tracer this spec puts in place; its criterion
-`TestReadTrace` holds them. Every object storage call is a child span
-of `otel.Transport` named by its HTTP method; the span named by the
-operation belongs with the store adapter of spec 015, which owns
-`origo_storage_ops_total{op}`. Repository id, subject, and actor are
+`TestReadTrace` holds them. Every object storage call carries two spans: the transport span of
+`otel.Transport`, named by its HTTP method, and the span named by the
+operation, which the store adapter of spec 015 opens beside it because
+that spec owns `origo_storage_ops_total{op}`. Repository id, subject, and actor are
 span attributes, never metric labels. Without
 `OTEL_EXPORTER_OTLP_ENDPOINT` the spans are created and discarded.
 
@@ -304,11 +304,11 @@ each as the rule, so a reader finds one answer:
   now that `internal/tracing` gives it a tracer: it carries the builder
   item and the criterion `TestReadTrace`, which mirrors
   `TestPushTrace`.
-- Every object storage call is a child span through `otel.Transport` on
-  the storage transport, named by its HTTP method, where the first draft
-  named it by the operation. A span named by the operation belongs with
-  the store adapter spec 015 builds, which is what owns
-  `origo_storage_ops_total{op}`; that spec's builder adds it.
+- The child span this spec puts on every object storage call is
+  `otel.Transport`'s, named by the HTTP method, where the first draft
+  named it by the operation. The span named by the operation belongs
+  with the store adapter, which owns `origo_storage_ops_total{op}`, so
+  spec 015 opens it beside the transport's.
 - The refused push of the vocabulary fixture is a push to a repository
   that does not exist, answered `repo_not_found`. A push the log refuses
   cannot be produced with the git client against a single node: git
