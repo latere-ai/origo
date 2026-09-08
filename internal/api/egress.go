@@ -267,10 +267,10 @@ type Proxy struct {
 	refusal  *EgressError
 }
 
-// StartProxy starts a proxy on a loopback port with a fresh credential.
-// The caller closes it when git exits.
-func (e *Egress) StartProxy() (*Proxy, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+// StartProxy starts a proxy on a loopback port with a fresh credential;
+// ctx bounds the listen alone. The caller closes it when git exits.
+func (e *Egress) StartProxy(ctx context.Context) (*Proxy, error) {
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}

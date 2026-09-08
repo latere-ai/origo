@@ -115,7 +115,7 @@ func FuzzValidRefName(f *testing.F) {
 // validator accepts is a path component git refuses under the NTFS and
 // HFS+ rules the node's repositories run with.
 func FuzzValidLabel(f *testing.F) {
-	for _, s := range []string{"acme", "app", ".git", ".GIT", "git~1", "GIT~1", ".g‌it", ".", "..", "a..b", "a b", "a;b", "a/b", "a\x00b", "ä", "-", "_", strings.Repeat("x", 128)} {
+	for _, s := range []string{"acme", "app", ".git", ".GIT", "git~1", "GIT~1", ".g\u200cit", ".", "..", "a..b", "a b", "a;b", "a/b", "a\x00b", "ä", "-", "_", strings.Repeat("x", 128)} {
 		f.Add(s)
 	}
 	oracle.init(f)

@@ -344,7 +344,7 @@ func TestEgressProxyFollowsRedirectsAndRefusesConnect(t *testing.T) {
 	res := &fakeResolver{answers: map[string][]string{"127.0.0.1": {"127.0.0.1"}, "meta.example.com": {"169.254.169.254"}}}
 	e := NewEgress(EgressOptions{Allow: []string{"127.0.0.1", "meta.example.com"}, Roots: roots}).withLoopback()
 	e.resolve = res.lookup
-	p, err := e.StartProxy()
+	p, err := e.StartProxy(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestEgressProxyFollowsRedirectsAndRefusesConnect(t *testing.T) {
 	stubRoots := x509.NewCertPool()
 	stubRoots.AppendCertsFromPEM(stub.CA())
 	ge := NewEgress(EgressOptions{Allow: []string{"localhost"}, Roots: stubRoots}).withLoopback()
-	gp, err := ge.StartProxy()
+	gp, err := ge.StartProxy(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

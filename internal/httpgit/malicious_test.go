@@ -49,7 +49,7 @@ func TestMaliciousPackWritesNothing(t *testing.T) {
 	cases := []struct{ name, commit, message string }{
 		{"dotgit", withEntry(".git"), "hasDotgit"},
 		{"ntfs", withEntry("git~1"), "hasDotgit"},
-		{"hfs", withEntry(".g‌it"), "hasDotgit"},
+		{"hfs", withEntry(".g\u200cit"), "hasDotgit"},
 		{"broken", broken, "missingEmail"},
 	}
 	before := store.Keys()
