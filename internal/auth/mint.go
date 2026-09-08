@@ -92,15 +92,43 @@ func NewSigner(key *ecdsa.PrivateKey, issuer string, now func() time.Time) *Sign
 		now = time.Now
 	}
 	s := &Signer{key: key, kid: KeyID(&key.PublicKey), issuer: strings.TrimRight(issuer, "/"), now: now}
-	x := make([]byte, 32)
-	y := make([]byte, 32)
-	key.PublicKey.X.FillBytes(x)
-	key.PublicKey.Y.FillBytes(y)
-	s.jwks, _ = json.Marshal(map[string]any{"keys": []map[string]string{{
-		"kty": "EC", "crv": "P-256", "kid": s.kid, "alg": "ES256", "use": "sig",
-		"x": base64.RawURLEncoding.EncodeToString(x), "y": base64.RawURLEncoding.EncodeToString(y),
+	// The uncompressed point: 0x04, then x and y of 32 bytes each.
+	point, err := key.PublicKey.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	s.jwks = mustJSON(map[string][]publishedKey{"keys": {{
+		Kty: "EC", Crv: "P-256", Kid: s.kid, Alg: "ES256", Use: "sig",
+		X: base64.RawURLEncoding.EncodeToString(point[1:33]), Y: base64.RawURLEncoding.EncodeToString(point[33:65]),
 	}}})
 	return s
+}
+
+// jwkOut is the one key the node publishes.
+type publishedKey struct {
+	Kty string `json:"kty"`
+	Crv string `json:"crv"`
+	Kid string `json:"kid"`
+	Alg string `json:"alg"`
+	Use string `json:"use"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
+}
+
+// header is the JOSE header of a minted token.
+type header struct {
+	Alg string `json:"alg"`
+	Kid string `json:"kid"`
+	Typ string `json:"typ"`
+}
+
+// mustJSON encodes a value of a type that always marshals.
+func mustJSON[T any](v T) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 // KID is the kid every minted token names.
@@ -130,12 +158,11 @@ func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Durat
 		// minter's and the entry a build pushes names both.
 		claims["sub"], claims["act"] = minter.Actor, minter.Subject
 	}
-	header, _ := json.Marshal(map[string]string{"alg": "ES256", "kid": s.kid, "typ": "JWT"})
 	body, err := json.Marshal(claims)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	signing := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(body)
+	signing := base64.RawURLEncoding.EncodeToString(mustJSON(header{Alg: "ES256", Kid: s.kid, Typ: "JWT"})) + "." + base64.RawURLEncoding.EncodeToString(body)
 	digest := sha256.Sum256([]byte(signing))
 	r, sv, err := ecdsa.Sign(rand.Reader, s.key, digest[:])
 	if err != nil {

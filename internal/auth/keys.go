@@ -16,6 +16,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -74,11 +75,12 @@ func (k jwk) public() crypto.PublicKey {
 		}
 		x, errX := base64.RawURLEncoding.DecodeString(k.X)
 		y, errY := base64.RawURLEncoding.DecodeString(k.Y)
-		if errX != nil || errY != nil {
+		if errX != nil || errY != nil || len(x) != 32 || len(y) != 32 {
 			return nil
 		}
-		pub := &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
-		if !pub.Curve.IsOnCurve(pub.X, pub.Y) {
+		// The uncompressed point; the parser checks it is on the curve.
+		pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), slices.Concat([]byte{4}, x, y))
+		if err != nil {
 			return nil
 		}
 		return pub
@@ -104,7 +106,7 @@ type keySet struct {
 	mu          sync.Mutex
 	keys        map[string]crypto.PublicKey
 	fetched     bool
-	fetching    bool
+	inflight    chan struct{} // closed when the fetch in flight ends; nil when none
 	lastAttempt time.Time
 	lastFetched time.Time
 }
@@ -122,11 +124,27 @@ func (i *keySet) keyFor(kid string) (crypto.PublicKey, bool) {
 func (i *keySet) due(now time.Time) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.fetching || (!i.lastAttempt.IsZero() && now.Sub(i.lastAttempt) < RetryInterval) {
+	if i.inflight != nil || (!i.lastAttempt.IsZero() && now.Sub(i.lastAttempt) < RetryInterval) {
 		return false
 	}
-	i.fetching, i.lastAttempt = true, now
+	i.inflight, i.lastAttempt = make(chan struct{}), now
 	return true
+}
+
+// await blocks until the fetch in flight, if any, ends or ctx is done,
+// so a request that arrives during a refresh waits for its keys rather
+// than being refused.
+func (i *keySet) await(ctx context.Context) {
+	i.mu.Lock()
+	ch := i.inflight
+	i.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+	}
 }
 
 // stale reports whether the set is older than RefreshInterval.
@@ -142,7 +160,8 @@ func (i *keySet) fetch(ctx context.Context, client *http.Client, timeout time.Du
 	keys, err := fetchKeys(ctx, client, i.url, timeout)
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.fetching = false
+	close(i.inflight)
+	i.inflight = nil
 	if err != nil {
 		return err
 	}

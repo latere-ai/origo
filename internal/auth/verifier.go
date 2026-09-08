@@ -229,16 +229,18 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 // unknown_key after one refresh when the set does not hold it. A fetch
 // from here is bounded to one a minute per issuer.
 func (v *Verifier) issuerKey(ctx context.Context, i *keySet, kid string, now time.Time) (any, error) {
-	pub, fetched := i.keyFor(kid)
+	pub, _ := i.keyFor(kid)
 	if pub != nil {
 		return pub, nil
 	}
 	if i.due(now) {
 		v.fetchIssuer(ctx, i, now)
-		pub, fetched = i.keyFor(kid)
-		if pub != nil {
-			return pub, nil
-		}
+	} else {
+		i.await(ctx)
+	}
+	pub, fetched := i.keyFor(kid)
+	if pub != nil {
+		return pub, nil
 	}
 	if !fetched {
 		return nil, refuse(ReasonIssuerUnavailable)
