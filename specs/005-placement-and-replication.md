@@ -285,7 +285,9 @@ the cache on shutdown.
   push fails and no clone fails at 2, 4, and 8 replicas; each
   replica count is set with `cluster.ApplyManifest` of
   `test/e2e/testdata/hpa-<n>.yaml`, a HorizontalPodAutoscaler named
-  `origod` with `minReplicas` and `maxReplicas` both `<n>`, which
+  `origod` with `minReplicas` and `maxReplicas` both `<n>` (this spec
+  writes `hpa-4.yaml` and `hpa-8.yaml`; `hpa-2.yaml` is spec 013's,
+  the fixture of its helper test), which
   replaces the overlay's autoscaler of the same name rather than
   adding a second one, so `cluster.HPAStatus("origod")` reads it and
   `cluster.Apply` of the overlay restores the original; each count is

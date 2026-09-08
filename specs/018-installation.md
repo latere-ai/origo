@@ -107,9 +107,10 @@ drifts from the manifests fails the job. The `install` job in
 push, because there is no release for it: it creates a bare kind
 cluster from `deploy/examples/kind/kind.yaml` with `kind create
 cluster`, not with `up.sh`, because an operator has a cluster and no
-script, and installs Cilium as the one step `up.sh` also takes, because
-`kind.yaml` disables the default CNI (spec 013) and an operator's
-cluster comes with one; downloads the `candidate-images` artifact the `e2e` job of
+script, and installs Cilium as the one step `up.sh` also takes, at the
+chart version `deploy/examples/kind/versions.env` pins (spec 013's
+overlay table), because `kind.yaml` disables the default CNI (spec 013)
+and an operator's cluster comes with one; downloads the `candidate-images` artifact the `e2e` job of
 spec 013 uploaded (`actions/upload-artifact` there,
 `actions/download-artifact` here, the two `docker save` tarballs of
 `origod` and `origo-stubs`) and loads both with `kind load
