@@ -47,18 +47,28 @@ modernize:
 
 # Spec 001's last criterion, owned by spec 013: the build list of
 # ./cmd/origod reaches no cloud SDK and no Kubernetes client. The allow
-# list is latere.ai/x/pkg and the standard library, so a new dependency
-# is a decision recorded here.
+# list is latere.ai/x/pkg, the OpenTelemetry SDK it exports telemetry
+# through, and the standard library, so a new dependency is a decision
+# recorded here.
 depcheck:
   packages:
     github.com/latere-ai/origo/cmd/origod:
       decision: >-
-        the node reaches latere.ai/x/pkg and the standard library and
-        nothing else, so the binary carries no cloud SDK and no
+        the node reaches latere.ai/x/pkg, the OpenTelemetry SDK that
+        pkg/otel and internal/tracing export through (spec 011), and the
+        standard library, so the binary carries no cloud SDK and no
         Kubernetes client (spec 001)
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
         github.com/google/uuid: reached through latere.ai/x/pkg, which names events and deliveries with it; not a cloud SDK
+        go.opentelemetry.io: the OpenTelemetry SDK, exporters, and instrumentation the traces, metrics, and log bridge of spec 011 go out through
+        google.golang.org: protobuf and gRPC, the wire format and the transport of the OTLP exporters
+        golang.org/x: net, sys, text, and time, reached by the OTLP exporters
+        github.com/cenkalti/backoff: the OTLP exporters' retry schedule
+        github.com/cespare/xxhash: the metric SDK's aggregation keys
+        github.com/felixge/httpsnoop: otelhttp's response recorder
+        github.com/go-logr: the OpenTelemetry SDK's internal logging interface
+        github.com/grpc-ecosystem/grpc-gateway: the OTLP status marshalling the exporters read errors with
 
 license:
   spdx: MIT
