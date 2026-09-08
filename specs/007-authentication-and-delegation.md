@@ -153,7 +153,9 @@ optional and names the rate this subject alone is bucketed at on the
 node; absent, the subject is bucketed at the value of
 `ORIGO_REQUESTS_PER_MINUTE`. It is for a subject that drives many
 repositories, which spec 020 names as its case; the node does not read
-it yet, and spec 020's builder adds it under that spec's item. An allow is cached per
+it yet, and spec 020's builder adds it under that spec's item.
+
+An allow is cached per
 `(subject, actor, repo id, action)` for `ttl`; a deny for 5 seconds; an
 answer for an unresolved name (empty id) is not cached. Each cache
 holds at most 65 536 entries and evicts the least recently used. The
