@@ -404,10 +404,28 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) error {
 			return errNeedsWrite
 		}
 		ix, err := c.log.ReadIndex(ctx, r.ID, r.Seq)
-		if err != nil {
+		switch {
+		case err == nil:
+			r.Index = ix
+		case errors.Is(err, wal.ErrNotFound):
+			// The sequence the copy holds is no longer in the log: the
+			// bucket was reset under a warm cache, or the object was
+			// swept. HEAD index/<n+1> answered 404 for the wrong reason,
+			// so the copy proves nothing; it is removed and the
+			// repository is materialized from whatever the log holds
+			// now, which is ErrNotFound when it holds nothing.
+			c.logger.WarnContext(ctx, "held sequence is not in the log, rebuilding the copy", "repo", r.ID, "seq", r.Seq)
+			c.evict(r)
+			newest, changed, err = c.log.Newest(ctx, r.ID, 0, false)
+			if err != nil {
+				if errors.Is(err, wal.ErrNotFound) {
+					return ErrNotFound
+				}
+				return err
+			}
+		default:
 			return err
 		}
-		r.Index = ix
 	}
 	if !changed {
 		if r.Index.DeletedAt != nil {

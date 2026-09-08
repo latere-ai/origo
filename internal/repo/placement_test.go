@@ -5,6 +5,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -82,6 +83,86 @@ func TestConcurrentWorkersApplyThinEntries(t *testing.T) {
 	if left, _ := os.ReadDir(h.cache.SpoolDir()); len(left) != 0 {
 		t.Fatalf("the spool holds %d files after the failure", len(left))
 	}
+}
+
+// TestLostSequenceRebuildsFromTheLog is the open item of spec 013's
+// Outcome: a warm cache whose bucket was reset answered
+// storage_unavailable, because HEAD index/<n+1> is 404 when the log
+// holds nothing at all, and the read of index/<n> then failed. The
+// copy is removed and the repository materialized from what the log
+// holds now: nothing (404), or a new history under the same id.
+func TestLostSequenceRebuildsFromTheLog(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	c1 := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
+	c2 := h.src.Commit("a.txt", "two", "second")
+	h.push("refs/heads/main", c1, c2, h.src.Pack(c2, c1))
+	_, release := h.acquire(false)
+	release()
+
+	// The bucket is reset under a restarted process.
+	for _, k := range h.store.Keys() {
+		_ = h.store.Delete(ctx, k)
+	}
+	c, err := New(Options{Dir: h.cache.dir, Log: h.log, Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Acquire(ctx, repoA, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reset bucket: %v", err)
+	}
+	if _, err := os.Stat(c.repoDir(repoA)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the stale copy was kept")
+	}
+	// The repository is created again with another history: the next
+	// open materializes that one.
+	ix, err := h.log.CreateRepo(ctx, wal.Meta{ID: repoA, Owner: "acme", Slug: "app"}, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.held = ix
+	fresh := gittest.NewSource(t)
+	f1 := fresh.Commit("b.txt", "b", "other")
+	h.push("refs/heads/main", wal.ZeroSHA, f1, fresh.Pack(f1))
+	r, release, err := c.Acquire(ctx, repoA, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Seq != 1 || h.localRef(r, "refs/heads/main") != f1 {
+		t.Fatalf("after the reset: seq %d main %s", r.Seq, h.localRef(r, "refs/heads/main"))
+	}
+
+	// A held sequence swept while a newer index exists: the copy is
+	// rebuilt to the newest, not served stale.
+	f2 := fresh.Commit("b.txt", "bb", "again")
+	h.push("refs/heads/main", f1, f2, fresh.Pack(f2, f1))
+	f3 := fresh.Commit("b.txt", "bbb", "again")
+	h.push("refs/heads/main", f2, f3, fresh.Pack(f3, f2))
+	release()
+	_ = h.store.Delete(ctx, h.log.RepoPrefix(repoA)+wal.IndexKey(1))
+	_ = h.store.Delete(ctx, h.log.RepoPrefix(repoA)+wal.IndexKey(2))
+	c, _ = New(Options{Dir: h.cache.dir, Log: h.log, Logger: slog.New(slog.DiscardHandler)})
+	r, release, err = c.Acquire(ctx, repoA, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Seq != 3 || h.localRef(r, "refs/heads/main") != f3 {
+		t.Fatalf("after the sweep: seq %d main %s", r.Seq, h.localRef(r, "refs/heads/main"))
+	}
+	release()
+	// The read of index/<n> failing for another reason surfaces.
+	c, _ = New(Options{Dir: h.cache.dir, Log: h.log, Logger: slog.New(slog.DiscardHandler)})
+	h.store.SetFault(func(op, key string) error {
+		if op == "Get" && strings.HasSuffix(key, wal.IndexKey(3)) {
+			return errors.New("bucket down")
+		}
+		return nil
+	})
+	if _, _, err := c.Acquire(ctx, repoA, false); err == nil || !strings.Contains(err.Error(), "bucket down") {
+		t.Fatalf("read failure: %v", err)
+	}
+	h.store.SetFault(nil)
 }
 
 // TestCopiesAndHeldFollowTheLifecycle covers what the evictor and the
