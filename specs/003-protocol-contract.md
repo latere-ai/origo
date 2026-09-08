@@ -193,6 +193,7 @@ contract; each is defined by the spec named:
 | this spec | `Origo-Contract` | the contract version, above |
 | 005 | `Origo-Prefer` | on every response that names a repository: the nodes that hold it warm, highest score first; a hint for routing, never a redirect; absent on a 401 or 403 for a name that did not resolve, so a refused caller learns nothing about where a repository lives |
 | 015 | `Origo-Stale` | on a response served from the local copy without a currency check while the bucket is unreachable: the whole seconds since the last check that answered; absent on every consistent response, so a consumer that must not read stale refuses the response by this header |
+| 012 | `RateLimit-Limit` | the requests one effective subject may send this node in a minute, on every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/); absent when the operator turned the limit off |
 
 The read API's `Origo-Commit` and `Origo-Truncated` are spec 009's; the
 event delivery headers are spec 008's.

@@ -80,10 +80,12 @@ more than `ORIGO_REQUESTS_PER_MINUTE` requests a minute, 600 by
 default, gets 429 `rate_limited` with `Retry-After`, counted per
 subject per node, so one repeating build does not crowd out the rest;
 the table holds only the subjects that called in the last ten minutes.
-Set it to `0` to turn the per-subject limit off, which is what a stack
-driven by a load generator under one token wants. Note that one client
-pushing back to back sends two requests per push, so a loop of pushes
-under one token meets 600 a minute quickly.
+Every response of that surface carries the figure in force as
+`RateLimit-Limit`, so a client reads it rather than assuming the
+default; `0` turns the limit off. Note that one client pushing back to
+back sends two requests per push, so a loop of pushes under one token
+meets 600 a minute quickly: raise the figure for a host that carries
+bulk work under one service token.
 
 Each node runs at most `ORIGO_MAX_GIT_PROCS` git subprocesses at once,
 64 by default. A request waits up to five seconds for a slot and is

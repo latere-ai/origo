@@ -29,6 +29,14 @@ const Header = "Origo-Contract"
 // the response by this header.
 const HeaderStale = "Origo-Stale"
 
+// HeaderRateLimit is the requests one effective subject may send a node
+// in a minute (spec 012), the RateLimit-Limit field of the IETF draft
+// "RateLimit header fields for HTTP"
+// (draft-ietf-httpapi-ratelimit-headers). It is on every response of
+// the rate-limited surface, so a client reads the figure in force
+// before it meets it; absent when the limit is off.
+const HeaderRateLimit = "RateLimit-Limit"
+
 // The stable error codes: spec 003's table and the codes later specs add
 // to it.
 const (

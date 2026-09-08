@@ -59,6 +59,12 @@ spec 010's interim rule ends.
 | entry header, transaction, index object | 4 KiB, 64 MiB, 64 MiB | the parsers of spec 004 | the entry or index is refused as corrupt (spec 015) |
 | object storage retries | 3 attempts from 50 ms, capped at 2 s, under `ORIGO_STORAGE_TIMEOUT` per attempt (spec 015) | `pkg/s3` | the store's error |
 
+### Headers
+
+| Header | Meaning |
+|---|---|
+| `RateLimit-Limit` | the requests one effective subject may send this node in a minute, the figure `ORIGO_REQUESTS_PER_MINUTE` names, on every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send one request more than the limit against any installation. Absent when the limit is off. |
+
 `receive.fsckObjects` (on since phase 1) rejects malformed objects on
 the way in; `transfer.fsckObjects` and `core.protectHFS` (spec 016) are
 added to the repository configuration of spec 004. A frozen repository
@@ -192,21 +198,24 @@ Divergences and interpretations, each kept and the reason:
   measurement is a storage read, and a repository that cannot be
   measured is not one a quota was checked against
   (`TestQuotaFailsClosedWhenTheListingFails`).
-- **The rate is a variable, and the kind stack turns it off.** The
-  Design fixes 600 a minute with no knob, and a client that pushes
-  back to back exceeds it: the first cluster run of this build refused
+- **The rate is a variable, and the stack raises it.** The first
+  draft fixed 600 a minute with no knob, and a client that pushes back
+  to back exceeds it: the first cluster run of this build refused
   `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`,
   `TestClusterCompactionKeepsFetchLatencyFlat`,
   `TestClusterDegradedStorage`, and `TestClusterNodeRemovalUnderReadLoad`
   with 429 `rate_limited`, the 500 push scenario alone running at
   about fourteen pushes a second, twenty-eight requests, against a
-  refill of ten. Giving each scenario a subject of its own was not
-  enough, because the 500 push scenario is one sequential client. So
-  the figure is `ORIGO_REQUESTS_PER_MINUTE`, the spec's 600 by default
-  and `0` off, and the `kind` overlay sets `0` beside the storage
-  figures it already tunes; a production node keeps 600. That 600 a
-  minute refuses a legitimate client pushing in a loop is a finding for
-  the deck, not something this build settles.
+  refill of ten. Two changes together: each cluster scenario takes a
+  subject of its own, which is what spec 013's `ORIGO_TEST_ADMIN_TOKEN`
+  default now mints, and the figure is `ORIGO_REQUESTS_PER_MINUTE`, the
+  Design's 600 by default, which the `kind` overlay raises to 6000
+  beside the storage figures it already tunes. The limit stays in force
+  on the stack, so spec 021's `rate_limited` case can still meet it;
+  `RateLimit-Limit` on every response of the surface is how that case
+  learns the figure to exceed. That 600 a minute refuses a legitimate
+  client pushing in a loop is a finding for the deck, not something
+  this build settles.
 
 Items this spec closes for another:
 
@@ -224,11 +233,11 @@ Open, for whoever needs them settled:
   no side for the "references in the map after it" half; this build
   answers 413 for the command count and the sideband for the count
   after the push.
-- Whether 600 requests a minute is the right figure for git traffic,
+- Whether 600 requests a minute is the right default for git traffic,
   where one client's loop of pushes is two requests each: the `kind`
-  overlay turns the limit off to run its scenarios, so no stack proves
-  the rule today. Raising the default, bucketing pushes and reads
-  apart, or leaving it to the operator's variable are all open.
+  overlay runs at 6000 because its scenarios exceed 600. Raising the
+  default, bucketing pushes and reads apart, or leaving it to the
+  operator's variable are all open.
 - Whether a repository-bound token's write should be refused while the
   authorizer is unavailable, rather than falling back to the default
   quota, is a question for spec 016's threat model: the figure is a

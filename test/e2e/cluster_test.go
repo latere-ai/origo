@@ -76,14 +76,34 @@ func requireCluster(t *testing.T) {
 	}
 }
 
-// adminToken is ORIGO_TEST_ADMIN_TOKEN, or a token minted for the dev
-// subject at the issuer's host port.
+// adminToken is ORIGO_TEST_ADMIN_TOKEN, or a token minted at the
+// issuer's host port for a subject naming the test.
+//
+// The subject is the test's, not one shared name, because a node
+// buckets requests per effective subject (spec 012) and the scenarios
+// here drive one node harder than any one caller of a live
+// installation does: 500 pushes, 200 pushes and twenty clones, a
+// clone loop at twenty-five a second. Under one subject the whole job
+// is one caller and the later scenarios are refused with
+// rate_limited, which is the limit working, not the scenario failing.
 func adminToken(t *testing.T) string {
 	t.Helper()
 	if tok := os.Getenv("ORIGO_TEST_ADMIN_TOKEN"); tok != "" {
 		return tok
 	}
-	return mintAt(t, fmt.Sprintf("http://localhost:%d", portIssuer), "dev")
+	return mintAt(t, fmt.Sprintf("http://localhost:%d", portIssuer), testSubject(t))
+}
+
+// testSubject is a subject naming the test, in the characters a JWT
+// subject and a request log line carry plainly.
+func testSubject(t *testing.T) string {
+	t.Helper()
+	return "dev-" + strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, t.Name())
 }
 
 func mintAt(t *testing.T, issuer, sub string) string {

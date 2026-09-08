@@ -91,6 +91,14 @@ leaves nothing; `Run` deletes by the ids it created and never lists or
 deletes by prefix, so a repository another test pushed beside it, spec
 017's release fixture among them, survives the run.
 
+The `rate_limited` case (spec 012) needs no field of `Target`: it reads
+`RateLimit-Limit` off any response of the surface, the requests one
+subject may send that node in a minute, and sends one more than the
+figure it names, so it holds against an installation at the default and
+against the `kind` stack, which runs at 6000 because its scenarios
+exceed 600. A target with the limit off sends no header and the case is
+reported skipped.
+
 Cases a target does not support are skipped by a `Skip` list on the
 target, never silently: each skipped case is reported by name. Four
 groups skip on their own when the field they need is empty, because

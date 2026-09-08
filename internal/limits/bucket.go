@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/contract"
 )
 
 // Buckets is one token bucket per effective subject: the bucket fills
@@ -101,11 +102,18 @@ func (b *Buckets) Len() int {
 // behind the verifier, so every request it sees carries a principal;
 // a request without one is bucketed under the empty subject, which is
 // no route of the public listener.
+//
+// Every response it passes carries RateLimit-Limit, the figure in
+// force, so a client and the conformance suite of spec 021 read the
+// limit before they meet it rather than guessing at the default.
 func (l *Limits) Middleware(next http.Handler) http.Handler {
 	if l == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if l.buckets.perMinute > 0 {
+			w.Header().Set(contract.HeaderRateLimit, itoa(l.buckets.perMinute))
+		}
 		subject := auth.Subject(r.Context())
 		ok, retry := l.buckets.Allow(subject)
 		if !ok {

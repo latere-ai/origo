@@ -120,12 +120,21 @@ func TestPerSubjectTokenBucket(t *testing.T) {
 	if env.Details["retry_after"] != float64(1) {
 		t.Errorf("details.retry_after: %+v", env.Details)
 	}
+	if got := header.Get(contract.HeaderRateLimit); got != strconv.Itoa(RequestsPerMinute) {
+		t.Errorf("RateLimit-Limit on the refusal is %q, want %d", got, RequestsPerMinute)
+	}
 	if got := e.refused(LimitSubject); got != 1 {
 		t.Errorf("origo_rate_limited_total{limit=subject} is %v, want 1", got)
 	}
-	// A second subject has a bucket of its own.
-	if code, _, _ := call(t, h, "bob"); code != http.StatusNoContent {
+	// A second subject has a bucket of its own, and reads the figure in
+	// force off its own response (spec 021 sends one request more than
+	// the header names).
+	code, _, header = call(t, h, "bob")
+	if code != http.StatusNoContent {
 		t.Errorf("a second subject: %d", code)
+	}
+	if got := header.Get(contract.HeaderRateLimit); got != strconv.Itoa(RequestsPerMinute) {
+		t.Errorf("RateLimit-Limit on an admitted response is %q, want %d", got, RequestsPerMinute)
 	}
 	// A minute later the bucket is full again.
 	e.clk.Advance(time.Minute)
@@ -486,8 +495,12 @@ func TestTheRateCanBeTurnedOff(t *testing.T) {
 	off := New(Options{PerMinute: -1, Logger: slog.New(slog.DiscardHandler)})
 	h := off.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	for range Burst + 10 {
-		if code, _, _ := call(t, h, "alice"); code != http.StatusNoContent {
+		code, _, header := call(t, h, "alice")
+		if code != http.StatusNoContent {
 			t.Fatalf("a request past the burst with the limit off: %d", code)
+		}
+		if got := header.Get(contract.HeaderRateLimit); got != "" {
+			t.Fatalf("RateLimit-Limit %q with the limit off", got)
 		}
 	}
 	on := New(Options{Logger: slog.New(slog.DiscardHandler)})

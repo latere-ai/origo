@@ -199,8 +199,9 @@ committed: the commit log already holds that.
   its control endpoint on host port 30085.
 - Limits and abuse controls (spec 012). A node accepts
   `ORIGO_REQUESTS_PER_MINUTE` requests a minute per authenticated
-  subject, 600 by default and `0` to turn the limit off, and answers
-  429 `rate_limited` with `Retry-After` past that; it runs at most `ORIGO_MAX_GIT_PROCS` git
+  subject, 600 by default and `0` to turn the limit off, names the
+  figure on every response as `RateLimit-Limit`, and answers 429
+  `rate_limited` with `Retry-After` past that; it runs at most `ORIGO_MAX_GIT_PROCS` git
   subprocesses at once, 64 by default, a request waiting five seconds
   for a slot before the same 429 and a compaction skipping to its next
   sweep. A repository is held to the authorizer's `quota_bytes`, 50 GiB
