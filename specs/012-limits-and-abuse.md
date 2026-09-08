@@ -217,6 +217,15 @@ Divergences and interpretations, each kept and the reason:
   client pushing in a loop is a finding for the deck, not something
   this build settles.
 
+No criterion of this spec is a stack criterion, so none needed the
+kind stack; what the stack proves is that the limits do not refuse the
+work of the specs that run on it. The cluster tiers run on a tag or a
+`workflow_dispatch` since the change that took them off every push,
+and the dispatched run 34278489246 on `c43db8e` is green in every job:
+the gate, the integration tier, the mutation job, the `e2e` and
+`e2e-slow` cluster tiers, and the up-script check, with the overlay at
+6000 and each scenario on a subject of its own.
+
 Items this spec closes for another:
 
 - Spec 010's builder item is done: `quota_bytes` for a
