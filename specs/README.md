@@ -377,7 +377,7 @@ holds it and fails against the sweep rule 006 removed. 011 carries the
 seeding rule with its two exceptions, the bucket sets of
 `origo_compaction_seconds` and `origo_storage_seconds`, the details
 struct in place of `WithRouteTemplate`, the log line's writer, the
-storage span named by its HTTP method with the `op` span left to 015,
+storage span named by its HTTP method beside the `op` span 015 opens,
 and the rules document `specindex -rules` prints out of a file the base
 does not name. A read's three spans are decided: they are 009's to build
 now that `internal/tracing` exists, and 009 carries the builder item and
