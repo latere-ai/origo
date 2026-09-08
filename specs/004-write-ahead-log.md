@@ -463,6 +463,27 @@ written in `test/e2e` and runs in the `e2e` job;
 spec 006 and runs in the `e2e-slow` job; the tenth is spec 017's
 release checklist recording the Spaces probe.
 
+Two defects found and fixed by spec 005 on 2026-09-08, each in its
+own commit with a test that fails without it:
+
+- `repo.Cache.sync` treated `HEAD index/<n+1>` answering 404 as proof
+  the copy was current, and then failed the read of `index/<n>` with
+  `wal: object not found` when the log no longer held the sequence: a
+  warm cache pointed at a reset bucket, the open item of spec 013's
+  Outcome, answered `storage_unavailable` for good. The copy is now
+  evicted and the repository materialized from what the log holds,
+  404 when it holds nothing (`TestLostSequenceRebuildsFromTheLog`).
+- A reader whose check found a newer index released the read lock,
+  took the write lock, and ran the check again: a second `HEAD` and a
+  second `GET` of the index it had read. The index the check read is
+  applied as it is when the copy did not move while the reader waited
+  (`TestReaderUpgradeAppliesTheIndexItRead`).
+
+The materialization budget of spec 005 replaced the per-entry
+`index-pack` and `update-ref` of step 3 with concurrent fetches and one
+`index-pack` per batch of consecutive entries, the references
+reconciled once by step 4; spec 005's Outcome has the measurements.
+
 Divergences from the first draft, all kept and now in the Design:
 
 - `index/000000000000` is created with the repository so a writer always

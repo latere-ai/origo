@@ -1,6 +1,6 @@
 ---
 title: "Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -26,16 +26,14 @@ not, the autoscaler, the disk, and the materialization budget.
 
 ## Current state
 
-Spec 004 gives one node correct behaviour: `internal/repo.Cache.Acquire`
-runs the `HEAD index/<n+1>` currency check on every open and applies
-what the copy lacks. `cmd/origod` opens the gossip socket on
-`ORIGO_GOSSIP_ADDR`, reads datagrams, and discards them; `ORIGO_NODE_NAME`
-and `ORIGO_GOSSIP_PEERS` are read and unused; `ORIGO_GOSSIP_SECRET` is
-not read. `ORIGO_CACHE_BYTES` is resolved and unused: nothing evicts. `deploy/base` has a Deployment with
-2 replicas, `maxSurge: 1, maxUnavailable: 0`, a PodDisruptionBudget with
-`minAvailable: 1`, an `emptyDir` of 20 GiB for `/var/lib/origo`, the
-headless Service `origod-gossip`, and no HorizontalPodAutoscaler.
-`internal/placement` does not exist.
+Built on 2026-09-08 as the Design describes, with the divergences the
+Outcome records. Before it, spec 004 gave one node correct behaviour:
+`internal/repo.Cache.Acquire` ran the `HEAD index/<n+1>` currency check
+on every open and applied what the copy lacked; `cmd/origod` read the
+gossip socket and discarded every datagram; `ORIGO_NODE_NAME` and
+`ORIGO_GOSSIP_PEERS` were read and unused, `ORIGO_GOSSIP_SECRET` not
+read, `ORIGO_CACHE_BYTES` resolved and unused; `deploy/base` had no
+HorizontalPodAutoscaler and `internal/placement` did not exist.
 
 ## Design
 
@@ -319,3 +317,136 @@ the cache on shutdown.
   a plain test of the one-node run that runs on every push and shares
   its fixture builder with `TestMeasure`; `internal/repo`,
   `TestConcurrentWorkersApplyThinEntries`).
+
+## Outcome
+
+Built on 2026-09-08 in twelve commits: the `result` label and the
+`OnCommit` callback on the log, `ORIGO_GOSSIP_SECRET`, the guard's
+decision, the cache's copies and workers, the lost-sequence rebuild,
+`internal/placement`, `Origo-Prefer` on both handlers, the node
+wiring, the manifests, the batched indexer, the one-check catch-up,
+and the tests.
+
+| Criterion | Test |
+|---|---|
+| placement agrees across nodes; the preferred node is warm on the stack | `internal/placement`, `TestRendezvousAgreesAcrossNodes`; `test/e2e`, `TestClusterPreferredNodeIsWarm` (`e2e` job) |
+| a push on A is returned by a fetch on B, with gossip before the request and without it on the first fetch; the catch-up time is recorded | `test/e2e`, `TestE2EGossipShortensTheCatchUp` (two nodes of the one-node harness, `integration` job) |
+| three nodes agree on the live set, a quiet node is dropped after 60 seconds, a node's own name is in its set | `internal/placement`, `TestMembershipByHeartbeat`; the peer forms in `TestGossipResolvesTheDNSForm` |
+| a bad MAC, a changed payload, or an `at` 61 seconds old is dropped and counted, the same payload under the right secret accepted | `internal/placement`, `TestGossipDropsABadMAC` |
+| 10 000 datagrams for one repository in one second cause at most one catch-up | `internal/placement`, `TestGossipCatchUpIsRateLimited` |
+| eviction is least recently acquired first, never a copy in use or under the floor, and an evicted copy materializes again | `internal/placement`, `TestEvictionIsLRUAndNeverInUse` |
+| a copy idle for 24 hours is evicted | `internal/placement`, `TestIdleEviction` |
+| deleting node 2 under 50 clones per second fails no request | `test/e2e`, `TestClusterNodeRemovalUnderReadLoad` (`e2e` job) |
+| 200 clones of 10 MiB with a push every second at 2, 4, and 8 replicas fail nothing; the autoscaler reaches 4 replicas within 60 seconds of the crossing | `test/e2e`, `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp` (`e2e-slow` job); monotonicity in `TestMeasure` |
+| a drain during 100 concurrent pushes loses none | `test/e2e`, `TestE2EDrainLosesNoPush` |
+| 1 000 entries materialize under 30 seconds; a thin entry over the previous one lands | `test/e2e`, `TestE2EMaterializeThousandEntriesUnderBudget`; `internal/repo`, `TestConcurrentWorkersApplyThinEntries` |
+
+Measurements on an Apple silicon laptop against MinIO in a podman
+virtual machine: node B applied an announced entry 23 ms after node A
+acknowledged the push; 100 concurrent pushes into a draining node were
+all acknowledged, none lost; 1 000 entries materialized onto an empty
+disk in 0.65 s, from 42 s with the per-entry design below and 70.7 s
+in phase 1.
+
+Divergences, each kept and the reason:
+
+- The materialization budget is met by a different mechanism than the
+  Design's concurrent `index-pack` per entry. Measured on 1 000 entries
+  each thin over the previous one, the pattern every push produces:
+  one worker 53.8 s, four workers 52.5 s, eight workers 48.5 s, with
+  999 of the 1 000 first `index-pack` runs failing on a missing base
+  and running again. Entry i+1 cannot index before entry i landed, so
+  the chain serializes the work and the retry doubles it. The cause is
+  one subprocess per entry, and the packfile format allows one per
+  batch: a 12 byte header with an object count, self-delimiting
+  objects whose `OFS_DELTA` offsets are relative and whose `REF_DELTA`
+  bases are named by hash, and a SHA-1 trailer. So the workers fetch,
+  verify, and spool concurrently, and one indexer joins consecutive
+  packs, at most 256 entries or 256 MiB, into one pack for one
+  `index-pack --fix-thin --strict` run in sequence order: every base is
+  in the batch or already in the store, there is no retry, and a cold
+  copy of 1 000 pushes holds 4 packs, not 1 000, which every later git
+  command opens. `TestConcurrentWorkersApplyThinEntries` keeps its name
+  and asserts the batching with a test-set bound of 5 per batch.
+- The `Origo-Prefer` header on a refused request: on the id form the
+  header is present on a 403 with k = 1, because the id is the path's;
+  on the name form it is absent on a 403 whether or not the name
+  resolved, because a header only on a resolved name would tell a
+  refused caller the repository exists, which spec 007's authorization
+  before lookup forbids. The Design's sentence covers the unresolved
+  case; the resolved-and-refused case follows from 007.
+- A datagram that names a repository the node does not hold is counted
+  `dropped`, as the Design says, and still records its sender in the
+  live set, because the MAC was valid and the Design's live set is
+  "the names heard by heartbeat or by an announcement that carried a
+  valid MAC".
+- The evictor skips a copy whose write lock is held rather than wait
+  behind the request: `Cache.TryEvict` takes the lock only when it is
+  free. A copy in use was acquired recently by definition, and the
+  floor covers it.
+- The gossip loop is split into `Bind`, which takes the socket the
+  node opened and resolves the peers before anything is served, and
+  `Run`; the first commit's announcement would otherwise race the
+  loop's start.
+- `ORIGO_GOSSIP_SECRET` shorter than 32 bytes is refused whenever it
+  is set, peers or not, as a malformed value in the one start-up
+  message.
+- `TestE2EGossipShortensTheCatchUp` measures the counts over a
+  `git ls-remote` with protocol version 1, one request, because a
+  version 2 `ls-remote` sends an `ls-refs` POST after the
+  advertisement, a second check. A check that finds a newer index
+  walks `HEAD index/<m+1>` forward until a 404, so on the node without
+  gossip the 404 count rises by one beside the 200.
+- `TestSlowAutoscalerScalesUp` scales under `test/e2e/testdata/hpa-scale.yaml`
+  (3 to 8 replicas on CPU, scale-up window 0, the overlay's 60 second
+  scale-down window) applied with `cluster.ApplyManifest`, not under
+  the overlay's own autoscaler: spec 013 holds that one at 3 replicas
+  so the three host ports always answer and the other cluster tests
+  see three pods, and an autoscaler with `maxReplicas: 3` cannot reach
+  4. The overlay's autoscaler is the base's patched
+  (`patches/hpa-statefulset.yaml`), as spec 013's Outcome foresaw.
+- `TestE2EDrainLosesNoPush` asserts what the criterion states, that an
+  acknowledged push is in the newest index and a failed one is absent,
+  and records how the failed ones failed; on this machine the node
+  acknowledged all 100 inside its grace period, so no push was refused.
+- The base's `HorizontalPodAutoscaler` names the Deployment; the
+  overlay's patch names the StatefulSet. `deploy/prod` therefore
+  carries the autoscaler at 2 to 32.
+
+Two defects found in existing code, fixed at the root with a failing
+test each and recorded in spec 004's Outcome: a warm copy whose bucket
+was reset answered `storage_unavailable`, the open item of spec 013's
+Outcome, and is now rebuilt from the log
+(`TestLostSequenceRebuildsFromTheLog`); a reader that found a newer
+index ran the whole currency check again under the write lock, a
+second `HEAD` and a second `GET` of the index it had read
+(`TestReaderUpgradeAppliesTheIndexItRead`).
+
+Items for other specs:
+
+- Spec 006: once compaction sets `compacted_through` and the sweeper
+  removes index objects, `HEAD index/<n+1>` answering 404 no longer
+  proves a copy current when `index/<n+1>` itself was swept; a warm
+  process holding `index/<n>` in memory would serve stale. Today
+  nothing is swept because `compacted_through` is always 0. The idle
+  rule here evicts a copy after 24 hours, so a sweeper that keeps every
+  index object at least 24 hours closes the gap for a warm copy; a
+  process that holds a copy past that without a request is the
+  remaining case, and the restart path (`ReadIndex` of the held
+  sequence answering 404) already rebuilds.
+- Spec 015: a thin pack whose base is in no entry fails the batch with
+  git's `did not receive expected object` and is served
+  `storage_unavailable`; it is an integrity error of the log, which
+  015's `repository_unavailable` names.
+- Spec 011: `origo_wal_head_check_seconds` carries `result`;
+  `origo_gossip_packets_total`, `origo_evictions_total`,
+  `origo_cache_bytes`, and `origo_cache_repos` are registered by the
+  packages that record them until `internal/metrics/register.go`
+  lands.
+- `latere.ai/x/pkg`: nothing new was needed; `pkg/cache` is the
+  catch-up rate limiter and `pkg/wait` the evictor's ticker.
+
+The cluster criteria are proved by the `e2e` and `e2e-slow` jobs of
+spec 013; the kind stack cannot run on this machine (spec 013's
+Outcome). The spec stays at `testing` until both jobs are green on
+`main` with these tests, and the Outcome then records the run.

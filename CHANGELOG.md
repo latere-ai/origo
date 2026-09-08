@@ -87,6 +87,25 @@ committed: the commit log already holds that.
   `ORIGO_REPAIR_UNHEARD`). The URL without the secret refuses to
   start. `origo_push_duration_seconds{phase}` reports the four phases
   of a push.
+- Placement and replication (spec 005): nodes keep a live set by
+  heartbeat over the gossip port, every datagram signed with
+  `ORIGO_GOSSIP_SECRET`, required whenever `ORIGO_GOSSIP_PEERS` is set;
+  a push is announced to every peer so a warm copy elsewhere catches up
+  before the next request. Every response that names a repository
+  carries `Origo-Prefer`, the nodes that hold it warm by rendezvous
+  hashing, highest first, as many as the authorizer's `replicas`. The
+  cache is bounded by `ORIGO_CACHE_BYTES`: least recently used copies
+  are evicted under pressure, copies used in the last 10 minutes are
+  kept, and copies idle for 24 hours go. Materialization fetches
+  entries with 4 workers and indexes consecutive packs in one
+  `index-pack` run, so 1 000 entries land in about a second instead of
+  a minute. `deploy/base` gains the HorizontalPodAutoscaler on CPU
+  between 2 and 32 replicas and pod anti-affinity; the bootstrap
+  Secret template carries `ORIGO_GOSSIP_SECRET`. A warm copy whose
+  bucket was reset is rebuilt from the log instead of answering
+  `storage_unavailable`, and a catch-up costs one currency check, not
+  two. The currency check's histogram carries `result` (`404`, `200`,
+  `error`).
   `deploy/examples/kind` runs MinIO, three nodes, and the stubs in a kind
   cluster with Cilium and metrics-server on fixed host ports, through
   `up.sh` and `down.sh` (`make dev-up`, `make dev-down`); `verify.yml`

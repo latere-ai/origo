@@ -45,13 +45,31 @@ pipeline of spec 017; a release cut before it lands carries neither.
 
 ## Scale
 
-The HorizontalPodAutoscaler, which spec 005 adds to `deploy/base`,
-scales on CPU only, between 2 and 32 replicas; until it lands the
-Deployment's replica count is what you set. `origo_requests_in_flight`
-is a signal for a dashboard, not an autoscaler input. Reads scale with
-replicas. Pushes to one repository do
-not, by design; if one repository needs more than about ten pushes per
+Replicas are the one thing that scales. The HorizontalPodAutoscaler in
+`deploy/base` scales on CPU only, 70% of the request, between 2 and 32
+replicas, up after 30 seconds and down after 10 minutes so a burst of
+clones does not churn the cache. No metrics adapter is installed;
+`origo_requests_in_flight` is a signal for a dashboard, not an
+autoscaler input. Reads scale with replicas: every node serves any
+repository after one materialization. Pushes to one repository do not,
+by design; if one repository needs more than about ten pushes per
 second sustained, that is a design conversation, not a replica count.
+
+Nodes find each other over gossip on UDP 7946 through the headless
+Service `origod-gossip`, with every datagram signed under
+`ORIGO_GOSSIP_SECRET` from the `origod-auth` Secret: a node without
+the secret is never in the live set. Every response that names a
+repository carries `Origo-Prefer`, the nodes that hold it warm, highest
+first, for an ingress that can route by pod; a request is served
+wherever it lands.
+
+Each pod's cache is bounded by `ORIGO_CACHE_BYTES`, 80% of the volume
+by default: the least recently used copies go first, a copy used in
+the last 10 minutes is kept, and a copy idle for 24 hours goes whatever
+the pressure. `origo_cache_bytes`, `origo_cache_repos`, and
+`origo_evictions_total{reason}` show it; a pod that restarts on the
+same volume is warm, one that moves starts cold and warms as requests
+arrive.
 
 ## When the bucket is unhealthy
 
