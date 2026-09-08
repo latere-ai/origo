@@ -5,7 +5,7 @@ track: infra
 depends_on:
   - specs/004-write-ahead-log.md
   - specs/007-authentication-and-delegation.md
-affects: [internal/api/, internal/repo/, internal/gittest/, test/e2e/]
+affects: [internal/api/, internal/repo/, internal/gittest/, cmd/origod/, test/e2e/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -188,6 +188,10 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
   with `Range: bytes=0-1023` (proposed: `internal/api`, `TestBlobRange`).
 - A second request with `If-None-Match` equal to the `ETag` answers 304
   and runs no git subprocess (proposed: `internal/api`, `TestETagRevalidates`).
+- A read against an in-memory OTLP receiver produces one trace whose
+  spans are `index.check`, `materialize`, and `git.<command>` (spec
+  011's Traces section), with the repository id as an attribute
+  (proposed: `cmd/origod`, `TestReadTrace`, mirroring `TestPushTrace`).
 
 ## Outcome
 
@@ -265,6 +269,13 @@ Divergences and interpretations, all kept and now in the Design:
   is more specific. The reserved owner `v1` of spec 003 is what keeps
   the two apart on the wire; the answers are unchanged.
 
+One builder item, from spec 011: the read path's three spans,
+`index.check`, `materialize`, and `git.<command>`, are this spec's to
+build. Spec 011 named them, built the write path's five, and left these
+because `internal/tracing`, the one seam to the OpenTelemetry SDK, did
+not exist when this spec landed. The span helpers come from that
+package; the criterion is `TestReadTrace` in `cmd/origod`.
+
 Deferred to spec 013's jobs: `TestE2EArchiveStreams` on every push,
 and the 40 second `FuzzValidPath` run. The spec moves to `complete`
-when both run there.
+when both run there and `TestReadTrace` is green.

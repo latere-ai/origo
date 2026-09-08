@@ -85,12 +85,12 @@ never recorded and are replaced by the names below.
 | `origo_evictions_total` | counter | `reason` (`pressure`, `idle`) | the evictor (005) |
 | `origo_gossip_packets_total` | counter | `direction` (`sent`, `received`, `dropped`) | gossip (005) |
 | `origo_compactions_total` | counter | `result` (`ok`, `stale`, `error`, `skipped`) | compaction (006); `skipped` is a run that found no subprocess slot within 5 seconds (012) |
-| `origo_compaction_seconds` | histogram | | compaction (006) |
+| `origo_compaction_seconds` | histogram, buckets 0.5 s to 10 minutes | | compaction (006) |
 | `origo_authorizer_seconds` | histogram | `result` (`allow`, `deny`, `error`) | the authorizer client (007) |
 | `origo_events_delivered_total`, `origo_events_dead_total` | counter | | event delivery (008) |
 | `origo_rate_limited_total` | counter | `limit` (`subject`, `subprocesses`, `repository`) | limits (012), the per-repository limits of 019 and 020 |
 | `origo_storage_ops_total` | counter | `op` (`get`, `put`, `create`, `head`, `delete`, `list`), `result` (`ok`, `not_found`, `exists`, `error`) | the store adapter (015) |
-| `origo_storage_seconds` | histogram | `op` | same |
+| `origo_storage_seconds` | histogram, the shared duration buckets | `op` | same |
 | `origo_storage_breaker_state` | gauge | `class` (`read`, `write`); 0 closed, 1 open, 2 half-open | the breakers (015) |
 | `origo_stale_responses_total` | counter | | responses served with `Origo-Stale` (015) |
 | `origo_log_integrity_errors_total` | counter | | a pack or entry the log names that is missing or fails its digest (015) |
@@ -101,9 +101,17 @@ No label ever carries a repository id, owner, slug, subject, reference,
 or path. Every metric in the table is registered at start-up in
 `internal/metrics/register.go`, one function `Register(reg) *Set` that
 returns the handles the recording packages take, so `GET /metrics`
-carries every name at 0 before anything is recorded; a labelled counter
-is registered with one `Add` of 0 per label value in its vocabulary.
-Gauges are registered with `Registry.Gauge` and read at scrape time.
+carries every name before anything is recorded. A labelled counter is
+registered with one `Add` of 0 per combination of its label
+vocabularies, the cross product where a metric has two; gauges are
+registered with `Registry.Gauge`, read at scrape time, and carry one
+series per label value. Two kinds of series are absent until something
+is recorded, and the criterion below asks for presence by name for
+them: a labelled histogram, because `latere.ai/x/pkg/metrics` creates a
+cell only through `Observe`, which would record an observation (the
+item below), and `origo_requests_total` and
+`origo_request_duration_seconds`, whose `route` is the mux pattern and
+has no vocabulary to seed.
 
 ### Traces
 
@@ -111,9 +119,20 @@ Gauges are registered with `Registry.Gauge` and read at scrape time.
 "origod", Version, Replica, Stdout})` with `Stdout` a JSON handler on
 standard output, because `Bootstrap` defaults to standard error and the
 node's log lines stay on standard output (spec 002), wraps the public handler in
-`otel.Handler` with `WithRouteTemplate` returning the mux pattern and
-`WithMetricsHook` feeding the two request metrics, and wraps the storage
-transport in `otel.Transport`.
+`otel.Handler` with `WithMetricsHook` feeding the two request metrics,
+and wraps the storage transport in `otel.Transport`.
+
+`WithRouteTemplate` is not used: `latere.ai/x/pkg/otel` passes that
+function to the span name formatter, which runs before the mux has
+matched, so a template returning the pattern would name every root span
+`<METHOD> ` with an empty route. The route the metrics hook and the log
+line use comes instead from a details struct the outermost wrapper
+installs on the request's context and a middleware behind the verifier
+fills, because the verifier and the application mux each hand the next
+layer a request of their own and the pattern the outermost wrapper sees
+is the public mux's catch-all `/`. The same struct carries the
+repository, the subject, and the actor, which are known only there. A
+probe passes none of them and keeps the hook's own route.
 
 `internal/tracing` is the one package in the module that imports
 `go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/trace`. Every
@@ -127,27 +146,45 @@ the standard library and `latere.ai/x/pkg`; the `depcheck` gate of
 reason per upstream root, so a further direct dependency fails the
 gate.
 
-One trace per request; a push's spans are
-`receive`, `entry.put`, `index.create`, `apply`, `event.enqueue`; a
-read's are `index.check`, `materialize`, `git.<command>`; every object
-storage call is a child span named by its `op`. Repository id, subject,
-and actor are span attributes, never metric labels. Without
+One trace per request. A push's spans are `receive`, `entry.put`,
+`index.create`, `apply`, `event.enqueue`, and this spec builds them. A
+read's are `index.check`, `materialize`, `git.<command>`, which spec
+009 builds on the tracer this spec puts in place; its criterion
+`TestReadTrace` holds them. Every object storage call is a child span
+of `otel.Transport` named by its HTTP method; the span named by the
+operation belongs with the store adapter of spec 015, which owns
+`origo_storage_ops_total{op}`. Repository id, subject, and actor are
+span attributes, never metric labels. Without
 `OTEL_EXPORTER_OTLP_ENDPOINT` the spans are created and discarded.
 
 ### Logs
 
-JSON through `log/slog`, one line per request from the `otel.Handler`
-with `route`, `method`, `status`, `duration_ms`, `repo`, `subject`,
+JSON through `log/slog`, one line per request, written by a wrapper of
+`cmd/origod` inside `otel.Handler`, which logs nothing itself, with
+`route`, `method`, `status`, `duration_ms`, `repo`, `subject`,
 `actor`, `bytes_in`, `bytes_out`, `trace_id`; never a token, never
 object bytes, never a basic auth password. A push logs its sequence.
 Entries in the log itself are the audit record (spec 004).
 
 ### Alerts
 
-A PrometheusRule `origod` in `deploy/base`, validated by
-`promtool check rules` in the `specindex` job of `verify.yml`, which
-installs `promtool` and runs it beside the cross-reference test (spec
-013 owns the job's other steps):
+A PrometheusRule `origod` in `deploy/base`, validated in the
+`specindex` job of `verify.yml`, which installs `promtool` and runs it
+beside the cross-reference test (spec 013 owns the job's other steps).
+`promtool check rules` reads a Prometheus rules file and not a
+Kubernetes object, so it fails on `apiVersion`, `kind`, `metadata`, and
+`spec`: `tools/specindex -rules` prints the rules document out of the
+object and the job checks that. The same flag fails first when an alert
+names an Origo metric no spec defines; a metric another exporter
+publishes, the autoscaler row below, does not carry the prefix and is
+not checked.
+
+The file is not a resource of the base's kustomization. A PrometheusRule
+needs the Prometheus operator's CustomResourceDefinition, which Origo
+does not require and the kind stack does not install, so a base that
+named it would fail to apply on every installation without that
+operator. An installation that runs the operator applies the file beside
+the base, which `docs/operations.md` says.
 
 | Alert | Condition |
 |---|---|
@@ -170,10 +207,11 @@ defaults.
 ## Acceptance criteria
 
 - Right after start-up, with nothing recorded, `GET /metrics` contains
-  every name in the table with every listed label value at 0, because
-  `internal/metrics/register.go` registered them; after a fixture load
-  (create, push, clone, a refused push) no label value equals a
-  repository id, subject, reference, or path used by the fixture
+  every name in the table, and a 0 series for every closed vocabulary,
+  because `internal/metrics/register.go` registered them; after a
+  fixture load (create, push, clone, and a push the node refuses, which
+  is a push to a repository that does not exist) no label value equals
+  a repository id, subject, reference, or path used by the fixture
   (proposed: `cmd/origod`, `TestMetricsVocabulary`, the presence part
   needing no fixture; `internal/metrics`, `TestRegisterNamesEveryMetric`
   comparing the registered names to the table of this spec read from
@@ -189,19 +227,21 @@ defaults.
 - The request log line for a push carries the listed fields and no
   `Authorization` value when the request used basic auth (proposed:
   `cmd/origod`, `TestRequestLogRedactsCredentials`).
-- `promtool check rules deploy/base/prometheusrule.yaml` passes in the
+- `promtool check rules` passes on the rules document `tools/specindex
+  -rules` prints out of `deploy/base/prometheusrule.yaml`, in the
   `specindex` job of `verify.yml`, which installs `promtool` and runs
-  it, and every alert's metric names are in the table (proposed:
+  it, and every alert's Origo metric is in the table (proposed:
   `tools/specindex` reads the rule file; `verify.yml`, the `specindex`
   job).
 
 ## Outcome
 
-Built on 2026-09-08 in eleven commits: `internal/tracing`, the metric
+Built on 2026-09-08 in fifteen commits: `internal/tracing`, the metric
 table in `internal/metrics`, one commit per recording package for the
 move of its registrations, the node's telemetry wiring with the three
 tests, the depcheck decision, the alert rules with the `specindex`
-check, and the documentation.
+check, the documentation, and two that close the coverage of the new
+node code.
 
 | Criterion | Test |
 |---|---|
@@ -216,7 +256,8 @@ rather than reading 0 forever. Each recording package's `Metrics` option
 is that `Set`; a package built without one registers a set of its own,
 so a test that asserts on nothing needs no registry.
 
-Divergences and interpretations, all kept:
+Divergences and interpretations, all kept; the Design above states
+each as the rule, so a reader finds one answer:
 
 - A labelled histogram carries its family and no series before its first
   observation. `latere.ai/x/pkg/metrics` has no way to create a
@@ -257,14 +298,17 @@ Divergences and interpretations, all kept:
   every installation without that operator. An installation that runs
   the operator applies the file beside the base, which
   `docs/operations.md` says.
-- A read's spans, `index.check`, `materialize`, and `git.<command>`, are
-  not built. No criterion names them, and each is an edit in the two
-  packages spec 006 is being built in; the five spans of the write path,
-  which the criterion names, are there.
+- A read's spans, `index.check`, `materialize`, and `git.<command>`,
+  are not built here. The five spans of the write path, which this
+  spec's criterion names, are. Building the read's three is spec 009's,
+  now that `internal/tracing` gives it a tracer: it carries the builder
+  item and the criterion `TestReadTrace`, which mirrors
+  `TestPushTrace`.
 - Every object storage call is a child span through `otel.Transport` on
-  the storage transport, named by its HTTP method. A span named by the
-  operation belongs with the store adapter spec 015 builds, which is
-  what owns `origo_storage_ops_total{op}`.
+  the storage transport, named by its HTTP method, where the first draft
+  named it by the operation. A span named by the operation belongs with
+  the store adapter spec 015 builds, which is what owns
+  `origo_storage_ops_total{op}`; that spec's builder adds it.
 - The refused push of the vocabulary fixture is a push to a repository
   that does not exist, answered `repo_not_found`. A push the log refuses
   cannot be produced with the git client against a single node: git
@@ -273,9 +317,9 @@ Divergences and interpretations, all kept:
   produces one builds the request body itself
   (`internal/httpgit`, `TestReferenceMovedBetweenAdvertisementAndPush`).
 - The bucket sets of `origo_compaction_seconds` and
-  `origo_storage_seconds` are this spec's choice, which the table left
-  open: 0.5 s to 10 minutes for a compaction, the shared duration
-  buckets for a storage call.
+  `origo_storage_seconds` were open in the first draft's table and are
+  chosen here: 0.5 s to 10 minutes for a compaction, the shared duration
+  buckets for a storage call. The table above carries both.
 - The outbound transport to the issuers and the authorizer is not
   wrapped; the Traces section names the storage transport only.
 
