@@ -359,6 +359,30 @@ its own). 011 names the six packages that registered metrics and makes
 seventh invariant is amended to name the SDK and its Outcome records
 why. Three decision rows and the `latere.ai/x/pkg` items below are new.
 
+The fourteenth round, on 006 and 011 at `complete`: each spec's Design
+now states as the rule what its Outcome recorded as a divergence, so a
+reader finds one answer. 006 carries the `pack_bytes` source of the byte
+threshold, the multi-pack index as the run's pack set with the
+carry-forward, the eviction after the read lock, the request a purge
+leaves, the step 6 warning, the `compact.Slots` seam, and
+`compact.Manager.GC` beside 019's endpoint; its stack criterion states
+the wait that pushes every 15 seconds, its truncation criterion the
+folded count the tree uses, and its latency criterion 20 MiB and 200
+pushes with `TestMeasure` at 1 GiB and 1 000. 004's index row carries
+`pack_bytes`, which 004 owns and 006 mentions. One defect: the
+truncation criterion's second half, the currency check on a folded
+sequence, was named and asserted nowhere;
+`TestHolderOfAFoldedSequenceSeesTheNewerIndex` in `internal/compact`
+holds it and fails against the sweep rule 006 removed. 011 carries the
+seeding rule with its two exceptions, the bucket sets of
+`origo_compaction_seconds` and `origo_storage_seconds`, the details
+struct in place of `WithRouteTemplate`, the log line's writer, the
+storage span named by its HTTP method with the `op` span left to 015,
+and the rules document `specindex -rules` prints out of a file the base
+does not name. A read's three spans are decided: they are 009's to build
+now that `internal/tracing` exists, and 009 carries the builder item and
+the criterion `TestReadTrace`, staying at `testing`.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
