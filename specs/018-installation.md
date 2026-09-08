@@ -10,7 +10,7 @@ depends_on:
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/017-release-and-versioning.md
   - specs/021-conformance-suite.md
-affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, cmd/origod/, internal/config/, Makefile, .github/workflows/]
+affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -188,7 +188,16 @@ rendered by `tools/apidoc`, a Go program in its own module beside
 parses out of the specs (the tables whose first header is `Method` and
 `Path`, `Header`, or `Code`), grouped by the spec that owns each row
 with a link to it, so the page never carries a name the specs do not
-define. `make docs` runs `cd tools/apidoc && go run . -write` after
+define. The parser is shared, not copied: `tools/specindex` exports
+the package `tools/specindex/specs`, the parser and the
+cross-reference model its `main` uses today, and `tools/apidoc`
+requires the `tools/specindex` module with a `replace ../specindex`
+directive in its `go.mod`, so both tools read one parser and a table
+shape one of them does not recognise is a finding in both. The export
+is a builder item of this spec: `specindex` is a tool, not a package a
+spec owns, so moving its parser under `specs/` changes no other spec's
+status, and `make specindex` (`go test ./...` in that module) covers
+the new package as it covers `main`. `make docs` runs `cd tools/apidoc && go run . -write` after
 the configuration page, and the `specindex` job of `verify.yml` runs
 `make docs` and then `git diff --exit-code docs/`, so a spec change
 that moves a table shows up as a documentation diff on the same push. The page states the contract
