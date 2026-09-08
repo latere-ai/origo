@@ -5,29 +5,49 @@ package api
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
+	"github.com/latere-ai/origo/test/stubs/authorizer"
 )
 
-const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+const (
+	repoA   = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	unknown = "00000000-0000-4000-8000-000000000000"
+	issuer  = "https://git.example.com"
+)
 
 type harness struct {
-	t     *testing.T
-	store *wal.MemStore
-	log   *wal.Log
-	cache *repo.Cache
-	srv   *httptest.Server
+	t      *testing.T
+	store  *wal.MemStore
+	log    *wal.Log
+	cache  *repo.Cache
+	srv    *httptest.Server
+	authz  *authorizer.Server
+	guard  *auth.Guard
+	key    *ecdsa.PrivateKey
+	signer *auth.Signer
+
+	mu        sync.Mutex
+	principal auth.Principal
 }
 
 func newHarness(t *testing.T) *harness {
@@ -39,11 +59,38 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	authz := authorizer.New(t)
+	client, err := auth.NewClient(auth.ClientOptions{URL: authz.URL(), Token: authz.Token(), HTTP: &http.Client{Transport: &http.Transport{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &harness{t: t, store: store, log: l, cache: cache, authz: authz, key: key, principal: auth.Principal{Subject: "alice"}}
+	h.guard = auth.NewGuard(client, logger)
+	h.signer = auth.NewSigner(key, issuer, nil)
 	mux := http.NewServeMux()
-	New(cache, nil).Register(mux)
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return &harness{t: t, store: store, log: l, cache: cache, srv: srv}
+	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer}).Register(mux)
+	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
+	// The verifier is spec 007's own; here the principal is set on the
+	// request the way the middleware does.
+	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.mu.Lock()
+		p := h.principal
+		h.mu.Unlock()
+		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+	}))
+	t.Cleanup(h.srv.Close)
+	return h
+}
+
+// as makes the following requests carry the principal.
+func (h *harness) as(p auth.Principal) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.principal = p
 }
 
 func (h *harness) do(method, path, body string) (int, map[string]any) {
@@ -60,6 +107,14 @@ func (h *harness) do(method, path, body string) (int, map[string]any) {
 	return resp.StatusCode, out
 }
 
+func details(out map[string]any) map[string]any {
+	if e, ok := out["error"].(map[string]any); ok {
+		d, _ := e["details"].(map[string]any)
+		return d
+	}
+	return nil
+}
+
 func code(out map[string]any) string {
 	if e, ok := out["error"].(map[string]any); ok {
 		c, _ := e["code"].(string)
@@ -74,11 +129,16 @@ func TestRepositoryLifecycle(t *testing.T) {
 	if status != 201 || out["id"] != repoA || out["default_branch"] != "trunk" || out["head"] != "" || out["size_bytes"] != float64(0) {
 		t.Fatalf("create: %d %v", status, out)
 	}
-	if status, out := h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"other"}`); status != 409 || code(out) != contract.CodeRepoExists {
+	if status, out := h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"other"}`); status != 409 || code(out) != contract.CodeRepoExists || details(out)["field"] != "id" {
 		t.Fatalf("duplicate id: %d %v", status, out)
 	}
-	if status, out := h.do("POST", "/v1/repos", `{"id":"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d","owner":"acme","slug":"app"}`); status != 409 || code(out) != contract.CodeRepoExists {
+	if status, out := h.do("POST", "/v1/repos", `{"id":"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d","owner":"acme","slug":"app"}`); status != 409 || code(out) != contract.CodeRepoExists || details(out)["field"] != "name" {
 		t.Fatalf("duplicate name: %d %v", status, out)
+	}
+	// Every message is the contract's sentence, with the reason in the
+	// developer detail.
+	if _, out := h.do("POST", "/v1/repos", `{"id":"x","owner":"a","slug":"b"}`); out["error"].(map[string]any)["message"] != contract.Sentence(contract.CodeInvalid) || details(out)["field"] != "id" || details(out)["reason"] == nil {
+		t.Fatalf("invalid envelope: %v", out)
 	}
 	for name, body := range map[string]string{
 		"not json":       `{`,
@@ -139,6 +199,21 @@ func TestRepositoryLifecycle(t *testing.T) {
 	if status, out := h.do("PATCH", "/v1/repos/00000000-0000-4000-8000-000000000000", `{"slug":"x"}`); status != 404 {
 		t.Fatalf("patch unknown: %d %v", status, out)
 	}
+
+	// The subject and the actor of the caller are in the entry a patch
+	// of the default branch commits.
+	h.as(auth.Principal{Subject: "bob", Actor: "svc"})
+	if status, _ := h.do("PATCH", "/v1/repos/"+repoA, `{"default_branch":"trunk"}`); status != 200 {
+		t.Fatal("patch as bob")
+	}
+	ix, _, _ = h.log.Newest(context.Background(), repoA, 0, false)
+	rc, _, _ := h.store.Get(context.Background(), h.log.RepoPrefix(repoA)+ix.Entry, "")
+	hdr, _, _, err := wal.ReadEntryHead(rc)
+	_ = rc.Close()
+	if err != nil || hdr.Subject != "bob" || hdr.Actor != "svc" {
+		t.Fatalf("entry header: %+v, %v", hdr, err)
+	}
+	h.as(auth.Principal{Subject: "alice"})
 
 	// Delete holds the objects and answers 404 until an undelete.
 	if status, out := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 || out["deleted_at"] == nil || out["purge_after"] == nil {
@@ -228,4 +303,191 @@ func TestStorageFailuresAnswer503(t *testing.T) {
 		return nil
 	})
 	check("create read-back", "POST", "/v1/repos", `{"id":"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d","owner":"a","slug":"c"}`)
+}
+
+// TestDenyBeforeLookup: for every route that names a repository, the
+// authorizer is asked with what the path names before anything of the
+// repository is read, so a denied caller learns nothing and a 404 goes
+// only to an allowed one.
+func TestDenyBeforeLookup(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`)
+	h.authz.Deny(authorizer.Rule{Subject: "eve"}, "eve is denied")
+	h.authz.ClearRequests()
+
+	// Every store operation is recorded with the number of authorizer
+	// requests seen at that moment.
+	var mu sync.Mutex
+	var ops []string
+	h.store.SetFault(func(op, key string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		ops = append(ops, op+" "+key)
+		return nil
+	})
+	reset := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := ops
+		ops = nil
+		return out
+	}
+	type route struct {
+		method, path, body string
+		id, owner, slug    string
+	}
+	byID := []route{
+		{"GET", "/v1/repos/" + unknown, "", unknown, "", ""},
+		{"PATCH", "/v1/repos/" + unknown, `{"slug":"x"}`, unknown, "", ""},
+		{"DELETE", "/v1/repos/" + unknown, "", unknown, "", ""},
+		{"POST", "/v1/repos/" + unknown + "/undelete", "", unknown, "", ""},
+		{"POST", "/v1/repos/" + unknown + "/tokens", `{"scope":"read","ttl":60}`, unknown, "", ""},
+		{"GET", "/r/" + unknown + ".git/info/refs?service=git-upload-pack", "", unknown, "", ""},
+		{"GET", "/r/" + unknown + ".git/info/refs?service=git-receive-pack", "", unknown, "", ""},
+		{"POST", "/r/" + unknown + ".git/git-upload-pack", "0000", unknown, "", ""},
+		{"POST", "/r/" + unknown + ".git/git-receive-pack", "0000", unknown, "", ""},
+		{"GET", "/v1/repos/" + repoA, "", repoA, "", ""},
+		{"POST", "/v1/repos", `{"id":"` + unknown + `","owner":"nobody","slug":"nothing"}`, unknown, "nobody", "nothing"},
+	}
+	byName := []route{
+		{"GET", "/nobody/nothing.git/info/refs?service=git-upload-pack", "", "", "nobody", "nothing"},
+		{"POST", "/nobody/nothing.git/git-upload-pack", "0000", "", "nobody", "nothing"},
+		{"POST", "/nobody/nothing.git/git-receive-pack", "0000", "", "nobody", "nothing"},
+		{"GET", "/acme/app.git/info/refs?service=git-upload-pack", "", repoA, "acme", "app"},
+	}
+	// The denied caller: 403 everywhere, one authorizer request carrying
+	// what the path names, and no store read but the name resolution. A
+	// distinct actor per route keeps the client's cache out of the count.
+	for i, r := range append(byID, byName...) {
+		h.as(auth.Principal{Subject: "eve", Actor: fmt.Sprintf("run-%d", i)})
+		reset()
+		before := len(h.authz.Requests())
+		status, out := h.do(r.method, r.path, r.body)
+		if status != 403 || code(out) != contract.CodeForbidden || details(out)["reason"] != "eve is denied" || details(out)["subject"] != "eve" {
+			t.Errorf("eve %s %s: %d %v", r.method, r.path, status, out)
+		}
+		reqs := h.authz.Requests()
+		if len(reqs) != before+1 || reqs[before].Repo.ID != r.id || reqs[before].Repo.Owner != r.owner || reqs[before].Repo.Slug != r.slug {
+			t.Errorf("eve %s %s: authorizer saw %+v", r.method, r.path, reqs[len(reqs)-1])
+		}
+		got := reset()
+		want := 0
+		if r.owner != "" && r.id == "" || r.owner == "acme" {
+			want = 1 // the name lookup, and nothing of the repository
+		}
+		if len(got) != want || (want == 1 && !strings.HasPrefix(got[0], "Get origo/names/")) {
+			t.Errorf("eve %s %s: store operations %v", r.method, r.path, got)
+		}
+	}
+	// The allowed caller: 404 on the same unknown paths, the authorizer
+	// asked before the first store read.
+	h.authz.ClearRequests()
+	for i, r := range append(byID[:9], byName[:3]...) {
+		h.as(auth.Principal{Subject: "alice", Actor: fmt.Sprintf("run-%d", i)})
+		var seenAtFirstOp int
+		h.store.SetFault(func(op, key string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			if len(ops) == 0 {
+				seenAtFirstOp = len(h.authz.Requests())
+			}
+			ops = append(ops, op+" "+key)
+			return nil
+		})
+		reset()
+		before := len(h.authz.Requests())
+		status, out := h.do(r.method, r.path, r.body)
+		if status != 404 || code(out) != contract.CodeRepoNotFound {
+			t.Errorf("alice %s %s: %d %v", r.method, r.path, status, out)
+		}
+		if r.id != "" && details(out)["id"] != r.id || r.id == "" && details(out)["owner"] != r.owner {
+			t.Errorf("alice %s %s: details %v", r.method, r.path, details(out))
+		}
+		if got := reset(); len(got) == 0 || seenAtFirstOp != before+1 {
+			// The name form's lookup precedes the authorizer; the id form
+			// reads nothing before it.
+			if r.id != "" || seenAtFirstOp != before {
+				t.Errorf("alice %s %s: authorizer at %d, requests before %d, ops %v", r.method, r.path, seenAtFirstOp, before, got)
+			}
+		}
+	}
+	// The cache: a second denied request within 5 seconds is no call.
+	h.as(auth.Principal{Subject: "eve", Actor: "cached"})
+	n := len(h.authz.Requests())
+	h.do("GET", "/v1/repos/"+repoA, "")
+	h.do("GET", "/v1/repos/"+repoA, "")
+	if len(h.authz.Requests()) != n+1 {
+		t.Fatalf("the deny was not cached: %d calls", len(h.authz.Requests())-n)
+	}
+	// An authorizer outage is 503 authorizer_unavailable, never an allow.
+	h.authz.Fail(500)
+	if status, out := h.do("GET", "/v1/repos/"+unknown, ""); status != 503 || code(out) != contract.CodeAuthorizerUnavailable || details(out)["status"] != 500.0 {
+		t.Fatalf("outage: %d %v", status, out)
+	}
+	// A storage failure on the name lookup is 503 before the authorizer.
+	h.authz.Resume()
+	h.store.SetFault(func(op, key string) error { return errors.New("down") })
+	if status, out := h.do("GET", "/x/y.git/info/refs?service=git-upload-pack", ""); status != 503 || code(out) != contract.CodeStorageUnavailable {
+		t.Fatalf("name lookup down: %d %v", status, out)
+	}
+}
+
+func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
+	h := newHarness(t)
+	h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`)
+	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":600}`)
+	token, _ := out["token"].(string)
+	if status != 201 || token == "" || out["expires_at"] == nil {
+		t.Fatalf("mint: %d %v", status, out)
+	}
+	expires, err := time.Parse(time.RFC3339, out["expires_at"].(string))
+	if err != nil || time.Until(expires) > 600*time.Second || time.Until(expires) < 590*time.Second {
+		t.Fatalf("expires_at %v: %v", out["expires_at"], err)
+	}
+	// The token verifies against the node's key and names the minter's
+	// subject and actor, the repository, and the scope.
+	v, err := auth.NewVerifier(auth.VerifierOptions{LocalIssuer: issuer, LocalKey: &h.key.PublicKey, Client: &http.Client{Transport: &http.Transport{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := v.Verify(context.Background(), token)
+	if err != nil || p.Subject != "alice" || p.Actor != "svc" || p.Bound == nil || p.Bound.Repo != repoA || p.Bound.Scope != auth.ScopeRead {
+		t.Fatalf("verified: %+v, %v", p, err)
+	}
+	// Minting is an admin action on the repository, and a bound token
+	// never mints.
+	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "admin" || reqs[len(reqs)-1].Repo.ID != repoA || reqs[len(reqs)-1].Actor != "svc" {
+		t.Fatalf("authorizer: %+v", reqs[len(reqs)-1])
+	}
+	h.as(p)
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 403 || details(out)["reason"] != auth.ReasonScope {
+		t.Fatalf("bound token minting: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "alice"})
+	for name, body := range map[string]string{
+		"not json":    `{`,
+		"admin scope": `{"scope":"admin","ttl":60}`,
+		"no scope":    `{"ttl":60}`,
+		"zero ttl":    `{"scope":"read","ttl":0}`,
+		"long ttl":    `{"scope":"read","ttl":3601}`,
+		"unknown":     `{"scope":"read","ttl":60,"x":1}`,
+	} {
+		if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", body); status != 400 || code(out) != contract.CodeInvalid {
+			t.Errorf("%s: %d %v", name, status, out)
+		}
+	}
+	if status, _ := h.do("POST", "/v1/repos/"+unknown+"/tokens", `{"scope":"write","ttl":1}`); status != 404 {
+		t.Fatalf("unknown repository: %d", status)
+	}
+	h.do("DELETE", "/v1/repos/"+repoA, "")
+	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"write","ttl":3600}`); status != 404 {
+		t.Fatalf("deleted repository: %d", status)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a handler without a guard")
+		}
+	}()
+	New(Options{Cache: h.cache})
 }

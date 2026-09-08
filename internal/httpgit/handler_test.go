@@ -7,12 +7,16 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +33,8 @@ import (
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
+	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"github.com/latere-ai/origo/test/stubs/issuer"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
@@ -45,6 +51,18 @@ type node struct {
 	srv    *httptest.Server
 	reg    *metrics.Registry
 	logger *slog.Logger
+	authz  *authorizer.Server
+}
+
+// newGuard builds a guard over a stub authorizer that allows everyone.
+func newGuard(t *testing.T, logger *slog.Logger) (*auth.Guard, *authorizer.Server) {
+	t.Helper()
+	authz := authorizer.New(t)
+	client, err := auth.NewClient(auth.ClientOptions{URL: authz.URL(), Token: authz.Token(), HTTP: &http.Client{Transport: &http.Transport{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return auth.NewGuard(client, logger), authz
 }
 
 func newNode(t *testing.T, store wal.Store) *node {
@@ -56,14 +74,17 @@ func newNode(t *testing.T, store wal.Store) *node {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute})
+	guard, authz := newGuard(t, logger)
+	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute, Guard: guard})
 	mux := http.NewServeMux()
 	h.Register(mux)
+	// The verifier is spec 007's own; here the principal is set on the
+	// request the way the middleware does.
 	srv := httptest.NewServer(contract.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mux.ServeHTTP(w, r.WithContext(auth.WithSubject(r.Context(), "alice")))
+		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "alice"})))
 	})))
 	t.Cleanup(srv.Close)
-	return &node{t: t, store: store, log: l, cache: cache, h: h, srv: srv, reg: reg, logger: logger}
+	return &node{t: t, store: store, log: l, cache: cache, h: h, srv: srv, reg: reg, logger: logger, authz: authz}
 }
 
 func (n *node) url(path string) string { return n.srv.URL + path }
@@ -567,12 +588,13 @@ func newNodeAt(t *testing.T, store wal.Store, dataDir, gitBin string) *node {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute})
+	guard, authz := newGuard(t, logger)
+	h := New(Options{Cache: cache, Logger: logger, Metrics: reg, Timeout: time.Minute, Guard: guard})
 	mux := http.NewServeMux()
 	h.Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return &node{t: t, store: store, log: l, cache: cache, h: h, srv: srv, reg: reg, logger: logger}
+	return &node{t: t, store: store, log: l, cache: cache, h: h, srv: srv, reg: reg, logger: logger, authz: authz}
 }
 
 func TestGitFailuresAreReported(t *testing.T) {
@@ -660,8 +682,73 @@ func TestGitFailuresAreReported(t *testing.T) {
 	}
 	_ = stdin.Close()
 	// Defaults fill in what the options leave out.
-	h := New(Options{Cache: n.cache})
+	guard, _ := newGuard(t, nil)
+	h := New(Options{Cache: n.cache, Guard: guard})
 	if h.timeout != 5*time.Minute || h.logger == nil || h.pushes == nil {
 		t.Fatalf("defaults: %+v", h)
 	}
+}
+
+// TestActClaimIsRecordedOnEntryAndAuthorizer: a service token carrying
+// act sets the effective subject; the authorizer request carries both
+// and the entry header records subject and actor.
+func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
+	store := wal.NewMemStore()
+	n := newNode(t, store)
+	n.create(repoA, "acme", "app")
+	// A second server over the same handler with the real verifier and a
+	// stub issuer in front.
+	iss := issuer.New(t)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := auth.NewVerifier(auth.VerifierOptions{Issuers: []string{iss.URL()}, LocalIssuer: "https://git.example.com", LocalKey: &key.PublicKey, Client: &http.Client{Transport: &http.Transport{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	n.h.Register(mux)
+	srv := httptest.NewServer(contract.Middleware(v.Middleware(mux)))
+	t.Cleanup(srv.Close)
+	token := iss.Mint(issuer.Claims{Sub: "svc", Act: "alice"})
+	u, _ := url.Parse(srv.URL)
+	u.User = url.UserPassword("x", token)
+	work := clone(t, u.String()+"/r/"+repoA+".git")
+	_ = os.WriteFile(filepath.Join(work, "a.txt"), []byte("a"), 0o644)
+	mustGit(t, work, "add", "a.txt")
+	mustGit(t, work, "commit", "-q", "-m", "a")
+	n.authz.ClearRequests()
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	reqs := n.authz.Requests()
+	if len(reqs) == 0 {
+		t.Fatal("the authorizer was not asked")
+	}
+	for _, r := range reqs {
+		if r.Subject != "alice" || r.Actor != "svc" || r.Repo.ID != repoA || r.Action != "write" {
+			t.Fatalf("authorizer request: %+v", r)
+		}
+	}
+	ix, _, _ := n.log.Newest(context.Background(), repoA, 0, false)
+	rc, _, _ := store.Get(context.Background(), n.log.RepoPrefix(repoA)+ix.Entry, "")
+	hdr, _, _, err := wal.ReadEntryHead(rc)
+	_ = rc.Close()
+	if err != nil || hdr.Subject != "alice" || hdr.Actor != "svc" {
+		t.Fatalf("entry header: %+v, %v", hdr, err)
+	}
+	// Without a token git is refused with the challenge on info/refs.
+	resp, err := srv.Client().Get(srv.URL + "/r/" + repoA + ".git/info/refs?service=git-upload-pack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 || resp.Header.Get("WWW-Authenticate") == "" {
+		t.Fatalf("no token: %d", resp.StatusCode)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a handler without a guard")
+		}
+	}()
+	New(Options{Cache: n.cache})
 }

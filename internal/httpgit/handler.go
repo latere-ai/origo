@@ -32,7 +32,6 @@ import (
 	"syscall"
 	"time"
 
-	"latere.ai/x/pkg/httpjson"
 	"latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/auth"
@@ -44,6 +43,9 @@ import (
 // Options configures the handler.
 type Options struct {
 	Cache *repo.Cache
+	// Guard decides every request before the repository is looked up;
+	// required.
+	Guard *auth.Guard
 	// Timeout bounds one git subprocess. 5 minutes by default.
 	Timeout time.Duration
 	Logger  *slog.Logger
@@ -54,6 +56,7 @@ type Options struct {
 type Handler struct {
 	cache   *repo.Cache
 	log     *wal.Log
+	guard   *auth.Guard
 	timeout time.Duration
 	logger  *slog.Logger
 
@@ -64,7 +67,10 @@ type Handler struct {
 
 // New builds the handler.
 func New(o Options) *Handler {
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), timeout: o.Timeout, logger: o.Logger}
+	if o.Guard == nil {
+		panic("httpgit: the handler needs a guard")
+	}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, timeout: o.Timeout, logger: o.Logger}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
 	}
@@ -94,21 +100,34 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	}
 }
 
-// resolve maps the request path to a repository id.
-func (h *Handler) resolve(w http.ResponseWriter, r *http.Request) (string, bool) {
+// resolve maps the request path to a repository and asks the guard for
+// the action before anything of the repository is read (spec 007,
+// authorization before lookup). The id form sends the id from the path;
+// the name form first resolves the name, because an authorizer keys on
+// the id, and sends the owner and slug alone when it did not resolve.
+// So a deny is 403 whether or not the repository exists, and 404 is
+// answered only to a caller the authorizer allowed.
+func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Action) (string, bool) {
+	var ref auth.RepoRef
 	if id := r.PathValue("id"); id != "" {
-		return strings.TrimSuffix(id, ".git"), true
-	}
-	id, err := h.log.Resolve(r.Context(), r.PathValue("owner"), strings.TrimSuffix(r.PathValue("slug"), ".git"))
-	if err != nil {
-		if errors.Is(err, wal.ErrNotFound) {
-			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
-		} else {
+		ref.ID = strings.TrimSuffix(id, ".git")
+	} else {
+		ref.Owner, ref.Slug = r.PathValue("owner"), strings.TrimSuffix(r.PathValue("slug"), ".git")
+		id, err := h.log.Resolve(r.Context(), ref.Owner, ref.Slug)
+		if err != nil && !errors.Is(err, wal.ErrNotFound) {
 			h.storageError(w, r, err)
+			return "", false
 		}
+		ref.ID = id
+	}
+	if !h.guard.Allow(w, r, ref, action) {
 		return "", false
 	}
-	return id, true
+	if ref.ID == "" {
+		contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"owner": ref.Owner, "slug": ref.Slug})
+		return "", false
+	}
+	return ref.ID, true
 }
 
 // acquire opens the repository for the request and maps the refusals.
@@ -117,7 +136,7 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
-			httpjson.WriteError(w, http.StatusNotFound, httpjson.Error{Code: contract.CodeRepoNotFound, Message: "repository not found"})
+			contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"id": id})
 		default:
 			h.storageError(w, r, err)
 		}
@@ -128,7 +147,7 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	h.logger.ErrorContext(r.Context(), "repository unavailable", "path", r.URL.Path, "error", err)
-	httpjson.WriteError(w, http.StatusServiceUnavailable, httpjson.Error{Code: contract.CodeStorageUnavailable, Message: "repository unavailable"})
+	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
 }
 
 // gitCommand builds a git service subprocess against the repository
@@ -148,11 +167,16 @@ func (h *Handler) gitCommand(ctx context.Context, r *http.Request, rp *repo.Repo
 // infoRefs advertises references for the requested service.
 func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 	service := r.URL.Query().Get("service")
-	if service != "git-upload-pack" && service != "git-receive-pack" {
-		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: "smart HTTP only: service must be git-upload-pack or git-receive-pack"})
+	action := auth.ActionRead
+	switch service {
+	case "git-upload-pack":
+	case "git-receive-pack":
+		action = auth.ActionWrite
+	default:
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "smart HTTP only: service must be git-upload-pack or git-receive-pack", "field": "service"})
 		return
 	}
-	id, ok := h.resolve(w, r)
+	id, ok := h.resolve(w, r, action)
 	if !ok {
 		return
 	}
@@ -179,7 +203,7 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 
 // uploadPack serves a fetch or clone.
 func (h *Handler) uploadPack(w http.ResponseWriter, r *http.Request) {
-	id, ok := h.resolve(w, r)
+	id, ok := h.resolve(w, r, auth.ActionRead)
 	if !ok {
 		return
 	}
@@ -190,7 +214,7 @@ func (h *Handler) uploadPack(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	body, closeBody, err := requestBody(r)
 	if err != nil {
-		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": err.Error()})
 		return
 	}
 	defer closeBody()
@@ -225,7 +249,7 @@ func requestBody(r *http.Request) (io.Reader, func(), error) {
 // over the transaction, the entry is committed, and only then does the
 // hook let git update the references.
 func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
-	id, ok := h.resolve(w, r)
+	id, ok := h.resolve(w, r, auth.ActionWrite)
 	if !ok {
 		return
 	}
@@ -237,13 +261,13 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 
 	spool, err := spoolBody(r, h.cache.SpoolDir())
 	if err != nil {
-		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": err.Error()})
 		return
 	}
 	defer func() { _ = spool.Close(); _ = os.Remove(spool.Name()) }()
 	req, err := parseReceive(spool)
 	if err != nil {
-		httpjson.WriteError(w, http.StatusBadRequest, httpjson.Error{Code: contract.CodeInvalid, Message: err.Error()})
+		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": err.Error()})
 		return
 	}
 	if err := installHook(rp.Dir); err != nil {
@@ -314,7 +338,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		h.pushes.Inc(nil)
-		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()))
+		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()), "actor", auth.Actor(r.Context()))
 	}
 }
 
@@ -327,7 +351,7 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 		return nil, "reject " + contract.CodeStorageUnavailable + ": " + err.Error()
 	}
 	entry := wal.Entry{
-		Kind: wal.KindPush, Subject: auth.Subject(ctx), Refs: refs, Pack: pack,
+		Kind: wal.KindPush, Subject: auth.Subject(ctx), Actor: auth.Actor(ctx), Refs: refs, Pack: pack,
 		PushOptions: req.Options,
 	}
 	committed, err := h.log.Commit(ctx, id, rp.Index, entry, func(ctx context.Context, ix *wal.Index) error {
