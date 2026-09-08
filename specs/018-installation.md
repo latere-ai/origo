@@ -10,7 +10,7 @@ depends_on:
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/017-release-and-versioning.md
   - specs/021-conformance-suite.md
-affects: [deploy/, docs/install.md, docs/configuration.md, cmd/origod/, internal/config/, Makefile, .github/workflows/]
+affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, cmd/origod/, internal/config/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
 updated: 2026-09-08
@@ -172,6 +172,22 @@ it first.
 002's table, its default, its constraints, and which subsystem reads it.
 The install document links to it and never restates a value.
 
+### API reference
+
+`docs/api.md`, the page `docs/README.md` lists for a consumer, is the
+second output of `make docs` and this spec's: the endpoint table, the
+header table, and the code table with each code's status and sentence,
+rendered by `tools/apidoc`, a Go program in its own module beside
+`tools/specindex`, from the same cross-reference data `specindex`
+parses out of the specs (the tables whose first header is `Method` and
+`Path`, `Header`, or `Code`), grouped by the spec that owns each row
+with a link to it, so the page never carries a name the specs do not
+define. `make docs` runs `cd tools/apidoc && go run . -write` after
+the configuration page, and the verify workflow compares both pages
+byte for byte, so a spec change that moves a table shows up as a
+documentation diff on the same push. The page states the contract
+number of spec 003 at its top and nothing a spec does not state.
+
 ### The install document
 
 `docs/install.md`: requirements, the five steps (create the bucket,
@@ -225,8 +241,13 @@ binary artifact of spec 017.
   everything in place against `pkg/s3/s3test` and the stubs of spec 013
   it prints seven `ok` lines and exits 0 (proposed: `cmd/origod`,
   `TestCheckReportsEachRequirement`).
-- `make docs` regenerates `docs/configuration.md` byte-identical in the
-  verify workflow (proposed: `internal/config`, `TestConfigurationDocIsCurrent`).
+- `make docs` regenerates `docs/configuration.md` and `docs/api.md`
+  byte-identical in the verify workflow, and `docs/api.md` carries
+  every endpoint, header, and code the cross-reference of
+  `specs/README.md` lists and no other (proposed: `internal/config`,
+  `TestConfigurationDocIsCurrent`; `tools/apidoc`,
+  `TestAPIDocIsCurrent`, which reads the specs and the page through a
+  test-only constant resolved from its own source file).
 - A maintainer following `docs/install.md` on a fresh kind cluster
   reaches a successful push without consulting any other document: a
   release checklist item of spec 017, done once per release by hand and
