@@ -364,12 +364,21 @@ func (c *Cache) Acquire(ctx context.Context, id string, write bool) (*Repo, func
 			r.lock.RUnlock()
 		}
 	}
-	err := c.sync(ctx, r, write)
+	newest, err := c.sync(ctx, r, write)
 	if errors.Is(err, errNeedsWrite) {
 		// A reader found the copy behind: upgrade, catch up, downgrade.
+		// The index the check read is applied as it is when the copy
+		// did not move while the reader waited for the write lock,
+		// which is the common case, so a catch-up costs one check;
+		// otherwise the check runs again under the lock.
+		seq, local := r.Seq, r.Local
 		r.lock.RUnlock()
 		r.lock.Lock()
-		err = c.sync(ctx, r, true)
+		if newest != nil && r.Seq == seq && r.Local == local {
+			err = c.applyNewest(ctx, r, newest)
+		} else {
+			_, err = c.sync(ctx, r, true)
+		}
 		r.lock.Unlock()
 		r.lock.RLock()
 	}
@@ -382,29 +391,41 @@ func (c *Cache) Acquire(ctx context.Context, id string, write bool) (*Repo, func
 
 var errNeedsWrite = errors.New("repo: catch-up needs the write lock")
 
+// applyNewest brings the copy to the newest index under the write lock,
+// or evicts it when the index marks the repository deleted.
+func (c *Cache) applyNewest(ctx context.Context, r *Repo, newest *wal.Index) error {
+	if newest.DeletedAt != nil {
+		c.evict(r)
+		r.Index = newest
+		return ErrDeleted
+	}
+	return c.Apply(ctx, r, newest)
+}
+
 // sync runs the currency check and applies what the local copy lacks.
-// Without the write lock it only reports whether work is needed.
-func (c *Cache) sync(ctx context.Context, r *Repo, write bool) error {
+// Without the write lock it only reports whether work is needed, with
+// the newer index it read so the caller applies it under the lock.
+func (c *Cache) sync(ctx context.Context, r *Repo, write bool) (*wal.Index, error) {
 	if r.Index != nil && r.Local && write && c.fsckEvery > 0 {
 		r.opens++
 		if r.opens%c.fsckEvery == 0 {
 			if err := c.Verify(ctx, r); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	newest, changed, err := c.log.Newest(ctx, r.ID, r.Seq, r.Local)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
-			return ErrNotFound
+			return nil, ErrNotFound
 		}
-		return err
+		return nil, err
 	}
 	if !changed && r.Index == nil {
 		// A local copy from a previous process: its index object is
 		// read once so a commit has a base.
 		if !write {
-			return errNeedsWrite
+			return nil, errNeedsWrite
 		}
 		ix, err := c.log.ReadIndex(ctx, r.ID, r.Seq)
 		switch {
@@ -422,29 +443,24 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) error {
 			newest, changed, err = c.log.Newest(ctx, r.ID, 0, false)
 			if err != nil {
 				if errors.Is(err, wal.ErrNotFound) {
-					return ErrNotFound
+					return nil, ErrNotFound
 				}
-				return err
+				return nil, err
 			}
 		default:
-			return err
+			return nil, err
 		}
 	}
 	if !changed {
 		if r.Index.DeletedAt != nil {
-			return ErrDeleted
+			return nil, ErrDeleted
 		}
-		return nil
+		return nil, nil
 	}
 	if !write {
-		return errNeedsWrite
+		return newest, errNeedsWrite
 	}
-	if newest.DeletedAt != nil {
-		c.evict(r)
-		r.Index = newest
-		return ErrDeleted
-	}
-	return c.Apply(ctx, r, newest)
+	return nil, c.applyNewest(ctx, r, newest)
 }
 
 // Apply brings the local copy to ix: packs first, then every entry above

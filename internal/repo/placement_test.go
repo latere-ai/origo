@@ -276,3 +276,40 @@ func TestCopiesAndHeldFollowTheLifecycle(t *testing.T) {
 		}
 	}
 }
+
+// TestReaderUpgradeAppliesTheIndexItRead: a reader whose currency check
+// finds a newer index applies that index once it holds the write lock,
+// paying one check and one read of the index, not two; a reader whose
+// copy moved while it waited runs the check again.
+func TestReaderUpgradeAppliesTheIndexItRead(t *testing.T) {
+	h := newHarness(t)
+	c1 := h.src.Commit("a.txt", "one", "first")
+	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
+	_, release := h.acquire(false)
+	release()
+	c2 := h.src.Commit("a.txt", "two", "second")
+	h.push("refs/heads/main", c1, c2, h.src.Pack(c2, c1))
+	// HEAD index/2 (200), the hint, HEAD index/3 (404): two HEADs and
+	// the index and entry reads, once.
+	h.store.Calls["Head"], h.store.Calls["Get"] = 0, 0
+	r, release := h.acquire(false)
+	release()
+	if r.Seq != 2 || h.store.Calls["Head"] != 2 || h.store.Calls["Get"] != 3 {
+		t.Fatalf("catch-up: seq %d, %d HEADs, %d GETs", r.Seq, h.store.Calls["Head"], h.store.Calls["Get"])
+	}
+	// A deletion found by a reader is applied under the lock the same way.
+	c3 := h.src.Commit("a.txt", "three", "third")
+	h.push("refs/heads/main", c2, c3, h.src.Pack(c3, c2))
+	e := wal.Entry{Kind: wal.KindDelete, Deleted: true}
+	del, err := h.log.Commit(context.Background(), repoA, h.held, e, func(context.Context, *wal.Index) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.held = del.Index
+	if _, _, err := h.cache.Acquire(context.Background(), repoA, false); !errors.Is(err, ErrDeleted) {
+		t.Fatalf("deleted: %v", err)
+	}
+	if _, ok := h.cache.Held(repoA); ok {
+		t.Fatal("a deleted copy is held")
+	}
+}
