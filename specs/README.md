@@ -364,7 +364,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 018 |
+| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 013, 018 |
 | variable | `ORIGO_RELEASE_DEPLOY` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
