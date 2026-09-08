@@ -98,6 +98,11 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.S3PathStyle || cfg.CacheBytes != 0 || cfg.OIDCInsecureIssuers != nil || cfg.Failpoint != "" {
 		t.Fatalf("unexpected optional values: %+v", cfg)
 	}
+	// The endpoint LFS clients reach is the bucket's own by default
+	// (spec 010).
+	if cfg.S3PublicEndpoint != cfg.S3Endpoint {
+		t.Fatalf("S3PublicEndpoint = %q, want %q", cfg.S3PublicEndpoint, cfg.S3Endpoint)
+	}
 	if len(cfg.OIDCIssuers) != 1 || cfg.AuthorizerURL != "https://authz.example" || cfg.TokenKey == nil || cfg.TokenKey.Curve != elliptic.P256() {
 		t.Fatalf("spec 007 values: %+v", cfg)
 	}
@@ -122,12 +127,16 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_FAILPOINT"] = "commit.before-index"
 	m["ORIGO_REPAIR_INTERVAL"] = "10s"
 	m["ORIGO_REPAIR_UNHEARD"] = "5s"
+	m["ORIGO_S3_PUBLIC_ENDPOINT"] = "http://localhost:30900"
 	cfg, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !cfg.S3PathStyle || cfg.DataDir != "/data/origo" || cfg.CacheBytes != 1024 {
 		t.Fatalf("storage values: %+v", cfg)
+	}
+	if cfg.S3PublicEndpoint != "http://localhost:30900" {
+		t.Fatalf("S3PublicEndpoint = %q", cfg.S3PublicEndpoint)
 	}
 	if len(cfg.OIDCIssuers) != 2 || cfg.OIDCIssuers[0] != "https://a.example" || cfg.OIDCIssuers[1] != "https://b.example" {
 		t.Fatalf("OIDCIssuers = %q", cfg.OIDCIssuers)

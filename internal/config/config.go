@@ -50,6 +50,11 @@ type Config struct {
 	S3Key       string
 	S3Secret    string
 	S3PathStyle bool
+	// S3PublicEndpoint is the bucket endpoint LFS clients can reach; the
+	// presigned URLs of spec 010 are signed against it. S3Endpoint when
+	// unset, which is the deployment where the node and the client see
+	// the bucket at the same name.
+	S3PublicEndpoint string
 
 	// DataDir holds the repository cache. It must be a local disk.
 	DataDir string
@@ -136,6 +141,7 @@ func Load(getenv Getenv) (*Config, error) {
 		GossipAddr:      orDefault(getenv("ORIGO_GOSSIP_ADDR"), DefaultGossipAddr),
 		Failpoint:       getenv("ORIGO_FAILPOINT"),
 	}
+	cfg.S3PublicEndpoint = orDefault(getenv("ORIGO_S3_PUBLIC_ENDPOINT"), cfg.S3Endpoint)
 	if getenv("ORIGO_DEV_TOKEN") != "" {
 		problems = append(problems, "ORIGO_DEV_TOKEN is no longer read; remove it")
 	}
