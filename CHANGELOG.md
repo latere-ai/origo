@@ -79,3 +79,13 @@ committed: the commit log already holds that.
 - `make test-integration` runs the store suite against MinIO and the
   end-to-end suite: push, wipe the disk, clone; two nodes pushing
   different branches at once; a node killed mid-push.
+- Three defects of the write-ahead log (spec 004) are fixed. A pack
+  produced by compaction or an import is written on disk as
+  `pack-<hash>.pack`, the name git reads; it was written under the log
+  key's base name, on disk and invisible to git. A local copy fetches
+  every listed pack it is missing whatever it already holds, so a copy
+  that lost a pack file is restored on its next open instead of served
+  from an incomplete object store. `size_bytes` of a repository is what
+  the log holds: a compaction sets it to the bytes of its packs and a
+  push adds its own, so the figure falls after a compaction and the
+  quota and `stats` count bytes that exist.

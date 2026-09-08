@@ -46,35 +46,32 @@ both, and versioning refuses no write. `pkg/s3` has no `If-Match` and its
 fake answers 412 to one, so a compare-and-swap cannot enter the design
 unnoticed. The Outcome lists what is verified and what is not.
 
-Defects against the Design found by review, for the builder:
+Defects against the Design found by review, all four fixed on
+2026-09-08; each fix carries the test the Outcome names:
 
-- `repo.Cache.Apply` fetches the packs the index lists only when the
-  copy is fresh or its sequence is below `compacted_through`; the
-  Materialization section says every listed pack missing under
-  `objects/pack/` is fetched whatever the copy holds, because a copy
-  that lost a pack file, or one that followed a compaction whose
-  `compacted_through` its sequence already passed, is otherwise served
-  from an incomplete object store.
-- `repo.Cache.fetchPack` writes a fetched pack as `<hash>.pack` and
-  `<hash>.idx`, the log key's base name; git reads only files named
-  `pack-<hash>.pack` under `objects/pack/`, so a fetched pack is on disk
-  and invisible. The mapping in the Objects table is the rule:
-  `packs/<hash>.pack` in the log is `pack-<hash>.pack` on disk.
-  `TestCompactionPacksAreFetched` accepts either file name, which is
-  why it passes.
-- Fixed by spec 009 on 2026-09-08: the index object carried no
-  `pushed_at`. `wal.Index` carries it, `Log.nextIndex` sets it as the
-  Index object section below says, and `ParseIndex` accepts its
-  absence, so `GET /v1/repos/{id}` (spec 009) and `stats` (spec 019)
-  read one field instead of the newest entry's header.
-- `size_bytes` accumulates monotonically: `Log.nextIndex` does
-  `next.SizeBytes += e.Pack.Size` for every kind, a `compact` entry
-  included, so the figure never falls after a compaction and counts
-  bytes the sweeper has deleted. The Index object section below
-  defines it as what the log holds; `nextIndex` sets it on a `compact`
-  entry to the bytes of the packs the entry lists, which the writer
-  passes as `Entry.PacksBytes`, and adds `pack_bytes` on every other
-  kind. Spec 012's quota and spec 019's `stats` read the defined
+- `repo.Cache.Apply` fetched the packs the index lists only when the
+  copy was fresh or its sequence was below `compacted_through`, so a
+  copy that lost a pack file, or one that followed a compaction whose
+  `compacted_through` its sequence already passed, was served from an
+  incomplete object store. It now fetches every listed pack missing
+  under `objects/pack/` whatever the copy holds, as the Materialization
+  section says; a pack on disk costs one `stat`.
+- `repo.Cache.fetchPack` wrote a fetched pack as `<hash>.pack` and
+  `<hash>.idx`, the log key's base name, which git never opens, so a
+  fetched pack was on disk and invisible. It now writes
+  `pack-<hash>.idx` then `pack-<hash>.pack` through `wal.PackFile`, the
+  mapping of the Objects table in one function.
+- Fixed by spec 009: the index object carried no `pushed_at`.
+  `wal.Index` carries it, `Log.nextIndex` sets it as the Index object
+  section below says, and `ParseIndex` accepts its absence, so `GET
+  /v1/repos/{id}` (spec 009) and `stats` (spec 019) read one field
+  instead of the newest entry's header.
+- `size_bytes` accumulated `pack_bytes` on every kind, a `compact`
+  entry included, so the figure never fell after a compaction and
+  counted bytes the sweeper had deleted. `Entry` carries `PacksBytes`,
+  and `Log.nextIndex` sets `size_bytes` to it on a `compact` entry and
+  adds `pack_bytes` on every other kind, the definition of the Index
+  object section; spec 012's quota and spec 019's `stats` read that
   figure, and spec 019's `TestClusterGcBoundsStorage` passes only with
   it.
 
@@ -107,7 +104,7 @@ keys sort in sequence order under a listing, and the largest sequence
 | `wal/<seq>.<nonce>.entry` | one push, compaction, or delete: header, reference transaction, pack; immutable; `<nonce>` 16 hex characters |
 | `index/<seq>` | the state after entry `seq`; immutable; created once by `If-None-Match: *`; `index/000000000000` is created with the repository, names no entry, and holds `HEAD` on the default branch |
 | `index/latest` | `{"seq": n}`, a hint written unconditionally after each commit; may lag or go backwards; never leads correctness |
-| `packs/<hash>.pack`, `packs/<hash>.idx` | packs produced by compaction (spec 006) or an import (spec 019), `<hash>` 40 to 64 hex characters: git's own pack checksum, the one git puts in the file name. The mapping between the log and a local copy is fixed here and referenced by every spec that moves a pack: the log key `packs/<hash>.pack` is the file `objects/pack/pack-<hash>.pack` on disk, and `packs/<hash>.idx` is `pack-<hash>.idx`; a pack is uploaded under the hash of its file name and written back under the name git gave it, so a pack keeps one name everywhere |
+| `packs/<hash>.pack`, `packs/<hash>.idx` | packs produced by compaction (spec 006) or an import (spec 019), `<hash>` 40 to 64 hex characters: git's own pack checksum, the one git puts in the file name. The mapping between the log and a local copy is fixed here and referenced by every spec that moves a pack: the log key `packs/<hash>.pack` is the file `objects/pack/pack-<hash>.pack` on disk, and `packs/<hash>.idx` is `pack-<hash>.idx`, the function `wal.PackFile`; a pack is uploaded under the hash of its file name and written back under the name git gave it, so a pack keeps one name everywhere |
 
 The name `origo/names/<owner>/<slug>` holds the id and is created by
 `If-None-Match: *`, so two repositories cannot take one name and a rename
@@ -395,22 +392,42 @@ the specs that build on this one start meanwhile.
 ## Outcome
 
 Phase 1 shipped the log on 2026-09-06 as the Current state describes.
-The first seven criteria have passing tests in the tree; the eighth and
-ninth wait for the jobs of spec 013 and the packs of spec 006, which is
-why the spec stays at testing, and the tenth is a release checklist
-item of spec 017. Spec 013 renames the end-to-end tests with the
+The first seven criteria have passing tests in the tree; the tests the
+eighth and ninth name are not, which is why the spec stays at testing,
+and the tenth is a release checklist item of spec 017. Spec 013 renames the end-to-end tests with the
 `TestE2E` prefix its job regex selects; the names above are the renamed
-ones. Three of the four defects the Current state records are open and are
-builder items of this spec, no other spec builds them, fixed before it
-moves on: `TestCommitWritesOneEntryAndOneIndex` gains the assertion
-that a `compact` entry sets `size_bytes` to `Entry.PacksBytes` and a
-following push adds its `pack_bytes` to that (the `size_bytes`
-defect), `TestCompactionPacksAreFetched` gains the assertion that the
-fetched files are named `pack-<hash>.pack` and that `git verify-pack`
-reads them (the pack file name defect), and a new
-`TestPacksAreFetchedForACurrentCopy` removes a pack file from a
-current copy and asserts the next apply restores it (the pack fetch
-condition defect). The fourth, `pushed_at`, is fixed, below.
+ones.
+
+The four defects the Current state records are fixed, each with a test
+that fails without the fix. Three were fixed on 2026-09-08 by this
+spec, one commit each:
+
+- `size_bytes`: `Entry.PacksBytes` is new, a `compact` commit sets
+  `size_bytes` to it, every other kind adds `pack_bytes`.
+  `TestCommitWritesOneEntryAndOneIndex` asserts the sum over three
+  pushes, that a `delete` and an empty `push` add 0, that a compaction
+  falls to `PacksBytes`, that the next push adds its own `pack_bytes`
+  to that, and that a negative `PacksBytes` is refused before any
+  object is created. `internal/api` is the one reader of the field and
+  serves the defined figure without a change.
+- The pack file name: `fetchPack` writes `pack-<hash>.idx` then
+  `pack-<hash>.pack` through `wal.PackFile`, the mapping of the Objects
+  table in one function for spec 006's upload and spec 019's import
+  (`TestPackFileMapsTheLogKeyToTheFileGitReads`).
+  `TestCompactionPacksAreFetched` asserts the exact names, that the log
+  key's base name is not written, that `git verify-pack` reads the
+  file, and that a copy built from the compaction pack alone passes
+  `git fsck` with one pack on disk; it accepted either name before.
+- The pack fetch condition: `Apply` fetches every listed pack missing
+  under `objects/pack/` whatever the copy holds. The new
+  `TestPacksAreFetchedForACurrentCopy` builds a copy from the
+  compaction pack alone, removes the pack file, commits a push with no
+  pack, and asserts the next apply restores the file with two `GET`s,
+  `git fsck` passes, and a further apply pays no `GET` for a pack on
+  disk. Without the fix git refuses the reference write for a
+  nonexistent object.
+
+The fourth, `pushed_at`, is fixed by spec 009, below.
 
 Measurements, one node on an Apple silicon laptop against MinIO in a
 podman virtual machine (`test/e2e`, `TestMeasure` with
@@ -436,10 +453,15 @@ The `pushed_at` defect was fixed by spec 009 on 2026-09-08:
 entry's `at`, every other commit copies it forward, index 0 holds
 null, and `ParseIndex` accepts its absence, which reads as null
 (`TestCommitWritesOneEntryAndOneIndex`, `TestParseIndex`). A `delete`
-records the same `at` as its entry's header. So the spec is at
-`testing` on: the three defects above (this spec), the eighth and
-ninth criteria (spec 013's jobs and spec 006's packs), and the tenth
-(spec 017's release checklist).
+records the same `at` as its entry's header. With every defect fixed,
+what holds the spec at `testing` is the three deferred criteria. Spec
+013 is complete and its jobs are green on main, so the tier each test
+runs in exists; the tests do not.
+`TestE2EHundredConcurrentPushesFromEightClients` (the eighth) is
+written in `test/e2e` and runs in the `e2e` job;
+`TestSlowMaterializeTenThousandEntries` (the ninth) needs the packs of
+spec 006 and runs in the `e2e-slow` job; the tenth is spec 017's
+release checklist recording the Spaces probe.
 
 Divergences from the first draft, all kept and now in the Design:
 
