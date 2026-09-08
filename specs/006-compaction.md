@@ -1,6 +1,6 @@
 ---
 title: "Compaction: primary-only repacks and log truncation"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -392,4 +392,8 @@ Items for other specs:
   in this repository, not in a generic package.
 
 The two stack criteria are proved by the `e2e` job of spec 013; the
-kind stack cannot run on this machine.
+kind stack cannot run on this machine. That job is green on `main` at
+`ef6d945` (run 34257319187), with every other job, and the spec is
+complete. The `build` and `race` jobs of the first attempt failed on
+the module proxy answering `INTERNAL_ERROR` to two downloads and were
+re-run.
