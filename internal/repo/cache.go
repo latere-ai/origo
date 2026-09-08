@@ -57,11 +57,20 @@ type Options struct {
 	// (spec 005, materialization budget). DefaultWorkers when zero.
 	Workers int
 	// Now is the clock the last-acquired times of the copies run on,
-	// which the evictor of spec 005 ranks by. The wall clock by default.
-	Now     func() time.Time
-	Logger  *slog.Logger
-	Metrics *metrics.Set
+	// which the evictor of spec 005 ranks by, and the last-check times
+	// the stale bound of spec 015 runs on. The wall clock by default.
+	Now func() time.Time
+	// StaleMax is ORIGO_STALE_MAX (spec 015): how long a warm copy is
+	// served without a currency check while the read breaker is open,
+	// measured from the last check that answered. DefaultStaleMax when
+	// zero.
+	StaleMax time.Duration
+	Logger   *slog.Logger
+	Metrics  *metrics.Set
 }
+
+// DefaultStaleMax is ORIGO_STALE_MAX's default.
+const DefaultStaleMax = 5 * time.Minute
 
 // DefaultWorkers is the number of concurrent entry workers of Apply.
 const DefaultWorkers = 4
@@ -74,6 +83,7 @@ type Cache struct {
 	fsckEvery int
 	workers   int
 	now       func() time.Time
+	staleMax  time.Duration
 	logger    *slog.Logger
 	// maxBatchEntries and maxBatchBytes are the batch bounds of
 	// applyEntries, the constants below; a test lowers them.
@@ -90,6 +100,8 @@ type Cache struct {
 	applied      *pkgmetrics.Counter
 	rebuilt      *pkgmetrics.Counter
 	materialize  *pkgmetrics.Histogram
+	stale        *pkgmetrics.Counter
+	integrity    *pkgmetrics.Counter
 }
 
 // Repo is one materialized repository. Seq and Index describe the state
@@ -116,7 +128,26 @@ type Repo struct {
 	// as UnixNano. The evictor of spec 005 ranks copies by both.
 	bytes    atomic.Int64
 	acquired atomic.Int64
+	// checked is the time of the last currency check that answered,
+	// as UnixNano, written by Acquire on every check that answers and
+	// read by Lease when the read breaker is open to decide whether the
+	// copy may be served stale (spec 015). An evicted copy has none.
+	checked atomic.Int64
 }
+
+// Lease is one acquired repository: the copy, and whether it was served
+// without a currency check because the read breaker is open (spec 015),
+// with the time since the last check that answered, which the handler
+// sends as Origo-Stale in whole seconds.
+type Lease struct {
+	*Repo
+	Stale    bool
+	StaleFor time.Duration
+	release  func()
+}
+
+// Release unlocks the repository.
+func (l *Lease) Release() { l.release() }
 
 // Copy describes one local copy for the evictor of spec 005.
 type Copy struct {
@@ -177,12 +208,17 @@ func New(o Options) (*Cache, error) {
 	if now == nil {
 		now = time.Now
 	}
+	staleMax := o.StaleMax
+	if staleMax <= 0 {
+		staleMax = DefaultStaleMax
+	}
 	c := &Cache{
 		dir: o.Dir, log: o.Log, git: &Git{Bin: path, Home: home, Timeout: timeout},
-		fsckEvery: fsckEvery, workers: workers, now: now, logger: logger, repos: map[string]*Repo{},
+		fsckEvery: fsckEvery, workers: workers, now: now, staleMax: staleMax, logger: logger, repos: map[string]*Repo{},
 		maxBatchEntries: MaxBatchEntries, maxBatchBytes: MaxBatchBytes,
 		materialized: set.RepoMaterialized, applied: set.RepoEntriesApplied,
 		rebuilt: set.RepoRebuilt, materialize: set.RepoMaterialize,
+		stale: set.StaleResponses, integrity: set.LogIntegrityErrors,
 	}
 	if err := c.load(); err != nil {
 		return nil, err
@@ -344,10 +380,27 @@ func (c *Cache) get(id string) *Repo {
 // Acquire locks the repository for reading or writing and brings the
 // local copy current with the log before returning it. The release
 // function must be called when the caller is done. ErrNotFound and
-// ErrDeleted are the two refusals a handler turns into a 404.
+// ErrDeleted are the two refusals a handler turns into a 404. A reader
+// under an open read breaker may get a stale copy without knowing;
+// Lease is Acquire for a caller that must know.
 func (c *Cache) Acquire(ctx context.Context, id string, write bool) (*Repo, func(), error) {
+	l, err := c.Lease(ctx, id, write)
+	if err != nil {
+		return nil, nil, err
+	}
+	return l.Repo, l.Release, nil
+}
+
+// Lease is Acquire with the stale verdict of spec 015. When the read
+// breaker refuses the currency check, a reader of a warm copy whose
+// last check that answered is within StaleMax gets the copy marked
+// Stale; a cold copy, a copy past the bound, and every writer get the
+// refusal, wal.ErrStorageOpen, which the handlers map to 503
+// storage_unavailable: a write needs a current index object as its
+// base, so it is refused before it does any work.
+func (c *Cache) Lease(ctx context.Context, id string, write bool) (*Lease, error) {
 	if !wal.ValidID(id) {
-		return nil, nil, ErrNotFound
+		return nil, ErrNotFound
 	}
 	r := c.get(id)
 	r.acquired.Store(c.now().UnixNano())
@@ -382,10 +435,33 @@ func (c *Cache) Acquire(ctx context.Context, id string, write bool) (*Repo, func
 		r.lock.RLock()
 	}
 	if err != nil {
+		if lease, ok := c.staleLease(r, write, err, release); ok {
+			return lease, nil
+		}
 		release()
-		return nil, nil, err
+		return nil, err
 	}
-	return r, release, nil
+	return &Lease{Repo: r, release: release}, nil
+}
+
+// staleLease decides whether a refused check may be served from the
+// copy: the refusal is the read breaker's, the caller reads, the copy
+// is warm with an index and a last check that answered, and that check
+// is within StaleMax. The caller holds the lock.
+func (c *Cache) staleLease(r *Repo, write bool, err error, release func()) (*Lease, bool) {
+	if write || !errors.Is(err, wal.ErrStorageOpen) || !r.Local || r.Index == nil || r.Index.DeletedAt != nil {
+		return nil, false
+	}
+	checked := r.checked.Load()
+	if checked == 0 {
+		return nil, false
+	}
+	age := c.now().Sub(time.Unix(0, checked))
+	if age > c.staleMax {
+		return nil, false
+	}
+	c.stale.Inc(nil)
+	return &Lease{Repo: r, Stale: true, StaleFor: age, release: release}, true
 }
 
 var errNeedsWrite = errors.New("repo: catch-up needs the write lock")
@@ -420,6 +496,9 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) (*wal.Index, erro
 		}
 		return nil, err
 	}
+	// The check answered: the copy may be served stale from here for
+	// StaleMax once the breaker opens (spec 015).
+	r.checked.Store(c.now().UnixNano())
 	if !changed && r.Index == nil {
 		// A local copy from a previous process: its index object is
 		// read once so a commit has a base.
@@ -483,7 +562,7 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 	// on disk costs one stat.
 	for _, p := range ix.Packs {
 		if err := c.fetchPack(ctx, r, p); err != nil {
-			return err
+			return c.recordIntegrity(ctx, r, err)
 		}
 	}
 	var pending []wal.IndexEntry
@@ -493,6 +572,9 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 		}
 	}
 	if err := c.applyEntries(ctx, r, pending); err != nil {
+		if isIntegrity(err) {
+			return c.recordIntegrity(ctx, r, err)
+		}
 		if IsCorruption(err) {
 			c.rebuilt.Inc(nil)
 			c.evict(r)
@@ -511,6 +593,26 @@ func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
 	c.measure(r)
 	c.materialize.Observe(nil, time.Since(start).Seconds())
 	return nil
+}
+
+// isIntegrity reports whether err is a wal.IntegrityError.
+func isIntegrity(err error) bool {
+	var ie *wal.IntegrityError
+	return errors.As(err, &ie)
+}
+
+// recordIntegrity counts and logs an integrity error of the log (spec
+// 015) and returns it unchanged: the key is in the line for the operator
+// who restores the object, nothing is evicted, and the next request
+// materializes again. An error that is not one passes through.
+func (c *Cache) recordIntegrity(ctx context.Context, r *Repo, err error) error {
+	var ie *wal.IntegrityError
+	if !errors.As(err, &ie) {
+		return err
+	}
+	c.integrity.Inc(nil)
+	c.logger.ErrorContext(ctx, "log integrity error", "repo", r.ID, "key", ie.Key, "error", ie.Err)
+	return err
 }
 
 func (c *Cache) initBare(ctx context.Context, r *Repo) error {
@@ -554,7 +656,13 @@ func (c *Cache) fetchPack(ctx context.Context, r *Repo, key string) error {
 		return nil
 	}
 	for _, k := range []string{strings.TrimSuffix(key, ".pack") + ".idx", key} {
-		rc, _, err := c.log.Store().Get(ctx, c.log.RepoPrefix(r.ID)+k, "")
+		full := c.log.RepoPrefix(r.ID) + k
+		rc, _, err := c.log.Store().Get(ctx, full, "")
+		if errors.Is(err, wal.ErrNotFound) {
+			// A pack the index names is gone: corruption in the log,
+			// never an outage (spec 015).
+			return &wal.IntegrityError{Key: full, Err: err}
+		}
 		if err != nil {
 			return fmt.Errorf("repo: pack %s: %w", k, err)
 		}
@@ -718,17 +826,25 @@ func spooledThrough(ready []*spooled, from, to int) bool {
 // row, and spools its pack with its length and digest verified. An
 // entry with no pack spools nothing.
 func (c *Cache) spoolEntry(ctx context.Context, r *Repo, e wal.IndexEntry) *spooled {
-	rc, _, err := c.log.Store().Get(ctx, c.log.RepoPrefix(r.ID)+e.Key, "")
+	full := c.log.RepoPrefix(r.ID) + e.Key
+	// An entry the index names that is gone, does not parse, or carries
+	// another sequence, length, or digest than its row is corruption in
+	// the log (spec 015): an IntegrityError naming the key.
+	integrity := func(err error) *spooled { return &spooled{err: &wal.IntegrityError{Key: full, Err: err}} }
+	rc, _, err := c.log.Store().Get(ctx, full, "")
+	if errors.Is(err, wal.ErrNotFound) {
+		return integrity(err)
+	}
 	if err != nil {
 		return &spooled{err: fmt.Errorf("repo: entry %s: %w", e.Key, err)}
 	}
 	defer func() { _ = rc.Close() }()
 	h, _, pack, err := wal.ReadEntryHead(rc)
 	if err != nil {
-		return &spooled{err: err}
+		return integrity(err)
 	}
 	if h.Seq != e.Seq || h.Kind != e.Kind {
-		return &spooled{err: fmt.Errorf("repo: entry %s carries seq %d kind %s", e.Key, h.Seq, h.Kind)}
+		return integrity(fmt.Errorf("repo: entry carries seq %d kind %s, the index says %d %s", h.Seq, h.Kind, e.Seq, e.Kind))
 	}
 	if h.PackBytes == 0 {
 		return &spooled{}
@@ -749,11 +865,11 @@ func (c *Cache) spoolEntry(ctx context.Context, r *Repo, e wal.IndexEntry) *spoo
 		return fail(err)
 	}
 	if n != h.PackBytes || hex.EncodeToString(sum.Sum(nil)) != h.PackSHA256 {
-		return fail(fmt.Errorf("repo: pack of %d bytes with digest %s does not match the entry (%d bytes, %s)", n, hex.EncodeToString(sum.Sum(nil)), h.PackBytes, h.PackSHA256))
+		return fail(&wal.IntegrityError{Key: full, Err: fmt.Errorf("repo: pack of %d bytes with digest %s does not match the entry (%d bytes, %s)", n, hex.EncodeToString(sum.Sum(nil)), h.PackBytes, h.PackSHA256)})
 	}
 	var head [packHeaderSize]byte
 	if _, err := f.ReadAt(head[:], 0); err != nil || string(head[:4]) != "PACK" || binary.BigEndian.Uint32(head[4:8]) != 2 || n < packHeaderSize+packTrailerSize {
-		return fail(fmt.Errorf("repo: entry %s: the pack is not a version 2 packfile", e.Key))
+		return fail(&wal.IntegrityError{Key: full, Err: errors.New("repo: the pack is not a version 2 packfile")})
 	}
 	sp.count = binary.BigEndian.Uint32(head[8:12])
 	if err := f.Close(); err != nil {
@@ -970,6 +1086,7 @@ func (c *Cache) evict(r *Repo) {
 	r.Seq, r.Local, r.Index = 0, false, nil
 	r.setHeld()
 	r.bytes.Store(0)
+	r.checked.Store(0)
 }
 
 func writeAtomic(path string, src io.Reader) error {
