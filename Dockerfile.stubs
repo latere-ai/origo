@@ -14,7 +14,7 @@
 # git rather than the static distroless base the Latere template uses. The
 # base is pinned by digest: a tag can be moved by its owner, which turns the
 # base into a mutable input.
-ARG RUNTIME_BASE=docker.io/library/debian:bookworm-slim@sha256:6bd27d44e6c32a66bbd72d7cb2b76a8ae3497ec2e5274a81abd1b37f6013fa1f
+ARG RUNTIME_BASE=docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 # >>> end shared runtime base <<<
 
 ARG BUILDER_BASE=docker.io/library/golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b

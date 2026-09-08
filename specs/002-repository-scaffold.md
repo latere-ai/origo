@@ -338,3 +338,10 @@ Divergences from the first draft:
   connect timeout times the client's retries. Both now dial with a 10
   second bound (`cmd/origod`, `TestTransportsBoundTheDial`); spec 015's
   `ORIGO_STORAGE_TIMEOUT` bounds the whole operation once it lands.
+- A second defect fixed by spec 013 on 2026-09-08: the digests pinned
+  for `debian:bookworm-slim` in both Dockerfiles and for `minio/mc` in
+  `docker-compose.yml` were the `linux/arm64` manifests of a pull on an
+  Apple Silicon machine, not the multi-arch indexes, so a build or a run
+  on an `amd64` runner failed with `exec format error`. Every pin is now
+  the index digest, which resolves to the platform's manifest; the
+  `build` and `integration` jobs of `verify.yml` prove it on every push.
