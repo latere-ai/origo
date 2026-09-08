@@ -1,6 +1,6 @@
 ---
 title: "Repository administration: rename, transfer, freeze, delete, undelete, import, export, and garbage collection"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/003-protocol-contract.md

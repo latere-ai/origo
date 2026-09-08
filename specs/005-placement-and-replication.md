@@ -1,6 +1,6 @@
 ---
 title: "Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
