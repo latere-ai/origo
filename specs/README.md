@@ -228,7 +228,7 @@ deck and stated here so a reader sees them without the owning spec.
 | the kind overlay is a table of rows, each with the spec that needs it; the CI jobs select tests by name prefix (`TestE2E`, `TestCluster`, `TestSlow`) and reach the stack through `ORIGO_TEST_URL`; `up.sh` creates the cluster and applies the overlay, `down.sh` deletes it, `make dev-up` and `make dev-down` call them | 013 | 004, 005, 008, 015, 016, 021 |
 | the kind stack has no ingress controller; its ports table fixes every host port (origod balanced 30080, nodes 1 to 3 public 30180 to 30182 and internal 30190 to 30192 on the StatefulSet `origod-0` to `origod-2`, the stub issuer 30081, authorizer 30082, sink 30083, the TLS source 30084, the slow proxy 30085, MinIO 30900), the defaults of `ORIGO_TEST_URL` and `ORIGO_S3_PUBLIC_ENDPOINT` on the stack; a criterion names a node by its row, "node 1 of the ports table" | 013 | 005, 006, 010, 015, 017, 021 |
 | the stack's MinIO has fixed values (bucket `origo-test`, key and secret `minioadmin`, region `us-east-1`, path style, host port 30900) that the cluster jobs export as the `ORIGO_TEST_S3_ENDPOINT` family, read by a test that starts a node of its own, the fixture harness, and the `Fault` | 013 | 008, 017, 021 |
-| a cluster test changes the cluster only through `test/e2e/cluster` (`DeletePod`, `ApplyManifest`, `ApplyManifestExpectRefusal`, `HPAStatus`, `Apply`, `Get`), which shells out to `kubectl` on `PATH` under the job's kubeconfig; fault manifests live under `test/e2e/testdata/`, `hpa-2.yaml` written by 013 and `hpa-4.yaml` and `hpa-8.yaml` by 005; every cluster criterion names the function it uses | 013 | 005, 015, 016, 021 |
+| a cluster test changes the cluster only through `test/e2e/cluster` (`DeletePod`, `ApplyManifest`, `ApplyManifestExpectRefusal`, `HPAStatus`, `Apply`, `Get`), which shells out to `kubectl` on `PATH` under the job's kubeconfig; fault manifests live under `test/e2e/testdata/`, `hpa-2.yaml` written by 013 and `hpa-4.yaml`, `hpa-8.yaml`, and `hpa-scale.yaml` (3 to 8 replicas, for the autoscaler test, because 013 holds the overlay's own autoscaler at 3) by 005; every cluster criterion names the function it uses | 013 | 005, 015, 016, 021 |
 | 007 builds `test/stubs/issuer` and `test/stubs/authorizer`; 013 builds the sink, the contract stub, the TLS source stub, the binary, the overlay, and the jobs | 007, 013 | 014, 018, 019, 021 |
 | `tools/docs/run-blocks.sh` runs a document's `sh` blocks as its test | 013 | 014, 018 |
 | every event kind goes through `internal/events`: `Enqueue` for a `push` entry, `Emit` for a kind without a sequence, keyed `a-<uuid v5 of repo:kind:at>` so a repeated emit is one event; one delivery loop, retry schedule, dead-letter, cursor, and repair for all | 008 | 014, 018, 019 |
@@ -265,6 +265,9 @@ deck and stated here so a reader sees them without the owning spec.
 | a failpoint of `ORIGO_FAILPOINT` has no count: the node exits the first time the point is reached; a test that needs it on a later operation restarts the node under its name and data directory with it | 002 | 008, 021 |
 | an upload batch omits `actions` for an object the store holds, `lfs/verified/<oid>` present and naming the declared size, the batch API's rule; the quota counts a held object's bytes once | 010 | 021 |
 | `quota_bytes` for a repository-bound token is `auth.DefaultQuotaBytes` until 012 asks the authorizer for the minter's figure; 007's claim set carries no quota | 010, 012 | 007 |
+| truncation removes folded entries and superseded packs and never an index object, so `HEAD index/<n+1>` stays the currency check and its 404 stays proof of currency: a warm node holding index n below a truncation point would read the 404 left by a deleted `index/<n+1>` as current. One small object per push is the cheaper side of the trade; 006 removes the index rule `internal/wal/sweep.go` carries today | 006 | 004, 005, 015, 019 |
+| a thin pack whose base object is in no entry the log holds is served `storage_unavailable`, not `repository_unavailable`: a missing base is a storage-side inconsistency, not a state of the repository; `TestThinPackWithoutBaseIsStorageUnavailable` in `internal/repo` holds it | 015 | 003, 005, 021 |
+| `internal/tracing` is the one package that imports `go.opentelemetry.io/otel` and `otel/trace`; every other package takes its span helpers from there and `cmd/origod` reaches the SDK through `latere.ai/x/pkg/otel`. The SDK is the one direct dependency beside the standard library and `latere.ai/x/pkg`, which amends spec 001's seventh invariant, and `depcheck` holds the node's whole build list | 011 | 001, 002 |
 
 ## Applied fix lists
 
@@ -339,6 +342,23 @@ delivery rule and the bound on a suppressed entry's re-read; 002
 states that a failpoint has no count; 011 and 012 carry one builder
 item each from 010.
 
+The thirteenth round, on 005 at `complete`: 005's Design states what
+was built as its rule, so the Outcome's divergences no longer answer a
+question the Design answers differently, the batched `index-pack` with
+its figures and the duplicate-base fallback, the header on a refused
+request in each form, the evictor's `TryLock`, the gossip `Bind` and
+`Run`, the kind overlay's 50m CPU request, and `deploy/prod`'s
+autoscaler; its criteria name `hpa-scale.yaml`, the protocol version 1
+`ls-remote`, and the batches in place of the retry the batching
+removed. The two open items are settled: truncation never removes an
+index object, so the currency check stays `HEAD index/<n+1>` (006, with
+004's Sweeper table and a criterion of its own), and a thin pack whose
+base is in no entry is `storage_unavailable` (015, with a criterion of
+its own). 011 names the six packages that registered metrics and makes
+`internal/tracing` the one importer of the OpenTelemetry SDK; 001's
+seventh invariant is amended to name the SDK and its Outcome records
+why. Three decision rows and the `latere.ai/x/pkg` items below are new.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -351,6 +371,16 @@ consumer needs it.
   it out).
 - A shallow first import with a later deepen, for a repository larger
   than one import budget (spec 014 scopes it out).
+
+## Items for `latere.ai/x/pkg`
+
+Gaps a spec met in the shared library and worked around here. Each is
+carried to that module's own queue; the workaround stays until it lands.
+
+| Item | Found by | Workaround here |
+|---|---|---|
+| `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
+| `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library | 011 | `internal/tracing` is the one importer, the decision row above |
 
 ## Open source readiness
 
