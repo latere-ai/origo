@@ -25,6 +25,7 @@ import (
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
+	"github.com/latere-ai/origo/internal/lfs"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -154,6 +155,17 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	app := http.NewServeMux()
 	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard, Events: n.events}).Register(app)
 	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events}).Register(app)
+	// LFS (spec 010): the batch answers presigned URLs signed against
+	// the endpoint LFS clients reach, so object bytes never pass through
+	// the node.
+	presigner, err := lfs.NewPresigner(lfs.PresignerOptions{
+		Endpoint: cfg.S3PublicEndpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
+	})
+	if err != nil {
+		return nil, err
+	}
+	lfs.New(lfs.Options{Log: n.log, Guard: guard, Presigner: presigner, Logger: logger}).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})

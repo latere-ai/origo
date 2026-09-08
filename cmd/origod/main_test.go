@@ -509,6 +509,16 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 		{"GET", "/v1/repos/" + repoA + "/tree/main"},
 		{"GET", "/v1/repos/" + repoA + "/blob/main"},
 		{"GET", "/v1/repos/" + repoA + "/archive/main.tar.gz"},
+		// LFS (spec 010). The verifier runs in front of the handler, so
+		// a request without a token answers spec 003's envelope here
+		// rather than the LFS body; the spec's Outcome records it.
+		{"POST", "/r/" + repoA + ".git/info/lfs/objects/batch"},
+		{"POST", "/r/" + repoA + ".git/info/lfs/verify"},
+		{"POST", "/r/" + repoA + ".git/info/lfs/locks"},
+		{"POST", "/r/" + repoA + ".git/info/lfs/locks/verify"},
+		{"POST", "/acme/app.git/info/lfs/objects/batch"},
+		{"POST", "/acme/app.git/info/lfs/verify"},
+		{"POST", "/acme/app.git/info/lfs/locks/verify"},
 		{"GET", "/nope"},
 		{"GET", "/livez"},
 		{"GET", "/metrics"},

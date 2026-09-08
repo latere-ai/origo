@@ -31,6 +31,7 @@ import (
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/httpgit"
+	"github.com/latere-ai/origo/internal/lfs"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -107,6 +108,13 @@ func New(t testing.TB) *Server {
 	app := http.NewServeMux()
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Metrics: reg, Guard: guard}).Register(app)
 	api.New(api.Options{Cache: cache, Logger: logger, Guard: guard, Signer: signer}).Register(app)
+	presigner, err := lfs.NewPresigner(lfs.PresignerOptions{
+		Endpoint: s.bucket.URL(), Region: s3test.Region, Bucket: Bucket, Key: s3test.Key, Secret: s3test.Secret, PathStyle: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lfs.New(lfs.Options{Log: s.log, Guard: guard, Presigner: presigner, Logger: logger}).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})
