@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"latere.ai/x/pkg/httpjson"
 	"latere.ai/x/pkg/wait"
 )
 
@@ -83,7 +84,7 @@ func (p *Proxy) state() state {
 func (p *Proxy) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, p.state())
+		httpjson.Write(w, http.StatusOK, p.state())
 	})
 	mux.HandleFunc("PUT /delay", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -99,19 +100,13 @@ func (p *Proxy) Handler() http.Handler {
 			return
 		}
 		p.SetDelay(d)
-		writeJSON(w, http.StatusOK, p.state())
+		httpjson.Write(w, http.StatusOK, p.state())
 	})
 	mux.HandleFunc("DELETE /delay", func(w http.ResponseWriter, _ *http.Request) {
 		p.SetDelay(0)
-		writeJSON(w, http.StatusOK, p.state())
+		httpjson.Write(w, http.StatusOK, p.state())
 	})
 	return mux
-}
-
-func writeJSON(w http.ResponseWriter, status int, v state) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 // Serve forwards every connection accepted on ln to the target until

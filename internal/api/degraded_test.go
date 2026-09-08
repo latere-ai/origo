@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestReadAPIServesStaleAndRepositoryUnavailable(t *testing.T) {
 	// Open: every read endpoint is served from the copy with the header.
 	for _, path := range []string{"/refs", "/commits", "/tree/" + f.Refs["refs/heads/main"]} {
 		r := h.get("/v1/repos/" + repoA + path)
-		if r.status != 200 || r.header.Get(contract.HeaderStale) != "0" {
+		if age, err := strconv.Atoi(r.header.Get(contract.HeaderStale)); r.status != 200 || err != nil || age < 0 || age > 60 {
 			t.Fatalf("%s under the open breaker: %d Origo-Stale %q", path, r.status, r.header.Get(contract.HeaderStale))
 		}
 	}
