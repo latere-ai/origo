@@ -144,6 +144,17 @@ nothing, and refuses the repository:
 |---|---|---|---|
 | `repository_unavailable` | 503 | This repository cannot be served until an operator restores it. Other repositories are not affected. | `key`, `error` |
 
+One case next to those three is not a repository state and does not
+take this code: a thin pack whose base object is in no entry the log
+holds, which fails materialization with git's `did not receive expected
+object` (spec 005, the materialization budget). The base is missing
+from the objects the log stores, so the inconsistency is storage-side,
+the same class as a 5xx or an unreachable bucket, and the answer is 503
+`storage_unavailable` with `details.op` and `details.error`.
+`repository_unavailable` says an operator must restore this repository
+before it can be served; `storage_unavailable` says the bucket did not
+give the node what it asked for, which is what happened.
+
 It never rebuilds the log from a local copy. An operator restores the
 object from the provider's versioning or from a replica's cache by the
 procedure in `docs/operations.md`; the next request materializes again.
@@ -191,6 +202,10 @@ Queueing pushes for later commit.
   with `details.key`, increments `origo_log_integrity_errors_total`, and
   leaves another repository served (proposed: `internal/repo`,
   `TestMissingPackIsAnIntegrityError`).
+- A thin pack whose base object is in no entry the log holds is served
+  503 `storage_unavailable`, not `repository_unavailable`, with the
+  git message in `details.error` (proposed: `internal/repo`,
+  `TestThinPackWithoutBaseIsStorageUnavailable`).
 - All of the above run in the kind stack against MinIO with a fault
   injector, through node 1 of spec 013's ports table with its counters
   read from that node's internal host port: a NetworkPolicy for
