@@ -267,10 +267,11 @@ Queueing pushes for later commit.
   503 `storage_unavailable`, not `repository_unavailable`, with the
   git message in `details.error` (proposed: `internal/repo`,
   `TestThinPackWithoutBaseIsStorageUnavailable`).
-- All of the above run in the kind stack against MinIO with a fault
-  injector, through node 1 of spec 013's ports table with its counters
-  read from that node's internal host port: a NetworkPolicy for
-  unreachable, `test/e2e/testdata/cut-storage.yaml` applied with
+- The three fault modes, unreachable, slow, and partial, run in the
+  kind stack against MinIO with a fault injector, through node 1 of
+  spec 013's ports table with its counters read from that node's
+  internal host port: a NetworkPolicy for unreachable,
+  `test/e2e/testdata/cut-storage.yaml` applied with
   `cluster.ApplyManifest` of spec 013's `test/e2e/cluster` and removed
   by its cleanup, enforced because the stack's CNI is Cilium (a row of
   spec 013's overlay table; kindnet enforces no policy), with
