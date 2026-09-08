@@ -4,6 +4,11 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -15,16 +20,41 @@ func env(m map[string]string) Getenv {
 	return func(k string) string { return m[k] }
 }
 
-func complete() map[string]string {
-	return map[string]string{
-		"ORIGO_S3_ENDPOINT": "http://127.0.0.1:9000",
-		"ORIGO_S3_REGION":   "us-east-1",
-		"ORIGO_S3_BUCKET":   "origo",
-		"ORIGO_S3_KEY":      "minioadmin",
-		"ORIGO_S3_SECRET":   "minioadmin",
-		"ORIGO_PUBLIC_URL":  "https://git.example.com/",
-		"ORIGO_DEV_TOKEN":   "dev-token",
+// testKey is a P-256 key in the form openssl ecparam -genkey writes: an
+// EC PARAMETERS block, then the key.
+func testKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := pem.EncodeToMemory(&pem.Block{Type: "EC PARAMETERS", Bytes: []byte{0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07}})
+	return string(params) + string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
+}
+
+func complete(t *testing.T) map[string]string {
+	t.Helper()
+	return map[string]string{
+		"ORIGO_S3_ENDPOINT":      "http://127.0.0.1:9000",
+		"ORIGO_S3_REGION":        "us-east-1",
+		"ORIGO_S3_BUCKET":        "origo",
+		"ORIGO_S3_KEY":           "minioadmin",
+		"ORIGO_S3_SECRET":        "minioadmin",
+		"ORIGO_PUBLIC_URL":       "https://git.example.com/",
+		"ORIGO_OIDC_ISSUERS":     "https://issuer.example",
+		"ORIGO_AUTHORIZER_URL":   "https://authz.example",
+		"ORIGO_AUTHORIZER_TOKEN": "s",
+		"ORIGO_TOKEN_KEY":        testKey(t),
+	}
+}
+
+var required = []string{
+	"ORIGO_S3_ENDPOINT", "ORIGO_S3_REGION", "ORIGO_S3_BUCKET", "ORIGO_S3_KEY", "ORIGO_S3_SECRET",
+	"ORIGO_PUBLIC_URL", "ORIGO_OIDC_ISSUERS", "ORIGO_AUTHORIZER_URL", "ORIGO_AUTHORIZER_TOKEN", "ORIGO_TOKEN_KEY",
 }
 
 func TestLoadNamesEveryMissingKeyInOneMessage(t *testing.T) {
@@ -32,12 +62,12 @@ func TestLoadNamesEveryMissingKeyInOneMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	for _, key := range []string{"ORIGO_S3_ENDPOINT", "ORIGO_S3_REGION", "ORIGO_S3_BUCKET", "ORIGO_S3_KEY", "ORIGO_S3_SECRET", "ORIGO_PUBLIC_URL", "ORIGO_DEV_TOKEN"} {
+	for _, key := range required {
 		if !strings.Contains(err.Error(), "missing "+key) {
 			t.Errorf("message %q does not name %s", err, key)
 		}
 	}
-	if strings.Count(err.Error(), "missing ") != 7 {
+	if strings.Count(err.Error(), "missing ") != len(required) {
 		t.Errorf("message %q names the wrong number of keys", err)
 	}
 }
@@ -46,7 +76,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	old := osHostname
 	osHostname = func() (string, error) { return "node-1", nil }
 	t.Cleanup(func() { osHostname = old })
-	cfg, err := Load(env(complete()))
+	cfg, err := Load(env(complete(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,19 +92,21 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.PublicURL.String() != "https://git.example.com" {
 		t.Fatalf("PublicURL = %q, trailing slash not trimmed", cfg.PublicURL)
 	}
-	if cfg.S3PathStyle || cfg.CacheBytes != 0 || cfg.OIDCIssuers != nil || cfg.Failpoint != "" {
+	if cfg.S3PathStyle || cfg.CacheBytes != 0 || cfg.OIDCInsecureIssuers != nil || cfg.Failpoint != "" {
 		t.Fatalf("unexpected optional values: %+v", cfg)
+	}
+	if len(cfg.OIDCIssuers) != 1 || cfg.AuthorizerURL != "https://authz.example" || cfg.TokenKey == nil || cfg.TokenKey.Curve != elliptic.P256() {
+		t.Fatalf("spec 007 values: %+v", cfg)
 	}
 }
 
 func TestLoadReadsEveryOptionalValue(t *testing.T) {
-	m := complete()
+	m := complete(t)
 	m["ORIGO_S3_PATH_STYLE"] = "1"
 	m["ORIGO_DATA_DIR"] = "/data/origo"
 	m["ORIGO_CACHE_BYTES"] = "1024"
-	m["ORIGO_OIDC_ISSUERS"] = "https://a.example, https://b.example,"
-	m["ORIGO_AUTHORIZER_URL"] = "https://authz.example"
-	m["ORIGO_AUTHORIZER_TOKEN"] = "s"
+	m["ORIGO_OIDC_ISSUERS"] = "https://a.example/, https://b.example,"
+	m["ORIGO_OIDC_INSECURE_ISSUERS"] = "http://stubs.example:8081/"
 	m["ORIGO_EVENTS_URL"] = "https://events.example"
 	m["ORIGO_EVENTS_SECRET"] = "e"
 	m["ORIGO_NODE_NAME"] = "pod-7"
@@ -92,8 +124,11 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	if !cfg.S3PathStyle || cfg.DataDir != "/data/origo" || cfg.CacheBytes != 1024 {
 		t.Fatalf("storage values: %+v", cfg)
 	}
-	if len(cfg.OIDCIssuers) != 2 || cfg.OIDCIssuers[1] != "https://b.example" {
+	if len(cfg.OIDCIssuers) != 2 || cfg.OIDCIssuers[0] != "https://a.example" || cfg.OIDCIssuers[1] != "https://b.example" {
 		t.Fatalf("OIDCIssuers = %q", cfg.OIDCIssuers)
+	}
+	if len(cfg.OIDCInsecureIssuers) != 1 || cfg.OIDCInsecureIssuers[0] != "http://stubs.example:8081" {
+		t.Fatalf("OIDCInsecureIssuers = %q", cfg.OIDCInsecureIssuers)
 	}
 	if cfg.AuthorizerURL != "https://authz.example" || cfg.AuthorizerToken != "s" || cfg.EventsURL != "https://events.example" || cfg.EventsSecret != "e" {
 		t.Fatalf("spec 007/008 values: %+v", cfg)
@@ -110,16 +145,24 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 }
 
 func TestLoadReportsMalformedValuesTogether(t *testing.T) {
-	m := complete()
+	m := complete(t)
 	m["ORIGO_PUBLIC_URL"] = "git.example.com"
 	m["ORIGO_CACHE_BYTES"] = "lots"
 	m["ORIGO_SWEEP_INTERVAL"] = "soon"
 	m["ORIGO_SWEEP_MIN_AGE"] = "-1h"
+	m["ORIGO_AUTHORIZER_URL"] = "authz.example"
+	m["ORIGO_TOKEN_KEY"] = "not a key"
+	m["ORIGO_OIDC_ISSUERS"] = "issuer.example"
 	_, err := Load(env(m))
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	for _, want := range []string{"ORIGO_PUBLIC_URL must be an absolute URL", "ORIGO_CACHE_BYTES must be a positive integer", "ORIGO_SWEEP_INTERVAL must be a duration", "ORIGO_SWEEP_MIN_AGE must be a duration"} {
+	for _, want := range []string{
+		"ORIGO_PUBLIC_URL must be an absolute URL", "ORIGO_CACHE_BYTES must be a positive integer",
+		"ORIGO_SWEEP_INTERVAL must be a duration", "ORIGO_SWEEP_MIN_AGE must be a duration",
+		"ORIGO_AUTHORIZER_URL must be an absolute", "ORIGO_TOKEN_KEY must be a PEM-encoded ECDSA P-256 private key",
+		"ORIGO_OIDC_ISSUERS: issuer.example is not an absolute",
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err, want)
 		}
@@ -128,6 +171,42 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 	m["ORIGO_CACHE_BYTES"] = "0"
 	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ORIGO_PUBLIC_URL must be") || !strings.Contains(err.Error(), "ORIGO_CACHE_BYTES must be") {
 		t.Fatalf("unparsable URL and zero cache not reported: %v", err)
+	}
+}
+
+func TestDevTokenIsRefused(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_DEV_TOKEN"] = "dev"
+	_, err := Load(env(m))
+	if err == nil || !strings.Contains(err.Error(), "ORIGO_DEV_TOKEN is no longer read; remove it") {
+		t.Fatalf("err = %v", err)
+	}
+	if err.Error() != "configuration: ORIGO_DEV_TOKEN is no longer read; remove it" {
+		t.Fatalf("the dev token was not the one problem: %v", err)
+	}
+}
+
+func TestInsecureIssuersNeedTheList(t *testing.T) {
+	for _, iss := range []string{"http://127.0.0.1:8081", "http://localhost:8081", "http://[::1]:8081", "https://issuer.example"} {
+		m := complete(t)
+		m["ORIGO_OIDC_ISSUERS"] = iss
+		if _, err := Load(env(m)); err != nil {
+			t.Errorf("%s: %v", iss, err)
+		}
+	}
+	m := complete(t)
+	m["ORIGO_OIDC_ISSUERS"] = "http://origo-stubs.origo.svc:8081"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "http://origo-stubs.origo.svc:8081 uses http://") || !strings.Contains(err.Error(), "ORIGO_OIDC_INSECURE_ISSUERS") {
+		t.Fatalf("a plain http issuer started: %v", err)
+	}
+	m["ORIGO_OIDC_INSECURE_ISSUERS"] = "http://origo-stubs.origo.svc:8081"
+	cfg, err := Load(env(m))
+	if err != nil || cfg.OIDCIssuers[0] != "http://origo-stubs.origo.svc:8081" {
+		t.Fatalf("listed issuer refused: %v", err)
+	}
+	m["ORIGO_OIDC_ISSUERS"] = "ftp://issuer.example"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ftp://issuer.example is not an absolute http or https URL") {
+		t.Fatalf("another scheme started: %v", err)
 	}
 }
 

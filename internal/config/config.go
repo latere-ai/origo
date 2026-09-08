@@ -8,14 +8,19 @@
 package config
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/latere-ai/origo/internal/auth"
 )
 
 // Defaults for the optional variables.
@@ -48,20 +53,18 @@ type Config struct {
 	// means 80% of the disk that holds DataDir, resolved at start-up.
 	CacheBytes int64
 
-	// PublicURL is the origin clients see, used in clone URLs and event
-	// payloads. Required.
+	// PublicURL is the origin clients see, used in clone URLs, event
+	// payloads, and as the issuer of repository-bound tokens. Required.
 	PublicURL *url.URL
 
-	// DevToken is the phase 1 stand-in for authentication (spec 007): the
-	// public listener accepts exactly this bearer and refuses everything
-	// else. It is required until the OIDC issuers replace it.
-	DevToken string
-
-	// Spec 007 identity and authorization. Optional until spec 007 lands;
-	// read now so a deployment that already sets them is not refused.
-	OIDCIssuers     []string
-	AuthorizerURL   string
-	AuthorizerToken string
+	// Spec 007 identity and authorization. Required.
+	OIDCIssuers         []string
+	OIDCInsecureIssuers []string
+	AuthorizerURL       string
+	AuthorizerToken     string
+	// TokenKey is the ECDSA P-256 key of ORIGO_TOKEN_KEY that signs
+	// repository-bound tokens; required in every mode.
+	TokenKey *ecdsa.PrivateKey
 
 	// Spec 008 push events. Optional.
 	EventsURL    string
@@ -113,9 +116,7 @@ func Load(getenv Getenv) (*Config, error) {
 		S3Secret:        missing("ORIGO_S3_SECRET"),
 		S3PathStyle:     getenv("ORIGO_S3_PATH_STYLE") == "1",
 		DataDir:         orDefault(getenv("ORIGO_DATA_DIR"), DefaultDataDir),
-		DevToken:        missing("ORIGO_DEV_TOKEN"),
-		AuthorizerURL:   getenv("ORIGO_AUTHORIZER_URL"),
-		AuthorizerToken: getenv("ORIGO_AUTHORIZER_TOKEN"),
+		AuthorizerToken: missing("ORIGO_AUTHORIZER_TOKEN"),
 		EventsURL:       getenv("ORIGO_EVENTS_URL"),
 		EventsSecret:    getenv("ORIGO_EVENTS_SECRET"),
 		NodeName:        getenv("ORIGO_NODE_NAME"),
@@ -124,6 +125,9 @@ func Load(getenv Getenv) (*Config, error) {
 		InternalAddr:    orDefault(getenv("ORIGO_INTERNAL_ADDR"), DefaultInternalAddr),
 		GossipAddr:      orDefault(getenv("ORIGO_GOSSIP_ADDR"), DefaultGossipAddr),
 		Failpoint:       getenv("ORIGO_FAILPOINT"),
+	}
+	if getenv("ORIGO_DEV_TOKEN") != "" {
+		problems = append(problems, "ORIGO_DEV_TOKEN is no longer read; remove it")
 	}
 	if raw := missing("ORIGO_PUBLIC_URL"); raw != "" {
 		u, err := url.Parse(raw)
@@ -134,12 +138,26 @@ func Load(getenv Getenv) (*Config, error) {
 			cfg.PublicURL = u
 		}
 	}
-	if raw := getenv("ORIGO_OIDC_ISSUERS"); raw != "" {
-		for s := range strings.SplitSeq(raw, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				cfg.OIDCIssuers = append(cfg.OIDCIssuers, s)
-			}
+	cfg.OIDCInsecureIssuers = list(getenv("ORIGO_OIDC_INSECURE_ISSUERS"))
+	cfg.OIDCIssuers = list(missing("ORIGO_OIDC_ISSUERS"))
+	for _, iss := range cfg.OIDCIssuers {
+		if problem := checkIssuer(iss, cfg.OIDCInsecureIssuers); problem != "" {
+			problems = append(problems, problem)
 		}
+	}
+	if raw := missing("ORIGO_AUTHORIZER_URL"); raw != "" {
+		if u, err := url.Parse(raw); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			problems = append(problems, "ORIGO_AUTHORIZER_URL must be an absolute http or https URL")
+		} else {
+			cfg.AuthorizerURL = raw
+		}
+	}
+	if raw := missing("ORIGO_TOKEN_KEY"); raw != "" {
+		key, err := auth.ParseKey(raw)
+		if err != nil {
+			problems = append(problems, "ORIGO_TOKEN_KEY must be a PEM-encoded ECDSA P-256 private key: "+err.Error())
+		}
+		cfg.TokenKey = key
 	}
 	if raw := getenv("ORIGO_CACHE_BYTES"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)
@@ -158,6 +176,38 @@ func Load(getenv Getenv) (*Config, error) {
 		return nil, errors.New("configuration: " + strings.Join(problems, "; "))
 	}
 	return cfg, nil
+}
+
+// list splits a comma separated variable, trimming each entry and a
+// trailing slash on a URL.
+func list(raw string) []string {
+	var out []string
+	for s := range strings.SplitSeq(raw, ",") {
+		if s = strings.TrimRight(strings.TrimSpace(s), "/"); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// checkIssuer is spec 007's issuer scheme rule: https, or http on a
+// loopback host or when the URL is listed in ORIGO_OIDC_INSECURE_ISSUERS.
+func checkIssuer(iss string, insecure []string) string {
+	u, err := url.Parse(iss)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Sprintf("ORIGO_OIDC_ISSUERS: %s is not an absolute http or https URL", iss)
+	}
+	if u.Scheme == "https" || slices.Contains(insecure, iss) {
+		return ""
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return ""
+	}
+	return fmt.Sprintf("ORIGO_OIDC_ISSUERS: %s uses http:// on a host that is not a loopback address; use https:// or list it in ORIGO_OIDC_INSECURE_ISSUERS", iss)
 }
 
 // Resolve fills the values that depend on the machine: it creates DataDir
