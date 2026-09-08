@@ -197,6 +197,23 @@ committed: the commit log already holds that.
   fire. A replica stays ready while its breaker is open. The kind
   overlay runs the slow proxy of `origo-stubs` in front of MinIO, with
   its control endpoint on host port 30085.
+- Security and threat model (spec 016). A server-side fetch of another
+  host, the import and verify to come, reaches only a host named in
+  `ORIGO_EGRESS_ALLOW`, exact or `*.` wildcard, and never a loopback,
+  link-local, private, or cluster address (`ORIGO_CLUSTER_CIDRS`): the
+  node resolves the host once and dials by IP, through a forward proxy
+  on a loopback port that git is pointed at, which terminates the
+  source's TLS against the system roots plus `ORIGO_EGRESS_CA_BUNDLE`,
+  follows redirects itself so every hop is checked, and refuses
+  `CONNECT`. An operator names a source inside the cluster as
+  `host=address`, the one address it may resolve to. Every repository
+  now runs with `transfer.fsckObjects` and `core.protectHFS` beside
+  `receive.fsckObjects` and `core.protectNTFS`, so a pack carrying a
+  broken object or a tree entry that names the git directory is refused
+  on every transfer. A reference name that is not UTF-8, or whose
+  component ends in a dot, is refused. The gossip port admits UDP from
+  the `origod` pods alone (`deploy/base/networkpolicy.yaml`), and
+  `SECURITY.md` at the root says how to report a vulnerability.
 - Limits and abuse controls (spec 012). A node accepts
   `ORIGO_REQUESTS_PER_MINUTE` requests a minute per authenticated
   subject, 600 by default and `0` to turn the limit off, names the

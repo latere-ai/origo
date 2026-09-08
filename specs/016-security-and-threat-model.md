@@ -1,6 +1,6 @@
 ---
 title: "Security and threat model: what Origo protects, against whom, and how"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/001-architecture.md
@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -27,19 +27,22 @@ and the pod.
 
 ## Current state
 
-Spec 007 verifies every token against the configured issuers and the
-node's own key and asks the authorizer before any lookup; the node runs
-every git subprocess through `internal/repo.Git` with the environment
-below, `core.protectNTFS` and `receive.fsckObjects` on, and a 5 minute
-deadline; the smart HTTP services run in their own process group that is
-killed whole, the other subprocesses under the context's kill. The pod runs with
-the security context below (`deploy/base/deployment.yaml`). `SECURITY.md`
-exists at the root with the disclosure process. The gate runs `vuln` on
-every push. Not yet: `transfer.fsckObjects`, `core.protectHFS`, a bill
-of materials, a validator fuzz test, a test over the subprocess
-environment, and the NetworkPolicy on the gossip port (`deploy/base`
-carries none; this spec adds it, and specs 005, 013, and 018 name it
-as this spec's).
+Built on 2026-09-09. Spec 007 verifies every token against the
+configured issuers and the node's own key and asks the authorizer
+before any lookup; the node runs every git subprocess through
+`internal/repo.Git` with the environment below, `core.protectNTFS`,
+`core.protectHFS`, `receive.fsckObjects`, and `transfer.fsckObjects`
+on, and a 5 minute deadline; the smart HTTP services run in their own
+process group that is killed whole, the other subprocesses under the
+context's kill. The egress dialer and the forward proxy are
+`internal/api/egress.go`, built by `cmd/origod` from the three
+variables of spec 002 and handed to the handler, whose `import` and
+`verify` (specs 019, 014) are the callers to come. The pod runs with
+the security context below (`deploy/base/deployment.yaml`) and the
+NetworkPolicy `origod-gossip` of `deploy/base/networkpolicy.yaml`,
+with `origod-http` beside it. `SECURITY.md` exists at the root with
+the disclosure process. The gate runs `vuln` on every push. Not yet: a
+bill of materials (spec 017).
 
 One item for the builder, from spec 012, in `internal/auth`: a write
 under a repository-bound token asks the authorizer for the minter's
@@ -107,7 +110,12 @@ decides what is served. The NetworkPolicy `origod-gossip` in
 Deployment's own pods only, selected by the pod labels the Deployment
 and spec 013's StatefulSet share; it is defence in depth, not the
 control, because a policy is enforced by the network plugin and a MAC
-by the node.
+by the node. A policy restricts every ingress it does not admit for
+the pods it selects, so `origod-http` in the same file admits TCP 8080
+and 8081, the two listeners of spec 002, from every peer: the ingress
+controller, the probes, and the scrape; the bearer of spec 007 is the
+control there. The two are additive, and `origod-gossip` alone is what
+the stack criterion reads.
 The source of an `import` or a `verify` (specs 019, 014) is a host the
 caller names, so it is hostile until the egress allow-list admits it,
 and trusted only for the bytes git checks.
@@ -125,7 +133,7 @@ deadline, and under the pod's security context.
 | Malformed or malicious git objects | `receive.fsckObjects` (phase 1), `transfer.fsckObjects`, `core.protectNTFS` (phase 1), `core.protectHFS`; Origo never checks out a tree on the server except into the archive stream, which is `git archive` with no filesystem write | 004, 009 |
 | Command injection through refs, owner, slug, or paths | reference names validated by `internal/wal.ValidRefName`; owner and slug by the grammar of spec 003; subprocess arguments never pass through a shell; `GIT_DIR` set explicitly; the only hook is Origo's own pre-receive, installed by the node and never from a push | 003, 004 |
 | Resource exhaustion by one client | per-subject rate limit, per-node subprocess cap, body and repository size limits, subprocess deadlines | 012 |
-| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, the fetch runs through a `DialContext` that resolves the host once, refuses every resolved address in a refused range, and dials one of the remaining addresses by IP, so a name that rebinds between the check and the connection cannot redirect it; the refused ranges are RFC 1918, RFC 4193 (ULA), loopback, link-local, and unspecified, plus the cluster's service and pod ranges from `ORIGO_CLUSTER_CIDRS` (spec 002), default empty, meaning only the well-known ranges. One exception, so an operator can name a source that runs inside the cluster on purpose: an entry of `ORIGO_EGRESS_ALLOW` in the form `host=address` (spec 002), an exact host with one IP literal, pins the address recorded for that host at start-up, and a resolved address inside a range `ORIGO_CLUSTER_CIDRS` lists is admitted only when it equals the address pinned for that host, so a later DNS change to another cluster address is refused; an exact host without a pinned address, or a `*.` wildcard, never admits a cluster address, and the admission covers the pinned address even where a well-known range also contains it, as kind's service range inside RFC 1918 does; loopback, link-local, and unspecified addresses are never admitted this way, pinned or not. The kind overlay of spec 013 uses it: `ORIGO_EGRESS_ALLOW=origo-stubs.origo.svc=10.96.0.42`, the fixed `clusterIP` of the stubs' Service, and `ORIGO_CLUSTER_CIDRS` naming kind's service and pod ranges let the nodes import from the in-cluster source stub, which is what the cluster tests of specs 014 and 019 fetch from. The dialer takes one more option, `AllowLoopback`, which admits loopback addresses for a host on the list; it is a field of the handler's constructor in `internal/api`, false in every deployment because `cmd/origod` never sets it and no configuration variable exists for it, and true only in a unit test of `import` or `verify` (specs 014, 019) that serves its source from `test/stubs/source` in-process. Every redirect hop is resolved and dialed the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened. The dialer is what git's `http.proxy` cannot give, so the fetch runs through a local forward proxy the node starts per import on a loopback port, which git is pointed at and which applies the dialer. The proxy is the one place that dials the source, so it, not git, terminates the source's TLS: git is given the source with its scheme rewritten to `http://` and talks plain HTTP to the proxy; the proxy dials the source over TLS at the pinned address, verifies its certificate against the system roots plus the PEM bundle `ORIGO_EGRESS_CA_BUNDLE` (spec 002) names when it is set, unset in production and set by the kind overlay of spec 013 to the CA of the source stub's certificate, and forwards every request through the same dialer. The proxy follows redirects itself: a 3xx from the source is never returned to git, the proxy resolves and dials the `Location` through the dialer like a first hop, at most 10 hops, so every hop is checked; it refuses `CONNECT` with 405 and opens no connection for it; and because the URL git is given is `http://`, git never asks for a tunnel, so no `https://` hop, first or redirected, is ever tunnelled past the dialer, which a `CONNECT` tunnel would hide from it. Git is configured through the environment for what is secret, stated here once and referenced by specs 019 and 014: `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=http.<source>.extraheader` with `GIT_CONFIG_VALUE_0=Authorization: Bearer <token>`, `<source>` the rewritten `http://` URL git is given, and `GIT_CONFIG_KEY_1=http.proxy` with `GIT_CONFIG_VALUE_1=http://<credential>@127.0.0.1:<port>` of that proxy, `<credential>` a random value the node draws per import from `crypto/rand`, so the count stays 2 and the credential travels in the proxy URL and nowhere else; the source URL, the token, the proxy, and the credential never appear on git's command line. `transfer.fsckObjects=true` is no secret and goes on the command line as `-c transfer.fsckObjects=true`, so the count stays 2 and a process listing shows the check is on. The proxy answers 407 to a request without the credential, so another process on the node that finds the loopback port gets no fetch through it, and closes when git exits. `latere.ai/x/pkg/egress` is not used here: it substitutes credentials through a `CONNECT` proxy, a different purpose, and `CONNECT` hides from the proxy the hop the pinned dialer must see | 019, 014 |
+| Server-side request forgery through `import` and `verify` | every server-side fetch goes to a host on the egress allow-list `ORIGO_EGRESS_ALLOW` (spec 002): comma separated exact hostnames or `*.` wildcards, matched with `latere.ai/x/pkg/hostmatch` after lower-casing and trailing-dot removal; the default, unset, refuses every source. Whatever the list says, the fetch runs through a `DialContext` that resolves the host once, refuses every resolved address in a refused range, and dials one of the remaining addresses by IP, so a name that rebinds between the check and the connection cannot redirect it; the refused ranges are RFC 1918, RFC 4193 (ULA), loopback, link-local, and unspecified, plus the cluster's service and pod ranges from `ORIGO_CLUSTER_CIDRS` (spec 002), default empty, meaning only the well-known ranges. One exception, so an operator can name a source that runs inside the cluster on purpose: an entry of `ORIGO_EGRESS_ALLOW` in the form `host=address` (spec 002), an exact host with one IP literal, pins the address recorded for that host at start-up, and a resolved address inside a range `ORIGO_CLUSTER_CIDRS` lists is admitted only when it equals the address pinned for that host, so a later DNS change to another cluster address is refused; an exact host without a pinned address, or a `*.` wildcard, never admits a cluster address, and the admission covers the pinned address even where a well-known range also contains it, as kind's service range inside RFC 1918 does; loopback, link-local, and unspecified addresses are never admitted this way, pinned or not. The kind overlay of spec 013 uses it: `ORIGO_EGRESS_ALLOW=origo-stubs.origo.svc=10.96.0.42`, the fixed `clusterIP` of the stubs' Service, and `ORIGO_CLUSTER_CIDRS` naming kind's service and pod ranges let the nodes import from the in-cluster source stub, which is what the cluster tests of specs 014 and 019 fetch from. The dialer takes one more option, `AllowLoopback`, which admits loopback addresses for a host on the list; it is a field of the handler's constructor in `internal/api`, false in every deployment because `cmd/origod` never sets it and no configuration variable exists for it, and true only in a unit test of `import` or `verify` (specs 014, 019) that serves its source from `test/stubs/source` in-process. Every redirect hop is resolved and dialed the same way. A refused source is 400 `invalid_request` with `details.reason: "egress"` and no connection is opened. The dialer is what git's `http.proxy` cannot give, so the fetch runs through a local forward proxy the node starts per import on a loopback port, which git is pointed at and which applies the dialer. The proxy is the one place that dials the source, so it, not git, terminates the source's TLS: git is given the source with its scheme rewritten to `http://` and talks plain HTTP to the proxy; the proxy dials the source over TLS at the pinned address, verifies its certificate against the system roots plus the PEM bundle `ORIGO_EGRESS_CA_BUNDLE` (spec 002) names when it is set, unset in production and set by the kind overlay of spec 013 to the CA of the source stub's certificate, and forwards every request through the same dialer. The proxy follows redirects itself: a 3xx from the source is never returned to git, the proxy resolves and dials the `Location` through the dialer like a first hop, at most 10 hops, so every hop is checked; it refuses `CONNECT` with 405 and opens no connection for it; and because the URL git is given is `http://`, git never asks for a tunnel, so no `https://` hop, first or redirected, is ever tunnelled past the dialer, which a `CONNECT` tunnel would hide from it. Git is configured through the environment for what is secret, stated here once and referenced by specs 019 and 014: `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=http.<source>.extraheader` with `GIT_CONFIG_VALUE_0=Authorization: Bearer <token>`, `<source>` the rewritten `http://` URL git is given, and `GIT_CONFIG_KEY_1=http.proxy` with `GIT_CONFIG_VALUE_1=http://<credential>:egress@127.0.0.1:<port>` of that proxy, `<credential>` a random value the node draws per import from `crypto/rand` and `egress` a fixed password, there because git prompts for one when a proxy URL carries a user alone and a prompt under `GIT_TERMINAL_PROMPT=0` ends the fetch, so the count stays 2 and the credential travels in the proxy URL and nowhere else; a source given without a token gets the proxy key alone and a count of 1, never an empty bearer; the source URL, the token, the proxy, and the credential never appear on git's command line. `transfer.fsckObjects=true` is no secret and goes on the command line as `-c transfer.fsckObjects=true`, so the count stays 2 and a process listing shows the check is on. The proxy answers 407 to a request without the credential, so another process on the node that finds the loopback port gets no fetch through it, and closes when git exits. `latere.ai/x/pkg/egress` is not used here: it substitutes credentials through a `CONNECT` proxy, a different purpose, and `CONNECT` hides from the proxy the hop the pinned dialer must see | 019, 014 |
 | Membership forgery through gossip | every datagram carries an HMAC-SHA256 under `ORIGO_GOSSIP_SECRET`; one without a valid MAC is dropped before it is parsed and counted on `origo_gossip_packets_total{direction="dropped"}`, so a sender without the secret cannot enter the live set, keep a dead node in it, or trigger a catch-up, and cannot change who a repository's compaction primary, import lease holder, or orphan sweeper is (specs 006, 019); the NetworkPolicy `origod-gossip` on the gossip port, this spec's, is defence in depth | 005, 016 |
 | Amplification through gossip | a valid datagram is at most one catch-up, and catch-ups triggered by gossip are rate-limited to one per repository per second, so a flood from a node that holds the secret costs one `HEAD` per named repository per second and nothing else; a datagram that names a repository the node does not hold is dropped; an invalid one costs one HMAC | 005 |
 | Exhaustion through the bucket | breakers and per-operation deadlines so one slow client cannot hold a subprocess open against a slow bucket | 015 |
@@ -268,3 +276,79 @@ Audit export beyond the log itself.
   the test's own source file (proposed: `cmd/origod`,
   `TestSecurityPolicyIsPresent`), and the release carries a bill of
   materials and provenance (spec 017's artifact criterion).
+
+## Outcome
+
+Built on 2026-09-09 in nine commits: the two configuration keys of the
+bare repository and the subprocess environment test, the validator
+fuzz tests, the three egress variables, the dialer and the proxy with
+the seam, the node's wiring, the hostile pack test, the two
+NetworkPolicies, the stack test, and `SECURITY.md`. Every criterion has
+a test in the tree:
+
+| Criterion | Test |
+|---|---|
+| every route refuses a missing, foreign-audience, or expired token except the three unauthenticated paths | `cmd/origod`, `TestEveryRouteRequiresAToken` (spec 007) |
+| a `.git`, NTFS, or HFS+ tree entry or a broken object is rejected with git's message and no entry is written | `internal/httpgit`, `TestMaliciousPackWritesNothing` |
+| a reference name, owner, or slug with a metacharacter, `..`, or a control character is refused; the fuzz finds nothing git refuses | `internal/wal`, `TestValidRefName`, `TestValidLabel`, `FuzzValidRefName`, `FuzzValidLabel`; `make fuzz` runs both for 40 seconds |
+| a git subprocess observes exactly the documented environment | `internal/repo`, `TestSubprocessEnvironment`; `TestBareRepositoryConfiguration` for the four config keys |
+| the egress dialer on its own | `internal/api`, `TestEgressDialerHonoursTheAllowList`, `TestEgressDialerAdmitsOnlyThePinnedClusterAddress`, `TestEgressDialerAllowLoopbackIsATestSeam`, `TestEgressDialerPinsTheResolvedAddress`; `internal/config`, `TestEgressAllowPinsOnlyExactHosts`, `TestEgressCABundleIsReadAtStartup` |
+| a production configuration admits no loopback source; the seam is written in `_test.go` files only | `cmd/origod`, `TestEgressAdmitsNoLoopbackInProduction`; `internal/api`, `TestAllowLoopbackIsSetOnlyByTests` |
+| a gossip datagram without a valid MAC is dropped; 10 000 datagrams cause at most one catch-up | spec 005, `TestGossipDropsABadMAC`, `TestGossipCatchUpIsRateLimited` |
+| the egress proxy on its own: a followed redirect, a refused hop, `CONNECT` 405, `git ls-remote` sends no `CONNECT` | `internal/api`, `TestEgressProxyFollowsRedirectsAndRefusesConnect` |
+| the pod's security context, the refused privileged pod, the gossip NetworkPolicy | `test/e2e`, `TestClusterPodSecurityContext`, in the `e2e` job |
+| `SECURITY.md` names the report address; the release carries a bill of materials | `cmd/origod`, `TestSecurityPolicyIsPresent`; the bill of materials is spec 017's artifact criterion |
+
+Divergences and interpretations, all kept and stated in the Design:
+
+- The route sweep of `TestEveryRouteRequiresAToken` is a list of the
+  routes, spec 007's build, not a walk of the mux's patterns:
+  `http.ServeMux` exposes none, and a recording mux would change the
+  `Register(mux *http.ServeMux)` signature of four packages. A route
+  added later needs a line in the list.
+- The proxy URL carries a fixed password beside the credential,
+  `http://<credential>:egress@127.0.0.1:<port>`: git prompts for a
+  password when a proxy URL carries a user alone, and a prompt under
+  `GIT_TERMINAL_PROMPT=0` ends the fetch. The proxy reads the user
+  alone.
+- `GitConfig` with an empty token sets `GIT_CONFIG_COUNT=1` and the
+  proxy key alone: an `Authorization: Bearer` header with no value is
+  not a credential.
+- `origod-http` is a second NetworkPolicy beside `origod-gossip`: a
+  policy restricts every ingress it does not admit for the pods it
+  selects, so a gossip-only policy would close the two listeners to the
+  ingress controller and the probes. The criterion reads
+  `origod-gossip` alone, which keeps its one rule.
+- A label containing `..` inside, `a..b`, stays admitted: spec 003's
+  grammar admits it, a label is never a path component a subprocess
+  sees, and `FuzzValidLabel` holds the validator to git's path rules
+  instead, where `.` and `..` as whole labels are what git refuses.
+- `ORIGO_EGRESS_ALLOW` entries go through `hostmatch.ValidPattern`,
+  which takes an FQDN or an IP literal and refuses a single-label
+  name, so `localhost` cannot be listed; the tests use
+  `source.localhost`, which the resolver answers with loopback and no
+  DNS query (RFC 6761). The README's items table carries the row.
+- The pinned dialer resolves inside `DialContext` and filters the
+  answer, dialing the first admitted address and skipping a refused
+  one among admitted ones, the Design's "refuses every resolved
+  address in a refused range, and dials one of the remaining".
+- `TestClusterPodSecurityContext` asserts the memory request and limit
+  of the Design and that a CPU request is set, because spec 005's kind
+  overlay runs the stack at 50m and the base at 250m.
+
+Two defects the fuzz found in `internal/wal.ValidRefName`, fixed at the
+root with the seeds in the tree: a component ending in a dot,
+`refs/heads/a.`, which git refuses; and a name that is not UTF-8,
+which git accepts and the JSON index object rewrites to U+FFFD, so it
+could never round-trip through the log. Both are refused now.
+
+Deferred: that `import` and `verify` run through the dialer with
+`-c transfer.fsckObjects=true` is asserted by specs 019 and 014 in
+their own criteria; the bill of materials and provenance by spec 017.
+
+Stack proof: pending the dispatched run of `verify.yml` on main.
+
+Open: whether a pinned address outside every range of
+`ORIGO_CLUSTER_CIDRS`, which the dialer then judges by the well-known
+ranges alone and never admits when private, should be a problem of the
+start-up message.
