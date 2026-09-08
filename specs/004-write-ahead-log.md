@@ -136,7 +136,8 @@ before the list grows past it):
 ```json
 {"v": 1, "seq": 1043, "entry": "wal/000000001043.9f3c1a7be2d40c55.entry",
  "refs": {"refs/heads/main": "<sha>", "HEAD": "ref: refs/heads/main"},
- "entries": [{"seq": 1040, "key": "wal/000000001040.….entry", "kind": "push", "pack_sha256": "…"}, …],
+ "entries": [{"seq": 1040, "key": "wal/000000001040.….entry", "kind": "push",
+              "pack_bytes": 4096, "pack_sha256": "…"}, …],
  "packs": ["packs/<hash>.pack"], "compacted_through": 1039,
  "size_bytes": 123456789, "deleted_at": null,
  "pushed_at": "2026-09-06T10:00:00Z"}
@@ -144,7 +145,11 @@ before the list grows past it):
 
 `entries` lists every entry after `compacted_through` up to and
 including `seq`, in order, with the object's own entry last; earlier
-history is represented by `packs`. `size_bytes` is what the log holds
+history is represented by `packs`. A row carries the entry's
+`pack_bytes`, omitted when the entry has no pack and read as 0 on an
+index object written before the field existed, so the byte threshold of
+compaction (spec 006) sums the list instead of reading one entry header
+per push. `size_bytes` is what the log holds
 for the repository: the bytes of the `.pack` objects `packs` lists plus
 the sum of `pack_bytes` over `entries`. A `compact` commit sets it to
 the bytes of the packs it lists, which the writer of the entry knows

@@ -48,13 +48,24 @@ against the newest index the commit produced:
 | bytes of those entries | sum of `pack_bytes` over `entries` > 256 MiB |
 | size of the index object | > 512 KiB |
 
+The byte threshold reads `pack_bytes` off each row of the index
+object's `entries` list (spec 004, Index object), which is what the
+index carries for it: `size_bytes` is the listed packs plus that sum
+and cannot be split back into the two, and summing the entry headers
+instead would cost one `GET` per entry on every push.
+
 When any of them holds, the primary schedules the compaction in the
 background and returns; a node that is not the primary creates the
 request object `origo/gc/<id>` below and returns. The request never
 waits for either. The primary also runs a sweep every 10 minutes that
 checks the thresholds over the repositories it holds locally and lists
 `origo/gc/`, so a repository pushed to through other nodes is found
-whether or not the primary holds it. At most one compaction per
+whether or not the primary holds it. `compact.Manager.GC` is the
+method spec 019's endpoint calls, and it answers one of three results:
+`Ran` with the before and after figures, `Running` with `started_at`,
+or `Primary` on a node that is not the primary. The endpoint's request
+and response shape, its rate limit, and its event are spec 019's. At
+most one compaction per
 repository runs on a node at a time: a trigger that finds one running
 is a no-op, and the sweep starts the next one. A node that is not the
 primary never compacts; it only downloads packs and writes requests.
@@ -91,17 +102,22 @@ listed id leaves it. A request is therefore acted on within 10 minutes
 while the primary is up; the compaction sweep on any node deletes a
 request object older than 24 hours, which only a primary that never
 ran leaves behind, and the next push through any node writes a fresh
-one.
+one. Any node's sweep also drops the request of a repository the log
+no longer holds: a purge (spec 004) removes the repository and leaves
+the request under `origo/gc/`, where it would otherwise fail one run
+per sweep for a whole day.
 
 ### Procedure
 
 `internal/compact.Run(repo)` on the primary, under its own deadline of
 30 minutes for the whole run (the repack subprocess runs with that
 deadline rather than the 5 minutes of spec 004, which spec 012 records).
-Once spec 012 lands, every git subprocess of the run takes a slot of
-its subprocess semaphore; a run that waits more than 5 seconds for a
-slot skips this run with `origo_compactions_total{result="skipped"}`
-and the next sweep retries it:
+Every git subprocess of the run takes a slot of the node's subprocess
+semaphore through `compact.Slots`, the seam spec 012 wires
+`ORIGO_MAX_GIT_PROCS` into; a node passes nil until that spec lands and
+the run takes no slot. A run that waits more than 5 seconds for a slot
+skips this run with `origo_compactions_total{result="skipped"}` and the
+next sweep retries it:
 
 ```mermaid
 sequenceDiagram
@@ -139,11 +155,20 @@ sequenceDiagram
    after an import (spec 019) or a first compaction of a large history.
 3. `git fsck --connectivity-only --no-progress`; a failure aborts with
    `origo_compactions_total{result="error"}` and the copy is evicted for
-   rebuild (spec 004).
-4. Upload every pack now under `objects/pack/` that the held index does
-   not list, with its `.idx`, under the log key the mapping of spec 004
-   gives its file name (`pack-<hash>.pack` is `packs/<hash>.pack`); the
-   `.idx` first so a reader never sees a pack without one.
+   rebuild (spec 004). The eviction happens after the run releases the
+   read lock, not inside this step: evicting takes the write lock, so
+   evicting under the read lock the run holds would deadlock.
+4. The run's pack set is what the multi-pack index of step 2 names,
+   read from its `PNAM` chunk: a repack without `-d` leaves every
+   superseded pack on disk on purpose, and the multi-pack index names
+   exactly the packs it left current, the new ones and the large ones
+   the geometric roll-up left alone. Upload every pack of that set the
+   held index does not already list, with its `.idx`, under the log key
+   the mapping of spec 004 gives its file name (`pack-<hash>.pack` is
+   `packs/<hash>.pack`); the `.idx` first so a reader never sees a pack
+   without one. A pack the held index already lists is carried into the
+   new list without being uploaded again, which is what keeps the list
+   small over many runs.
 5. Release the read lock and take the write lock; a push that landed in
    between has advanced the local sequence, and `Log.Commit` sees it in
    the next step. Commit a `compact` entry with an empty transaction, no
@@ -163,7 +188,12 @@ sequenceDiagram
    (`git repack -d` semantics, done by the node so the set on disk equals
    the index) and run `git multi-pack-index write --bitmap`, so the
    multi-pack index names exactly the packs on disk and the bitmap of
-   step 2 is rebuilt over them. Release the write lock, `result="ok"`,
+   step 2 is rebuilt over them. A failure of this step is a warning and
+   not a failure of the run: the log is already correct when the commit
+   returns, so a failed swap leaves the copy holding packs the index
+   does not list, which the next run's repack folds and this step then
+   removes, and answering the caller an error would say the compaction
+   did not happen. Release the write lock, `result="ok"`,
    `origo_compaction_seconds` observed, and the truncation below removes
    what the compaction folded.
 
@@ -226,7 +256,14 @@ request and response shape, rate limit, and event (spec 019).
   of spec 013's ports table and after the background run the last
   threshold crossing scheduled completes, the newest index lists at
   most 64 entries and at most 6 packs, and `git fsck` passes on the
-  copy a clone through node 2 of that table materializes (proposed:
+  copy a clone through node 2 of that table materializes. The wait for
+  that run pushes once every 15 seconds, which is what the next push on
+  a live repository does: under a push storm the run in flight when the
+  last push lands is the one that push overtakes, so it ends `stale`
+  and nothing after it scheduled a run, and the repository would
+  otherwise sit until the primary's 10 minute sweep. The pushes the
+  wait adds are why the history check compares the clone against the
+  working copy rather than a count of 500 (proposed:
   `test/e2e`,
   `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, in the
   `e2e` job of spec 013 against its stack and not in the unit suite the
@@ -261,27 +298,32 @@ request and response shape, rate limit, and event (spec 019).
 - A pack no index lists is deleted by the sweeper after
   `ORIGO_SWEEP_MIN_AGE` and one that the newest index lists is kept
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
-- After a compaction that folds 100 entries, every index object of the
+- After a compaction that folds 70 entries, every index object of the
   repository is still in the log, however old and however far below
   `compacted_through`, and a node holding one of them learns it is
   behind: the currency check on the held sequence answers 200 and not
-  the 404 a deleted successor would leave (proposed: `internal/wal`,
-  `TestSweepKeepsEveryIndexObject`; `internal/repo`,
-  `TestHolderOfAFoldedSequenceSeesTheNewerIndex`).
-- Fetch latency of a 100 MiB repository after 1 000 pushes is within
-  25% of its latency after 10 pushes, measured as the p50 of 10 clones
-  each through node 1 of spec 013's ports table, asserted on every push to `main`
-  (proposed: `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat`,
-  in the `e2e` job of spec 013; the fixture is sized so the test fits
-  that job's budget, and `TestMeasure` under `ORIGO_E2E_MEASURE=1`
-  prints the same figures for a 1 GiB fixture without asserting them).
+  the 404 a deleted successor would leave (`internal/wal`,
+  `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames` for the sweeper
+  half; `internal/compact`,
+  `TestHolderOfAFoldedSequenceSeesTheNewerIndex` for the holder's
+  check, in the package the compaction that makes it reachable lives
+  in).
+- Fetch latency of a 20 MiB repository after 200 pushes is within 25%
+  of its latency after 10 pushes, measured as the p50 of 10 clones each
+  through node 1 of spec 013's ports table, asserted on every push to
+  `main` (proposed: `test/e2e`,
+  `TestClusterCompactionKeepsFetchLatencyFlat`, in the `e2e` job of
+  spec 013). The figures are the Design's tuning target scaled to that
+  job's 30 minute budget, which already carries the 500 push test;
+  `TestMeasure` under `ORIGO_E2E_MEASURE=1` runs the same routine on a
+  1 GiB fixture and 1 000 pushes and asserts nothing.
 
 ## Outcome
 
-Built on 2026-09-08 in six commits: the `pack_bytes` row and the
-sweeper rules on the log, `internal/compact` with the procedure, the
-request objects and the sweep, the trigger on the receive path, the node
-wiring, and the tests.
+Built on 2026-09-08 in seven commits: the `pack_bytes` row on the log,
+the sweeper rules, `internal/compact` with the procedure, the request
+objects and the sweep, the threshold check on the node after every
+push, the trigger on the receive path, and the stack tests.
 
 | Criterion | Test |
 |---|---|
@@ -291,7 +333,8 @@ wiring, and the tests.
 | a `gc` on a node that is not the primary writes `origo/gc/<id>`, answers with the primary, and the primary's sweep compacts and deletes the request | `internal/compact`, `TestGcRequestIsPickedUpByThePrimary` |
 | 65 pushes through a node that is not the primary leave `origo/gc/<id>` with `reason: "threshold"`, and the primary, holding no copy, materializes and folds them | `internal/compact`, `TestPushOnANonPrimaryRequestsCompaction` |
 | a node that read the previous index materializes after the compaction while the entries are younger than `ORIGO_SWEEP_MIN_AGE` | `internal/compact`, `TestDelayedReaderSurvivesCompaction` |
-| a pack no index lists is swept after `ORIGO_SWEEP_MIN_AGE` and a listed one is kept, and no index object is ever swept | `internal/wal`, `TestSweepRemovesUnlistedPacks`, `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames` |
+| a pack no index lists is swept after `ORIGO_SWEEP_MIN_AGE` and a listed one is kept | `internal/wal`, `TestSweepRemovesUnlistedPacks` |
+| no index object is ever swept, and a holder of a folded sequence learns it is behind | `internal/wal`, `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`; `internal/compact`, `TestHolderOfAFoldedSequenceSeesTheNewerIndex` |
 | fetch latency after many pushes is within 25% of its latency after 10 | `test/e2e`, `TestClusterCompactionKeepsFetchLatencyFlat` (`e2e` job); `TestMeasure` under `ORIGO_E2E_MEASURE=1` for the 1 GiB fixture |
 | a run that waits more than 5 seconds for a subprocess slot skips (spec 012) | `internal/compact`, `TestCompactionSkipsWhenNoSlot` |
 
@@ -303,10 +346,12 @@ under a swept index object. `internal/wal/sweep.go` lost its index
 rule, the `Indexes` count of `SweepReport`, and the two assertions on
 it, and spec 004's Sweeper table carries the same rows.
 
-Divergences, each kept and the reason:
+Divergences from the first draft, each kept, with the reason; the
+Design above states each as the rule, so a reader finds one answer:
 
 - **The index row carries `pack_bytes`, which the byte threshold
-  sums.** The index object carried no such figure: `size_bytes` is that
+  sums.** The first draft's index object carried no such figure:
+  `size_bytes` is that
   sum plus the listed packs and cannot be split back into the two, and
   reading each entry's header to sum them would cost one `GET` per
   entry on every push. `wal.IndexEntry.PackBytes` and
@@ -314,10 +359,10 @@ Divergences, each kept and the reason:
   pack and an index object written before it existed reads as 0, so
   nothing in the tree has to be rewritten. Spec 004's Outcome records
   it.
-- **The pack set of a run is what the multi-pack index names.** Step 4
-  says "every pack now under `objects/pack/` that the held index does
-  not list", which after a repack without `-d` is every superseded pack
-  as well: `git repack` leaves them on disk on purpose. The
+- **The pack set of a run is what the multi-pack index names.** The
+  first draft uploaded every pack under `objects/pack/` the held index
+  did not list, which after a repack without `-d` is every superseded
+  pack as well: `git repack` leaves them on disk on purpose. The
   multi-pack index the same repack wrote names exactly the packs it
   left current, the new ones and the large ones the geometric roll-up
   left alone, so the run reads its `PNAM` chunk (`internal/compact/midx.go`).
@@ -325,23 +370,24 @@ Divergences, each kept and the reason:
   without being uploaded again, which is what keeps the list small over
   many runs (`TestASecondRunCarriesTheLargePackForward`).
 - **A run that fails the connectivity check evicts the copy after it
-  releases the read lock.** Step 3 says the copy "is evicted for
-  rebuild"; evicting takes the write lock, so doing it inside step 3
-  deadlocks against the read lock the run holds. The run releases
+  releases the read lock.** The first draft evicted inside step 3;
+  evicting takes the write lock, so doing it there deadlocks against
+  the read lock the run holds. The run releases
   first and evicts then, which is the same outcome one lock ordering
   later (`TestRunFailuresAreCountedAndReported`).
 - **A request object for a repository the log no longer holds is
-  deleted by any node's sweep**, beside the 24 hour rule the Design
-  gives. A purge (spec 004) removes the repository and leaves the
+  deleted by any node's sweep**, beside the 24 hour rule the first
+  draft gave. A purge (spec 004) removes the repository and leaves the
   request under `origo/gc/`, where it would fail one run per sweep for
   a whole day (`TestSweepReportsStoreFailures`).
-- **Step 6 is a warning, not a failure.** The log is already correct
+- **A failed pack swap in step 6 is a warning, not a failure of the
+  run.** The log is already correct
   when the commit returns, so a failed pack swap on disk leaves the
   copy holding packs the index does not list, which the next run's
   repack folds and this step then removes. Answering the caller an
   error would say the compaction did not happen.
 - **The subprocess semaphore is the `compact.Slots` seam.** Spec 012
-  owns `ORIGO_MAX_GIT_PROCS` and has not landed, so the manager takes a
+  owns `ORIGO_MAX_GIT_PROCS` and had not landed, so the manager takes a
   slot through an interface a node passes nil for today;
   `TestCompactionSkipsWhenNoSlot` drives it with a semaphore that
   grants nothing, and spec 012 wires the real one.
