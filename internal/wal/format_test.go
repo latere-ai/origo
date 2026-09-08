@@ -138,6 +138,25 @@ func validIndex() *Index {
 	}
 }
 
+// mustEncode and mustParse are the round trip in one line each.
+func mustEncode(t *testing.T, ix *Index) []byte {
+	t.Helper()
+	b, err := EncodeIndex(ix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func mustParse(t *testing.T, data []byte) *Index {
+	t.Helper()
+	ix, err := ParseIndex(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ix
+}
+
 func TestParseIndex(t *testing.T) {
 	data, err := EncodeIndex(validIndex())
 	if err != nil {
@@ -164,6 +183,36 @@ func TestParseIndex(t *testing.T) {
 	if ix, err := ParseIndex(legacy); err != nil || ix.PushedAt != nil {
 		t.Fatalf("legacy index: %+v, %v", ix, err)
 	}
+	// pack_bytes is the same shape: omitted on a row with no pack, so an
+	// index object written before it existed parses and sums to 0, and a
+	// row that carries it round-trips and EntriesBytes adds it up (spec
+	// 006's byte threshold).
+	if !bytes.Contains(data, []byte(`"kind":"push","pack_sha256"`)) {
+		t.Fatalf("pack_bytes is written on a row with no pack:\n%s", data)
+	}
+	if got := ix.EntriesBytes(); got != 0 {
+		t.Fatalf("EntriesBytes of rows with no pack = %d", got)
+	}
+	withBytes := mustParse(t, mustEncode(t, func() *Index {
+		ix := validIndex()
+		ix.Entries[0].PackBytes, ix.Entries[1].PackBytes = 3, 4
+		return ix
+	}()))
+	if got := withBytes.EntriesBytes(); got != 7 {
+		t.Fatalf("EntriesBytes = %d, want 7", got)
+	}
+	if got := withBytes.Clone().Entries[1].PackBytes; got != 4 {
+		t.Fatalf("Clone dropped pack_bytes: %d", got)
+	}
+	negative := mustEncode(t, func() *Index {
+		ix := validIndex()
+		ix.Entries[0].PackBytes = -1
+		return ix
+	}())
+	if _, err := ParseIndex(negative); err == nil {
+		t.Fatal("a negative pack_bytes was accepted")
+	}
+
 	pushedAt := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
 	pushed, _ := EncodeIndex(&Index{V: 1, PushedAt: &pushedAt})
 	if ix, err := ParseIndex(pushed); err != nil || ix.PushedAt == nil || !ix.PushedAt.Equal(pushedAt) || !ix.Clone().PushedAt.Equal(pushedAt) {

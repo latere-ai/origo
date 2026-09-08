@@ -23,9 +23,10 @@ import (
 // TestMeasure records the three numbers spec 004's Outcome carries:
 // pushes per second one node sustains for 60 seconds with 1 KiB
 // commits, the latency of the HEAD currency check, and the time to
-// materialize a repository of 1000 entries onto an empty disk; and
-// spec 009's time to the first byte of the archive of a 1 GiB tree. It
-// runs only with ORIGO_E2E_MEASURE=1 and prints its results.
+// materialize a repository of 1000 entries onto an empty disk; spec
+// 009's time to the first byte of the archive of a 1 GiB tree; and spec
+// 006's clone latency of a 1 GiB repository before and after 1 000
+// pushes. It runs only with ORIGO_E2E_MEASURE=1 and prints its results.
 func TestMeasure(t *testing.T) {
 	if os.Getenv("ORIGO_E2E_MEASURE") != "1" {
 		t.Skip("ORIGO_E2E_MEASURE is not set")
@@ -36,6 +37,7 @@ func TestMeasure(t *testing.T) {
 	t.Run("materialize 1000 entries", func(t *testing.T) { measureMaterialize(t, s) })
 	t.Run("archive 1 GiB tree", func(t *testing.T) { measureArchive(t, s) })
 	t.Run("clones per second over replicas", measureReplicas)
+	t.Run("compaction fetch latency", measureCompaction)
 }
 
 // measureReplicas is the one check TestMeasure carries (spec 005): the

@@ -24,6 +24,7 @@ import (
 
 const (
 	repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	repoB = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
 	nodeA = "origod-0"
 	nodeB = "origod-1"
 )
@@ -165,6 +166,23 @@ func (h *harness) packFiles(r *repo.Repo) []string {
 	return out
 }
 
+// bitmaps counts the multi-pack-index bitmaps under objects/pack: a
+// rewrite that left the previous one behind would leave two.
+func bitmaps(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(dir, "objects", "pack"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "multi-pack-index-") && strings.HasSuffix(e.Name(), ".bitmap") {
+			n++
+		}
+	}
+	return n
+}
+
 // elsewhere materializes the repository on a second node's empty disk
 // and answers the copy, which is what a fetch through another node
 // serves.
@@ -233,6 +251,9 @@ func TestThresholdFoldsEntries(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(local.Dir, "objects", "pack", "multi-pack-index")); err != nil {
 		t.Fatal(err)
+	}
+	if n := bitmaps(t, local.Dir); n != 1 {
+		t.Fatalf("%d multi-pack-index bitmaps after the run, want 1", n)
 	}
 	// A second node builds the same history from the packs alone.
 	other := h.elsewhere()
@@ -460,9 +481,11 @@ func TestPushOnANonPrimaryRequestsCompaction(t *testing.T) {
 	if err != nil || rep.Threshold != 1 {
 		t.Fatalf("threshold sweep: %+v, %v", rep, err)
 	}
-	if got := h.newest(); got.CompactedThrough != 131 {
-		t.Fatalf("compacted_through %d", got.CompactedThrough)
+	second := h.newest()
+	if second.CompactedThrough != 131 || len(second.Packs) > 6 {
+		t.Fatalf("compacted_through %d, %d packs", second.CompactedThrough, len(second.Packs))
 	}
+	h.elsewhere()
 }
 
 // TestDelayedReaderSurvivesCompaction: a node that read the previous

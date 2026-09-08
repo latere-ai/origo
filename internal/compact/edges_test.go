@@ -10,10 +10,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -241,8 +243,8 @@ func TestSweepReportsStoreFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.now = h.now.Add(RequestMaxAge)
-	h.store.SetFault(func(op, _ string) error {
-		if op == "Delete" {
+	h.store.SetFault(func(op, key string) error {
+		if op == "Delete" && strings.Contains(key, "gc/") {
 			return errors.New("delete refused")
 		}
 		return nil
@@ -251,7 +253,23 @@ func TestSweepReportsStoreFailures(t *testing.T) {
 		t.Fatal("a refused delete was hidden")
 	}
 	h.store.SetFault(nil)
+	// Two requests go without a run: repoA's, past RequestMaxAge above,
+	// and repoB's, for a repository the log does not hold.
+	if err := h.m.request(ctx, repoB, ReasonThreshold); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err := h.m.Sweep(ctx); err != nil || rep.Expired != 2 {
+		t.Fatalf("expired and purged requests: %+v, %v", rep, err)
+	}
+	for _, id := range []string{repoA, repoB} {
+		if _, err := h.m.ReadRequest(ctx, id); !errors.Is(err, wal.ErrNotFound) {
+			t.Fatalf("the request for %s survived", id)
+		}
+	}
 	// A cancelled sweep stops at the first repository.
+	if err := h.m.request(ctx, repoA, ReasonThreshold); err != nil {
+		t.Fatal(err)
+	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	if _, err := h.m.Sweep(cancelled); !errors.Is(err, context.Canceled) {
@@ -380,6 +398,52 @@ func TestSwapPacksReportsAMissingDirectory(t *testing.T) {
 	if base, ok := packBase("pack-abc.tmp"); ok {
 		t.Fatalf("a temporary file read as pack %q", base)
 	}
+}
+
+// TestASecondRunCarriesTheLargePackForward: the geometric roll-up
+// leaves a pack far larger than the ones it folds alone, so the second
+// run's entry lists it beside the new pack and the upload does not send
+// it a second time. That carry-forward is what keeps the pack list
+// small over many runs.
+func TestASecondRunCarriesTheLargePackForward(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	// A first commit far larger than every push after it.
+	h.src.Write("big.bin", gittest.Bytes(4<<20, 7))
+	head := h.src.CommitAll("the large history")
+	h.head = head
+	e := wal.Entry{Kind: wal.KindPush, Refs: []wal.RefUpdate{{Ref: "refs/heads/main", Old: wal.ZeroSHA, New: head}}, Pack: wal.BytesBody(h.src.Pack(head))}
+	c, err := h.log.Commit(ctx, repoA, h.held, e, func(context.Context, *wal.Index) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.held = c.Index
+	h.warm()
+	if out := h.m.runNow(ctx, repoA); out != OutcomeOK {
+		t.Fatalf("first run: %s", out)
+	}
+	first := h.newest()
+	if len(first.Packs) != 1 {
+		t.Fatalf("the first run lists %d packs", len(first.Packs))
+	}
+	h.pushes(65)
+	if out := h.m.runNow(ctx, repoA); out != OutcomeOK {
+		t.Fatalf("second run: %s", out)
+	}
+	second := h.newest()
+	if len(second.Packs) != 2 || !slices.Contains(second.Packs, first.Packs[0]) {
+		t.Fatalf("the second run lists %v, want the large pack %s carried forward beside a new one", second.Packs, first.Packs[0])
+	}
+	// The carried pack was uploaded once: its object still carries the
+	// modification time of the first run.
+	head1, err := h.store.Head(ctx, h.log.RepoPrefix(repoA)+first.Packs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !head1.LastModified.Equal(h.now) {
+		t.Fatalf("the carried pack was uploaded again at %s", head1.LastModified)
+	}
+	h.elsewhere()
 }
 
 func TestUploadReportsAMissingPack(t *testing.T) {

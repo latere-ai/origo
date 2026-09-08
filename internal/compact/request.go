@@ -101,8 +101,9 @@ func (m *Manager) requests(ctx context.Context) ([]string, error) {
 type SweepReport struct {
 	// Requested is the request objects this node acted on and removed.
 	Requested int
-	// Expired is the request objects older than RequestMaxAge removed,
-	// which only a primary that never ran leaves behind.
+	// Expired is the request objects removed without a run: one older
+	// than RequestMaxAge, which only a primary that never ran leaves
+	// behind, or one for a repository the log no longer holds.
 	Expired int
 	// Threshold is the local copies a threshold started a run for.
 	Threshold int
@@ -136,6 +137,16 @@ func (m *Manager) Sweep(ctx context.Context) (SweepReport, error) {
 			rep.Expired++
 			continue
 		}
+		// A request for a repository the log no longer holds, left by a
+		// purge (spec 004), is dropped by any node: the run would only
+		// fail, once per sweep, for the whole day of RequestMaxAge.
+		if _, _, err := m.log.Newest(ctx, id, 0, false); errors.Is(err, wal.ErrNotFound) {
+			if err := m.log.Store().Delete(ctx, m.requestKey(id)); err != nil {
+				return rep, err
+			}
+			rep.Expired++
+			continue
+		}
 		if !m.isPrimary(id) {
 			continue
 		}
@@ -150,15 +161,15 @@ func (m *Manager) Sweep(ctx context.Context) (SweepReport, error) {
 		}
 		rep.Requested++
 	}
-	for _, copy := range m.cache.Copies() {
+	for _, c := range m.cache.Copies() {
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
-		if requested[copy.ID] || !m.isPrimary(copy.ID) || !m.crossedLocally(ctx, copy.ID) {
+		if requested[c.ID] || !m.isPrimary(c.ID) || !m.crossedLocally(ctx, c.ID) {
 			continue
 		}
 		rep.Threshold++
-		m.runNow(ctx, copy.ID)
+		m.runNow(ctx, c.ID)
 	}
 	return rep, nil
 }
