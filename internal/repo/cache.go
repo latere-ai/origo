@@ -635,12 +635,16 @@ func (c *Cache) initBare(ctx context.Context, r *Repo) error {
 	if _, err := c.git.Run(ctx, r.Dir, nil, "init", "-q", "--bare", "."); err != nil {
 		return err
 	}
-	// Objects from a client are checked, the local copy is never garbage
-	// collected on its own (compaction is a log entry, spec 006), and the
-	// capabilities spec 003 promises are advertised.
+	// Objects from a client are checked on receive and on every other
+	// transfer, a tree entry that would name the git directory on an
+	// NTFS or HFS+ file system is refused (spec 016), the local copy is
+	// never garbage collected on its own (compaction is a log entry,
+	// spec 006), and the capabilities spec 003 promises are advertised.
 	for _, kv := range [][2]string{
 		{"core.protectNTFS", "true"},
+		{"core.protectHFS", "true"},
 		{"receive.fsckObjects", "true"},
+		{"transfer.fsckObjects", "true"},
 		{"receive.advertiseAtomic", "true"},
 		{"receive.advertisePushOptions", "true"},
 		{"receive.autogc", "false"},
