@@ -119,6 +119,7 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_EVENTS_SECRET"] = "e"
 	m["ORIGO_NODE_NAME"] = "pod-7"
 	m["ORIGO_GOSSIP_PEERS"] = "origod-headless"
+	m["ORIGO_GOSSIP_SECRET"] = strings.Repeat("s", 32)
 	m["ORIGO_PUBLIC_ADDR"] = "127.0.0.1:0"
 	m["ORIGO_INTERNAL_ADDR"] = "127.0.0.1:1"
 	m["ORIGO_GOSSIP_ADDR"] = "127.0.0.1:2"
@@ -147,7 +148,7 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	if cfg.AuthorizerURL != "https://authz.example" || cfg.AuthorizerToken != "s" || cfg.EventsURL != "https://events.example" || cfg.EventsSecret != "e" {
 		t.Fatalf("spec 007/008 values: %+v", cfg)
 	}
-	if cfg.NodeName != "pod-7" || cfg.GossipPeers != "origod-headless" {
+	if cfg.NodeName != "pod-7" || cfg.GossipPeers != "origod-headless" || cfg.GossipSecret != strings.Repeat("s", 32) {
 		t.Fatalf("node values: %+v", cfg)
 	}
 	if cfg.PublicAddr != "127.0.0.1:0" || cfg.InternalAddr != "127.0.0.1:1" || cfg.GossipAddr != "127.0.0.1:2" {
@@ -215,6 +216,35 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 	m["ORIGO_CACHE_BYTES"] = "0"
 	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ORIGO_PUBLIC_URL must be") || !strings.Contains(err.Error(), "ORIGO_CACHE_BYTES must be") {
 		t.Fatalf("unparsable URL and zero cache not reported: %v", err)
+	}
+}
+
+// TestGossipSecretIsRequiredWithPeers is spec 002's rule for spec
+// 005's two variables: peers without the secret is a missing key in
+// the one message, a secret shorter than 32 bytes is malformed, the
+// secret alone is read and unused, and neither is a single node.
+func TestGossipSecretIsRequiredWithPeers(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_GOSSIP_PEERS"] = "127.0.0.1:7946,127.0.0.1:7947"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "missing ORIGO_GOSSIP_SECRET") {
+		t.Fatalf("peers without the secret: %v", err)
+	}
+	m["ORIGO_GOSSIP_SECRET"] = "short"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ORIGO_GOSSIP_SECRET must be at least 32 bytes") {
+		t.Fatalf("short secret: %v", err)
+	}
+	m["ORIGO_GOSSIP_SECRET"] = strings.Repeat("k", 32)
+	cfg, err := Load(env(m))
+	if err != nil || cfg.GossipSecret != strings.Repeat("k", 32) || cfg.GossipPeers != "127.0.0.1:7946,127.0.0.1:7947" {
+		t.Fatalf("peers with the secret: %+v %v", cfg, err)
+	}
+	delete(m, "ORIGO_GOSSIP_PEERS")
+	if cfg, err := Load(env(m)); err != nil || cfg.GossipSecret == "" {
+		t.Fatalf("the secret without peers: %+v %v", cfg, err)
+	}
+	delete(m, "ORIGO_GOSSIP_SECRET")
+	if cfg, err := Load(env(m)); err != nil || cfg.GossipSecret != "" || cfg.GossipPeers != "" {
+		t.Fatalf("a single node: %+v %v", cfg, err)
 	}
 }
 

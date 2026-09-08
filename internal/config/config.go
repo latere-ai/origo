@@ -35,6 +35,9 @@ const (
 	// a node must be unheard before its journals are repaired.
 	DefaultRepairInterval = 10 * time.Minute
 	DefaultRepairUnheard  = 5 * time.Minute
+	// MinGossipSecretBytes is the shortest ORIGO_GOSSIP_SECRET accepted
+	// (spec 002): the key of an HMAC-SHA256 is at least its output size.
+	MinGossipSecretBytes = 32
 	// Prefix under which every object of every repository lives. Spec 001
 	// fixes it; it is not configurable.
 	Prefix = "origo/"
@@ -88,8 +91,14 @@ type Config struct {
 	// NodeName identifies the node in gossip and placement (spec 005). The
 	// host name by default, which is the pod name in Kubernetes.
 	NodeName string
-	// GossipPeers is a DNS name resolving to every node. Optional.
+	// GossipPeers names the other nodes (spec 005): a comma separated
+	// list of host:port entries, or one DNS name that resolves to every
+	// node on the port of GossipAddr. Optional; empty is a single node.
 	GossipPeers string
+	// GossipSecret is the key of the HMAC every gossip datagram carries
+	// (spec 005), at least MinGossipSecretBytes long. Required when
+	// GossipPeers is set; read and unused without peers.
+	GossipSecret string
 
 	// Listen addresses. Spec 002 fixes the ports; the addresses are
 	// variables so a test binds an ephemeral port and two checkouts run
@@ -136,6 +145,7 @@ func Load(getenv Getenv) (*Config, error) {
 		EventsSecret:    getenv("ORIGO_EVENTS_SECRET"),
 		NodeName:        getenv("ORIGO_NODE_NAME"),
 		GossipPeers:     getenv("ORIGO_GOSSIP_PEERS"),
+		GossipSecret:    getenv("ORIGO_GOSSIP_SECRET"),
 		PublicAddr:      orDefault(getenv("ORIGO_PUBLIC_ADDR"), DefaultPublicAddr),
 		InternalAddr:    orDefault(getenv("ORIGO_INTERNAL_ADDR"), DefaultInternalAddr),
 		GossipAddr:      orDefault(getenv("ORIGO_GOSSIP_ADDR"), DefaultGossipAddr),
@@ -181,6 +191,15 @@ func Load(getenv Getenv) (*Config, error) {
 			problems = append(problems, "ORIGO_CACHE_BYTES must be a positive integer number of bytes")
 		}
 		cfg.CacheBytes = n
+	}
+	// The secret is required whenever there are peers, because a
+	// datagram without a MAC is dropped and the node would never hear
+	// them; a single node runs with neither (spec 005).
+	switch {
+	case cfg.GossipPeers != "" && cfg.GossipSecret == "":
+		problems = append(problems, "missing ORIGO_GOSSIP_SECRET")
+	case cfg.GossipSecret != "" && len(cfg.GossipSecret) < MinGossipSecretBytes:
+		problems = append(problems, fmt.Sprintf("ORIGO_GOSSIP_SECRET must be at least %d bytes", MinGossipSecretBytes))
 	}
 	cfg.SweepInterval = duration(getenv, "ORIGO_SWEEP_INTERVAL", DefaultSweepInterval, &problems)
 	cfg.SweepMinAge = duration(getenv, "ORIGO_SWEEP_MIN_AGE", DefaultSweepMinAge, &problems)
