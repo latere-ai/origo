@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "path": "src/b.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "fbbee861521bd5355538b096fa3998541cd33909",
+      "size": 11
+    }
+  ],
+  "next_cursor": null
+}
+

@@ -1,0 +1,27 @@
+{
+  "entries": [
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "80ee0cbffdde4efac5da5c7aa554a913f7d472e9",
+      "size": 19
+    },
+    {
+      "path": "assets",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "4581ed03cfc4cc7691ad4f17663b0d89c877a596",
+      "size": null
+    },
+    {
+      "path": "src",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "280ebaa0f913d506937c0dfae0f36c6b55b44fc3",
+      "size": null
+    }
+  ],
+  "next_cursor": null
+}
+

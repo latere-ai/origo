@@ -1,0 +1,43 @@
+[
+  {
+    "name": "refs/heads/big",
+    "sha": "874d954d423d056caeb982bd439fbe85a9ac68d8",
+    "peeled": null
+  },
+  {
+    "name": "refs/heads/feature",
+    "sha": "037640d7592172a766fb64b1d2839bfd952a5df8",
+    "peeled": null
+  },
+  {
+    "name": "refs/heads/large",
+    "sha": "e3e8d99642562d6ea8e84d172bb0a4d8557b5a79",
+    "peeled": null
+  },
+  {
+    "name": "refs/heads/main",
+    "sha": "6c64eb08aa47d0d34f41afbc4b6a57e21702b6e0",
+    "peeled": null
+  },
+  {
+    "name": "refs/heads/side",
+    "sha": "fcbfde12ad83eb24a5535d742712398ce8a5ba11",
+    "peeled": null
+  },
+  {
+    "name": "refs/heads/topic/x",
+    "sha": "075391aaefaea2254a0c8dc608033ba88757135a",
+    "peeled": null
+  },
+  {
+    "name": "refs/tags/latest",
+    "sha": "6c64eb08aa47d0d34f41afbc4b6a57e21702b6e0",
+    "peeled": null
+  },
+  {
+    "name": "refs/tags/v1.0",
+    "sha": "51adf7fd98d606dfdd9769bedc5d9c8f117e08cb",
+    "peeled": "1729ad8976b26de0ad0adedbcbc8b885f26b330e"
+  }
+]
+

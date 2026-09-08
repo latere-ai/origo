@@ -1,0 +1,12 @@
+diff --git a/README.md b/README.md
+index ca69e6d..80ee0cb 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,3 @@
+ # Fixture
++
++Signed.
+diff --git a/assets/logo.bin b/assets/logo.bin
+new file mode 100644
+index 0000000..79ba77b
+Binary files /dev/null and b/assets/logo.bin differ

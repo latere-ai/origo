@@ -1,0 +1,24 @@
+{
+  "sha": "f5ba82c68a7b855daf116988412fa48f83078c02",
+  "parents": [
+    "08966f547949d247a3b5700efe957880a37269ee"
+  ],
+  "author": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:03:00Z"
+  },
+  "committer": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:03:00Z"
+  },
+  "message": "Rename a to b\n",
+  "trailers": [],
+  "stats": {
+    "files": 1,
+    "additions": 0,
+    "deletions": 0
+  }
+}
+

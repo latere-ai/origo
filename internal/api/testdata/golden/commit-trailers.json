@@ -1,0 +1,37 @@
+{
+  "sha": "1729ad8976b26de0ad0adedbcbc8b885f26b330e",
+  "parents": [
+    "9d88b81b110cc3d1462f08ccb7d1f5dae53f8396"
+  ],
+  "author": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:05:00Z"
+  },
+  "committer": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:05:00Z"
+  },
+  "message": "Sign the work\n\nThe body of the message.\n\nSigned-off-by: Alice \u003calice@example.com\u003e\nSigned-off-by: Bob \u003cbob@example.com\u003e\nCo-authored-by: Carol \u003ccarol@example.com\u003e\n",
+  "trailers": [
+    {
+      "key": "Signed-off-by",
+      "value": "Alice \u003calice@example.com\u003e"
+    },
+    {
+      "key": "Signed-off-by",
+      "value": "Bob \u003cbob@example.com\u003e"
+    },
+    {
+      "key": "Co-authored-by",
+      "value": "Carol \u003ccarol@example.com\u003e"
+    }
+  ],
+  "stats": {
+    "files": 1,
+    "additions": 2,
+    "deletions": 0
+  }
+}
+

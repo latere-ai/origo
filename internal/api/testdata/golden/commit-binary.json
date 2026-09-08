@@ -1,0 +1,24 @@
+{
+  "sha": "9d88b81b110cc3d1462f08ccb7d1f5dae53f8396",
+  "parents": [
+    "f5ba82c68a7b855daf116988412fa48f83078c02"
+  ],
+  "author": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:04:00Z"
+  },
+  "committer": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:04:00Z"
+  },
+  "message": "Add a binary file\n",
+  "trailers": [],
+  "stats": {
+    "files": 1,
+    "additions": 0,
+    "deletions": 0
+  }
+}
+

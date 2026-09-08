@@ -3,9 +3,10 @@
 
 // Package api serves the repository lifecycle of spec 003 under
 // /v1/repos: create with a caller-chosen id, read, rename, delete with
-// a hold, and undelete, and the repository-bound tokens of spec 007.
-// Every request is authorized before the repository is looked up. Every
-// other read operation of spec 009 lands with that spec.
+// a hold, and undelete, the repository-bound tokens of spec 007, and
+// the read API of spec 009: refs, commits, compare, tree, blob, and the
+// archive, each served by git from the local copy after the currency
+// check. Every request is authorized before the repository is looked up.
 package api
 
 import (
@@ -33,6 +34,9 @@ type Options struct {
 	Guard *auth.Guard
 	// Signer mints repository-bound tokens; required.
 	Signer *auth.Signer
+	// ReadTimeout is the budget of the git subprocesses of one read
+	// request; DefaultReadTimeout when zero.
+	ReadTimeout time.Duration
 }
 
 // Handler serves /v1/repos.
@@ -42,6 +46,8 @@ type Handler struct {
 	logger *slog.Logger
 	guard  *auth.Guard
 	signer *auth.Signer
+
+	readTimeout time.Duration
 }
 
 // New builds the handler.
@@ -53,7 +59,11 @@ func New(o Options) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer}
+	timeout := o.ReadTimeout
+	if timeout == 0 {
+		timeout = DefaultReadTimeout
+	}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, readTimeout: timeout}
 }
 
 // Register mounts the routes.
@@ -64,6 +74,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/repos/{id}", h.delete)
 	mux.HandleFunc("POST /v1/repos/{id}/undelete", h.undelete)
 	mux.HandleFunc("POST /v1/repos/{id}/tokens", h.tokens)
+	h.registerRead(mux)
 }
 
 // Repository is the representation spec 003 fixes.
@@ -75,6 +86,9 @@ type Repository struct {
 	SizeBytes     int64     `json:"size_bytes"`
 	Head          string    `json:"head"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// PushedAt is the time of the newest push, from the index object
+	// the node holds (spec 009); null for a repository with no push.
+	PushedAt *time.Time `json:"pushed_at"`
 }
 
 // reservedOwners are path prefixes the public surface uses itself.
@@ -158,7 +172,7 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 	branch := ix.DefaultBranch()
 	return Repository{
 		ID: m.ID, Owner: m.Owner, Slug: m.Slug, DefaultBranch: branch,
-		SizeBytes: ix.SizeBytes, Head: ix.Refs["refs/heads/"+branch], UpdatedAt: m.UpdatedAt,
+		SizeBytes: ix.SizeBytes, Head: ix.Refs["refs/heads/"+branch], UpdatedAt: m.UpdatedAt, PushedAt: ix.PushedAt,
 	}
 }
 

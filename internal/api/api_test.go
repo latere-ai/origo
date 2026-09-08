@@ -50,12 +50,43 @@ type harness struct {
 	principal auth.Principal
 }
 
-func newHarness(t *testing.T) *harness {
+// harnessOption changes how a harness is built.
+type harnessOption func(*harnessConfig)
+
+type harnessConfig struct {
+	store       *wal.MemStore
+	gitBin      string
+	readTimeout time.Duration
+}
+
+// withStore shares a store between harnesses, two nodes over one log.
+func withStore(store *wal.MemStore) harnessOption {
+	return func(c *harnessConfig) { c.store = store }
+}
+
+// withGit runs every subprocess through the binary at path.
+func withGit(path string) harnessOption {
+	return func(c *harnessConfig) { c.gitBin = path }
+}
+
+// withReadTimeout lowers the read API's budget.
+func withReadTimeout(d time.Duration) harnessOption {
+	return func(c *harnessConfig) { c.readTimeout = d }
+}
+
+func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
-	store := wal.NewMemStore()
+	var cfg harnessConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	store := cfg.store
+	if store == nil {
+		store = wal.NewMemStore()
+	}
 	logger := slog.New(slog.DiscardHandler)
 	l := wal.New(wal.Options{Store: store, Logger: logger})
-	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger})
+	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, GitBin: cfg.gitBin})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +103,7 @@ func newHarness(t *testing.T) *harness {
 	h.guard = auth.NewGuard(client, logger)
 	h.signer = auth.NewSigner(key, issuer, nil)
 	mux := http.NewServeMux()
-	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer}).Register(mux)
+	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout}).Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.

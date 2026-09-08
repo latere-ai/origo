@@ -1,0 +1,4 @@
+diff --git a/src/a.txt b/src/b.txt
+similarity index 100%
+rename from src/a.txt
+rename to src/b.txt

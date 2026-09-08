@@ -1,0 +1,25 @@
+{
+  "sha": "075391aaefaea2254a0c8dc608033ba88757135a",
+  "parents": [
+    "2199e58d3a7e13a862b667a872fefa20db2ad23a",
+    "037640d7592172a766fb64b1d2839bfd952a5df8"
+  ],
+  "author": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:10:00Z"
+  },
+  "committer": {
+    "name": "Origo Test",
+    "email": "test@example.com",
+    "at": "2026-09-06T10:10:00Z"
+  },
+  "message": "Merge feature\n",
+  "trailers": [],
+  "stats": {
+    "files": 2,
+    "additions": 2,
+    "deletions": 0
+  }
+}
+
