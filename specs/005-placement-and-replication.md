@@ -498,6 +498,14 @@ Items for other specs:
 - `latere.ai/x/pkg`: nothing new was needed; `pkg/cache` is the
   catch-up rate limiter and `pkg/wait` the evictor's ticker.
 
+A defect in the batched materialization found and fixed by spec 015
+on 2026-09-08: a worker's failure cancelled the indexer, which may
+have been running `index-pack` on an earlier batch, and the caller saw
+that run's `context canceled` instead of the worker's error, so a
+missing entry read as an outage rather than the integrity error it
+is. `applyEntries` now reports the first worker error over the
+cancelled run (`TestWorkerErrorIsNotMaskedByTheCancelledIndexer`).
+
 The cluster criteria are proved by the `e2e` and `e2e-slow` jobs of
 spec 013; the kind stack cannot run on this machine (spec 013's
 Outcome). Both jobs are green on `main` at `ee6a5c6` (run

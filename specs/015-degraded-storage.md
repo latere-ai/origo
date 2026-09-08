@@ -1,6 +1,6 @@
 ---
 title: "Degraded storage: what a node does when the bucket is slow, partial, or gone"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -227,3 +227,158 @@ Queueing pushes for later commit.
   through the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family
   the job exported for partial, inside the `e2e` job of spec 013
   (proposed: `test/e2e`, `TestClusterDegradedStorage`).
+
+## Outcome
+
+Built on 2026-09-08 in ten commits: the breaker store in
+`internal/wal` (`breaker.go`: the local breaker, `BreakerStore`,
+`OpError`, `ErrorDetails`), `MemStore.SetLatency` and the log's
+`IntegrityError`, a materialization fix, the cache's `Lease` with the
+stale bound and the integrity errors, the handlers, the code, the two
+variables, the node's wiring and readiness, `test/stubs/slowproxy`,
+the overlay, the cluster test, and the documentation.
+
+| Criterion | Test |
+|---|---|
+| unreachable: a warm repository clones with `Origo-Stale` for `ORIGO_STALE_MAX` and answers 503 after, a cold one 503 at once, a push refused at `info/refs` with the `ERR` pkt-line before any pack, an `Acquire` for writing refused at once while the clone is served stale | `internal/httpgit`, `TestReadBreakerServesStaleThenRefuses`; the cache's half in `internal/repo`, `TestStaleLeaseIsBoundedByStaleMax`; the read API in `internal/api`, `TestReadAPIServesStaleAndRepositoryUnavailable` |
+| slow: a call fails after `ORIGO_STORAGE_TIMEOUT`, one call of three attempts counts one failure, the 5th opens, an open breaker refuses with `ErrStorageOpen`, after 30 seconds of fake time one probe runs while a concurrent call is refused, a failed probe reopens for 30 and not 60, a successful probe closes | `internal/wal`, `TestBreakerOpensOnTimeoutsAndRecovers` (`MemStore.SetLatency` for the slow store, `SetFault` for the failed probe), `TestOneCallWithThreeAttemptsIsOneFailure` (the S3 adapter over `s3test` under three 503s), `TestWaitPollsTheWriteBreaker`, `TestGetDeadlineBoundsTheCallNotTheBody`; the first consistent response after the probe in `TestReadBreakerServesStaleThenRefuses` |
+| write breaker open: `info/refs?service=git-receive-pack` answers 200 with the `ERR` pkt-line and `Retry-After`, `git push` exits with the sentence in `remote error` having sent no pack; a spooled push is committed when the breaker admits a probe within 60 seconds of fake time and refused in the sideband when it does not, or when the probe fails | `internal/httpgit`, `TestWriteBreakerRefusesBeforeUpload` (protocol versions 0 and 2), `TestSpooledPushWaitsForTheBreaker` |
+| a missing pack object is 503 `repository_unavailable` with `details.key`, counts `origo_log_integrity_errors_total`, leaves another repository served | `internal/repo`, `TestMissingPackIsAnIntegrityError` (a pack, a gone entry, an entry whose digest differs, an entry that does not parse); `internal/httpgit`, `TestIntegrityErrorIsRepositoryUnavailable`; the thin-pack rule below in `TestThinPackWithoutBaseIsStorageUnavailable` |
+| the stack: unreachable under `cut-storage.yaml`, slow under the proxy's delay through host port 30085, partial after a deletion through the MinIO host port, through node 1 with its counters from its internal host port | `test/e2e`, `TestClusterDegradedStorage`, in the `e2e` job of spec 013 |
+| the variables, the wiring, readiness | `internal/config`, `TestLoadAppliesDefaults`, `TestLoadReadsEveryOptionalValue`, `TestStorageTimeoutMustBeAboveZero`; `cmd/origod`, `TestReadyzStaysReadyWhileTheBreakerIsOpen`, `TestStorageTimeoutBoundsTheReadinessListing` |
+| the proxy | `test/stubs/slowproxy`, `TestProxyHoldsTheFirstBytesForTheDelay`, `TestSettingTheDelayClosesPooledConnections`, `TestControlRefusesABadDelayAndSetReportsIt`, `TestProxyEndsWithAnUnreachableTargetAndOnClose`; `test/stubs/cmd/origo-stubs`, `TestRunsEveryStubFromFlags` |
+
+Divergences and interpretations, each kept and the reason:
+
+- The deadline is per call, not per attempt. `pkg/s3` runs its three
+  attempts under the one context it is given and `retry.Policy` has no
+  per-attempt deadline, so the wrapper bounds the whole call: a slow
+  bucket fails a call after `ORIGO_STORAGE_TIMEOUT`, which is what the
+  criterion states, not after three times it as the Design's "about 30
+  seconds" says. One call is still one count, and
+  `TestOneCallWithThreeAttemptsIsOneFailure` proves the three attempts
+  inside it. A per-attempt deadline is a pkg item below.
+- A `Get` is bounded to the arrival of the object's headers; its body
+  is read under the caller's own context, because an entry of up to
+  2 GiB cannot be read inside any per-call deadline. The git deadline
+  of the request bounds the read.
+- The breaker is local. `pkg/circuitbreaker.Breaker` reads `time.Now`
+  and has no `WithClock`, the item the Current state records, so
+  `internal/wal/breaker.go` holds a breaker with the package's
+  semantics and a clock function, its home named in its comment.
+  `circuitbreaker.State` is still the package's type and the gauge's
+  values. The wrapper's clock is an interface with `Now()`, as the
+  Design says; the deadline runs on real time, so the unit test of the
+  timeout uses a short real deadline and the fake clock for the
+  window and the stale bound.
+- A cancelled call counts as a failure. The Design lists a timeout, a
+  transport error, and a 5xx; a call ended by its caller's context is
+  counted the same, because the readiness probe's listing, which the
+  probe's 2 second budget ends before a 10 second deadline, is the
+  one call a replica out of rotation keeps making, and without it the
+  breaker of an unready replica would never open. A success resets the
+  count, so a client that goes away under a healthy bucket opens
+  nothing.
+- Readiness, which the spec leaves open: the `storage` check passes
+  while the read breaker is open. A replica that serves warm
+  repositories stale and refuses writes with the retry sentence is
+  serving the degraded design; out of the endpoint list a client would
+  see neither. The check fails as before while the bucket is slow or
+  gone and the breaker is still closed, so a replica is unready for
+  the interval between the first failure and the fifth, at most 25
+  seconds of probes, then ready again
+  (`TestReadyzStaysReadyWhileTheBreakerIsOpen`). Recorded under Open
+  below.
+- A refused call counts on `origo_storage_ops_total{result="error"}`
+  and is not observed on `origo_storage_seconds`: nothing ran. A 304
+  counts as `ok`, the table having no `not_modified` value.
+- The storage span is named by the op exactly (`get`, `head`, ...),
+  as spec 011's Outcome left it to this spec; the transport span of
+  `otel.Transport` stays beside it.
+- `origo_stale_responses_total` is counted by the cache when it hands
+  out a stale lease, one place for the git routes and the read API,
+  rather than by each handler as it writes the header.
+- The push refused at `info/refs` covers both breakers: the write
+  breaker asked before the lease, and the read breaker through the
+  lease's refusal or its stale verdict, because a push needs a current
+  index object as its base (the decisions table's rule). `Retry-After`
+  is the remaining window of the breaker that refused. The same
+  `Retry-After` goes on a 503 `storage_unavailable` the read breaker
+  refused, on the git routes and the repository API alike.
+- The spooled push's wait polls `Admits`, which answers whether the
+  window has passed without taking the probe slot, and the commit's
+  first write is the probe; polling `Allow` itself would take the slot
+  and refuse the commit's own write. The sideband line for a wait that
+  passes and for a probe that fails is `storage_unavailable: <the
+  sentence>`; the line for a commit the log refuses for another reason
+  keeps its text until spec 021's `TestRejectLinesAreTheTableSentences`
+  lands.
+- A thin pack whose base is in no entry and no pack, spec 005's item,
+  is `storage_unavailable`, not `repository_unavailable`: git refuses
+  the batch and the error is neither an integrity error of the log nor
+  corruption of the copy, so nothing is counted or evicted, and the
+  base pushed later completes the history
+  (`TestThinPackWithoutBaseIsStorageUnavailable`, the rule the
+  verifier of this spec fixed).
+- The integrity error covers, beside the three the Design lists, an
+  entry the index names that answers 404, one that does not parse, and
+  one whose pack is not a version 2 packfile: each is one key the log
+  names that does not hold what the log says. The key is the full
+  object key, so the operator's restore names it as the bucket does.
+- The slow proxy's `SetDelay` closes every forwarded connection, so a
+  node's pooled connections meet the delay on their next request; a
+  delay on new connections alone would leave a warm node's requests
+  unaffected. Its control endpoint answers a GET of its root with the
+  state, a PUT of `/delay` with a body `{"delay": "5s"}` sets the
+  delay, and a DELETE of `/delay` clears it; the package's `Set`
+  drives it from a test.
+- On the stack, `ORIGO_STORAGE_TIMEOUT` is `2s` beside the
+  `ORIGO_STALE_MAX=30s` spec 013's overlay row already set, so the read
+  breaker opens in a few seconds and the warm copy is observed stale
+  for most of its 30 seconds; at 10 seconds the breaker would open
+  near the bound. `cut-storage.yaml` now also denies the nodes egress
+  to the stubs pod's port 8086, the proxy's data listener that
+  `ORIGO_S3_ENDPOINT` names, keeping the stubs' other ports open; the
+  proxy's data listener has a Service of its own, `slowproxy`, and its
+  control port joins the stubs' NodePort Service at 30085, which
+  `up.sh` and `TestClusterUpScript` wait for.
+- `Cache.Acquire` keeps its signature and calls the new `Cache.Lease`,
+  which carries the stale verdict; a reader that calls `Acquire` under
+  an open breaker gets the stale copy without the verdict, which the
+  handlers never do.
+- The LFS handler's storage failures stay `storage_unavailable` in the
+  LFS body shape; an integrity error cannot reach it, because it reads
+  index objects and its own markers only.
+
+A defect found in existing code and fixed at its root, recorded in
+spec 005's Outcome: a worker's failure in the batched materialization
+was masked by the indexer's cancelled `index-pack` run, so a missing
+entry read as `context canceled`
+(`TestWorkerErrorIsNotMaskedByTheCancelledIndexer`).
+
+`latere.ai/x/pkg`, two items:
+
+- `pkg/circuitbreaker` has no clock option: `New(threshold,
+  openDuration)` reads `time.Now`, so its window cannot be advanced in
+  a test. `WithClock(func() time.Time)` as an `Option` on `New`, the
+  way `BackoffConfig.Now` works, would let `internal/wal/breaker.go`
+  go.
+- `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do`
+  passes one context to every attempt. A `Timeout` on `retry.Policy`,
+  applied to each attempt's context, would make "10 seconds per
+  attempt" expressible from outside the client.
+
+Open, left to the owner of the decision:
+
+- Readiness under an open breaker, above: built as ready-while-open
+  with the reasoning given; the alternative, unready until the bucket
+  answers, keeps a partitioned replica out of rotation at the cost of
+  no stale serving through a Service. Spec 002 owns `/readyz`.
+- Whether a `Retry-After` belongs on every 503 the breaker refuses,
+  built here, or on the receive-pack advertisement alone, the one
+  place the Design names it.
+
+The cluster criterion is proved by the `e2e` job of spec 013 on the
+push that lands this spec; the kind stack cannot run on this machine
+(spec 013's Outcome). The spec moves to `complete` when that job is
+green with `TestClusterDegradedStorage` in its run.
