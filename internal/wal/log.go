@@ -497,7 +497,7 @@ func (l *Log) nextIndex(base *Index, seq uint64, key string, at time.Time, e Ent
 			next.Refs[u.Ref] = u.New
 		}
 	}
-	ie := IndexEntry{Seq: seq, Key: key, Kind: e.Kind, PackSHA256: e.Pack.SHA256}
+	ie := IndexEntry{Seq: seq, Key: key, Kind: e.Kind, PackBytes: e.Pack.Size, PackSHA256: e.Pack.SHA256}
 	if e.Pack.Size == 0 {
 		ie.PackSHA256 = ""
 	}

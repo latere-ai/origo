@@ -67,10 +67,26 @@ type RefUpdate struct {
 
 // IndexEntry is one entry named by an index object.
 type IndexEntry struct {
-	Seq        uint64 `json:"seq"`
-	Key        string `json:"key"`
-	Kind       Kind   `json:"kind"`
+	Seq  uint64 `json:"seq"`
+	Key  string `json:"key"`
+	Kind Kind   `json:"kind"`
+	// PackBytes is the entry's pack_bytes. size_bytes is the bytes of
+	// the listed packs plus the sum of this field over the rows, and
+	// compaction (spec 006) reads the sum for its byte threshold
+	// without opening an entry. Absent on a row with no pack and on an
+	// index object written before the field existed.
+	PackBytes  int64  `json:"pack_bytes,omitempty"`
 	PackSHA256 string `json:"pack_sha256"`
+}
+
+// EntriesBytes is the sum of pack_bytes over the entries since the last
+// compaction, the byte threshold of spec 006.
+func (ix *Index) EntriesBytes() int64 {
+	var n int64
+	for _, e := range ix.Entries {
+		n += e.PackBytes
+	}
+	return n
 }
 
 // Index is the complete state of a repository after entry Seq.
@@ -137,6 +153,11 @@ const LatestKey = "index/latest"
 // pack keeps one name everywhere; every spec that moves a pack uses this
 // mapping.
 func PackFile(key string) string { return "pack-" + strings.TrimPrefix(key, "packs/") }
+
+// PackKey is PackFile the other way: the log key of a file git wrote
+// under objects/pack. A compaction (spec 006) uploads the packs its
+// repack produced under the key of the name git gave each file.
+func PackKey(file string) string { return "packs/" + strings.TrimPrefix(file, "pack-") }
 
 var (
 	entryKeyRe = regexp.MustCompile(`^wal/(\d{12})\.([0-9a-f]{16})\.entry$`)
@@ -327,6 +348,9 @@ func ParseIndex(data []byte) (*Index, error) {
 		case KindPush, KindCompact, KindDelete:
 		default:
 			return nil, fmt.Errorf("wal: index: entry kind %q", e.Kind)
+		}
+		if e.PackBytes < 0 {
+			return nil, fmt.Errorf("wal: index: entry %q pack_bytes negative", e.Key)
 		}
 	}
 	if ix.Seq > 0 && (len(ix.Entries) == 0 || ix.Entries[len(ix.Entries)-1].Key != ix.Entry) {
