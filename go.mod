@@ -6,7 +6,7 @@ tool latere.ai/x/ci-gate/cmd/lateregate
 
 require (
 	github.com/google/uuid v1.6.0
-	latere.ai/x/pkg v0.58.0
+	latere.ai/x/pkg v0.59.0
 )
 
 require (
