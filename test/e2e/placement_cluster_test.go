@@ -22,6 +22,10 @@ import (
 	"github.com/latere-ai/origo/test/e2e/cluster"
 )
 
+// placementWindow is how long three nodes may take to agree on the
+// live set after one joins (spec 005's membership criterion).
+const placementWindow = 60 * time.Second
+
 // nodePorts maps a node name of the stack to its public and internal
 // host ports of spec 013's ports table: origod-0 is node 1.
 func nodePorts(t *testing.T, name string) (public, internal int) {
@@ -92,21 +96,26 @@ func TestClusterPreferredNodeIsWarm(t *testing.T) {
 	commitFile(t, work, "a.txt", "one", "first")
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 
+	// A node that joined just now, as a pod the previous test replaced,
+	// hears the others within the window of spec 005's membership
+	// criterion, 60 seconds; until then its own set is short and its
+	// header differs. The three headers are read until they agree.
 	var first string
+	waitUntil(t, "the three nodes agreeing on the preferred node", placementWindow, func() bool {
+		var names []string
+		for i := range 3 {
+			prefer := preferHeader(t, portNode1+i, token, id)
+			if strings.Count(prefer, ",") != 0 {
+				t.Fatalf("replicas = 1 but node %d names %q", i+1, prefer)
+			}
+			names = append(names, prefer)
+		}
+		t.Logf("nodes 1, 2, 3 answer Origo-Prefer: %s", strings.Join(names, " "))
+		first = names[0]
+		return names[1] == first && names[2] == first
+	})
 	for i := range 3 {
-		port := portNode1 + i
-		clone(t, repoURL(port, token, id))
-		prefer := preferHeader(t, port, token, id)
-		name := strings.Split(prefer, ",")[0]
-		t.Logf("node %d answers Origo-Prefer: %s", i+1, prefer)
-		if i == 0 {
-			first = name
-		} else if name != first {
-			t.Fatalf("node %d prefers %s, node 1 prefers %s", i+1, name, first)
-		}
-		if strings.Count(prefer, ",") != 0 {
-			t.Fatalf("replicas = 1 but the header names %q", prefer)
-		}
+		clone(t, repoURL(portNode1+i, token, id))
 	}
 	public, internal := nodePorts(t, first)
 	materialized := stackMetric(t, internal, "origo_repo_materialized_total", "")
