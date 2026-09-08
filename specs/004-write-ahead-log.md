@@ -300,11 +300,18 @@ deletes, once an object is older than `ORIGO_SWEEP_MIN_AGE`:
 |---|---|
 | an entry with `seq` at or below `compacted_through` of the newest index | folded by compaction |
 | an entry with `seq` above the newest index, or one the newest index does not name | an orphan |
-| an index object below `compacted_through` and below the newest 64 | superseded; the newest 64 are always kept |
+| an index object | never, whatever `compacted_through` says (spec 006, Truncation) |
 | everything under the repository, and its name | the newest index carries `deleted_at` older than the 7 day hold; the age rule does not apply |
 
-A reader that holds a swept sequence is below `compacted_through` and
-rebuilds from packs, which is step 2 of materialization.
+An index object is never deleted because the currency check is `HEAD
+index/<n+1>` and a 404 means current: a warm node holding `index/<n>`
+below a truncation point would read the 404 left by a deleted
+`index/<n+1>` as proof its copy was current and serve stale references.
+One small object per push, bounded by 1 MiB, is the cheaper side of
+that trade. `internal/wal/sweep.go` deletes index objects below
+`compacted_through` today, which nothing reaches while
+`compacted_through` is 0; spec 006 removes the rule with the `Indexes`
+count of `SweepReport`, and owns the criterion.
 
 ### Deletion
 
@@ -456,12 +463,14 @@ null, and `ParseIndex` accepts its absence, which reads as null
 records the same `at` as its entry's header. With every defect fixed,
 what holds the spec at `testing` is the three deferred criteria. Spec
 013 is complete and its jobs are green on main, so the tier each test
-runs in exists; the tests do not.
-`TestE2EHundredConcurrentPushesFromEightClients` (the eighth) is
-written in `test/e2e` and runs in the `e2e` job;
-`TestSlowMaterializeTenThousandEntries` (the ninth) needs the packs of
-spec 006 and runs in the `e2e-slow` job; the tenth is spec 017's
-release checklist recording the Spaces probe.
+runs in exists; none of the three tests does.
+`TestE2EHundredConcurrentPushesFromEightClients` (the eighth) has
+nothing left to wait for, spec 013 having been its deferral target: it
+belongs in `test/e2e` under the `TestE2E` prefix the `integration` job
+selects through `make test-tiers`, and writing it is this spec's own
+remaining item. `TestSlowMaterializeTenThousandEntries` (the ninth)
+needs the packs of spec 006 and runs in the `e2e-slow` job. The tenth
+is spec 017's release checklist recording the Spaces probe.
 
 Two defects found and fixed by spec 005 on 2026-09-08, each in its
 own commit with a test that fails without it:
@@ -469,8 +478,8 @@ own commit with a test that fails without it:
 - `repo.Cache.sync` treated `HEAD index/<n+1>` answering 404 as proof
   the copy was current, and then failed the read of `index/<n>` with
   `wal: object not found` when the log no longer held the sequence: a
-  warm cache pointed at a reset bucket, the open item of spec 013's
-  Outcome, answered `storage_unavailable` for good. The copy is now
+  warm cache pointed at a reset bucket answered
+  `storage_unavailable` for good. The copy is now
   evicted and the repository materialized from what the log holds,
   404 when it holds nothing (`TestLostSequenceRebuildsFromTheLog`).
 - A reader whose check found a newer index released the read lock,

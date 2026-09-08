@@ -29,8 +29,9 @@ Spec 004 stores entries and lists packs in the index: `wal.Entry` has
 the index object for one (`packs` replaced, `entries` reset to the
 compaction entry, `compacted_through` set); `repo.Cache.Apply` fetches
 listed packs (`TestCompactionPacksAreFetched`); the sweeper deletes
-folded entries and superseded index objects. Nothing produces a
-compaction entry: `internal/compact` does not exist.
+folded entries, and index objects below `compacted_through`, which the
+Truncation section below removes. Nothing produces a compaction entry:
+`internal/compact` does not exist.
 
 ## Design
 
@@ -163,14 +164,36 @@ sequenceDiagram
    the index) and run `git multi-pack-index write --bitmap`, so the
    multi-pack index names exactly the packs on disk and the bitmap of
    step 2 is rebuilt over them. Release the write lock, `result="ok"`,
-   `origo_compaction_seconds` observed, and the sweeper (spec 004)
-   deletes the folded entries and the superseded index objects once
-   they are older than `ORIGO_SWEEP_MIN_AGE`.
+   `origo_compaction_seconds` observed, and the truncation below removes
+   what the compaction folded.
 
-The sweeper gains one rule: a pack under `packs/` that the newest index
-does not list and that is older than `ORIGO_SWEEP_MIN_AGE` is deleted.
-The age keeps a node that started materializing on the previous index
-able to finish.
+### Truncation
+
+Truncation is what makes a compaction pay: the entries it folded and
+the packs it superseded stop costing storage. It removes those two
+kinds of object and nothing else, once each is older than
+`ORIGO_SWEEP_MIN_AGE`:
+
+| Object | Removed |
+|---|---|
+| an entry with `seq` at or below `compacted_through` of the newest index | yes, folded into the compaction's packs |
+| a pack under `packs/` that the newest index does not list | yes; the age lets a node that started materializing on the previous index finish |
+| an index object | never, whatever `compacted_through` says |
+
+An index object is never removed because the currency check is `HEAD
+index/<n+1>` and a 404 means current. A warm node holding `index/<n>`
+below a truncation point would read the 404 left by a deleted
+`index/<n+1>` as proof that its copy is current and would serve stale
+references for as long as it held the copy. Keeping the objects is the
+cheaper side of the trade: an index object is one small object per
+push, bounded by 1 MiB (spec 004), against a check that would otherwise
+need a second round trip or a mutable marker. Spec 004's Sweeper table
+carries the same three rows; this spec's builder removes the index rule
+from `internal/wal/sweep.go`, which implements it today and which
+nothing reaches because `compacted_through` is 0 until this spec lands,
+and with it the `Indexes` count of `SweepReport` and the two assertions
+on it in `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`, which pass
+against the old rule.
 
 ### Invariants
 
@@ -238,6 +261,12 @@ request and response shape, rate limit, and event (spec 019).
 - A pack no index lists is deleted by the sweeper after
   `ORIGO_SWEEP_MIN_AGE` and one that the newest index lists is kept
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
+- After a compaction that folds 100 entries, every index object of the
+  repository is still in the log, however old and however far below
+  `compacted_through`, and a node holding one of them serves it: the
+  currency check on the held sequence answers 200 and not 404
+  (proposed: `internal/wal`, `TestSweepKeepsEveryIndexObject`;
+  `internal/repo`, `TestHolderOfATruncatedSequenceIsNotCurrent`).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
   25% of its latency after 10 pushes, measured as the p50 of 10 clones
   each through node 1 of spec 013's ports table, asserted on every push to `main`
