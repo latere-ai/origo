@@ -44,17 +44,15 @@ with `origod-http` beside it. `SECURITY.md` exists at the root with
 the disclosure process. The gate runs `vuln` on every push. Not yet: a
 bill of materials (spec 017).
 
-One item for the builder, from spec 012, in `internal/auth`: a write
-under a repository-bound token asks the authorizer for the minter's
-`quota_bytes`, and `Guard.quota` today logs an unreachable authorizer
-and falls back to `auth.DefaultQuotaBytes`, so a bound token writes
-through an outage that denies every other write on the node.
-`Guard.Decide` propagates the `*Unavailable` on a write instead, the
-write is refused with `authorizer_unavailable`, and a deny or an allow
-that names no figure still leaves the default because the token's scope
-already decided the access. `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`
-holds it; the closing block of `TestBoundTokenWriteTakesTheMintersQuota`
-asserts the fallback today and changes with it.
+The item spec 012 left to this build is done: `Guard.quota` in
+`internal/auth` returns the `*Unavailable` of an authorizer that
+produced no answer and `Guard.Decide` propagates it on a write, so a
+repository-bound token's write during an outage is refused with
+`authorizer_unavailable` like every other write, while a deny or an
+allow with no figure still leaves the default because the token's
+scope already decided the access;
+`TestBoundTokenWriteFailsClosedDuringAuthorizerOutage` holds it, and
+spec 012's Outcome records the fix.
 
 ## Design
 
@@ -341,6 +339,12 @@ root with the seeds in the tree: a component ending in a dot,
 `refs/heads/a.`, which git refuses; and a name that is not UTF-8,
 which git accepts and the JSON index object rewrites to U+FFFD, so it
 could never round-trip through the log. Both are refused now.
+
+Fixed in a package this spec owns, recorded in spec 012's Outcome: a
+repository-bound token's write during an authorizer outage fell back
+to `auth.DefaultQuotaBytes` and went through; it is refused with
+`authorizer_unavailable` now (`internal/auth`,
+`TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`).
 
 Deferred: that `import` and `verify` run through the dialer with
 `-c transfer.fsckObjects=true` is asserted by specs 019 and 014 in

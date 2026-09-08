@@ -312,11 +312,15 @@ Design's rules above:
   `requests_per_minute` and spec 020 carries the builder item.
 - A bound token's write during an authorizer outage fails closed with
   `authorizer_unavailable`, matching spec 007's rule that an outage
-  denies. It is the one thing in the tree the Design states and the
-  code does not: `Guard.quota` in `internal/auth` falls back to the
-  default on an unreachable authorizer, and spec 016's builder, who
-  owns that package, fixes it under
-  `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`.
+  denies. The first build let `Guard.quota` in `internal/auth` fall
+  back to the default on an unreachable authorizer; spec 016's build
+  fixed it on 2026-09-09: `quota` returns the `*Unavailable`,
+  `Guard.Decide` propagates it on a write, and
+  `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage` holds the 503
+  through `Admit`, the read that still answers, and the write allowed
+  again once the authorizer answers, while the closing block of
+  `TestBoundTokenWriteTakesTheMintersQuota` asserts the refusal in
+  place of the fallback.
 
 `latere.ai/x/pkg`: neither a token bucket nor a waiting semaphore is in
 the shared library; the README's items table carries the row.
