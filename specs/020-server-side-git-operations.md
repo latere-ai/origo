@@ -62,7 +62,8 @@ than clobbering:
 | `dry_run` | `true` computes the result and returns it without committing; the objects it writes go into a temporary object directory under `<ORIGO_DATA_DIR>/spool/`, set as `GIT_OBJECT_DIRECTORY` with the repository's `objects/` in `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and the directory is removed after the response, so a dry run never writes into the repository's objects and a loop of dry runs leaves nothing for compaction to clear |
 
 Response 201 `{"commit": "<sha>", "branch", "entry_seq", "tree": "<sha>"}`;
-for `dry_run`, 200 with the same fields and `"committed": false`. One
+for `dry_run`, 200 with the same fields, `entry_seq` null because no
+entry was committed, and `"committed": false`. One
 operation is one entry, one commit, one event: a `push` with one
 update whose `operation` field (spec 008) is the operation's name,
 carried in the entry header as the push option `origo.operation=<name>`
@@ -187,9 +188,9 @@ consumer's.
 - `commits` with `create_branch: true` and `from: main` creates the
   branch with `main`'s head as the parent, the same request on an
   existing branch is 409, one without `from` is 400 naming the field,
-  and a `dry_run` of it answers 200 with `committed: false`, leaves
-  `objects/` of the repository unchanged, and leaves no directory under
-  `spool/` (proposed: `internal/api`,
+  and a `dry_run` of it answers 200 with `committed: false` and
+  `entry_seq` null, leaves `objects/` of the repository unchanged, and
+  leaves no directory under `spool/` (proposed: `internal/api`,
   `TestCreateBranchFromAndDryRunWritesNothing`).
 - `merge` with `fast_forward_if_possible` fast-forwards when it can and
   creates a two-parent commit when it cannot; a conflicting merge is 409
