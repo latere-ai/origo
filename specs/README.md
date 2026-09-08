@@ -67,7 +67,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | validated |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | validated |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
-| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | drafted |
+| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | validated |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | validated |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | drafted |
@@ -251,6 +251,7 @@ deck and stated here so a reader sees them without the owning spec.
 | 020 adds its two codes to the code table and their literals when it lands; a row no literal sends fails only for the codes of a spec at `testing` or later | 021 | 020 |
 | the LFS round trip is measured through a counting reverse proxy in front of `ORIGO_TEST_URL`; no forward proxy | 010 | 013 |
 | `docs/api.md` is 018's, the second output of `make docs`, rendered by `tools/apidoc` (its own module) from the endpoint, header, and code tables of the specs | 018 | 003, 021, `docs/README.md` |
+| the stub authorizer's outage is set over HTTP as well as by flag: `PUT /fail {"status"}` (0 clears), `POST /hang`, `POST /resume`, added by 013 to the package 007 built, so 021's stack run produces `authorizer_unavailable` through the host port; no Secret lives in `deploy/base`, the templates `origod-s3` and `origod-auth` stay in `deploy/bootstrap` | 013, 018 | 007, 021 |
 | 012 depends on 006, which builds `internal/compact` where `TestCompactionSkipsWhenNoSlot` lives; the build order is unchanged, 006 is in phase 3 and 012 in phase 4 | 012 | 006 |
 
 ## Applied fix lists
@@ -272,6 +273,21 @@ through `tools/apidoc`. 021 states which codes the table alone
 proves, adds `Source` and `SourceToken` to `Target`, grows the skip
 list to six groups, and defers 020's rows. 010 keeps the reverse
 proxy only.
+
+The ninth round, after spec 007 landed: 002, 013, 016, 018, and 021
+state what 007 built (`internal/auth`, the two stub packages, the
+bootstrap Secret `origod-auth`, the code table in `internal/contract`
+and every envelope rendered through `contract.Write`); 013's
+authorizer stub gains the three outage control paths and both stubs
+`Resume`; 017's `git --version` check moves to the `build` job and
+step 1 of `release.yml` uploads `candidate-images`; 018 keeps every
+Secret out of `deploy/base`, fixes the `events` line when no sink is
+configured and the job that compares the generated pages, and moves
+to `validated`; 010 records that `s3test` reports a signature failure
+through `t.Errorf`; 021 fixes its stub `Fault` on `Fail(n, status)`
+and stays `drafted` for the code-table test, whose mechanism must
+match the tree (call sites of `contract.Write`, not `httpjson.Error`
+literals).
 
 ## Later
 
