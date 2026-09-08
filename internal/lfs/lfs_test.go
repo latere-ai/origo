@@ -425,6 +425,63 @@ func TestUploadOverQuota(t *testing.T) {
 	decodeBatch(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":600}]}`, unverified)))
 }
 
+// TestUploadSkipsAnObjectTheStoreHolds is the batch API's rule for an
+// object the server already has: the response object carries no
+// actions and no error, so the client uploads nothing, and the quota
+// counts its bytes once, through the lfs/ listing, not again through
+// the batch. A marker of another size is not the object the client
+// has, so that oid gets an upload action.
+func TestUploadSkipsAnObjectTheStoreHolds(t *testing.T) {
+	e := newEnv(t)
+	e.authz.decision = auth.Decision{Allow: true, QuotaBytes: 1000}
+	held, fresh := oidOf([]byte("held")), oidOf([]byte("fresh"))
+	e.seed(held, 600)
+	e.mark(held, 600)
+	// 600 held plus 400 fresh is the quota exactly; counting the held
+	// object's size again would refuse the batch.
+	body := fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600},{"oid":%q,"size":400}]}`, held, fresh)
+	rec := e.do("POST", batchPath, body)
+	res := decodeBatch(t, rec)
+	if len(res.Objects) != 2 {
+		t.Fatalf("%d objects", len(res.Objects))
+	}
+	if o := res.Objects[0]; o.OID != held || o.Size != 600 || o.Error != nil || len(o.Actions) != 0 {
+		t.Errorf("the held object: %+v", o)
+	}
+	var raw struct {
+		Objects []map[string]json.RawMessage `json:"objects"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw.Objects[0]["actions"]; ok {
+		t.Errorf("the held object carries an actions property: %s", rec.Body.String())
+	}
+	if _, ok := res.Objects[1].Actions["upload"]; !ok {
+		t.Errorf("the fresh object: %+v", res.Objects[1])
+	}
+	if _, ok := res.Objects[1].Actions["verify"]; !ok {
+		t.Errorf("the fresh object has no verify action: %+v", res.Objects[1])
+	}
+	// A marker naming another size is not the object: an upload action,
+	// and its size counts beside the stored bytes it would replace.
+	e.mark(held, 601)
+	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600}]}`, held)),
+		http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
+	e.authz.decision = auth.Decision{Allow: true, QuotaBytes: 2000}
+	res = decodeBatch(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600}]}`, held)))
+	if _, ok := res.Objects[0].Actions["upload"]; !ok {
+		t.Errorf("a marker of another size held the upload back: %+v", res.Objects[0])
+	}
+	// A download batch is unchanged by the rule: the marker is what it
+	// asks for.
+	e.mark(held, 600)
+	res = decodeBatch(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":600}]}`, held)))
+	if _, ok := res.Objects[0].Actions["download"]; !ok {
+		t.Errorf("download: %+v", res.Objects[0])
+	}
+}
+
 // TestQuotaCountsEveryPageOfTheListing walks the lfs/ listing past one
 // page, with the markers grouped into a prefix by the delimiter.
 func TestQuotaCountsEveryPageOfTheListing(t *testing.T) {
@@ -721,6 +778,25 @@ func TestStorageFailuresAreServiceUnavailable(t *testing.T) {
 	fail("List", "lfs/")
 	decodeError(t, e.do("POST", batchPath, up), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
 
+	// The marker read of an upload batch fails: a per-object 503, and a
+	// marker that does not parse is the same answer.
+	fail("Get", "lfs/verified/")
+	res = decodeBatch(t, e.do("POST", batchPath, up))
+	if res.Objects[0].Error == nil || res.Objects[0].Error.Code != http.StatusServiceUnavailable {
+		t.Fatalf("upload with the marker unreadable: %+v", res.Objects[0])
+	}
+	store.SetFault(nil)
+	if _, err := store.Put(t.Context(), log.RepoPrefix(testRepo)+"lfs/verified/"+oid, wal.BytesBody([]byte("nope"))); err != nil {
+		t.Fatal(err)
+	}
+	res = decodeBatch(t, e.do("POST", batchPath, up))
+	if res.Objects[0].Error == nil || res.Objects[0].Error.Code != http.StatusServiceUnavailable {
+		t.Fatalf("upload with a malformed marker: %+v", res.Objects[0])
+	}
+	if err := store.Delete(t.Context(), log.RepoPrefix(testRepo)+"lfs/verified/"+oid); err != nil {
+		t.Fatal(err)
+	}
+
 	// The HEAD of the object on verify fails, and so does the marker
 	// write after a matching size.
 	fail("Head", "lfs/")
@@ -752,7 +828,9 @@ func TestSigningFailureIsAPerObjectError(t *testing.T) {
 		Presigner: failingPresigner{}, Logger: slog.New(slog.DiscardHandler),
 	}).Register(mux)
 	e.mux = mux
-	for _, op := range []string{"download", "upload"} {
+	// The download names the held object; the upload names one the
+	// store does not hold, because a held object needs no signature.
+	for op, oid := range map[string]string{"download": oid, "upload": oidOf([]byte("fresh"))} {
 		res := decodeBatch(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":%q,"objects":[{"oid":%q,"size":1}]}`, op, oid)))
 		if res.Objects[0].Error == nil || res.Objects[0].Error.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s: %+v", op, res.Objects[0])

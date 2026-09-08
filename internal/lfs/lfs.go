@@ -308,8 +308,9 @@ type marker struct {
 	Subject string    `json:"subject"`
 }
 
-// batch answers one action per object: a presigned GET for a download,
-// a presigned PUT and the verify endpoint for an upload.
+// batch answers each object: a presigned GET for a download, a
+// presigned PUT and the verify endpoint for an upload, and no actions
+// for an upload of an object the store already holds.
 func (h *Handler) batch(w http.ResponseWriter, r *http.Request) {
 	var req batchRequest
 	if err := decode(r, &req); err != nil {
@@ -342,14 +343,62 @@ func (h *Handler) batch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if act == auth.ActionWrite && !h.withinQuota(w, r, id, size, decision, req.Objects) {
-		return
+	var held map[string]bool
+	if act == auth.ActionWrite {
+		held = h.heldObjects(r, id, req.Objects)
+		if !h.withinQuota(w, r, id, size, decision, req.Objects, held) {
+			return
+		}
 	}
 	out := batchResponse{Transfer: BasicTransfer, Objects: make([]responseObject, 0, len(req.Objects))}
 	for _, o := range req.Objects {
-		out.Objects = append(out.Objects, h.answer(w, r, id, act, o))
+		out.Objects = append(out.Objects, h.answer(w, r, id, act, o, held))
 	}
 	write(w, http.StatusOK, out)
+}
+
+// heldObjects is the batch API's rule for an object the server already
+// has: its response object carries no actions, so the client uploads
+// nothing. An object is held when lfs/verified/<oid> exists and names
+// the declared size; a marker of another size is not the object the
+// client has, and the upload action lets it replace the bytes. A marker
+// that cannot be read is recorded as false and answered as a per-object
+// 503 by answer.
+func (h *Handler) heldObjects(r *http.Request, id string, objects []requestObject) map[string]bool {
+	held := map[string]bool{}
+	for _, o := range objects {
+		if !validOID(o.OID) || o.Size < 0 {
+			continue
+		}
+		ok, err := h.held(r, id, o)
+		if err != nil {
+			h.logger.ErrorContext(r.Context(), "lfs marker read failed", "repo", id, "oid", o.OID, "error", err)
+			held[o.OID] = false
+			continue
+		}
+		if ok {
+			held[o.OID] = true
+		}
+	}
+	return held
+}
+
+// held reads the marker of one object and reports whether it names the
+// declared size; a missing marker is false and no error.
+func (h *Handler) held(r *http.Request, id string, o requestObject) (bool, error) {
+	rc, _, err := h.store.Get(r.Context(), h.markerKey(id, o.OID), "")
+	if errors.Is(err, wal.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rc.Close() }()
+	var m marker
+	if err := json.NewDecoder(io.LimitReader(rc, 64<<10)).Decode(&m); err != nil {
+		return false, err
+	}
+	return m.Size == o.Size, nil
 }
 
 func containsBasic(transfers []string) bool {
@@ -359,7 +408,7 @@ func containsBasic(transfers []string) bool {
 // answer builds one object of the batch response. A malformed object is
 // a per-object 400; a storage failure a per-object 503, so one bad
 // object does not lose the rest of the batch.
-func (h *Handler) answer(w http.ResponseWriter, r *http.Request, id string, act auth.Action, o requestObject) responseObject {
+func (h *Handler) answer(w http.ResponseWriter, r *http.Request, id string, act auth.Action, o requestObject, held map[string]bool) responseObject {
 	res := responseObject{OID: o.OID, Size: o.Size}
 	if !validOID(o.OID) || o.Size < 0 {
 		res.Error = &objectError{Code: http.StatusBadRequest, Message: contract.Sentence(contract.CodeInvalid)}
@@ -382,6 +431,15 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request, id string, act 
 			return res
 		}
 		res.Actions = map[string]action{"download": {Href: href, ExpiresIn: int(PresignTTL.Seconds())}}
+		return res
+	}
+	// An object the store holds gets no actions; a marker that could
+	// not be read is a per-object 503 like any other storage failure.
+	if isHeld, seen := held[o.OID]; seen {
+		if isHeld {
+			return res
+		}
+		res.Error = &objectError{Code: http.StatusServiceUnavailable, Message: contract.Sentence(contract.CodeStorageUnavailable)}
 		return res
 	}
 	// The PUT is signed with the length and the type, so the store
@@ -425,9 +483,11 @@ func verifyHeader(r *http.Request) map[string]string {
 }
 
 // withinQuota is spec 012's repository size rule on an upload batch:
-// the bytes the log holds plus the bytes under lfs/ plus the batch's
-// sizes, against the authorizer's quota_bytes.
-func (h *Handler) withinQuota(w http.ResponseWriter, r *http.Request, id string, size int64, d auth.Decision, objects []requestObject) bool {
+// the bytes the log holds plus the bytes under lfs/ plus the sizes of
+// the objects the batch would upload, against the authorizer's
+// quota_bytes. An object the store holds is in the lfs/ sum already
+// and adds nothing.
+func (h *Handler) withinQuota(w http.ResponseWriter, r *http.Request, id string, size int64, d auth.Decision, objects []requestObject, held map[string]bool) bool {
 	stored, err := h.lfsBytes(r, id)
 	if err != nil {
 		h.storageError(w, r, "list", err)
@@ -435,7 +495,7 @@ func (h *Handler) withinQuota(w http.ResponseWriter, r *http.Request, id string,
 	}
 	total := size + stored
 	for _, o := range objects {
-		if o.Size > 0 {
+		if o.Size > 0 && !held[o.OID] {
 			total += o.Size
 		}
 	}
