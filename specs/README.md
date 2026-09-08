@@ -70,7 +70,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | validated |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | validated |
-| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | drafted |
+| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | validated |
 
 ## Dependency graph
 
@@ -238,9 +238,10 @@ deck and stated here so a reader sees them without the owning spec.
 | the three LFS sentences are the codes `lfs_object_mismatch`, `lfs_object_not_stored`, and `lfs_locks_unsupported`, rendered through `contract.Sentence` in the LFS body shape; 021's code table holds them | 010 | 003, 021 |
 | the tag-time install run is the `install-release` job of `release.yml` after `publish`, with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`; the push-time `install` job of `verify.yml` uses the candidate build | 018 | 002, 017 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
-| the code table is the one source of every sentence; every `httpjson.Error` literal is checked against it | 021 | 003 and every spec with a Code table |
+| the code table is the one source of every sentence and status: `contract.Status(code)` beside `contract.Sentence`, every envelope through `contract.Write` with a `contract.Code*` constant and the table's status; `TestEveryCodeHasOneSentence` walks the module with `go/ast`, fails on an `httpjson.Error` literal or `httpjson.WriteError` call outside `internal/contract`, on a string code, on a status the table does not give the code, and on a code of a spec at `testing` or later with no call site, and proves itself on a negative fixture | 021 | 003 and every spec with a Code table |
 | `ORIGO_PUBLIC_URL=http://localhost:30080` is set on all three pods of the kind overlay, one value because a repository-bound token carries it as `iss`; once 018 moves the Latere values out of the base, the overlay is the only place it is set | 013 | 007, 018 |
-| `origo-stubs` takes `-issuer-listen`, `-authorizer-listen`, `-sink-listen`, `-source-listen`, `-slowproxy-listen`, `-issuer-url`, `-authorizer-token`, and `-source-token`; the source starts only when `-source-token` is set; `make dev` runs it at `DEV_PORT_BASE + 4` to `+ 6` on the loopback interface | 013 | 002, 007, 015, 018 |
+| `origo-stubs` takes `-issuer-listen`, `-authorizer-listen`, `-sink-listen`, `-source-listen`, `-slowproxy-listen`, `-slowproxy-target`, `-slowproxy-data`, `-issuer-url`, `-authorizer-token`, and `-source-token`; the source starts only when `-source-token` is set; `make dev` runs it at `DEV_PORT_BASE + 4` to `+ 6` on the loopback interface | 013 | 002, 007, 015, 018 |
+| the slow proxy of 015 runs from `origo-stubs` and starts only when `-slowproxy-target <host:port>` (MinIO's Service) is set; `-slowproxy-data` (default `0.0.0.0:8086`) is the in-cluster data listener `ORIGO_S3_ENDPOINT` names, `-slowproxy-listen` the control endpoint on host port 30085 of the ports table | 013, 015 | 021 |
 | `deploy/examples/kind/versions.env` pins the Cilium chart (`cilium/cilium` 1.18.0, `ipam.mode=kubernetes`, images by digest) and `metrics-server` (v0.7.2, its manifest by sha256 and its image by digest); `up.sh` and 018's `install` job source it | 013 | 005, 015, 016, 018 |
 | the checked-in `kind.yaml` is the offset-0 configuration; `up.sh` renders a copy under `out/kind/<name>/` by adding `PORT_OFFSET` to every `hostPort` with one `awk` expression, and 018's `install` job uses the checked-in file as it is | 013 | 018 |
 | the `build` job of `verify.yml` builds both images once and uploads `candidate-images`; `e2e`, `e2e-slow`, `up-script`, and 018's `install` download it and build nothing | 013 | 017, 018 |
@@ -248,9 +249,11 @@ deck and stated here so a reader sees them without the owning spec.
 | `TestPreviousReleaseFixture` carries the `e2e` tag, reads the fixture path from `ORIGO_PREVIOUS_RELEASE_FIXTURE`, which the `e2e` job and the release pipeline set from `gh release download`, skips when it is unset, and uploads the fixture under a fresh prefix through the S3 client before it starts | 017 | 002, 013, 021 |
 | the Namespace stays in `deploy/bootstrap`, never in `deploy/base`, because the rollout identity creates no namespace | 018 | 002, 017 |
 | `gone` and `operation_timeout` are proved by the code table alone; `over_quota` needs `Authorizer` to lower `quota_bytes`; `import`, `verify`, `repo_importing`, `repo_not_empty`, and `imported` need `Source` and `SourceToken` on `Target`; the live skip list has six entries; the source group is skipped on the stub run because `AllowLoopback` is a `_test.go` seam | 021 | 009, 014, 016, 017, 019 |
-| 020 adds its two codes to the code table and their literals when it lands; a row no literal sends fails only for the codes of a spec at `testing` or later | 021 | 020 |
+| 020 adds its two codes to the code table and their call sites when it lands; a row no call site sends fails only for the codes of a spec at `testing` or later | 021 | 020 |
 | the LFS round trip is measured through a counting reverse proxy in front of `ORIGO_TEST_URL`; no forward proxy | 010 | 013 |
 | `docs/api.md` is 018's, the second output of `make docs`, rendered by `tools/apidoc` (its own module) from the endpoint, header, and code tables of the specs | 018 | 003, 021, `docs/README.md` |
+| `tools/specindex` exports its parser and cross-reference model as the package `tools/specindex/specs`; `tools/apidoc` requires the `tools/specindex` module with a `replace ../specindex` directive; the export is a builder item of 018 and moves no status | 018 | `tools/specindex` |
+| a cloud provider named as a deployment target, a tested bucket, or an overlay name (`digitalocean`, `aws`, DigitalOcean Spaces, AWS S3) is allowed; the naming rule bars other companies as sources or references | README | 001, 004, 016, 017, 018 |
 | the stub authorizer's outage is set over HTTP as well as by flag: `PUT /fail {"status"}` (0 clears), `POST /hang`, `POST /resume`, added by 013 to the package 007 built, so 021's stack run produces `authorizer_unavailable` through the host port; no Secret lives in `deploy/base`, the templates `origod-s3` and `origod-auth` stay in `deploy/bootstrap` | 013, 018 | 007, 021 |
 | 012 depends on 006, which builds `internal/compact` where `TestCompactionSkipsWhenNoSlot` lives; the build order is unchanged, 006 is in phase 3 and 012 in phase 4 | 012 | 006 |
 
@@ -289,6 +292,21 @@ and stays `drafted` for the code-table test, whose mechanism must
 match the tree (call sites of `contract.Write`, not `httpjson.Error`
 literals).
 
+The ninth round's second list, with 009 and 013 in progress: 021's
+`TestEveryCodeHasOneSentence` walks the module with `go/ast` for
+`httpjson.Error` literals and `httpjson.WriteError` calls outside
+`internal/contract`, string codes, and a status other than
+`contract.Status(code)`, requires a call site for every code of a
+spec at `testing` or later, and proves itself on a negative fixture
+in place of "fails on the tree as it stands today"; 021 moves to
+`validated`. 013's flag table gains `-slowproxy-target` and
+`-slowproxy-data`, `-slowproxy-listen` is the control endpoint, and
+015 runs its proxy from the `origo-stubs` component in place of "a
+small Go program". 007's Outcome names `-authorizer-token`. 018
+states that `tools/specindex` exports the package `specs` and
+`tools/apidoc` requires it through `replace ../specindex`. The
+naming rule below admits a cloud provider as a deployment target.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -313,7 +331,12 @@ tag, the object-store probe of `tools/spike/condwrite`, and
 `docs/install.md` walked by a maintainer on a fresh cluster),
 `SECURITY.md` in place, and no Latere hostname or value anywhere but
 as a default or an example. Until then the repository is private and
-the deck is written as if it were already public. Specs 003 and 004
+the deck is written as if it were already public. A cloud provider
+named as a deployment target, a tested bucket, or an overlay name
+(DigitalOcean Spaces and AWS S3 in specs 001, 004, and 018, the
+`digitalocean` and `aws` overlays of 018, the release checklist of
+017) is not what the naming rule bars: the rule bars naming another
+company as a source or a reference. Specs 003 and 004
 stay short of `complete` until then on purpose: their remaining
 criteria are the conformance suite, the code table, and the stub
 (spec 021, spec 013), the cluster-job tests and the packs (specs 013,
@@ -346,7 +369,9 @@ them.
   Outcome section records any divergence.
 - Wording is for a reader outside Latere. A Latere hostname or value is
   an example or a default, never the only option; no other company is
-  named except the public citation in the README.
+  named as a source or a reference except the public citation in the
+  README, while a cloud provider named as a deployment target is
+  allowed (the readiness statement above).
 
 ## Cross-reference
 
@@ -370,7 +395,7 @@ name, or when a spec names something no spec defines.
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | - |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | - |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021 |
-| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
+| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020, 021 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021 |
 | error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021 |
 | error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020 |
@@ -420,7 +445,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013 |
+| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015 |
 | variable | `ORIGO_S3_KEY` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 018 |
