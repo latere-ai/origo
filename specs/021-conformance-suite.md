@@ -1,6 +1,6 @@
 ---
 title: "Conformance suite: the contract as executable tests"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -148,7 +148,7 @@ code table alone and by no case of the suite: `gone` (spec 019), which
 needs the 7-day hold after a delete to pass, and `operation_timeout`
 (spec 009), which needs a git subprocess held past its deadline. For
 them the table check below is the whole proof: the code has a sentence
-and a status, and a literal in the code sends it. Every other row of
+and a status, and a call site in the code sends it. Every other row of
 the table is produced on a target by one case of the suite, skipped
 with its group when the field the group needs is empty.
 
@@ -179,39 +179,73 @@ the two secrets and nothing else.
 the one sentence, for every row of the Code tables of spec 003 and of
 specs 007, 009, 010, 015, and 019, which is every code the
 cross-reference in `specs/README.md` lists except spec 020's; spec 020
-adds its rows, `invalid_change` and `merge_conflict`, and the literals
-that send them when it lands, and the rule below that a row no literal
-sends is a failure applies to the codes of a spec at `testing` or
+adds its rows, `invalid_change` and `merge_conflict`, and the call
+sites that send them when it lands, and the rule below that a row no
+call site sends is a failure applies to the codes of a spec at `testing` or
 later, so the table never fails on a code whose handler is not built
 yet. The table check covers every row without a target: every code
-has one sentence and one status, and every literal in the code has a
-row; the suite's cases produce the rows on a target, except the two
+has one sentence and one status, and every call site passes a code of
+the table; the suite's cases produce the rows on a target, except the two
 the paragraph above names. Spec 010's three rows are
 rendered in the LFS body shape and through `contract.Sentence`, never
-as an `httpjson.Error`, so for them the test asserts the `Sentence`
-call and no literal. `TestEveryCodeHasOneSentence`
-walks every Go file of the module outside `tools/`, parses it with
-`go/parser`, and collects every composite literal of type
-`httpjson.Error` (the envelope type of `latere.ai/x/pkg/httpjson`,
-which every handler renders through `httpjson.WriteError`): its `Code` field must be a `contract.Code*` constant
-the table holds, and its `Message` field must be a string literal equal
-to the table's sentence for that code. A `Message` built from an
-expression (`err.Error()`, a concatenation, a `fmt.Sprintf`) is a
-failure, because the reason belongs in `details`, and so is a table row
-no literal sends, for a code of a spec at `testing` or later, so a dead
-row is noticed. Each failure names the file
-and line. The sideband and hook lines (`ERR <code>: <sentence>`,
-`reject <code>: <sentence>`) are rendered from the same table by
-`contract.Sentence(code)` and hold no sentence of their own, so the
-grep over `httpjson.Error` literals is the whole of what can drift. The
-suite compares live responses to the same table. The divergences spec
-003's Outcome lists are fixed by making this test pass. The test walks
-the module from a root held in a test-only constant resolved from its
-own source file with `runtime.Caller`, never from the working
-directory, so the `tempdir` gate of spec 002, which runs the suite
-from an empty directory, and the `hermetic` gate see the module's
-files; spec 011's register test reads its spec the same way, and the
-builder is told here.
+through `contract.Write`, so for them a `contract.Sentence` call is the
+call site the rule below counts. The table gains the status beside the
+sentence: `contract.Status(code) int` answers the status of the owning
+spec's Code table and panics on an unknown code the way `Sentence`
+does. `contract.Write(w, status, code, details)` keeps its status
+argument, so no call site changes shape; the test below holds the
+argument to the table.
+
+`TestEveryCodeHasOneSentence` walks every Go file of the module
+outside `tools/`, parses each with `go/parser`, and reads selectors
+with `go/ast` alone: `httpjson.Error` and `contract.Write` are the
+selectors on the import names `httpjson` and `contract`, and a file
+that imports either package under another name is a failure, so the
+walk needs no type checker. It fails on:
+
+- a composite literal of type `httpjson.Error` or a call of
+  `httpjson.WriteError` in any package but `internal/contract`,
+  because `contract.Write` is the one renderer of the envelope;
+- a call of `contract.Write`, `contract.Error`, or `contract.Sentence`
+  whose code argument is not a `contract.Code*` identifier (a string
+  literal, a variable, an expression), because the constants are the
+  table's keys and a string can name a code the table lacks;
+- a call of `contract.Write` whose status argument does not equal
+  `contract.Status(code)` for the code it passes: the argument is an
+  integer literal or an `http.Status*` selector, which the test
+  resolves by parsing the `net/http` package under `runtime.GOROOT()`
+  with the same parser for its `Status*` integer constants, and any
+  other form (a variable, a call) is a failure, so a handler cannot
+  send a code under a status its spec does not give it;
+- a code of the table with no call site of the three functions
+  anywhere in the module, for a code of a spec at `testing` or later,
+  so a dead row is noticed; a code of a spec still `validated`, spec
+  020's two today, may have none.
+
+Each failure names the file and line. The test also holds the table
+itself: every code constant has one sentence and one status, and
+`Codes()` lists every constant. A negative fixture in the test file,
+one Go source string carrying an `httpjson.Error` literal and a
+`contract.Write` call with the string `"repo_not_found"` for its code,
+goes through the same walk and must yield exactly those two findings,
+each with the fixture's file name and line, which is how the test
+proves it can fail on a tree that has neither.
+
+The sideband and hook lines (`ERR <code>: <sentence>`, `reject <code>:
+<sentence>`) are rendered from the same table by `contract.Sentence`
+and hold no sentence of their own. The walk does not see a string a
+handler builds by hand, so the sideband divergence spec 003's Outcome
+lists is fixed by the builder rendering those lines through
+`contract.Sentence`, and the suite's `non_fast_forward` and
+`storage_unavailable` cases, which compare the line git reports to
+the table's sentence, are what hold them there. The suite compares
+every live response to the same table. The test walks the module
+from a root held in a test-only constant resolved from its own source
+file with `runtime.Caller`, never from the working directory, so the
+`tempdir` gate of spec 002, which runs the suite from an empty
+directory, and the `hermetic` gate see the module's files; spec 011's
+register test reads its spec the same way, and the builder is told
+here.
 
 ### The mutation job
 
@@ -310,15 +344,15 @@ assertions beyond the thresholds the owning specs name.
   consumer-shaped flow against the in-process stub and against the
   stack at `ORIGO_TEST_URL` and compares the responses field by field;
   it runs in spec 013's `e2e` job beside `TestContract`).
-- Every `httpjson.Error` literal in the module carries a `Code` the
-  table holds and a `Message` that is the string literal of the
-  table's sentence, every table row of a spec at `testing` or later is
-  sent by at least one literal or, for spec 010's three LFS rows, by
-  one `contract.Sentence` call,
-  and a `Message` built from an expression fails with its file and
-  line; the test fails on the tree as it stands today, on the
-  lower-case sentences spec 003's Outcome lists, and passes once they
-  are the table's (proposed: `internal/contract`,
+- No `httpjson.Error` literal and no `httpjson.WriteError` call exists
+  outside `internal/contract`, every `contract.Write`, `contract.Error`,
+  and `contract.Sentence` call passes a `contract.Code*` constant,
+  every `contract.Write` call passes the status `contract.Status`
+  answers for that code, and every code of a spec at `testing` or
+  later has at least one call site; the negative fixture, one Go
+  source string with an `httpjson.Error` literal and a `contract.Write`
+  call whose code is a string, yields exactly two findings, each with
+  the fixture's file name and line (proposed: `internal/contract`,
   `TestEveryCodeHasOneSentence`).
 - A run against a shared installation leaves no repository behind and
   touches no other: after `TestContract`, `GET /v1/repos/{id}` answers
