@@ -171,7 +171,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	authorizer, err := auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: authClient, Metrics: n.reg})
+	authorizer, err := auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: authClient, Metrics: n.metrics})
 	if err != nil {
 		return nil, err
 	}

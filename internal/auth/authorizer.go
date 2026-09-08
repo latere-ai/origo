@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/cache"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 )
 
 // Action is what a request wants to do with a repository.
@@ -103,7 +105,7 @@ type ClientOptions struct {
 	// when zero.
 	Timeout time.Duration
 	// Metrics receives origo_authorizer_seconds{result}.
-	Metrics *metrics.Registry
+	Metrics *metrics.Set
 	// Now is the clock the cache runs on.
 	Now func() time.Time
 }
@@ -117,7 +119,7 @@ type Client struct {
 	http    *http.Client
 	timeout time.Duration
 	now     func() time.Time
-	seconds *metrics.Histogram
+	seconds *pkgmetrics.Histogram
 	cache   *cache.TTLCache[cacheKey, cachedDecision]
 }
 
@@ -146,11 +148,11 @@ func NewClient(o ClientOptions) (*Client, error) {
 	if c.now == nil {
 		c.now = time.Now
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	c.seconds = reg.Histogram("origo_authorizer_seconds", "authorizer calls by result", metrics.DefaultDurationBuckets)
+	c.seconds = set.AuthorizerSeconds
 	c.cache = cache.New[cacheKey, cachedDecision](MaxTTL, cache.WithMaxSize[cacheKey, cachedDecision](CacheEntries), cache.WithClock[cacheKey, cachedDecision](c.now))
 	return c, nil
 }

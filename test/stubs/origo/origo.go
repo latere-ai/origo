@@ -97,7 +97,7 @@ func New(t testing.TB) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authzClient, err := auth.NewClient(auth.ClientOptions{URL: s.authz.URL(), Token: s.authz.Token(), HTTP: client, Metrics: reg})
+	authzClient, err := auth.NewClient(auth.ClientOptions{URL: s.authz.URL(), Token: s.authz.Token(), HTTP: client, Metrics: set})
 	if err != nil {
 		t.Fatal(err)
 	}

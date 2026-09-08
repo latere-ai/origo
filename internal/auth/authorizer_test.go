@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 
 	"github.com/latere-ai/origo/test/stubs/authorizer"
 )
@@ -54,9 +56,9 @@ func (t *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.next.RoundTrip(r)
 }
 
-func newClient(t *testing.T, url, token string, transport http.RoundTripper, clk *clock, reg *metrics.Registry) *Client {
+func newClient(t *testing.T, url, token string, transport http.RoundTripper, clk *clock, reg *pkgmetrics.Registry) *Client {
 	t.Helper()
-	c, err := NewClient(ClientOptions{URL: url, Token: token, HTTP: &http.Client{Transport: transport}, Timeout: 500 * time.Millisecond, Metrics: reg, Now: clk.Now})
+	c, err := NewClient(ClientOptions{URL: url, Token: token, HTTP: &http.Client{Transport: transport}, Timeout: 500 * time.Millisecond, Metrics: metrics.Register(reg), Now: clk.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +75,7 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 	}
 	clk := newClock()
 	stub := authorizer.New(t)
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, reg)
 	ctx := context.Background()
 	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "read", TTL: 30, Replicas: 3, QuotaBytes: 1024})
@@ -149,7 +151,7 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	clk := newClock()
 	stub := authorizer.New(t)
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, reg)
 	ctx := context.Background()
 	unavailable := func(err error) *Unavailable {
