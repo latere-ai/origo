@@ -34,6 +34,15 @@ Nothing limits a push's size, a repository's size, a subject's request
 rate, or the number of concurrent subprocesses. `internal/limits` does
 not exist.
 
+One item for the builder, from spec 010: `quota_bytes` for a
+repository-bound token is `auth.DefaultQuotaBytes` there, because the
+token's claims carry no quota and the authorizer never sees the token.
+This spec asks the authorizer for the minting subject's figure when a
+bound token writes (the token's `sub`, `act` as the actor, action
+`write`, on the bound repository), cached like any allow, so a bound
+token's uploads are held to the figure its minter's pushes are, and
+spec 010's interim rule ends.
+
 ## Design
 
 | Limit | Value | Enforced at | Answer |

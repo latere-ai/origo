@@ -42,6 +42,15 @@ the presence test below needs no fixture. The `internal/metrics` of
 phase 1 that moved to `latere.ai/x/pkg/metrics` (spec 002, Outcome)
 was the registry; this is the list of names over it.
 
+A second change, from spec 010: `internal/lfs` sends `request_id` in
+the LFS error body and has nothing to read today, so it sends a fresh
+UUID. The trace id the request log line below carries is what it
+needs: the builder puts the id on the request's context in the
+`otel.Handler` wrapping and reads it in `internal/lfs`, so the LFS
+body and the log line name one request. `otel.TraceIDs` of `pkg/otel`
+is not imported before this spec, because it pulls the OpenTelemetry
+SDK onto the node's build list, which this spec is what adds.
+
 ## Design
 
 ### Metrics

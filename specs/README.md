@@ -262,6 +262,9 @@ deck and stated here so a reader sees them without the owning spec.
 | the call-site rule of `TestEveryCodeHasOneSentence` is keyed on the spec that produces a code: `producers map[string]string` in the test, `over_quota` and `rate_limited` to 012, `ref_not_found` to 009, every other code to its owner; the test reads `status:` from `specs/<nnn>-*.md` or `specs/.archive/`; 021 depends on 012 | 021 | 003, 009, 012 |
 | the negative fixture is `test/conformance/testdata/negative/bad.go.txt`, outside `internal/contract`, fed to the walk by path; the status rule runs only on a `contract.Code*` identifier, so the fixture yields two findings, lines 16 and 17 | 021 | 003 |
 | a sideband line, `ERR` pkt-line, or hook verdict that carries a code is `<code>: <sentence>` exactly; the reference and the hashes of a refused push go to the handler's `info` log line, never the sideband; `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds it and 021 owns it | 021 | 003, 012, 015, 019 |
+| a failpoint of `ORIGO_FAILPOINT` has no count: the node exits the first time the point is reached; a test that needs it on a later operation restarts the node under its name and data directory with it | 002 | 008, 021 |
+| an upload batch omits `actions` for an object the store holds, `lfs/verified/<oid>` present and naming the declared size, the batch API's rule; the quota counts a held object's bytes once | 010 | 021 |
+| `quota_bytes` for a repository-bound token is `auth.DefaultQuotaBytes` until 012 asks the authorizer for the minter's figure; 007's claim set carries no quota | 010, 012 | 007 |
 
 ## Applied fix lists
 
@@ -324,6 +327,17 @@ sideband line is `<code>: <sentence>` exactly, the reference and the
 hashes go to the `info` log line, and `TestRejectLinesAreTheTableSentences`
 in `internal/httpgit` holds the verdicts, with 003's Outcome aligned;
 021 stays `validated`.
+
+The twelfth round, on 008 and 010 at `complete`: 010 makes the batch
+API's deduplication rule the design, with the code fixed and
+`TestUploadSkipsAnObjectTheStoreHolds` holding it, names
+`authorizer_unavailable` in its Errors, states the `verify` origin
+rule, the `request_id` rule, and the repository-bound token's quota;
+008 states the built signatures, the membership interface, the
+journal load at start-up, the create-if-absent repair, the sequential
+delivery rule and the bound on a suppressed entry's re-read; 002
+states that a failpoint has no count; 011 and 012 carry one builder
+item each from 010.
 
 ## Later
 
