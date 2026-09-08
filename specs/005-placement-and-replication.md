@@ -73,7 +73,7 @@ per name.
 
 | Header | Meaning |
 |---|---|
-| `Origo-Prefer` | on every response to a request that names a repository, whatever the status, with one exception: the comma separated names of the preferred nodes for that repository, highest score first; absent on a response that names none (`POST /v1/repos`, the probes, `GET /.well-known/jwks.json`) and absent on a 401 or 403 to a name that did not resolve, because the score needs the id and a refused caller is told nothing about it (spec 007, "Authorization before lookup"); a request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
+| `Origo-Prefer` | on every response to a request that names a repository by its id, whatever the status: the comma separated names of the preferred nodes for that repository, highest score first, with `k` = 1 on a refused request because it made no authorizer call. Absent on a response that names no repository (`POST /v1/repos`, the probes, `GET /.well-known/jwks.json`), and absent on a 401 or 403 to a request that names a repository by owner and slug, whether or not the name resolved: a header only on a resolved name would tell a refused caller the repository exists, which spec 007's authorization before lookup forbids, and the score needs the id. A request is served wherever it lands, so the header is a hint for an ingress or a client that can route by pod, never a redirect |
 
 The compaction primary of spec 006 is the first name.
 
@@ -119,6 +119,11 @@ served, and a lost packet costs one `HEAD` that answers 200 instead of
 404 on the next read. `origo_gossip_packets_total{direction}` counts
 `sent`, `received` (valid), and `dropped`.
 
+The loop starts in two calls: `Bind` takes the socket the node opened
+and resolves the peer addresses before anything is served, and `Run`
+serves the datagrams. Announcing from the first commit would otherwise
+race the loop's start.
+
 ### Consistent reads
 
 Every request that serves repository state begins with the currency
@@ -141,8 +146,8 @@ measured after every apply and walked once at start-up:
 | order | least recently acquired first; a copy found on disk at start-up, which no request has acquired in this process, counts as acquired at the process start time, so a restarted node keeps its warm set for the floor below and then ranks it by use |
 | floor | a copy acquired in the last 10 minutes is never evicted for pressure |
 | idle | a copy not acquired for 24 hours is evicted whatever the pressure, so idle repositories hold no copy anywhere |
-| in use | eviction takes the repository's write lock, so it never removes a copy mid-request or mid-apply |
-| what it does | `Cache.Evict`: deletes the directory and the state file; nothing is written back |
+| in use | eviction takes the repository's write lock with `TryLock` and skips the copy when the lock is held, so it never removes a copy mid-request or mid-apply and never waits behind one; a copy in use was acquired recently by definition, so the floor covers it and the next run takes it |
+| what it does | `Cache.TryEvict`: deletes the directory and the state file under the lock it took; nothing is written back |
 
 `origo_cache_bytes` and `origo_cache_repos` are gauges;
 `origo_evictions_total{reason}` counts `pressure` and `idle`.
@@ -179,8 +184,13 @@ adds to that overlay the patch that sets the scale-down window to 60
 seconds, so the autoscaler test below leaves a small cluster for the
 next test inside the job budget. That overlay runs the nodes as the
 StatefulSet `origod` so each pod has a host port of its own (spec 013,
-ports table), and patches the autoscaler's `scaleTargetRef` to it; the
-base keeps the Deployment. CPU is the only signal: the base and
+ports table), and patches the autoscaler's `scaleTargetRef` to it
+(`patches/hpa-statefulset.yaml`); the base keeps the Deployment, and
+`deploy/prod` carries the autoscaler at 2 to 32. The overlay's pods
+request 50m CPU, not the base's 250m: the runner has one kind node, and
+at 250m a fourth replica cannot schedule, so neither the 4 nor the 8
+replica count of the criteria below could exist there. The 70% target
+is of that request, which is what the clone load drives past. CPU is the only signal: the base and
 every example overlay of spec 018 scale on it and install no metrics
 adapter. `origo_requests_in_flight` (spec 011) stays defined for
 dashboards and is not an autoscaler input; `docs/operations.md` says
@@ -204,22 +214,43 @@ correct; it is only slower until warm.
 Phase 1 applied entries one at a time, one `GET`, one `index-pack`, and
 one `update-ref` each, and measured 70.7 seconds for 1 000 entries,
 about 70 ms per entry, on a laptop against MinIO (spec 004 Outcome).
-`internal/repo.Cache.Apply` changes in two ways. Entries are fetched and
-indexed by concurrent workers, 4 by default: each worker takes the next
-entry in sequence order, downloads it, verifies its length and
-`pack_sha256`, and runs `git index-pack --stdin --fix-thin --strict`
-against the shared object store, which is safe because objects are
-content addressed and git writes packs atomically. A thin pack can need
-objects from an earlier entry; a worker whose `index-pack` fails with a
-missing base waits until every lower entry has landed and runs once
-more, and a failure after that is corruption (spec 004). The per-entry
-`update-ref` is dropped: references are applied once at the end by step
-4 of materialization, which reconciles the whole map to the index. On
-the phase 1 numbers that reaches about 20 ms per entry with 4 workers,
-so 1 000 entries in about 20 seconds on the laptop; the acceptance
-threshold on the CI runner is 30 seconds for 1 000 entries, asserted by
-a plain end-to-end test that runs on every push, not by the measurement
-run `ORIGO_E2E_MEASURE` selects, which only prints. Compaction
+`internal/repo.Cache.Apply` changes in two ways: what runs concurrently
+and how many `index-pack` subprocesses run at all.
+
+One subprocess per entry cannot meet the budget on the pattern every
+push produces, a chain of thin packs each based on the entry before it.
+Measured on 1 000 such entries: one worker 53.8 s, four workers 52.5 s,
+eight workers 48.5 s, with 999 of the 1 000 first runs failing on a
+missing base and running again. Entry i+1 cannot index before entry i
+has landed, so the chain serializes the work whatever the worker count,
+and the retry doubles it.
+
+The packfile format allows one subprocess per batch instead: a 12 byte
+header with an object count, self-delimiting objects whose `OFS_DELTA`
+offsets are relative and whose `REF_DELTA` bases are named by hash, and
+a SHA-1 trailer. So the workers, 4 by default, fetch, verify (length
+and `pack_sha256`), and spool concurrently, and one indexer joins
+consecutive spooled packs, at most 256 entries or 256 MiB per batch,
+into one pack for one `git index-pack --fix-thin --strict` run, the
+batches in sequence order. Every base is then in the batch or already
+in the store, there is no retry, and a cold copy of 1 000 pushes holds
+4 packs rather than 1 000, which every later git command opens. Two
+entries can carry one object, which `index-pack --strict` refuses in
+one pack with `REF_DELTA already resolved (duplicate base)`: a joined
+batch it refuses is indexed one pack at a time in sequence order, each
+with `--fix-thin`, which is what one run per entry produces. A pack
+whose base is in no entry at all fails the run with git's `did not
+receive expected object`; that is an integrity error of the log, served
+`storage_unavailable` (spec 015).
+
+The per-entry `update-ref` is dropped: references are applied once at
+the end by step 4 of materialization, which reconciles the whole map to
+the index. Measured, 1 000 entries onto an empty disk take 0.65 s, from
+42 s with one `index-pack` per entry and 70.7 s in phase 1. The
+acceptance threshold on the CI runner is 30 seconds for 1 000 entries,
+asserted by a plain end-to-end test that runs on every push, not by the
+measurement run `ORIGO_E2E_MEASURE` selects, which only prints.
+Compaction
 (spec 006) keeps the entry count under 64 for any repository that is
 pushed to, so the budget matters on a cold node after a compaction gap,
 not on every request. A materialization over 60 seconds is visible on
@@ -241,16 +272,21 @@ the cache on shutdown.
   read from that node's internal host port, unchanged (proposed:
   `internal/placement`, `TestRendezvousAgreesAcrossNodes`; `test/e2e`,
   `TestClusterPreferredNodeIsWarm`).
-- A push acknowledged on node A is returned by a fetch on node B: with
-  gossip, the test waits until B's `origo_repo_entries_applied_total`
-  rose by one, which is the background catch-up the announcement
-  scheduled, then fetches on B and finds the pushed commit with B's
+- A push acknowledged on node A is returned by a fetch on node B, the
+  fetch a `git ls-remote` with protocol version 1 so it is one request
+  and one currency check (a version 2 `ls-remote` sends an `ls-refs`
+  POST after the advertisement, a second check): with gossip, the test
+  waits until B's `origo_repo_entries_applied_total` rose by one, which
+  is the background catch-up the announcement scheduled, then reads on
+  B and finds the pushed commit with B's
   `origo_wal_head_check_seconds{result="404"}` count risen by one while
   its `result="200"` count did not, so the catch-up happened before the
   request; with gossip disabled (`ORIGO_GOSSIP_PEERS` unset) the first
-  fetch on B returns the pushed commit with the `result="200"` count
-  risen by one. The test also records the time from A's acknowledgement
-  until B's counter rose (proposed: `test/e2e`,
+  read on B returns the pushed commit with the `result="200"` count
+  risen by one and the `result="404"` count by one beside it, because a
+  check that finds a newer index walks `HEAD index/<m+1>` forward until
+  a 404. The test also records the time from A's acknowledgement until
+  B's counter rose (proposed: `test/e2e`,
   `TestE2EGossipShortensTheCatchUp`, two nodes of the one-node run's
   harness).
 - Three nodes exchanging heartbeats agree on the live set within 60
@@ -295,10 +331,17 @@ the cache on shutdown.
   runner's CPU, not the design, bounds them. Monotonicity over the
   three counts is asserted only in `TestMeasure` under
   `ORIGO_E2E_MEASURE=1`, run against the stack, which no job selects.
-  The autoscaler test restores the overlay's own autoscaler
-  with `cluster.Apply("deploy/examples/kind")`, drives CPU past the
-  target, and reads `cluster.HPAStatus("origod")` until it reports 4
-  replicas, within 60 seconds of the crossing; scale-down is not
+  The autoscaler test applies
+  `test/e2e/testdata/hpa-scale.yaml`, this spec's third fixture: the
+  autoscaler named `origod` free between 3 and 8 replicas on CPU, with
+  a scale-up window of 0 and the overlay's 60 second scale-down window.
+  It is needed because spec 013 holds the overlay's own autoscaler at 3
+  replicas, so the three host ports always answer and the other cluster
+  tests see three pods, and an autoscaler with `maxReplicas: 3` can
+  never reach 4. The test then drives CPU past the target and reads
+  `cluster.HPAStatus("origod")` until it reports 4 replicas, within 60
+  seconds of the crossing, and restores the overlay's own autoscaler
+  with `cluster.Apply("deploy/examples/kind")`; scale-down is not
   asserted, the overlay's 60 second window only keeps the cluster
   small for the next test (proposed: `test/e2e` in the `e2e-slow` job
   of spec 013, `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp`).
@@ -307,8 +350,11 @@ the cache on shutdown.
   `storage_unavailable` and absent (proposed: `test/e2e`,
   `TestE2EDrainLosesNoPush`).
 - Materializing 1 000 entries from an empty disk with 4 workers
-  finishes under 30 seconds against MinIO on the CI runner, and a thin
-  entry whose base is in the previous entry lands on the retry. The
+  finishes under 30 seconds against MinIO on the CI runner, and a chain
+  of thin entries, each based on the one before it, lands in the joined
+  batches: the packs on disk are one per batch, the history equals the
+  source, `git fsck` passes, and a batch carrying one object twice
+  falls back to one pack per entry. The
   fixture is written by the harness through `Log.Commit`, one entry per
   commit with a pack the harness builds, not by `git push`, under a
   budget of its own of 5 minutes, because phase 1 measured 98 seconds
@@ -316,7 +362,8 @@ the cache on shutdown.
   (proposed: `test/e2e`, `TestE2EMaterializeThousandEntriesUnderBudget`,
   a plain test of the one-node run that runs on every push and shares
   its fixture builder with `TestMeasure`; `internal/repo`,
-  `TestConcurrentWorkersApplyThinEntries`).
+  `TestConcurrentWorkersApplyThinEntries` and
+  `TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry`).
 
 ## Outcome
 
@@ -348,39 +395,27 @@ all acknowledged, none lost; 1 000 entries materialized onto an empty
 disk in 0.65 s, from 42 s with the per-entry design below and 70.7 s
 in phase 1.
 
-Divergences, each kept and the reason:
+Divergences from the first draft, each kept and now the rule the Design
+states:
 
-- The materialization budget is met by a different mechanism than the
-  Design's concurrent `index-pack` per entry. Measured on 1 000 entries
-  each thin over the previous one, the pattern every push produces:
-  one worker 53.8 s, four workers 52.5 s, eight workers 48.5 s, with
-  999 of the 1 000 first `index-pack` runs failing on a missing base
-  and running again. Entry i+1 cannot index before entry i landed, so
-  the chain serializes the work and the retry doubles it. The cause is
-  one subprocess per entry, and the packfile format allows one per
-  batch: a 12 byte header with an object count, self-delimiting
-  objects whose `OFS_DELTA` offsets are relative and whose `REF_DELTA`
-  bases are named by hash, and a SHA-1 trailer. So the workers fetch,
-  verify, and spool concurrently, and one indexer joins consecutive
-  packs, at most 256 entries or 256 MiB, into one pack for one
-  `index-pack --fix-thin --strict` run in sequence order: every base is
-  in the batch or already in the store, there is no retry, and a cold
-  copy of 1 000 pushes holds 4 packs, not 1 000, which every later git
-  command opens. `TestConcurrentWorkersApplyThinEntries` keeps its name
-  and asserts the batching with a test-set bound of 5 per batch. Two
-  entries can carry one object (the 8-replica load on the stack found
-  it: `REF_DELTA already resolved (duplicate base)`), which
-  `index-pack --strict` refuses in one pack; a joined batch that is
-  refused is indexed one pack at a time in sequence order, each with
-  `--fix-thin`, which is what one run per entry produces
-  (`TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry`).
+- The materialization budget is met by batching, not by the first
+  draft's concurrent `index-pack` per entry, which cannot meet its own
+  budget on the chained thin packs every push produces: measured, one
+  worker 53.8 s, four workers 52.5 s, eight workers 48.5 s on 1 000
+  such entries, with 999 of the 1 000 first runs failing on a missing
+  base and running again. The Materialization budget section states the
+  batched design and the figures.
+  `TestConcurrentWorkersApplyThinEntries` keeps its name and asserts
+  the batching with a test-set bound of 5 entries per batch. The
+  duplicate-object fallback was found by the 8-replica load on the
+  stack (`REF_DELTA already resolved (duplicate base)`) and is held by
+  `TestBatchWithADuplicateObjectFallsBackToOnePackPerEntry`.
 - The `Origo-Prefer` header on a refused request: on the id form the
   header is present on a 403 with k = 1, because the id is the path's;
   on the name form it is absent on a 403 whether or not the name
-  resolved, because a header only on a resolved name would tell a
-  refused caller the repository exists, which spec 007's authorization
-  before lookup forbids. The Design's sentence covers the unresolved
-  case; the resolved-and-refused case follows from 007.
+  resolved. The first draft covered the unresolved case only; the
+  resolved-and-refused case follows from spec 007's authorization
+  before lookup, and the Header table now states both.
 - A datagram that names a repository the node does not hold is counted
   `dropped`, as the Design says, and still records its sender in the
   live set, because the MAC was valid and the Design's live set is
@@ -388,41 +423,35 @@ Divergences, each kept and the reason:
   valid MAC".
 - The evictor skips a copy whose write lock is held rather than wait
   behind the request: `Cache.TryEvict` takes the lock only when it is
-  free. A copy in use was acquired recently by definition, and the
-  floor covers it.
-- The gossip loop is split into `Bind`, which takes the socket the
-  node opened and resolves the peers before anything is served, and
-  `Run`; the first commit's announcement would otherwise race the
-  loop's start.
+  free, which the eviction table states.
+- The gossip loop is split into `Bind` and `Run`, which the Gossip
+  section states.
 - `ORIGO_GOSSIP_SECRET` shorter than 32 bytes is refused whenever it
   is set, peers or not, as a malformed value in the one start-up
   message.
 - `TestE2EGossipShortensTheCatchUp` measures the counts over a
-  `git ls-remote` with protocol version 1, one request, because a
-  version 2 `ls-remote` sends an `ls-refs` POST after the
-  advertisement, a second check. A check that finds a newer index
-  walks `HEAD index/<m+1>` forward until a 404, so on the node without
-  gossip the 404 count rises by one beside the 200.
-- `TestSlowAutoscalerScalesUp` scales under `test/e2e/testdata/hpa-scale.yaml`
-  (3 to 8 replicas on CPU, scale-up window 0, the overlay's 60 second
-  scale-down window) applied with `cluster.ApplyManifest`, not under
-  the overlay's own autoscaler: spec 013 holds that one at 3 replicas
-  so the three host ports always answer and the other cluster tests
-  see three pods, and an autoscaler with `maxReplicas: 3` cannot reach
-  4. The overlay's autoscaler is the base's patched
-  (`patches/hpa-statefulset.yaml`), as spec 013's Outcome foresaw.
+  `git ls-remote` with protocol version 1, and a check that finds a
+  newer index walks forward until a 404, so on the node without gossip
+  the 404 count rises by one beside the 200. Both are in the criterion.
+- `TestSlowAutoscalerScalesUp` needed a fixture the first draft did not
+  name: the overlay's own autoscaler is held at 3 replicas by spec 013,
+  and one with `maxReplicas: 3` can never reach 4. It scales under
+  `test/e2e/testdata/hpa-scale.yaml` applied with
+  `cluster.ApplyManifest`, which the criterion states. The overlay's
+  autoscaler is the base's patched (`patches/hpa-statefulset.yaml`), as
+  spec 013's Outcome foresaw.
 - `TestE2EDrainLosesNoPush` asserts what the criterion states, that an
   acknowledged push is in the newest index and a failed one is absent,
   and records how the failed ones failed; on this machine the node
   acknowledged all 100 inside its grace period, so no push was refused.
 - The base's `HorizontalPodAutoscaler` names the Deployment; the
   overlay's patch names the StatefulSet. `deploy/prod` therefore
-  carries the autoscaler at 2 to 32.
+  carries the autoscaler at 2 to 32, which the Scaling section states.
 - The kind overlay's pods request 50m CPU, not the base's 250m: the
-  first stack run left `origod-3` unschedulable, `Insufficient cpu`,
-  on the runner's one kind node, so neither 4 nor 8 replicas could
-  exist there. The autoscaler's 70% target is of that request, which
-  is what the clone load drives past.
+  first stack run left `origod-3` unschedulable, `Insufficient cpu`, on
+  the runner's one kind node, so neither 4 nor 8 replicas could exist
+  there. The Scaling section states the request and what the 70% target
+  is of.
 - `TestClusterPreferredNodeIsWarm` reads the three headers until they
   agree, for up to the 60 seconds of the membership criterion, because
   the test before it replaces two pods and a node that joined a second
@@ -430,8 +459,7 @@ Divergences, each kept and the reason:
 
 Two defects found in existing code, fixed at the root with a failing
 test each and recorded in spec 004's Outcome: a warm copy whose bucket
-was reset answered `storage_unavailable`, the open item of spec 013's
-Outcome, and is now rebuilt from the log
+was reset answered `storage_unavailable`, and is now rebuilt from the log
 (`TestLostSequenceRebuildsFromTheLog`); a reader that found a newer
 index ran the whole currency check again under the write lock, a
 second `HEAD` and a second `GET` of the index it had read
@@ -439,20 +467,20 @@ second `HEAD` and a second `GET` of the index it had read
 
 Items for other specs:
 
-- Spec 006: once compaction sets `compacted_through` and the sweeper
-  removes index objects, `HEAD index/<n+1>` answering 404 no longer
-  proves a copy current when `index/<n+1>` itself was swept; a warm
-  process holding `index/<n>` in memory would serve stale. Today
-  nothing is swept because `compacted_through` is always 0. The idle
-  rule here evicts a copy after 24 hours, so a sweeper that keeps every
-  index object at least 24 hours closes the gap for a warm copy; a
-  process that holds a copy past that without a request is the
-  remaining case, and the restart path (`ReadIndex` of the held
-  sequence answering 404) already rebuilds.
-- Spec 015: a thin pack whose base is in no entry fails the batch with
-  git's `did not receive expected object` and is served
-  `storage_unavailable`; it is an integrity error of the log, which
-  015's `repository_unavailable` names.
+- Spec 006, settled: compaction never deletes an index object, so
+  `HEAD index/<n+1>` stays the currency check and a 404 stays proof
+  that a copy is current. Truncation removes folded entries and
+  superseded packs only. An index object is one small object per push,
+  which is the cheaper side of the trade. Spec 006 states the rule and
+  its builder implements it; today `internal/wal/sweep.go` still
+  deletes index objects below `compacted_through`, which nothing
+  reaches because `compacted_through` is always 0 until 006 lands.
+- Spec 015, settled: a thin pack whose base is in no entry fails the
+  batch with git's `did not receive expected object` and is served
+  `storage_unavailable`, not `repository_unavailable`: a base the log
+  does not hold is a storage-side inconsistency, not a state of the
+  repository. Spec 015 holds it with
+  `TestThinPackWithoutBaseIsStorageUnavailable`.
 - Spec 011: `origo_wal_head_check_seconds` carries `result`;
   `origo_gossip_packets_total`, `origo_evictions_total`,
   `origo_cache_bytes`, and `origo_cache_repos` were registered by the
