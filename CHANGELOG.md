@@ -32,6 +32,10 @@ committed: the commit log already holds that.
   are required. The bootstrap Secret is `origod-auth`. `make dev` is out
   of service until spec 013 ships the stub binary; `make test-integration`
   runs the stub issuer and authorizer in-process.
+- The authorizer call is retried once when the authorizer closed a
+  kept-alive connection before reading the request (net/http's `server
+  closed idle connection`), the same as a refused or reset connection;
+  it was answered `authorizer_unavailable` before.
 - Every error response carries the fixed user sentence of its code with
   the developer reason in `details`, and every response of the public
   listener, `/readyz` and `/version` included, carries `Origo-Contract`.

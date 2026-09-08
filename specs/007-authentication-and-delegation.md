@@ -309,6 +309,13 @@ Divergences and interpretations, all kept:
   token, because 65 537 signatures do not fit the suite's budget; the
   authorizer half makes 65 537 real calls through the stub's handler
   in-process.
+- The retry accepts net/http's closed idle connection (`http: server
+  closed idle connection`, the peer's FIN seen before the request was
+  registered on the connection, which net/http does not retry for a
+  POST): the call failed before any response byte, so it is the one
+  retry the Design allows; `TestClosedIdleConnectionIsRetried` forces
+  the order, and without it `TestAuthorizerOutageDeniesAndRecovers`
+  was flaky (CI run 34202697213).
 - Both caches are `latere.ai/x/pkg/cache.TTLCache` with the bound and
   the least-recently-used eviction; each entry carries its own expiry
   (the token's lifetime capped at 5 minutes, the allow's `ttl`, the 5
