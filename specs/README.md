@@ -62,7 +62,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | validated |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | validated |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
-| [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | drafted |
+| [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | validated |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | validated |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | validated |
