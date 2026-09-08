@@ -4,17 +4,17 @@
 package httpgit
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"errors"
 	"io"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func receiveBody(t *testing.T, caps string, options []string, pack string, refs ...string) []byte {
@@ -159,56 +159,53 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 	defer ch.close()
 	zero := strings.Repeat("0", 40)
 	one := strings.Repeat("1", 40)
-	// A writer plays the hook: writes the updates, then reads the verdict.
+	// A writer plays the hook the way the script does: it opens the
+	// updates FIFO for writing, writes the transaction and the
+	// terminator, closes, then opens the verdict FIFO for reading and
+	// reads one line. Neither open waits, because the node holds both
+	// ends of each FIFO.
 	verdict := make(chan string, 1)
 	go func() {
-		w, err := os.OpenFile(ch.updates, os.O_WRONLY, 0)
+		w, err := os.OpenFile(filepath.Join(ch.dir, "updates"), os.O_WRONLY, 0)
 		if err != nil {
-			verdict <- "open: " + err.Error()
+			verdict <- "open updates: " + err.Error()
 			return
 		}
-		_, _ = w.WriteString(zero + " " + one + " refs/heads/main\n")
+		_, _ = w.WriteString(zero + " " + one + " refs/heads/main\n" + updatesEnd + "\n")
 		_ = w.Close()
-		r, err := os.OpenFile(ch.verdict, os.O_RDONLY, 0)
+		r, err := os.OpenFile(filepath.Join(ch.dir, "verdict"), os.O_RDONLY, 0)
 		if err != nil {
 			verdict <- "open verdict: " + err.Error()
 			return
 		}
-		b, _ := io.ReadAll(r)
+		line, _ := bufio.NewReader(r).ReadString('\n')
 		_ = r.Close()
-		verdict <- string(b)
+		verdict <- line
 	}()
 	refs, quarantine, ok, err := ch.readUpdates()
 	if err != nil || !ok || quarantine != "" || len(refs) != 1 || refs[0].New != one {
 		t.Fatalf("updates: %+v %v %v", refs, ok, err)
 	}
-	if err := ch.writeVerdict(context.Background(), "reject non_fast_forward: fetch\nfirst"); err != nil {
+	if err := ch.writeVerdict("reject non_fast_forward: fetch\nfirst"); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-verdict; got != "reject non_fast_forward: fetch first\n" {
 		t.Fatalf("verdict = %q", got)
 	}
-	// Released without a writer: no updates.
+	// Released before the hook ever wrote: no updates, and the release
+	// itself does not wait for the reader.
 	ch2, _ := newHookChannel(dir)
 	defer ch2.close()
-	done := make(chan bool, 1)
-	go func() {
-		_, _, ok, err := ch2.readUpdates()
-		done <- ok && err == nil
-	}()
-	time.Sleep(20 * time.Millisecond)
-	ch2.release()
-	if <-done {
-		t.Fatal("released channel reported updates")
+	if err := ch2.release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, err := ch2.readUpdates(); ok || err != nil {
+		t.Fatalf("released channel: ok %v, %v", ok, err)
 	}
 	// A malformed line from the hook is an error.
 	ch3, _ := newHookChannel(dir)
 	defer ch3.close()
-	go func() {
-		w, _ := os.OpenFile(ch3.updates, os.O_WRONLY, 0)
-		_, _ = w.WriteString("garbage\n")
-		_ = w.Close()
-	}()
+	_, _ = ch3.updates.WriteString("garbage\n" + updatesEnd + "\n")
 	if _, _, _, err := ch3.readUpdates(); err == nil {
 		t.Fatal("garbage accepted")
 	}
@@ -216,28 +213,18 @@ func TestHookChannelCarriesUpdatesAndVerdict(t *testing.T) {
 	// transaction follows it.
 	ch4, _ := newHookChannel(dir)
 	defer ch4.close()
-	go func() {
-		w, _ := os.OpenFile(ch4.updates, os.O_WRONLY, 0)
-		_, _ = w.WriteString("quarantine /tmp/q\n" + strings.Repeat("0", 40) + " " + strings.Repeat("a", 40) + " refs/heads/main\n")
-		_ = w.Close()
-	}()
+	_, _ = ch4.updates.WriteString("quarantine /tmp/q\n" + strings.Repeat("0", 40) + " " + strings.Repeat("a", 40) + " refs/heads/main\n" + updatesEnd + "\n")
 	if refs, quarantine, ok, err := ch4.readUpdates(); err != nil || !ok || quarantine != "/tmp/q" || len(refs) != 1 || refs[0].Ref != "refs/heads/main" {
 		t.Fatalf("quarantine line: %v %q %v %v", refs, quarantine, ok, err)
 	}
-	// A verdict nobody reads ends with the context.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	if err := ch3.writeVerdict(ctx, "ok"); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("unread verdict: %v", err)
-	}
-	// A missing FIFO is an error, and the channel cannot be created in a
-	// missing directory.
+	// A closed channel refuses both operations, and the channel cannot
+	// be created in a missing directory.
 	ch3.close()
-	if err := ch3.writeVerdict(context.Background(), "ok"); err == nil {
-		t.Fatal("missing verdict FIFO accepted")
+	if err := ch3.writeVerdict("ok"); err == nil {
+		t.Fatal("closed verdict FIFO accepted")
 	}
 	if _, _, _, err := ch3.readUpdates(); err == nil {
-		t.Fatal("missing updates FIFO accepted")
+		t.Fatal("closed updates FIFO accepted")
 	}
 	if _, err := newHookChannel(dir + "/missing"); err == nil {
 		t.Fatal("missing directory accepted")

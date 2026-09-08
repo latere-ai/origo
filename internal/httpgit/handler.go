@@ -358,9 +358,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		err        error
 	}
 	fromHook := make(chan updates, 1)
-	hookDone := make(chan struct{})
 	go func() {
-		defer close(hookDone)
 		refs, quarantine, ok, err := ch.readUpdates()
 		fromHook <- updates{refs, quarantine, ok, err}
 	}()
@@ -392,14 +390,17 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 				h.beforeVerdict(u.quarantine, forced)
 			}
 		}
-		if err := ch.writeVerdict(r.Context(), verdict); err != nil {
+		if err := ch.writeVerdict(verdict); err != nil {
 			h.logger.WarnContext(r.Context(), "verdict not delivered", "repo", id, "error", err)
 		}
 		runErr = <-exited
 	case runErr = <-exited:
 		// git refused the push before the hook ran: bad objects, a
-		// failed connectivity check, or a client that went away.
-		ch.drain(hookDone)
+		// failed connectivity check, or a client that went away. The
+		// reader is ended with the terminator the hook never wrote.
+		if err := ch.release(); err != nil {
+			h.logger.WarnContext(r.Context(), "hook channel not released", "repo", id, "error", err)
+		}
 		<-fromHook
 	}
 	if runErr != nil {

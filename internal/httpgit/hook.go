@@ -5,34 +5,41 @@ package httpgit
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/latere-ai/origo/internal/wal"
 )
 
 // preReceiveHook is installed in every materialized repository. It runs
 // inside git receive-pack after the objects are quarantined and checked
-// and before any reference moves: it reports the quarantine directory
-// and hands the transaction git resolved to the node over a FIFO, then
-// blocks on a second FIFO for the verdict. The node commits the entry
-// to the log in between and reads the pushed objects from the
-// quarantine for the forced flag (spec 008), so the push is durable
-// before git's own update and refused before it when the log refuses.
-// Only shell builtins are used: the hook runs wherever /bin/sh runs,
-// with nothing on PATH.
+// and before any reference moves: it opens the verdict FIFO, reports
+// the quarantine directory and hands the transaction git resolved to
+// the node over the updates FIFO, ends that with the terminator line,
+// then blocks reading the verdict. The node commits the entry to the
+// log in between and reads the pushed objects from the quarantine for
+// the forced flag (spec 008), so the push is durable before git's own
+// update and refused before it when the log refuses. Only shell
+// builtins are used: the hook runs wherever /bin/sh runs, with nothing
+// on PATH.
+//
+// The node holds both ends of each FIFO open for the whole request, so
+// neither of the hook's opens waits for the other side (see
+// hookChannel). The verdict FIFO is opened first, before the node can
+// have answered, so a node that goes away after that ends the hook with
+// end of file on its read, "no verdict", rather than leaving it, and
+// git with it, waiting in an open.
 const preReceiveHook = `#!/bin/sh
 # Installed by origod (internal/httpgit/hook.go). Do not edit.
 d="$ORIGO_HOOK_DIR"
 [ -n "$d" ] || { echo "origo: pre-receive ran outside origod" >&2; exit 1; }
-{ printf 'quarantine %s\n' "$GIT_QUARANTINE_PATH"; while IFS= read -r line; do printf '%s\n' "$line"; done; } > "$d/updates"
-if read -r verdict < "$d/verdict"; then :; else verdict="reject origo: no verdict"; fi
+exec 3< "$d/verdict"
+{ printf 'quarantine %s\n' "$GIT_QUARANTINE_PATH"; while IFS= read -r line; do printf '%s\n' "$line"; done; printf 'end\n'; } > "$d/updates"
+if read -r verdict <&3; then :; else verdict="reject origo: no verdict"; fi
 case "$verdict" in
   ok) exit 0 ;;
   *) printf '%s\n' "${verdict#reject }" >&2; exit 1 ;;
@@ -56,48 +63,91 @@ func installHook(repoDir string) error {
 	return os.Rename(tmp, path)
 }
 
-// hookChannel is one request's pair of FIFOs.
+// hookChannel is one request's pair of FIFOs, each held open by the
+// node for reading and writing from before git starts until the
+// request ends.
+//
+// A FIFO opened for one direction blocks until the other direction
+// opens, and that rendezvous is what the first version of this channel
+// relied on: the node's blocking open for reading met the hook's
+// blocking open for writing. On macOS that rendezvous loses a wakeup
+// about once in a thousand: the hook's open, write, and close all
+// complete between the moment the kernel counts the node's reader and
+// the moment it puts the reader to sleep, and the reader sleeps until a
+// later writer arrives, which for a request is never. git waits for
+// the hook, the hook waits for the verdict, the request runs into its
+// timeout, and the client's push, whose response ends without git's
+// closing flush, waits forever. Holding both ends from the start makes
+// every later open immediate on every platform: an open for writing
+// finds a reader, an open for reading finds a writer, and nothing
+// sleeps. It also means the reader never sees end of file, so the
+// updates end with a terminator line instead, and the node can end a
+// read itself by writing that line when git exits without running the
+// hook.
 type hookChannel struct {
 	dir     string
-	updates string
-	verdict string
+	updates *os.File
+	verdict *os.File
 }
+
+// updatesEnd is the line that ends the hook's updates. A command is
+// three fields and the quarantine line has its prefix, so neither can
+// be it.
+const updatesEnd = "end"
 
 func newHookChannel(spoolDir string) (*hookChannel, error) {
 	dir, err := os.MkdirTemp(spoolDir, "hook-")
 	if err != nil {
 		return nil, err
 	}
-	h := &hookChannel{dir: dir, updates: filepath.Join(dir, "updates"), verdict: filepath.Join(dir, "verdict")}
-	for _, p := range []string{h.updates, h.verdict} {
-		if err := syscall.Mkfifo(p, 0o600); err != nil {
-			_ = os.RemoveAll(dir)
+	h := &hookChannel{dir: dir}
+	for _, fifo := range []struct {
+		name string
+		file **os.File
+	}{{"updates", &h.updates}, {"verdict", &h.verdict}} {
+		path := filepath.Join(dir, fifo.name)
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			h.close()
 			return nil, err
 		}
+		f, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			h.close()
+			return nil, err
+		}
+		*fifo.file = f
 	}
 	return h, nil
 }
 
-func (h *hookChannel) close() { _ = os.RemoveAll(h.dir) }
+// close releases both FIFOs and removes the directory. A hook still
+// holding one sees end of file or a broken pipe on its next operation,
+// which ends it with "no verdict".
+func (h *hookChannel) close() {
+	for _, f := range []*os.File{h.updates, h.verdict} {
+		if f != nil {
+			_ = f.Close()
+		}
+	}
+	_ = os.RemoveAll(h.dir)
+}
 
 // quarantineLine is the first line the hook writes: the directory git
 // holds the pushed objects in until the verdict.
 const quarantineLine = "quarantine "
 
-// readUpdates blocks until the hook has written the quarantine path and
-// the transaction and returns them. It returns ok false when the FIFO
-// was released without a writer, which is how the node unblocks it once
-// git exited without running the hook.
+// readUpdates blocks until the updates end with the terminator and
+// returns the quarantine path and the transaction. It returns ok false
+// when no command arrived before the terminator, which is how the node
+// unblocks it once git exited without running the hook (release).
 func (h *hookChannel) readUpdates() (refs []wal.RefUpdate, quarantine string, ok bool, err error) {
-	f, err := os.OpenFile(h.updates, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, "", false, err
-	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(h.updates)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
 		line := sc.Text()
+		if line == updatesEnd {
+			return refs, quarantine, len(refs) > 0, nil
+		}
 		if refs == nil && quarantine == "" && strings.HasPrefix(line, quarantineLine) {
 			quarantine = strings.TrimPrefix(line, quarantineLine)
 			continue
@@ -111,60 +161,23 @@ func (h *hookChannel) readUpdates() (refs []wal.RefUpdate, quarantine string, ok
 	if err := sc.Err(); err != nil {
 		return nil, quarantine, true, err
 	}
-	return refs, quarantine, len(refs) > 0, nil
+	// End of file arrives only when the node closed its own end.
+	return nil, quarantine, true, errors.New("hook: updates ended before the terminator")
 }
 
-// release opens the updates FIFO for writing and closes it, so a
-// reader blocked in readUpdates sees end of file. It reports whether a
-// reader had the FIFO open: a non-blocking open for writing fails with
-// ENXIO when none does.
-func (h *hookChannel) release() bool {
-	f, err := os.OpenFile(h.updates, os.O_WRONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	return true
+// release ends a readUpdates that will never see the hook, because git
+// exited before running it: the node writes the terminator on the end
+// it holds. A terminator after the hook's own is never read and is
+// discarded with the FIFO.
+func (h *hookChannel) release() error {
+	_, err := fmt.Fprintln(h.updates, updatesEnd)
+	return err
 }
 
-// drain ends a readUpdates that will never see the hook, because git
-// exited before running it. The reader's own open blocks until a writer
-// appears, so one release is not enough: a release before the reader
-// has opened the FIFO finds no reader, and the reader then waits for a
-// writer that never comes. release is repeated until it finds the
-// reader or done reports the reader finished on its own.
-func (h *hookChannel) drain(done <-chan struct{}) {
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		if h.release() {
-			<-done
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-// writeVerdict delivers "ok" or "reject <message>" to the hook. The
-// FIFO has no reader until the hook reaches its read, and none ever if
-// git died, so the open is non-blocking and retried until ctx ends.
-func (h *hookChannel) writeVerdict(ctx context.Context, verdict string) error {
-	for {
-		f, err := os.OpenFile(h.verdict, os.O_WRONLY|syscall.O_NONBLOCK, 0)
-		if err == nil {
-			_, werr := fmt.Fprintln(f, strings.ReplaceAll(verdict, "\n", " "))
-			return errors.Join(werr, f.Close())
-		}
-		if !errors.Is(err, syscall.ENXIO) {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+// writeVerdict delivers "ok" or "reject <message>" to the hook through
+// the end the node holds; the hook's own open for reading finds that
+// writer and returns at once.
+func (h *hookChannel) writeVerdict(verdict string) error {
+	_, err := fmt.Fprintln(h.verdict, strings.ReplaceAll(verdict, "\n", " "))
+	return err
 }
