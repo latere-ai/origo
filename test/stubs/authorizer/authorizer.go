@@ -6,7 +6,8 @@
 // the answers from, a record of every request in order, and two
 // failure modes for the outage cases. Spec 007 builds it because its
 // own criteria need it; spec 013's binary runs it beside the other
-// stubs.
+// stubs and adds the three outage paths, PUT /fail, POST /hang, and
+// POST /resume, so a stack run sets the outage through the host port.
 //
 // One rule of the contract binds every authorizer, this one included:
 // the probe id 00000000-0000-0000-0000-000000000001 is denied for every
@@ -118,6 +119,12 @@ func NewHandler(opts ...Option) *Server {
 	s.mux.HandleFunc("PUT /rules", s.putRules)
 	s.mux.HandleFunc("GET /requests", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.Requests()) })
 	s.mux.HandleFunc("DELETE /requests", func(w http.ResponseWriter, _ *http.Request) { s.ClearRequests(); w.WriteHeader(http.StatusNoContent) })
+	// The outage is set over HTTP as well as by method (spec 013), so a
+	// stack run drives it through the host port: each path calls the
+	// method of the same name.
+	s.mux.HandleFunc("PUT /fail", s.putFail)
+	s.mux.HandleFunc("POST /hang", func(w http.ResponseWriter, _ *http.Request) { s.Hang(); w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("POST /resume", func(w http.ResponseWriter, _ *http.Request) { s.Resume(); w.WriteHeader(http.StatusNoContent) })
 	return s
 }
 
@@ -283,6 +290,20 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.SetRules(body.Rules...)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// putFail reads {"status": <int>} and calls Fail with it; 0 clears the
+// outage.
+func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Status int `json:"status"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.Fail(body.Status)
 	w.WriteHeader(http.StatusNoContent)
 }
 

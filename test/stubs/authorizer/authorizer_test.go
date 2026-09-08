@@ -180,6 +180,44 @@ func TestFailAndHang(t *testing.T) {
 	}
 }
 
+// TestOutageIsSetOverHTTP drives the three outage paths spec 013 adds:
+// PUT /fail with a status, 0 to clear it, POST /hang, and POST /resume,
+// each the method of the same name.
+func TestOutageIsSetOverHTTP(t *testing.T) {
+	s := authorizer.New(t)
+	body := `{"subject":"alice","repo":` + repoA + `,"action":"read"}`
+	if status, _ := control(t, s, "PUT", "/fail", `{"status":503}`); status != 204 {
+		t.Fatalf("PUT /fail: %d", status)
+	}
+	if status, _ := call(t, s, s.Token(), body); status != 503 {
+		t.Fatalf("after PUT /fail: %d", status)
+	}
+	if status, _ := control(t, s, "PUT", "/fail", `{"status":0}`); status != 204 {
+		t.Fatalf("PUT /fail 0: %d", status)
+	}
+	if status, out := call(t, s, s.Token(), body); status != 200 || out["allow"] != true {
+		t.Fatalf("after clearing: %d %v", status, out)
+	}
+	if status, _ := control(t, s, "PUT", "/fail", `nope`); status != 400 {
+		t.Fatalf("malformed PUT /fail: %d", status)
+	}
+	if status, _ := control(t, s, "POST", "/hang", ""); status != 204 {
+		t.Fatalf("POST /hang: %d", status)
+	}
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", s.URL(), strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+s.Token())
+	if _, err := client.Do(req); err == nil {
+		t.Fatal("a hung endpoint answered")
+	}
+	if status, _ := control(t, s, "POST", "/resume", ""); status != 204 {
+		t.Fatalf("POST /resume: %d", status)
+	}
+	if status, out := call(t, s, s.Token(), body); status != 200 || out["allow"] != true {
+		t.Fatalf("after POST /resume: %d %v", status, out)
+	}
+}
+
 func TestHandlerServesWithoutAListener(t *testing.T) {
 	s := authorizer.NewHandler(authorizer.WithToken("x"))
 	if s.Handler() == nil || s.Token() != "x" {
