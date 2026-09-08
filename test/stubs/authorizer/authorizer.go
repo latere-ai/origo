@@ -1,0 +1,292 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
+// Package authorizer is the stub of spec 007's authorizer endpoint, to
+// the control API of spec 013's stub table: a rule table a test chooses
+// the answers from, a record of every request in order, and two
+// failure modes for the outage cases. Spec 007 builds it because its
+// own criteria need it; spec 013's binary runs it beside the other
+// stubs.
+//
+// One rule of the contract binds every authorizer, this one included:
+// the probe id 00000000-0000-0000-0000-000000000001 is denied for every
+// subject and action, because `origod check` (spec 018) treats an allow
+// on it as a misconfigured authorizer.
+package authorizer
+
+import (
+	"crypto/subtle"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// ProbeID is the reserved repository id every authorizer denies.
+const ProbeID = "00000000-0000-0000-0000-000000000001"
+
+// DefaultToken is the bearer the stub expects unless WithToken sets
+// another; the kind overlay and make dev use it.
+const DefaultToken = "stub-authorizer-token"
+
+// Request is what spec 007's client sends, and what Requests records.
+type Request struct {
+	Subject string `json:"subject"`
+	Actor   string `json:"actor"`
+	Repo    struct {
+		ID    string `json:"id"`
+		Owner string `json:"owner"`
+		Slug  string `json:"slug"`
+	} `json:"repo"`
+	Action string `json:"action"`
+}
+
+// Rule is one row of the table. Subject, Actor, Repo, and Action are `*`
+// or a value; Repo is an id or `owner/slug`. An empty field matches
+// everything, the same as `*`. TTL, Replicas, and QuotaBytes are sent
+// only when set, so the node applies its defaults otherwise.
+type Rule struct {
+	Subject    string `json:"subject"`
+	Actor      string `json:"actor"`
+	Repo       string `json:"repo"`
+	Action     string `json:"action"`
+	Allow      bool   `json:"allow"`
+	Reason     string `json:"reason,omitempty"`
+	TTL        int    `json:"ttl,omitempty"`
+	Replicas   int    `json:"replicas,omitempty"`
+	QuotaBytes int64  `json:"quota_bytes,omitempty"`
+}
+
+func (r Rule) matches(req Request) bool {
+	return star(r.Subject, req.Subject) && star(r.Actor, req.Actor) && star(r.Action, req.Action) &&
+		(star(r.Repo, req.Repo.ID) || (req.Repo.Owner != "" && r.Repo == req.Repo.Owner+"/"+req.Repo.Slug))
+}
+
+func star(pattern, value string) bool {
+	return pattern == "" || pattern == "*" || pattern == value
+}
+
+// Option configures a Server.
+type Option func(*Server)
+
+// WithToken sets the bearer the endpoint requires.
+func WithToken(token string) Option {
+	return func(s *Server) { s.token = token }
+}
+
+// WithAllow sets the subjects allowed when no rule matches, `*` for
+// all. The default is `*`; WithAllow() with no subject allows nobody by
+// default.
+func WithAllow(subjects ...string) Option {
+	return func(s *Server) { s.allow = subjects }
+}
+
+// Server is one stub authorizer.
+type Server struct {
+	mu       sync.Mutex
+	token    string
+	allow    []string
+	rules    []Rule
+	requests []Request
+	fail     int
+	hung     chan struct{}
+	closed   chan struct{}
+	srv      *httptest.Server
+	mux      *http.ServeMux
+}
+
+// New starts a stub authorizer for the test and stops it with the test.
+func New(t testing.TB, opts ...Option) *Server {
+	t.Helper()
+	s := NewHandler(opts...)
+	s.srv = httptest.NewServer(s.mux)
+	t.Cleanup(s.Close)
+	return s
+}
+
+// NewHandler builds a stub without a listener, for a binary that serves
+// Handler itself.
+func NewHandler(opts ...Option) *Server {
+	s := &Server{token: DefaultToken, allow: []string{"*"}, closed: make(chan struct{}), mux: http.NewServeMux()}
+	for _, o := range opts {
+		o(s)
+	}
+	s.mux.HandleFunc("POST /{$}", s.decide)
+	s.mux.HandleFunc("PUT /rules", s.putRules)
+	s.mux.HandleFunc("GET /requests", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.Requests()) })
+	s.mux.HandleFunc("DELETE /requests", func(w http.ResponseWriter, _ *http.Request) { s.ClearRequests(); w.WriteHeader(http.StatusNoContent) })
+	return s
+}
+
+// Handler serves the endpoint and the control API.
+func (s *Server) Handler() http.Handler { return s.mux }
+
+// Close stops the listener and releases every hung request.
+func (s *Server) Close() {
+	s.mu.Lock()
+	select {
+	case <-s.closed:
+	default:
+		close(s.closed)
+	}
+	s.mu.Unlock()
+	if s.srv != nil {
+		s.srv.Close()
+	}
+}
+
+// URL is the endpoint, the value of ORIGO_AUTHORIZER_URL.
+func (s *Server) URL() string { return s.srv.URL }
+
+// Token is the bearer the endpoint requires, the value of
+// ORIGO_AUTHORIZER_TOKEN.
+func (s *Server) Token() string { return s.token }
+
+// Allow adds an allow rule. A later rule wins over an earlier one that
+// matches the same request.
+func (s *Server) Allow(rule Rule) {
+	rule.Allow = true
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rules = append(s.rules, rule)
+}
+
+// Deny adds a deny rule with the reason.
+func (s *Server) Deny(rule Rule, reason string) {
+	rule.Allow, rule.Reason = false, reason
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rules = append(s.rules, rule)
+}
+
+// SetRules replaces the table, what a PUT of /rules does.
+func (s *Server) SetRules(rules ...Rule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rules = slices.Clone(rules)
+}
+
+// Requests lists every request seen, in order.
+func (s *Server) Requests() []Request {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.requests)
+}
+
+// ClearRequests empties the list.
+func (s *Server) ClearRequests() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests = nil
+}
+
+// Fail makes every answer the given status; 0 restores the rule table.
+func (s *Server) Fail(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fail = status
+}
+
+// Hang makes the endpoint never answer until Resume or Close.
+func (s *Server) Hang() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hung == nil {
+		s.hung = make(chan struct{})
+	}
+}
+
+// Resume clears Hang and Fail: the next request is answered from the
+// rule table.
+func (s *Server) Resume() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fail = 0
+	if s.hung != nil {
+		close(s.hung)
+		s.hung = nil
+	}
+}
+
+// Decide answers one request from the table, the way the endpoint does.
+func (s *Server) Decide(req Request) Rule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Repo.ID == ProbeID {
+		return Rule{Allow: false, Reason: "the probe id is reserved"}
+	}
+	for _, v := range slices.Backward(s.rules) {
+		if v.matches(req) {
+			return v
+		}
+	}
+	if slices.Contains(s.allow, "*") || slices.Contains(s.allow, req.Subject) {
+		return Rule{Allow: true}
+	}
+	return Rule{Allow: false, Reason: "no rule allows " + req.Subject}
+}
+
+func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
+	raw, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(raw)), []byte(s.token)) != 1 {
+		http.Error(w, "bearer required", http.StatusUnauthorized)
+		return
+	}
+	var req Request
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	s.requests = append(s.requests, req)
+	fail, hung := s.fail, s.hung
+	s.mu.Unlock()
+	if hung != nil {
+		select {
+		case <-hung:
+		case <-s.closed:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+	}
+	if fail != 0 {
+		http.Error(w, "failing on request", fail)
+		return
+	}
+	rule := s.Decide(req)
+	if !rule.Allow {
+		writeJSON(w, map[string]any{"allow": false, "reason": rule.Reason})
+		return
+	}
+	out := map[string]any{"allow": true}
+	if rule.TTL != 0 {
+		out["ttl"] = rule.TTL
+	}
+	if rule.Replicas != 0 {
+		out["replicas"] = rule.Replicas
+	}
+	if rule.QuotaBytes != 0 {
+		out["quota_bytes"] = rule.QuotaBytes
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Rules []Rule `json:"rules"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.SetRules(body.Rules...)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
