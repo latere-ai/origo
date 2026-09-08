@@ -94,6 +94,14 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	if c.Index.PushedAt == nil || !c.Index.PushedAt.Equal(h.At) {
 		t.Fatalf("pushed_at %v, entry at %v", c.Index.PushedAt, h.At)
 	}
+	// The commit hands back the header as written, so spec 008 builds
+	// the event without a second read, and the time each phase took.
+	if c.Header.Seq != h.Seq || !c.Header.At.Equal(h.At) || c.Header.Subject != h.Subject || c.Header.PackSHA256 != h.PackSHA256 {
+		t.Fatalf("committed header %+v, written %+v", c.Header, h)
+	}
+	if c.EntryDuration <= 0 || c.IndexDuration <= 0 {
+		t.Fatalf("phase durations %v %v", c.EntryDuration, c.IndexDuration)
+	}
 	if hint, err := l.Hint(ctx, repoA); err != nil || hint != 1 {
 		t.Fatalf("hint = %d, %v", hint, err)
 	}

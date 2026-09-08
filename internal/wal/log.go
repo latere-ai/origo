@@ -321,6 +321,14 @@ type Committed struct {
 	Index *Index
 	// Key is the entry's key relative to the repository prefix.
 	Key string
+	// Header is the entry's header as written, what spec 008's event is
+	// built from without a second read of the entry.
+	Header Header
+	// EntryDuration and IndexDuration are the time spent writing the
+	// entry and creating the index object, summed over lost rounds; the
+	// receive path observes them as the entry and index phases of
+	// origo_push_duration_seconds (spec 011).
+	EntryDuration, IndexDuration time.Duration
 }
 
 // Commit writes the entry and commits it by creating the next index
@@ -330,6 +338,7 @@ type Committed struct {
 // the round is replayed at the next sequence. A reference that moved
 // refuses the whole commit with a ConflictError.
 func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, catchUp func(context.Context, *Index) error) (*Committed, error) {
+	var entryTime, indexTime time.Duration
 	for attempt := range l.maxAttempts {
 		if attempt > 0 {
 			l.retries.Inc(nil)
@@ -349,10 +358,13 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 		if seq > maxSeq {
 			return nil, errors.New("wal: sequence space exhausted")
 		}
-		key, at, err := l.writeEntry(ctx, repo, seq, e)
+		started := time.Now()
+		key, hdr, err := l.writeEntry(ctx, repo, seq, e)
+		entryTime += time.Since(started)
 		if err != nil {
 			return nil, err
 		}
+		at := hdr.At
 		if err := l.failpoint(FailpointBeforeIndex); err != nil {
 			return nil, err
 		}
@@ -364,7 +376,9 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 		if err != nil {
 			return nil, err
 		}
+		started = time.Now()
 		_, err = l.store.Create(ctx, l.key(repo, IndexKey(seq)), BytesBody(data))
+		indexTime += time.Since(started)
 		won := err == nil
 		if err != nil {
 			// A 412 means another writer created it, unless it is our own
@@ -389,7 +403,7 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 		if won {
 			l.commits.Inc(nil)
 			l.writeHint(ctx, repo, seq)
-			return &Committed{Index: next, Key: key}, nil
+			return &Committed{Index: next, Key: key, Header: hdr, EntryDuration: entryTime, IndexDuration: indexTime}, nil
 		}
 	}
 	return nil, ErrContended
@@ -420,11 +434,11 @@ func (l *Log) checkTransaction(base *Index, refs []RefUpdate) error {
 
 // writeEntry uploads header, transaction, and pack as one object under a
 // fresh nonce and returns the key relative to the repository prefix and
-// the header's at, which the index object records for a push.
-func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) (string, time.Time, error) {
+// the header as written, whose at the index object records for a push.
+func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) (string, Header, error) {
 	var nonce [8]byte
 	if _, err := cryptorand.Read(nonce[:]); err != nil {
-		return "", time.Time{}, err
+		return "", Header{}, err
 	}
 	h := Header{
 		V: Version, Kind: e.Kind, Seq: seq, At: l.now().UTC(), Subject: e.Subject, Actor: e.Actor,
@@ -435,18 +449,18 @@ func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) 
 	}
 	head, err := EncodeEntryHead(h, e.Refs)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", Header{}, err
 	}
 	body, err := concatBody(head, e.Pack)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", Header{}, err
 	}
 	key := EntryKey(seq, hex.EncodeToString(nonce[:]))
 	if _, err := l.store.Put(ctx, l.key(repo, key), body); err != nil {
-		return "", time.Time{}, fmt.Errorf("wal: write entry: %w", err)
+		return "", Header{}, fmt.Errorf("wal: write entry: %w", err)
 	}
 	l.entryByte.Add(nil, uint64(body.Size)) //nolint:gosec // a size is never negative
-	return key, h.At, nil
+	return key, h, nil
 }
 
 func (l *Log) nextIndex(base *Index, seq uint64, key string, at time.Time, e Entry) (*Index, error) {
