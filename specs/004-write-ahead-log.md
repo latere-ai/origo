@@ -472,6 +472,16 @@ remaining item. `TestSlowMaterializeTenThousandEntries` (the ninth)
 needs the packs of spec 006 and runs in the `e2e-slow` job. The tenth
 is spec 017's release checklist recording the Spaces probe.
 
+One divergence stands open on purpose: the Sweeper table's index row,
+rewritten on 2026-09-08 when the currency check's rule was settled, is
+ahead of `internal/wal/sweep.go`, which still deletes index objects
+below `compacted_through`, and of
+`TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`, which asserts the
+count it reports. Nothing reaches the rule while `compacted_through` is
+0, which no commit sets until spec 006 lands, and 006's builder removes
+the rule, the `Indexes` count of `SweepReport`, and those assertions
+with the compaction that makes them reachable.
+
 Two defects found and fixed by spec 005 on 2026-09-08, each in its
 own commit with a test that fails without it:
 

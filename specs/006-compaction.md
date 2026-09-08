@@ -263,10 +263,11 @@ request and response shape, rate limit, and event (spec 019).
   (proposed: `internal/wal`, `TestSweepRemovesUnlistedPacks`).
 - After a compaction that folds 100 entries, every index object of the
   repository is still in the log, however old and however far below
-  `compacted_through`, and a node holding one of them serves it: the
-  currency check on the held sequence answers 200 and not 404
-  (proposed: `internal/wal`, `TestSweepKeepsEveryIndexObject`;
-  `internal/repo`, `TestHolderOfATruncatedSequenceIsNotCurrent`).
+  `compacted_through`, and a node holding one of them learns it is
+  behind: the currency check on the held sequence answers 200 and not
+  the 404 a deleted successor would leave (proposed: `internal/wal`,
+  `TestSweepKeepsEveryIndexObject`; `internal/repo`,
+  `TestHolderOfAFoldedSequenceSeesTheNewerIndex`).
 - Fetch latency of a 100 MiB repository after 1 000 pushes is within
   25% of its latency after 10 pushes, measured as the p50 of 10 clones
   each through node 1 of spec 013's ports table, asserted on every push to `main`

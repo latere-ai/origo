@@ -346,9 +346,13 @@ the cache on shutdown.
   small for the next test (proposed: `test/e2e` in the `e2e-slow` job
   of spec 013, `TestSlowReplicasScaleReads`, `TestSlowAutoscalerScalesUp`).
 - A drain during 100 concurrent pushes loses none: every push is either
-  acknowledged and in the newest index or refused with
-  `storage_unavailable` and absent (proposed: `test/e2e`,
-  `TestE2EDrainLosesNoPush`).
+  acknowledged and in the newest index, or refused with
+  `storage_unavailable` and absent from it, or failed on the connection
+  after the listeners closed and absent from it, the third outcome
+  because a client that arrives after the drain delay is not refused by
+  the node but by its closed socket. The newest index sequence equals
+  the number acknowledged, and how the failed ones failed is recorded
+  in the test output (proposed: `test/e2e`, `TestE2EDrainLosesNoPush`).
 - Materializing 1 000 entries from an empty disk with 4 workers
   finishes under 30 seconds against MinIO on the CI runner, and a chain
   of thin entries, each based on the one before it, lands in the joined
@@ -443,7 +447,10 @@ states:
 - `TestE2EDrainLosesNoPush` asserts what the criterion states, that an
   acknowledged push is in the newest index and a failed one is absent,
   and records how the failed ones failed; on this machine the node
-  acknowledged all 100 inside its grace period, so no push was refused.
+  acknowledged all 100 inside its grace period, so neither failing
+  branch ran. The criterion names the third outcome, a connection
+  refused after the listeners closed, because the first draft named two
+  and the test saw that one on the runner.
 - The base's `HorizontalPodAutoscaler` names the Deployment; the
   overlay's patch names the StatefulSet. `deploy/prod` therefore
   carries the autoscaler at 2 to 32, which the Scaling section states.
