@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -459,7 +460,7 @@ func TestRequestCountersWrapTheResponse(t *testing.T) {
 	}
 
 	empty := &countingReader{}
-	if n, err := empty.Read(make([]byte, 4)); n != 0 || err != io.EOF {
+	if n, err := empty.Read(make([]byte, 4)); n != 0 || !errors.Is(err, io.EOF) {
 		t.Fatalf("a request with no body read %d, %v", n, err)
 	}
 	if err := empty.Close(); err != nil {
