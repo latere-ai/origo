@@ -99,8 +99,34 @@ event is rebuilt from the log, and a dead one is kept for the operator.
 
 ## Dashboards and alerts
 
-Spec 011 adds the PrometheusRule to `deploy/base`; until it lands there
-is no rule file to apply. The metrics are listed in spec 011; the ones
-to watch first are `origo_storage_breaker_state` (spec 015),
-`origo_wal_head_check_seconds` (in the tree), and
-`origo_requests_in_flight` (spec 011).
+Every metric a node exposes is on `/metrics` of the internal listener
+from the first scrape, at 0 until something records it, so a dashboard
+panel is never empty because a series has not appeared yet. The names
+are spec 011's table; the ones to watch first are
+`origo_storage_breaker_state`, `origo_wal_head_check_seconds`, and
+`origo_requests_in_flight`. No label carries a repository, an owner, a
+subject, a reference, or a path: those are span attributes.
+
+The alerts are `deploy/base/prometheusrule.yaml`, a PrometheusRule the
+operator of a cluster running the Prometheus operator applies beside the
+base. It is not a resource of the base's kustomization, because applying
+it needs that operator's CustomResourceDefinition and Origo does not
+require one. Without the operator, the same expressions go into whatever
+rule file the installation already has.
+
+## Traces and logs
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` is the one variable that turns telemetry
+on. With it set, the node exports traces, metrics, and log records over
+OTLP/HTTP to that endpoint: one trace per request on the public
+listener, with a span per phase of a push and per object storage call,
+and the repository, subject, and actor as span attributes. Unset, the
+spans are created and discarded and the node costs nothing for them.
+`OTEL_TRACES_SAMPLER_ARG` is the head-sampling ratio, one root trace in
+five by default.
+
+Every request on the public listener also writes one JSON line with its
+route, method, status, duration, repository, subject, actor, bytes each
+way, and `trace_id`, which is the id the response's `X-Trace-Id` header
+and an LFS failure's `request_id` carry, so a report from a user leads
+to the line and the trace. A credential is never in a line.

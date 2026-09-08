@@ -146,4 +146,18 @@ committed: the commit log already holds that.
   issuer's tokens from the first request after the issuer is up: the
   first fetch is retried after a second, doubling to the minute, instead
   of `issuer_unavailable` for a minute after a failed start-up fetch.
+- Telemetry (spec 011). `GET /metrics` carries every metric the deck
+  defines from the first scrape, at 0 until something records it, so a
+  dashboard panel is never empty because a series has not appeared yet;
+  no label carries a repository, an owner, a subject, a reference, or a
+  path. Setting `OTEL_EXPORTER_OTLP_ENDPOINT` exports traces, metrics,
+  and log records over OTLP/HTTP: one trace per request on the public
+  listener, a span per phase of a push and per object storage call, and
+  the repository, subject, and actor as span attributes. Every request
+  also writes one JSON line with its route, method, status, duration,
+  repository, subject, actor, bytes each way, and trace id, and never a
+  credential. That trace id is the `request_id` an LFS failure quotes,
+  in place of the fresh UUID it sent before. The ten alerts are
+  `deploy/base/prometheusrule.yaml`, applied beside the base where the
+  Prometheus operator is installed.
 
