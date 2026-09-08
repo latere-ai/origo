@@ -1,6 +1,6 @@
 ---
 title: "Installation: running Origo on any Kubernetes with any S3 compatible bucket"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -35,7 +35,8 @@ Service, an Ingress, a PodDisruptionBudget, and a ServiceAccount.
 Namespace and Secret templates. The Ingress assumes the `nginx` class
 and the cert-manager issuer `letsencrypt-prod` with host `git.latere.ai`;
 the Deployment sets `ORIGO_PUBLIC_URL` to `https://git.latere.ai` and
-reads `origod-s3` and `origod-dev-token`. There is no HPA, no
+reads the bootstrap Secrets `origod-s3` and `origod-auth` (spec 007)
+through `envFrom`. There is no HPA, no
 PrometheusRule, no `deploy/examples`, no `origod check`, no
 `docs/install.md`, and no `docs/configuration.md`; spec 002's table is
 the only configuration reference. `docs/README.md` lists both pages as
@@ -69,10 +70,15 @@ send timeout and request buffering beside them, move to the `kind`
 overlay, which adds them because a push body is a pack of any size and
 a clone can take minutes; an operator's overlay adds the equivalent
 for their controller, and the install document says so),
-HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, PrometheusRule
-(spec 011), and a Secret template with every required variable,
-`ORIGO_GOSSIP_SECRET` (spec 005) and `ORIGO_TOKEN_KEY` (spec 007) among
-them. The Namespace is not in the base: it stays in `deploy/bootstrap`
+HorizontalPodAutoscaler (spec 005), PodDisruptionBudget, and
+PrometheusRule (spec 011). No Secret is in the base, because `kubectl
+apply -k` of a base that carried one would overwrite the operator's on
+every rollout: the Secret templates stay in `deploy/bootstrap`
+(`secrets.example.yaml`, the two Secrets `origod-s3` and `origod-auth`
+of spec 007, the second gaining `ORIGO_GOSSIP_SECRET` of spec 005 beside
+`ORIGO_TOKEN_KEY`), with every required variable, and the base
+Deployment reads both through `envFrom`. The Namespace is not in the
+base either: it stays in `deploy/bootstrap`
 with the Secret templates, applied by hand once (spec 002's layout),
 because the identity that rolls out a release, the `deploy` job of spec
 017 and an operator's day-to-day `kubectl apply -k`, never creates
@@ -153,7 +159,7 @@ exiting 1 on any failure:
 | `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards. With `ORIGO_CHECK_SELFTEST=1` (spec 002) the check runs against an in-process HTTP server inside `origod check` that accepts every `PUT` and ignores the header, so the line must read `fail conditional-create: second create answered 200`; that is how the check's own detection is tested, since `pkg/s3/s3test` always honours the header |
 | `issuer` | each issuer's discovery document and JWKS are fetched |
 | `authorizer` | a `POST` with `action: "read"`, an empty subject, and the probe repository id `00000000-0000-0000-0000-000000000001` answers 200 with `allow: false`; spec 007's authorizer contract reserves that id and requires the deny, so an allow is `fail authorizer: probe id allowed`, and the stub of spec 013 denies it |
-| `events` | when `ORIGO_EVENTS_URL` is set, a signed `ping` event (below) answers any status under 500 |
+| `events` | when `ORIGO_EVENTS_URL` is set, a signed `ping` event (below) answers any status under 500; when it is unset the line is `ok events: not configured`, so the line count is seven either way |
 | `disk` | a file is created and removed under `ORIGO_DATA_DIR` and the file system holds at least `ORIGO_CACHE_BYTES` |
 | `git` | `git --version` runs and the version parsed from its output (`git version 2.47.1`, the first three dot-separated numbers after the second word) is 2.40 or newer, the floor spec 020's merge family needs; the released image carries 2.47 (spec 002, Images), and the floor stays at what the feature needs, not at what the image ships |
 
@@ -183,9 +189,9 @@ parses out of the specs (the tables whose first header is `Method` and
 `Path`, `Header`, or `Code`), grouped by the spec that owns each row
 with a link to it, so the page never carries a name the specs do not
 define. `make docs` runs `cd tools/apidoc && go run . -write` after
-the configuration page, and the verify workflow compares both pages
-byte for byte, so a spec change that moves a table shows up as a
-documentation diff on the same push. The page states the contract
+the configuration page, and the `specindex` job of `verify.yml` runs
+`make docs` and then `git diff --exit-code docs/`, so a spec change
+that moves a table shows up as a documentation diff on the same push. The page states the contract
 number of spec 003 at its top and nothing a spec does not state.
 
 ### The install document
@@ -242,7 +248,7 @@ binary artifact of spec 017.
   it prints seven `ok` lines and exits 0 (proposed: `cmd/origod`,
   `TestCheckReportsEachRequirement`).
 - `make docs` regenerates `docs/configuration.md` and `docs/api.md`
-  byte-identical in the verify workflow, and `docs/api.md` carries
+  byte-identical in the `specindex` job of `verify.yml`, and `docs/api.md` carries
   every endpoint, header, and code the cross-reference of
   `specs/README.md` lists and no other (proposed: `internal/config`,
   `TestConfigurationDocIsCurrent`; `tools/apidoc`,
