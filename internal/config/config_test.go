@@ -86,6 +86,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.SweepInterval != DefaultSweepInterval || cfg.SweepMinAge != DefaultSweepMinAge {
 		t.Fatalf("sweep defaults not applied: %+v", cfg)
 	}
+	if cfg.RepairInterval != DefaultRepairInterval || cfg.RepairUnheard != DefaultRepairUnheard {
+		t.Fatalf("repair defaults not applied: %+v", cfg)
+	}
 	if cfg.NodeName != "node-1" {
 		t.Fatalf("NodeName = %q", cfg.NodeName)
 	}
@@ -117,6 +120,8 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_SWEEP_INTERVAL"] = "1s"
 	m["ORIGO_SWEEP_MIN_AGE"] = "0s"
 	m["ORIGO_FAILPOINT"] = "commit.before-index"
+	m["ORIGO_REPAIR_INTERVAL"] = "10s"
+	m["ORIGO_REPAIR_UNHEARD"] = "5s"
 	cfg, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
@@ -141,6 +146,36 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	}
 	if cfg.SweepInterval != time.Second || cfg.SweepMinAge != 0 || cfg.Failpoint != "commit.before-index" {
 		t.Fatalf("development values: %+v", cfg)
+	}
+	if cfg.RepairInterval != 10*time.Second || cfg.RepairUnheard != 5*time.Second {
+		t.Fatalf("repair values: %+v", cfg)
+	}
+}
+
+// TestEventsURLNeedsTheSecret is spec 008's criterion: the URL without
+// the secret fails the start-up with the one message, in the one line
+// beside every other problem; the secret without the URL, and neither,
+// pass.
+func TestEventsURLNeedsTheSecret(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_EVENTS_URL"] = "https://events.example"
+	_, err := Load(env(m))
+	if err == nil || err.Error() != "configuration: ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL" {
+		t.Fatalf("err = %v", err)
+	}
+	m["ORIGO_REPAIR_INTERVAL"] = "soon"
+	_, err = Load(env(m))
+	if err == nil || !strings.Contains(err.Error(), "ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL") || !strings.Contains(err.Error(), "ORIGO_REPAIR_INTERVAL must be a duration such as 10m") {
+		t.Fatalf("not one message with both problems: %v", err)
+	}
+	delete(m, "ORIGO_REPAIR_INTERVAL")
+	m["ORIGO_EVENTS_SECRET"] = "k"
+	if cfg, err := Load(env(m)); err != nil || cfg.EventsURL != "https://events.example" || cfg.EventsSecret != "k" {
+		t.Fatalf("both set: %+v, %v", cfg, err)
+	}
+	delete(m, "ORIGO_EVENTS_URL")
+	if cfg, err := Load(env(m)); err != nil || cfg.EventsURL != "" {
+		t.Fatalf("secret alone: %+v, %v", cfg, err)
 	}
 }
 

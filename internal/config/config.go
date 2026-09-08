@@ -31,6 +31,10 @@ const (
 	DefaultGossipAddr    = ":7946"
 	DefaultSweepInterval = 10 * time.Minute
 	DefaultSweepMinAge   = time.Hour
+	// The event repair sweep of spec 008: how often it runs and how long
+	// a node must be unheard before its journals are repaired.
+	DefaultRepairInterval = 10 * time.Minute
+	DefaultRepairUnheard  = 5 * time.Minute
 	// Prefix under which every object of every repository lives. Spec 001
 	// fixes it; it is not configurable.
 	Prefix = "origo/"
@@ -66,9 +70,15 @@ type Config struct {
 	// repository-bound tokens; required in every mode.
 	TokenKey *ecdsa.PrivateKey
 
-	// Spec 008 push events. Optional.
+	// Spec 008 push events. Optional; the secret is required with the
+	// URL, because an unsigned delivery is one the sink cannot trust.
 	EventsURL    string
 	EventsSecret string
+	// RepairInterval is how often the event repair sweep runs and
+	// RepairUnheard how long a node must be unheard before another node
+	// repairs the events its journals name (spec 008).
+	RepairInterval time.Duration
+	RepairUnheard  time.Duration
 
 	// NodeName identifies the node in gossip and placement (spec 005). The
 	// host name by default, which is the pod name in Kubernetes.
@@ -168,6 +178,11 @@ func Load(getenv Getenv) (*Config, error) {
 	}
 	cfg.SweepInterval = duration(getenv, "ORIGO_SWEEP_INTERVAL", DefaultSweepInterval, &problems)
 	cfg.SweepMinAge = duration(getenv, "ORIGO_SWEEP_MIN_AGE", DefaultSweepMinAge, &problems)
+	cfg.RepairInterval = duration(getenv, "ORIGO_REPAIR_INTERVAL", DefaultRepairInterval, &problems)
+	cfg.RepairUnheard = duration(getenv, "ORIGO_REPAIR_UNHEARD", DefaultRepairUnheard, &problems)
+	if cfg.EventsURL != "" && cfg.EventsSecret == "" {
+		problems = append(problems, "ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL")
+	}
 	if cfg.NodeName == "" {
 		cfg.NodeName = hostname()
 	}
