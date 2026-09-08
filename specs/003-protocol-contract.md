@@ -33,17 +33,14 @@ repository lifecycle from `internal/api`, the error envelope and the
 `latere.ai/x/pkg/httpjson`. Identity is the static bearer of spec 002's
 Outcome. The Outcome below lists what is served and what is promised.
 
-Defects against the contract found by review, for the builder:
-
-- `GET /readyz` and `GET /version` on the public listener are mounted in
-  `cmd/origod/node.go` outside `contract.Middleware`, so those two
-  responses carry no `Origo-Contract` header; the table below says every
-  response of the public listener carries it.
-- `unauthenticated` is sent with no `details.reason`: `internal/auth`
-  answers every refusal alike. The reasons are the list in the table
-  below, produced by spec 007's verifier; the first draft's `scope` was
-  never produced by any path and is dropped, because a token with the
-  wrong scope is 403 `forbidden` (spec 007).
+Two defects against the contract found by review were fixed by spec
+007 on 2026-09-08: `GET /readyz` and `GET /version` on the public
+listener were mounted outside `contract.Middleware` and carried no
+`Origo-Contract` header, and `unauthenticated` was sent with no
+`details.reason`. The reasons are the list in the table below,
+produced by spec 007's verifier; the first draft's `scope` was never
+produced by any path and is dropped, because a token with the wrong
+scope is 403 `forbidden` (spec 007).
 
 ## Design
 
@@ -249,11 +246,15 @@ acknowledged only after its entry and index object are durable; the
 lifecycle table; the envelope with the codes named here; the
 `Origo-Contract: 1` header on every response.
 
-Not yet served (phase 2 and later): OIDC identity, the authorizer,
-delegation and `act`, `POST /v1/repos/{id}/tokens`, the read operations
-of spec 009, push events of spec 008, and the conformance suite of spec
-021, which is what the first two acceptance criteria require. In phase 1
-every request carries the one static bearer of `ORIGO_DEV_TOKEN`.
+Phase 2 (spec 007, 2026-09-08) added OIDC identity, the authorizer,
+delegation and `act`, `POST /v1/repos/{id}/tokens`, and `GET
+/.well-known/jwks.json`, and fixed the two defects the Current state
+records: every response of the public listener carries
+`Origo-Contract`, `/readyz` and `/version` included, and
+`unauthenticated` carries `details.reason` (`cmd/origod`,
+`TestEveryRouteRequiresAToken`). Not yet served: the read operations
+of spec 009, push events of spec 008, and the conformance suite of
+spec 021, which is what the first two acceptance criteria require.
 
 Divergences recorded against the first draft, all kept:
 
@@ -270,18 +271,17 @@ Divergences recorded against the first draft, all kept:
   `repo_not_found` today, because the purge removes `meta`; 410 `gone`
   needs the tombstone spec 019 defines.
 
-Divergences to fix, owned by spec 021's code-table test:
+Divergences fixed by spec 007 on 2026-09-08, ahead of spec 021's
+code-table test: the JSON envelopes of `internal/api`,
+`internal/httpgit`, and `internal/auth` are rendered from the code
+table in `internal/contract` (`contract.Sentence`), so `message` is
+the table's sentence for every code and the validation reason, the
+`repo_exists` field, and the storage error are `details`; the
+unknown-route handler in `cmd/origod` answers 400 `invalid_request`
+with `details.reason: "no such route"`.
 
-- Phase 1 sends `message` in lower case without a period (`a bearer
-  token is required`, `repository not found`, `repository unavailable`),
-  two sentences for `repo_exists` (`a repository with this id exists`,
-  `a repository with this owner and slug exists`), and the validation
-  reason inside `message` for `invalid_request`. The table above is the
-  contract; the code moves the reason into `details.reason` and sends the
-  fixed sentences.
-- The unknown-route handler in `cmd/origod` answers 404 `repo_not_found`
-  with `no such route`; it moves to `invalid_request` with
-  `details.reason: "no such route"`.
+Divergence to fix, owned by spec 021's code-table test:
+
 - The sideband for a refused commit is `storage_unavailable: the push
   was not recorded, retry`, and for a moved reference
   `non_fast_forward: <ref> moved to <sha> since you fetched; fetch

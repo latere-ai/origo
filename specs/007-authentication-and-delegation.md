@@ -1,6 +1,6 @@
 ---
 title: "Authentication and delegation: issuers, the authorizer, acting on behalf of a subject"
-status: in-progress
+status: testing
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -24,43 +24,37 @@ consumer runs. Origo stores no user and no permission.
 
 ## Current state
 
-`internal/auth.StaticBearer` admits the one value of `ORIGO_DEV_TOKEN`
-in the three forms spec 002's Outcome lists and stamps every admitted
-request with the subject `dev`; `internal/httpgit` records that subject
-in the entry header. `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`, and
-`ORIGO_AUTHORIZER_TOKEN` are read by `internal/config` and unused.
-`ORIGO_TOKEN_KEY` is not read. No request is authorized: every admitted
-request may do everything.
+Built on 2026-09-08 and in the tree. `internal/auth` holds the
+verifier over the configured issuers and the node's own key
+(`verifier.go`, `keys.go`, `token.go`), the credential forms and the
+401 (`middleware.go`), the authorizer client with its caches and its
+retry (`authorizer.go`), the guard that decides a request from a
+repository-bound token's scope or the authorizer (`guard.go`), and the
+signer of repository-bound tokens with the key set it serves
+(`mint.go`). `internal/config` refuses `ORIGO_DEV_TOKEN`, requires
+`ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`, `ORIGO_AUTHORIZER_TOKEN`,
+and `ORIGO_TOKEN_KEY`, and applies the issuer scheme rule.
+`internal/httpgit` and `internal/api` ask the guard before any read of
+the repository and record the subject and the actor in every entry;
+`internal/api` serves `POST /v1/repos/{id}/tokens`. `cmd/origod` runs
+the verifier in front of the public listener, its key refresh loop
+beside the sweeper, and `GET /.well-known/jwks.json` beside `/readyz`
+and `/version`. `internal/contract` carries the code table every
+envelope is rendered from. The stubs this spec builds are
+`test/stubs/issuer` and `test/stubs/authorizer`, to spec 013's table;
+the end-to-end harness and the unit suites run them in-process.
 
-Removing `ORIGO_DEV_TOKEN` breaks three things that set it today:
-`make dev` (`DEV_SERVICE_ENV` in the `Makefile`), the end-to-end harness
-(`test/e2e/harness_test.go`, `start`), and the bootstrap Secret
-`origod-dev-token` (`deploy/bootstrap/secrets.example.yaml`, read by
-`deploy/base/deployment.yaml`). The replacement is the stub issuer and
-the stub authorizer, `test/stubs/issuer` and `test/stubs/authorizer`,
-which this spec builds because its own criteria need them, to the
-control API spec 013's stub table fixes; spec 013 builds the binary
-that runs them, the sink, the contract stub, the source stub, the
-overlay, and the jobs. In the same phase, `make dev` runs `test/stubs/cmd/origo-stubs` beside
-MinIO, generates `ORIGO_TOKEN_KEY` at start with `openssl ecparam
--genkey -name prime256v1` into a file under `out/`, and prints a clone
-line with a token the stub minted (spec 002, Local stack); between this
-spec landing and spec 013 landing, `make dev` is out of service, because
-the binary it runs is spec 013's and the bearer it set is gone, and
-nothing in this spec's criteria needs it: this spec's own tests, the
-unit suites of `internal/auth`, `internal/config`, `internal/api`,
-`internal/httpgit`, and `cmd/origod` and the end-to-end harness, run
-the stub issuer and the stub authorizer in-process from the two
-packages this spec builds; the harness
-starts the issuer and the authorizer in-process, generates a key with
-`crypto/ecdsa`, and points `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
-and `ORIGO_TOKEN_KEY` at them; the bootstrap Secret becomes `origod-auth`
-with `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`,
-`ORIGO_AUTHORIZER_TOKEN`, and `ORIGO_TOKEN_KEY`, and the kind overlay
-(spec 013) runs the stubs as pods and generates the key into a Secret
-the same way `make dev` does. `cmd/origod/main_test.go` and
-`internal/config/config_test.go` drop the variable from their fixtures
-and gain the key.
+Between this spec and spec 013, `make dev` is out of service and says
+so: the phase 1 bearer is gone and the node needs an issuer, an
+authorizer, and a signing key, which the stub binary
+`test/stubs/cmd/origo-stubs` of spec 013 provides beside MinIO, with
+`ORIGO_TOKEN_KEY` generated at start with `openssl ecparam -genkey
+-name prime256v1` into a file under `out/` (spec 002, Local stack).
+Nothing in this spec's criteria needs it. The bootstrap Secret is
+`origod-auth` with the four variables above, read by
+`deploy/base/deployment.yaml`; the kind overlay (spec 013) runs the
+stubs as pods and generates the key into a Secret the same way `make
+dev` will.
 
 ## Design
 
@@ -259,3 +253,85 @@ beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
   and mutated valid tokens: it runs as a seed-corpus test in the suite
   on every push and for 40 seconds under `make fuzz` (spec 013) on the
   weekly schedule (proposed: `internal/auth`, `FuzzParseToken`).
+
+## Outcome
+
+Built on 2026-09-08 as the Design describes, in three steps: the two
+stub packages, `internal/auth` with the configuration, the handlers,
+and the node, then the harness, `make dev`, and the bootstrap Secret.
+Every criterion has a passing test in the tree:
+
+| Criterion | Test |
+|---|---|
+| two issuers verify, the local token verifies with no fetch, each row's reason | `internal/auth`, `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`; the route sweep `cmd/origod`, `TestEveryRouteRequiresAToken` asserts `missing`, `audience`, and `expired` on every route of the public listener and that `/readyz`, `/version`, and `/.well-known/jwks.json` answer without a token |
+| an unreachable issuer at start-up, the minute retry on a fake clock, the hung discovery abandoned | `internal/auth`, `TestIssuerUnavailableIsRetried` |
+| the issuer scheme rule | `internal/config`, `TestInsecureIssuersNeedTheList` |
+| `act` on the authorizer request and the entry header | `internal/httpgit`, `TestActClaimIsRecordedOnEntryAndAuthorizer` |
+| the authorizer outage: a 500 one request, a refused connection two, `authorizer_unavailable` within the timeout, recovery without a restart | `internal/auth`, `TestAuthorizerOutageDeniesAndRecovers` |
+| deny before lookup on an unknown id and an unknown name, 404 only to an allowed caller, one authorizer request before any store read | `internal/api`, `TestDenyBeforeLookup`, over the id form and the name form of both handlers |
+| both caches bounded at 65 536 with the first entry evicted | `internal/auth`, `TestCachesAreBounded` |
+| two tokens differing in `act` are two calls and two entries | `internal/auth`, `TestCacheKeyIncludesActor` |
+| a `read` token refused by scope on `git-receive-pack` of A and on `info/refs` of B, expired one second after `exp` | `internal/auth`, `TestRepositoryBoundTokenScope` |
+| `ORIGO_DEV_TOKEN` refused with the one message | `internal/config`, `TestDevTokenIsRefused` |
+| `FuzzParseToken` | `internal/auth`, as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013, which is why this spec stays at `testing` |
+
+The spec moves to `complete` when spec 013's `make fuzz` runs the
+fuzz function on the weekly schedule.
+
+Divergences and interpretations, all kept:
+
+- The exp and nbf skew of 60 seconds applies to an issuer's token, for
+  the difference between the issuer's clock and the node's. A
+  repository-bound token was minted on the node's own clock and gets
+  no skew, which is what lets it be `expired` one second after its
+  `exp` as the criterion says; with the skew the two sentences of the
+  Design could not both hold.
+- A minted token carries the minter's `sub` and `act` as they were on
+  the minter's own token (`sub` the minter's actor when there was one,
+  `act` the minter's subject), so the verifier derives from it the
+  same effective subject and actor the minter had and the entry a
+  build pushes names both. Read literally, "`sub` = the minter's
+  effective subject, `act` copied" would put one value in both claims
+  and make the subject its own actor.
+- The discovery and JWKS timeout and the authorizer's timeout are
+  constructor options with the Design's values as their defaults
+  (`auth.DefaultFetchTimeout`, `auth.AuthorizerTimeout`, both 5
+  seconds); the tests inject shorter ones and assert the defaults, so
+  a hung fetch does not cost the suite five seconds per run.
+- The key refresh has two paths: a loop that fetches every issuer at
+  start, retries an unfetched issuer once a minute, and refreshes a set
+  older than an hour; and a fetch from the request path when a token
+  names an issuer with no keys or an unknown `kid`, at most once a
+  minute per issuer. The criterion's minute retry on a fake clock
+  drives the second.
+- The verified-token bound of `TestCachesAreBounded` writes 65 536
+  entries the way `Verify` writes them and then verifies one real
+  token, because 65 537 signatures do not fit the suite's budget; the
+  authorizer half makes 65 537 real calls through the stub's handler
+  in-process.
+- Both caches are `latere.ai/x/pkg/cache.TTLCache` with the bound and
+  the least-recently-used eviction; each entry carries its own expiry
+  (the token's lifetime capped at 5 minutes, the allow's `ttl`, the 5
+  seconds of a deny) beside the value.
+- `POST /v1/repos/{id}/tokens` answers 404 `repo_not_found` for an
+  unknown or deleted repository after the `admin` allow, by spec 003's
+  general rule; the table here names only 201 and 400.
+- The reason of a repository-bound token refused by scope is `token
+  scope does not allow this action`; the Design fixes only the other
+  repository's.
+- The stub issuer has one control path beyond spec 013's table, a POST
+  to /resume, and both stubs a `Resume` method, so a test ends an
+  outage without restarting the stub. The `-fail`, `-hang`,
+  `-allow`, `-token`, and `-key` flags of the table are the binary's,
+  which spec 013 builds; the packages expose them as options
+  (`WithToken`, `WithAllow`, `WithKey`, `WithRS256`, `WithIssuer`,
+  `WithClock`) and methods (`Fail`, `Hang`).
+- The two defects spec 003's Current state records are fixed here and
+  its Outcome updated: `unauthenticated` carries `details.reason`, and
+  `/readyz` and `/version` on the public listener carry
+  `Origo-Contract`. With them, every envelope of `internal/api`,
+  `internal/httpgit`, and `internal/auth` is rendered from the code
+  table in `internal/contract` (`contract.Sentence`, `contract.Write`)
+  with the developer reason in `details`, and the unknown-route
+  handler answers `invalid_request`; the sideband strings of a refused
+  push are unchanged and stay with spec 021's code-table test.

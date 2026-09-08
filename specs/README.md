@@ -56,7 +56,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | validated |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | validated |
-| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | in-progress |
+| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | testing |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | validated |
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | validated |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | validated |
@@ -508,7 +508,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
 | header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003 |
-| header | `Origo-Contract` | [003](003-protocol-contract.md) | 017 |
+| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006 |
