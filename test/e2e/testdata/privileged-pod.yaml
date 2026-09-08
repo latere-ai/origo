@@ -1,0 +1,17 @@
+# Applied with cluster.ApplyManifestExpectRefusal: a pod that asks for
+# privilege escalation, which Pod Security admission at restricted (the
+# label spec 013's overlay puts on the namespace) refuses, so the pod is
+# never created.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged
+  namespace: origo
+spec:
+  containers:
+    - name: shell
+      image: ghcr.io/latere-ai/origod:candidate
+      command: ["/bin/sh", "-c", "sleep 3600"]
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
