@@ -1,0 +1,21 @@
+# The base's autoscaler (spec 005) retargeted to the StatefulSet and
+# held at three replicas so the three host ports of the ports table
+# always answer, with the 60 second scale-down window of spec 005's
+# row, so a test that scaled the stack leaves a small cluster for the
+# next one. A test that wants another count applies
+# test/e2e/testdata/hpa-<n>.yaml, which replaces this object by name,
+# and cluster.Apply of the overlay restores it.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: origod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: origod
+  minReplicas: 3
+  maxReplicas: 3
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60

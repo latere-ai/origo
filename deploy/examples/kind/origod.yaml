@@ -26,6 +26,17 @@ spec:
       serviceAccountName: origod
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 90
+      # Replicas prefer to spread across nodes (spec 005): a node that
+      # goes away takes one warm cache with it, not all of them.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: origod
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

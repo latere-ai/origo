@@ -1,0 +1,29 @@
+# Applied with cluster.ApplyManifest: the autoscaler named origod at
+# 8 replicas, replacing the overlay's, so the StatefulSet scales to
+# 8 pods; cluster.Apply of the overlay restores it. A fixture of spec
+# 005's TestSlowReplicasScaleReads; hpa-2.yaml is spec 013's.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: origod
+  namespace: origo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: origod
+  minReplicas: 8
+  maxReplicas: 8
+  # No windows: the count is reached within one reconcile.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 0
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -1,0 +1,29 @@
+# The autoscaler of spec 005: replicas are the one thing that scales,
+# on CPU alone, 70% of the request, between 2 and 32. Scale-up waits
+# 30 seconds and scale-down 600 so a burst of clones does not churn the
+# cache. No metrics adapter is installed: origo_requests_in_flight is a
+# dashboard signal, not an input. The kind overlay of spec 013 patches
+# the target to its StatefulSet and holds it at three replicas.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: origod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: origod
+  minReplicas: 2
+  maxReplicas: 32
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 600
