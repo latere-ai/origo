@@ -157,7 +157,7 @@ func pathValue(r *http.Request) (string, error) {
 // budget, so a catch-up of the copy is not charged to the read.
 func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, validate func() error) (*readRequest, func(), bool) {
 	id := r.PathValue("id")
-	if !h.guard.Allow(w, r, auth.RepoRef{ID: id}, auth.ActionRead) {
+	if !h.admit(w, r, id, auth.ActionRead) {
 		return nil, nil, false
 	}
 	if err := validate(); err != nil {

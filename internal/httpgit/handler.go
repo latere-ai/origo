@@ -37,6 +37,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
+	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -54,15 +55,19 @@ type Options struct {
 	// Events enqueues the push event of every committed push (spec
 	// 008); nil, or one with no sink, enqueues nothing.
 	Events *events.Dispatcher
+	// Placement answers Origo-Prefer (spec 005); the node's live set.
+	// Nil writes no header.
+	Placement placement.Placer
 }
 
 // Handler serves the smart HTTP routes.
 type Handler struct {
-	cache   *repo.Cache
-	log     *wal.Log
-	guard   *auth.Guard
-	timeout time.Duration
-	logger  *slog.Logger
+	cache     *repo.Cache
+	log       *wal.Log
+	guard     *auth.Guard
+	placement placement.Placer
+	timeout   time.Duration
+	logger    *slog.Logger
 
 	events   *events.Dispatcher
 	pushes   *metrics.Counter
@@ -92,7 +97,7 @@ func New(o Options) *Handler {
 	if o.Guard == nil {
 		panic("httpgit: the handler needs a guard")
 	}
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, timeout: o.Timeout, logger: o.Logger, events: o.Events}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, logger: o.Logger, events: o.Events}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
 	}
@@ -150,10 +155,17 @@ func (h *Handler) byName(w http.ResponseWriter, r *http.Request) {
 // the id, and sends the owner and slug alone when it did not resolve.
 // So a deny is 403 whether or not the repository exists, and 404 is
 // answered only to a caller the authorizer allowed.
+//
+// Origo-Prefer (spec 005) goes on every response that names a
+// repository: in the id form the id is the path's, so the header is
+// set before the guard with k = 1 and again with the allow's replicas;
+// in the name form it is set once the name resolved and the guard
+// allowed, so a refused caller learns nothing about the name.
 func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Action) (string, bool) {
 	var ref auth.RepoRef
 	if id := r.PathValue("id"); id != "" {
 		ref.ID = strings.TrimSuffix(id, ".git")
+		placement.SetHeader(w.Header(), h.placement, ref.ID, auth.DefaultReplicas)
 	} else {
 		ref.Owner, ref.Slug = r.PathValue("owner"), strings.TrimSuffix(r.PathValue("slug"), ".git")
 		id, err := h.log.Resolve(r.Context(), ref.Owner, ref.Slug)
@@ -163,13 +175,15 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Ac
 		}
 		ref.ID = id
 	}
-	if !h.guard.Allow(w, r, ref, action) {
+	d, ok := h.guard.Admit(w, r, ref, action)
+	if !ok {
 		return "", false
 	}
 	if ref.ID == "" {
 		contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"owner": ref.Owner, "slug": ref.Slug})
 		return "", false
 	}
+	placement.SetHeader(w.Header(), h.placement, ref.ID, d.Replicas)
 	return ref.ID, true
 }
 

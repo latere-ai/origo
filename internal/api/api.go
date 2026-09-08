@@ -23,6 +23,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
+	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -35,6 +36,9 @@ type Options struct {
 	Guard *auth.Guard
 	// Signer mints repository-bound tokens; required.
 	Signer *auth.Signer
+	// Placement answers Origo-Prefer (spec 005); the node's live set.
+	// Nil writes no header.
+	Placement placement.Placer
 	// ReadTimeout is the budget of the git subprocesses of one read
 	// request; DefaultReadTimeout when zero.
 	ReadTimeout time.Duration
@@ -46,12 +50,13 @@ type Options struct {
 
 // Handler serves /v1/repos.
 type Handler struct {
-	cache  *repo.Cache
-	log    *wal.Log
-	logger *slog.Logger
-	guard  *auth.Guard
-	signer *auth.Signer
-	events *events.Dispatcher
+	cache     *repo.Cache
+	log       *wal.Log
+	logger    *slog.Logger
+	guard     *auth.Guard
+	signer    *auth.Signer
+	events    *events.Dispatcher
+	placement placement.Placer
 
 	readTimeout time.Duration
 }
@@ -69,7 +74,7 @@ func New(o Options) *Handler {
 	if timeout == 0 {
 		timeout = DefaultReadTimeout
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, readTimeout: timeout, events: o.Events}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events}
 }
 
 // Register mounts the routes.
@@ -182,12 +187,25 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 	}
 }
 
+// admit is the guard on the id the path names, with Origo-Prefer (spec
+// 005) on the response whatever the status: the id is the path's, so
+// the header is set before the guard with k = 1 and again with the
+// allow's replicas.
+func (h *Handler) admit(w http.ResponseWriter, r *http.Request, id string, action auth.Action) bool {
+	placement.SetHeader(w.Header(), h.placement, id, auth.DefaultReplicas)
+	d, ok := h.guard.Admit(w, r, auth.RepoRef{ID: id}, action)
+	if ok {
+		placement.SetHeader(w.Header(), h.placement, id, d.Replicas)
+	}
+	return ok
+}
+
 // load authorizes the action on the id the path names and only then
 // reads the metadata and the newest index of the repository (spec 007,
 // authorization before lookup).
 func (h *Handler) load(w http.ResponseWriter, r *http.Request, action auth.Action, allowDeleted bool) (*wal.Meta, *wal.Index, bool) {
 	id := r.PathValue("id")
-	if !h.guard.Allow(w, r, auth.RepoRef{ID: id}, action) {
+	if !h.admit(w, r, id, action) {
 		return nil, nil, false
 	}
 	m, err := h.log.ReadMeta(r.Context(), id)

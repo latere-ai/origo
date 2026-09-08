@@ -25,6 +25,7 @@ import (
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
+	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
@@ -60,11 +61,17 @@ type harnessConfig struct {
 	gitBin      string
 	readTimeout time.Duration
 	sink        *sink.Server
+	placement   placement.Placer
 }
 
 // withSink runs an event dispatcher delivering to the stub sink.
 func withSink(s *sink.Server) harnessOption {
 	return func(c *harnessConfig) { c.sink = s }
+}
+
+// withPlacement answers Origo-Prefer from the set.
+func withPlacement(p placement.Placer) harnessOption {
+	return func(c *harnessConfig) { c.placement = p }
 }
 
 // withStore shares a store between harnesses, two nodes over one log.
@@ -121,7 +128,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		go func() { _ = dispatcher.Run(ctx) }()
 	}
 	mux := http.NewServeMux()
-	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher}).Register(mux)
+	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement}).Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
@@ -144,6 +151,13 @@ func (h *harness) as(p auth.Principal) {
 
 func (h *harness) do(method, path, body string) (int, map[string]any) {
 	h.t.Helper()
+	status, out, _ := h.doHeader(method, path, body)
+	return status, out
+}
+
+// doHeader is do with the response headers.
+func (h *harness) doHeader(method, path, body string) (int, map[string]any, http.Header) {
+	h.t.Helper()
 	req, _ := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, strings.NewReader(body))
 	resp, err := h.srv.Client().Do(req)
 	if err != nil {
@@ -153,7 +167,7 @@ func (h *harness) do(method, path, body string) (int, map[string]any) {
 	raw, _ := io.ReadAll(resp.Body)
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)
-	return resp.StatusCode, out
+	return resp.StatusCode, out, resp.Header
 }
 
 func details(out map[string]any) map[string]any {
@@ -590,5 +604,35 @@ func TestLifecycleEventsAreEmitted(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if len(s.Deliveries(repoA, events.KindPush)) != 1 || len(s.Deliveries(repoA, "undeleted")) != 1 {
 		t.Fatalf("deliveries %+v", s.Deliveries(repoA, ""))
+	}
+}
+
+// TestOrigoPreferOnEveryRepositoryResponse is spec 005's header on the
+// API: on every response to a request that names a repository,
+// whatever the status, with the allow's replicas, and absent on
+// POST /v1/repos, which names none.
+func TestOrigoPreferOnEveryRepositoryResponse(t *testing.T) {
+	set := placement.NewSet("origod-0", nil)
+	set.Heard("origod-1", time.Now())
+	h := newHarness(t, withPlacement(set))
+	h.authz.Allow(authorizer.Rule{Subject: "alice", Replicas: 2})
+	h.authz.Deny(authorizer.Rule{Subject: "eve"}, "no")
+	two := strings.Join(set.Prefer(repoA, 2), ",")
+	one := set.Prefer(repoA, 1)[0]
+	status, _, header := h.doHeader("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`)
+	if status != 201 || header.Get(placement.Header) != "" {
+		t.Fatalf("create: %d %q", status, header.Get(placement.Header))
+	}
+	for _, path := range []string{"/v1/repos/" + repoA, "/v1/repos/" + repoA + "/refs", "/v1/repos/" + repoA + "/commits"} {
+		if status, _, header := h.doHeader("GET", path, ""); status != 200 || header.Get(placement.Header) != two {
+			t.Fatalf("%s: %d %q, want %q", path, status, header.Get(placement.Header), two)
+		}
+	}
+	if status, _, header := h.doHeader("GET", "/v1/repos/1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", ""); status != 404 || header.Get(placement.Header) == "" {
+		t.Fatalf("unknown id: %d %q", status, header.Get(placement.Header))
+	}
+	h.as(auth.Principal{Subject: "eve"})
+	if status, _, header := h.doHeader("GET", "/v1/repos/"+repoA+"/refs", ""); status != 403 || header.Get(placement.Header) != one {
+		t.Fatalf("refused: %d %q, want %q", status, header.Get(placement.Header), one)
 	}
 }
