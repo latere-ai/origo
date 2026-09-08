@@ -477,3 +477,21 @@ func TestOptionsTakeTheSpecsValues(t *testing.T) {
 		t.Error("a rate of zero built a table")
 	}
 }
+
+// TestTheRateCanBeTurnedOff is ORIGO_REQUESTS_PER_MINUTE=0, which the
+// kind overlay sets: a negative figure in the options leaves every
+// subject unbucketed, and an unset one takes the spec's 600 for both
+// the rate and the burst.
+func TestTheRateCanBeTurnedOff(t *testing.T) {
+	off := New(Options{PerMinute: -1, Logger: slog.New(slog.DiscardHandler)})
+	h := off.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	for range Burst + 10 {
+		if code, _, _ := call(t, h, "alice"); code != http.StatusNoContent {
+			t.Fatalf("a request past the burst with the limit off: %d", code)
+		}
+	}
+	on := New(Options{Logger: slog.New(slog.DiscardHandler)})
+	if on.buckets.perMinute != RequestsPerMinute || on.buckets.burst != float64(RequestsPerMinute) {
+		t.Errorf("the default rate is %d a minute with a burst of %v", on.buckets.perMinute, on.buckets.burst)
+	}
+}

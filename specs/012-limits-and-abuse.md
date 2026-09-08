@@ -51,7 +51,7 @@ spec 010's interim rule ends.
 | single push | 2 GiB, one entry, one `PUT` (spec 004) | receive-pack, from `Content-Length` when present and while spooling | 413 `over_quota`, `details.limit: "push"` |
 | references | 100 000 commands per push and 100 000 references in the map after it | receive-pack, both before git runs: the commands as the body is parsed, the count after the push from the held index and the commands | 413 `over_quota`, `details.limit: "refs"`, on the command count; the sideband `over_quota` on the count after the push (phase 1 answered 400 `invalid_request` for the command count) |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
-| requests per subject | 600 per minute, a token bucket per effective subject per node, burst 600; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
+| requests per subject | `ORIGO_REQUESTS_PER_MINUTE`, default 600, per minute, a token bucket per effective subject per node, burst the same figure, `0` off; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
 | concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
 | subprocess wall time | 5 minutes for `upload-pack`, `receive-pack`, and `index-pack`; 30 minutes for the repack of a compaction (spec 006); 30 seconds for a read API operation (spec 009) and the `commits` operation, 5 minutes for the merge family (spec 020); 10 minutes for an export (spec 019) | `internal/repo.Git` and the handlers | the subprocess is killed with its process group; 504 `operation_timeout` (spec 009) on the API, git's own error on the sideband |
 | JSON body | 64 KiB | every `/v1/` route except the operation routes of spec 020, which carry their own 64 MiB limit | 400 `invalid_request` |
@@ -192,19 +192,21 @@ Divergences and interpretations, each kept and the reason:
   measurement is a storage read, and a repository that cannot be
   measured is not one a quota was checked against
   (`TestQuotaFailsClosedWhenTheListingFails`).
-
-- **The cluster scenarios take a subject each.** `test/e2e`'s
-  `adminToken` minted one `dev` subject for the whole job, which made
-  every scenario one caller of one bucket: the first cluster run of
-  this build refused `TestClusterCompactionKeepsFetchLatencyFlat`,
+- **The rate is a variable, and the kind stack turns it off.** The
+  Design fixes 600 a minute with no knob, and a client that pushes
+  back to back exceeds it: the first cluster run of this build refused
+  `TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`,
+  `TestClusterCompactionKeepsFetchLatencyFlat`,
   `TestClusterDegradedStorage`, and `TestClusterNodeRemovalUnderReadLoad`
-  with `rate_limited`, the limit working rather than the scenarios
-  failing. The token is now minted for a subject naming the test, one
-  bucket per scenario, which is what a live installation's callers are;
-  specs 002 and 013 say so where they name the default. The figure the
-  Design fixes, 600 a minute, is below what a single identity doing
-  bulk work asks for, and a consumer that pushes a repository fleet
-  under one service token will meet it.
+  with 429 `rate_limited`, the 500 push scenario alone running at
+  about fourteen pushes a second, twenty-eight requests, against a
+  refill of ten. Giving each scenario a subject of its own was not
+  enough, because the 500 push scenario is one sequential client. So
+  the figure is `ORIGO_REQUESTS_PER_MINUTE`, the spec's 600 by default
+  and `0` off, and the `kind` overlay sets `0` beside the storage
+  figures it already tunes; a production node keeps 600. That 600 a
+  minute refuses a legitimate client pushing in a loop is a finding for
+  the deck, not something this build settles.
 
 Items this spec closes for another:
 
@@ -222,6 +224,11 @@ Open, for whoever needs them settled:
   no side for the "references in the map after it" half; this build
   answers 413 for the command count and the sideband for the count
   after the push.
+- Whether 600 requests a minute is the right figure for git traffic,
+  where one client's loop of pushes is two requests each: the `kind`
+  overlay turns the limit off to run its scenarios, so no stack proves
+  the rule today. Raising the default, bucketing pushes and reads
+  apart, or leaving it to the operator's variable are all open.
 - Whether a repository-bound token's write should be refused while the
   authorizer is unavailable, rather than falling back to the default
   quota, is a question for spec 016's threat model: the figure is a

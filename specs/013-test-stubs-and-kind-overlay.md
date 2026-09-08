@@ -321,7 +321,7 @@ selects. A one-node test starts `origod` itself from the bucket
 variables of spec 002; a cluster or slow test targets the stack the job
 applied through `ORIGO_TEST_URL` and `ORIGO_TEST_ADMIN_TOKEN` (spec
 002), whose defaults are the ports table's: `http://localhost:30080`,
-and a token minted at the issuer's host port for a subject naming the test, one bucket of spec 012's rate limit per scenario, when
+and a token minted at the issuer's host port for the dev subject when
 the token is unset, so the jobs set neither. A test that starts a node
 of its own (008's repair case beside the stack, 021's `TestMutation`
 with no stack) reads the bucket from the
@@ -346,7 +346,7 @@ do with them:
 |---|---|
 | `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, `ORIGO_TEST_S3_PATH_STYLE` | the bucket the `integration` and `e2e` tiers use; the tiers skip when the endpoint is unset; in the two cluster jobs the values are the overlay's MinIO row (`http://localhost:30900`, `us-east-1`, `origo-test`, `minioadmin`, `minioadmin`, `1`), exported by the job, and what a test that starts its own node, spec 017's fixture harness, and spec 021's `Fault` read |
 | `ORIGO_E2E_MEASURE` | `1` runs `TestMeasure`, which prints the measurements spec 004's Outcome records and asserts no threshold; the one check it carries is spec 005's monotonicity of clones per second over 2, 4, and 8 replicas, which no job runs; every threshold a spec names is a plain test of the `e2e` tier that runs without it |
-| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the stack a `TestCluster` or `TestSlow` test targets and the token it creates repositories with; the URL defaults to `http://localhost:30080` and the token to one minted at the issuer's host port for a subject naming the test (the ports table), so spec 012's per-subject rate limit gives each scenario a bucket of its own; a cluster test skips when nothing answers at the URL, so the tier runs on a developer's machine without the stack |
+| `ORIGO_TEST_URL`, `ORIGO_TEST_ADMIN_TOKEN` | the stack a `TestCluster` or `TestSlow` test targets and the token it creates repositories with; the URL defaults to `http://localhost:30080` and the token to one minted for the dev subject at the issuer's host port (the ports table); a cluster test skips when nothing answers at the URL, so the tier runs on a developer's machine without the stack |
 
 ## Not in this spec
 

@@ -128,8 +128,11 @@ type Config struct {
 	StaleMax       time.Duration
 
 	// MaxGitProcs is ORIGO_MAX_GIT_PROCS: the git subprocesses this node
-	// runs at once (spec 012).
-	MaxGitProcs int
+	// runs at once (spec 012). RequestsPerMinute is
+	// ORIGO_REQUESTS_PER_MINUTE, the requests one effective subject may
+	// send this node in a minute; 0 turns the per-subject limit off.
+	MaxGitProcs       int
+	RequestsPerMinute int
 
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
@@ -210,6 +213,15 @@ func Load(getenv Getenv) (*Config, error) {
 			problems = append(problems, "ORIGO_MAX_GIT_PROCS must be a positive integer")
 		} else {
 			cfg.MaxGitProcs = n
+		}
+	}
+	cfg.RequestsPerMinute = limits.RequestsPerMinute
+	if raw := getenv("ORIGO_REQUESTS_PER_MINUTE"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			problems = append(problems, "ORIGO_REQUESTS_PER_MINUTE must be a non-negative integer")
+		} else {
+			cfg.RequestsPerMinute = n
 		}
 	}
 	if raw := getenv("ORIGO_CACHE_BYTES"); raw != "" {

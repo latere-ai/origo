@@ -120,6 +120,14 @@ spec:
               value: 30s
             - name: ORIGO_STORAGE_TIMEOUT
               value: 5s
+            # The per-subject rate of spec 012 is off on the stack. The
+            # cluster scenarios drive one node far harder than any one
+            # caller of a live installation does, hundreds of pushes and
+            # clones a minute under one token, so the limit would refuse
+            # the scenario rather than the abuse it is for; a production
+            # node keeps the spec's 600 a minute.
+            - name: ORIGO_REQUESTS_PER_MINUTE
+              value: "0"
             - name: ORIGO_TOKEN_KEY
               valueFrom:
                 secretKeyRef:

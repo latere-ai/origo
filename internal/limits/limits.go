@@ -77,7 +77,11 @@ type Options struct {
 	// SlotWait when zero.
 	SlotWait time.Duration
 	// PerMinute and Burst are the token bucket per effective subject.
-	// The constants above when zero.
+	// RequestsPerMinute when PerMinute is zero, and PerMinute when
+	// Burst is, because the spec's rate and burst are one figure. A
+	// negative PerMinute turns the per-subject limit off, which is
+	// ORIGO_REQUESTS_PER_MINUTE=0 on a stack driven far harder than a
+	// live installation.
 	PerMinute int
 	Burst     int
 	// Idle is how long a bucket may go untouched. IdleBucket when zero.
@@ -125,9 +129,10 @@ func New(o Options) *Limits {
 	if now == nil {
 		now = time.Now
 	}
+	perMinute := orInt(o.PerMinute, RequestsPerMinute)
 	l := &Limits{
 		slots:   NewSemaphore(orInt(o.MaxGitProcs, DefaultMaxGitProcs)),
-		buckets: NewBuckets(orInt(o.PerMinute, RequestsPerMinute), orInt(o.Burst, Burst), orDuration(o.Idle, IdleBucket), now),
+		buckets: NewBuckets(perMinute, orInt(o.Burst, perMinute), orDuration(o.Idle, IdleBucket), now),
 		lfs:     NewLFSBytes(o.Log, orDuration(o.LFSTTL, LFSTTL), now),
 		wait:    orDuration(o.SlotWait, SlotWait),
 		maxPush: o.MaxPushBytes,

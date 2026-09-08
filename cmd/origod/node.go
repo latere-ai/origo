@@ -198,8 +198,14 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// Limits (spec 012) are built before the packages that enforce
 	// them: one semaphore for the handlers and compaction, one bucket
 	// table for the listener, one cached lfs/ sum for the quota.
+	// A rate of 0 turns the per-subject bucket off; limits.Options reads
+	// a negative figure as off and a zero one as the spec's default.
+	perMinute := cfg.RequestsPerMinute
+	if perMinute == 0 {
+		perMinute = -1
+	}
 	n.limits = limits.New(limits.Options{
-		MaxGitProcs: cfg.MaxGitProcs, Log: n.log, Metrics: n.metrics, Logger: logger,
+		MaxGitProcs: cfg.MaxGitProcs, PerMinute: perMinute, Log: n.log, Metrics: n.metrics, Logger: logger,
 	})
 
 	// Compaction (spec 006): the primary of a repository is the first
