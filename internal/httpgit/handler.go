@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -64,6 +65,10 @@ type Options struct {
 	// schedules a compaction when a threshold is crossed (spec 006);
 	// nil triggers nothing.
 	Compaction Compactor
+	// BreakerPoll is how often a spooled push asks the write breaker
+	// for admission while it waits (spec 015); DefaultBreakerPoll when
+	// zero. A test lowers it.
+	BreakerPoll time.Duration
 }
 
 // Compactor is spec 006's after-push trigger. It returns before the
@@ -72,14 +77,23 @@ type Compactor interface {
 	After(id string, ix *wal.Index)
 }
 
+// The wait of a spooled push for the write breaker (spec 015): the
+// commit polls every DefaultBreakerPoll for at most BreakerWait, inside
+// the 5 minute deadline of receive-pack.
+const (
+	DefaultBreakerPoll = 500 * time.Millisecond
+	BreakerWait        = 60 * time.Second
+)
+
 // Handler serves the smart HTTP routes.
 type Handler struct {
-	cache     *repo.Cache
-	log       *wal.Log
-	guard     *auth.Guard
-	placement placement.Placer
-	timeout   time.Duration
-	logger    *slog.Logger
+	cache       *repo.Cache
+	log         *wal.Log
+	guard       *auth.Guard
+	placement   placement.Placer
+	timeout     time.Duration
+	breakerPoll time.Duration
+	logger      *slog.Logger
 
 	events   *events.Dispatcher
 	compact  Compactor
@@ -92,6 +106,10 @@ type Handler struct {
 	// after they are computed and before the verdict is written; a test
 	// asserts there that the objects are still in quarantine.
 	beforeVerdict func(quarantine string, forced map[string]bool)
+	// beforeCommit, when set, runs once the pack is spooled and the
+	// hook has handed over the transaction, before the commit asks the
+	// write breaker; a test opens the breaker there (spec 015).
+	beforeCommit func()
 }
 
 // pushPhases are the labels of origo_push_duration_seconds (spec 011):
@@ -110,9 +128,12 @@ func New(o Options) *Handler {
 	if o.Guard == nil {
 		panic("httpgit: the handler needs a guard")
 	}
-	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, logger: o.Logger, events: o.Events, compact: o.Compaction}
+	h := &Handler{cache: o.Cache, log: o.Cache.Log(), guard: o.Guard, placement: o.Placement, timeout: o.Timeout, breakerPoll: o.BreakerPoll, logger: o.Logger, events: o.Events, compact: o.Compaction}
 	if h.timeout == 0 {
 		h.timeout = 5 * time.Minute
+	}
+	if h.breakerPoll <= 0 {
+		h.breakerPoll = DefaultBreakerPoll
 	}
 	if h.logger == nil {
 		h.logger = slog.Default()
@@ -194,8 +215,11 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, action auth.Ac
 }
 
 // acquire opens the repository for the request and maps the refusals.
+// A read served without a currency check while the read breaker is
+// open carries Origo-Stale, the whole seconds since the last check that
+// answered (spec 015).
 func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, write bool) (*repo.Repo, func(), bool) {
-	rp, release, err := h.cache.Acquire(r.Context(), id, write)
+	l, err := h.cache.Lease(r.Context(), id, write)
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
@@ -205,12 +229,56 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 		}
 		return nil, nil, false
 	}
-	return rp, release, true
+	if l.Stale {
+		w.Header().Set(HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
+	}
+	return l.Repo, l.Release, true
 }
 
+// HeaderStale is the header of a response served from the local copy
+// without a currency check (spec 015): the whole seconds since the last
+// check that answered; absent on every consistent response.
+const HeaderStale = "Origo-Stale"
+
+// storageError answers a failure of the log: 503 repository_unavailable
+// naming the key for an integrity error of the log (spec 015), 503
+// storage_unavailable with the op, the key, and the error otherwise,
+// with Retry-After when a breaker refused the call.
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
+	if ie, ok := errors.AsType[*wal.IntegrityError](err); ok {
+		h.logger.ErrorContext(r.Context(), "repository unavailable until restored", "path", r.URL.Path, "key", ie.Key, "error", ie.Err)
+		contract.Write(w, http.StatusServiceUnavailable, contract.CodeRepositoryUnavailable, map[string]any{"key": ie.Key, "error": ie.Err.Error()})
+		return
+	}
 	h.logger.ErrorContext(r.Context(), "repository unavailable", "path", r.URL.Path, "error", err)
-	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
+	if errors.Is(err, wal.ErrStorageOpen) {
+		h.retryAfter(w, wal.ClassRead)
+	}
+	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
+}
+
+// retryAfter sets Retry-After to the whole seconds that remain of the
+// class's open window, at least one (spec 015).
+func (h *Handler) retryAfter(w http.ResponseWriter, class wal.Class) {
+	if bs := h.log.Breakers(); bs != nil {
+		if d := bs.RetryAfter(class); d > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(d/time.Second)))
+		}
+	}
+}
+
+// refuseAdvertisement refuses a push at info/refs in the one form git
+// shows the user (spec 015): HTTP 200 with the advertisement content
+// type, Retry-After, and a body of the service line, a flush, and one
+// ERR pkt-line carrying the code and its sentence, which git prints as
+// "remote error: storage_unavailable: ..." and sends no pack after.
+func (h *Handler) refuseAdvertisement(w http.ResponseWriter, service string, class wal.Class) {
+	h.retryAfter(w, class)
+	w.Header().Set("Content-Type", "application/x-"+service+"-advertisement")
+	w.Header().Set("Cache-Control", "no-cache")
+	_ = writePkt(w, "# service="+service+"\n")
+	_ = flushPkt(w)
+	_ = writePkt(w, "ERR "+contract.CodeStorageUnavailable+": "+contract.Sentence(contract.CodeStorageUnavailable)+"\n")
 }
 
 // gitCommand builds a git service subprocess against the repository
@@ -243,11 +311,37 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rp, release, ok := h.acquire(w, r, id, false)
-	if !ok {
+	// A push is refused before the client uploads a pack when either
+	// breaker is open (spec 015): the write breaker, asked here, and
+	// the read breaker, whose refusal or stale copy the lease reports,
+	// because a push needs a current index object as its base.
+	if action == auth.ActionWrite {
+		if bs := h.log.Breakers(); bs != nil && !bs.Admits(wal.ClassWrite) {
+			h.refuseAdvertisement(w, service, wal.ClassWrite)
+			return
+		}
+	}
+	l, err := h.cache.Lease(r.Context(), id, false)
+	if err != nil {
+		switch {
+		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
+			contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"id": id})
+		case action == auth.ActionWrite && errors.Is(err, wal.ErrStorageOpen):
+			h.refuseAdvertisement(w, service, wal.ClassRead)
+		default:
+			h.storageError(w, r, err)
+		}
 		return
 	}
-	defer release()
+	defer l.Release()
+	if l.Stale {
+		if action == auth.ActionWrite {
+			h.refuseAdvertisement(w, service, wal.ClassRead)
+			return
+		}
+		w.Header().Set(HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
+	}
+	rp := l.Repo
 	cmd, cancel := h.gitCommand(r.Context(), r, rp, strings.TrimPrefix(service, "git-"), "--stateless-rpc", "--advertise-refs", rp.Dir)
 	defer cancel()
 	var out, stderr bytes.Buffer
@@ -496,6 +590,22 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 	if err != nil {
 		return nil, "reject " + contract.CodeStorageUnavailable + ": " + err.Error()
 	}
+	if h.beforeCommit != nil {
+		h.beforeCommit()
+	}
+	// A pack spooled while the write breaker is open waits for the
+	// breaker (spec 015): the commit polls for admission and runs as the
+	// probe the first time it is admitted; when the wait passes with no
+	// admission, or the probe fails below, the push is refused in the
+	// sideband with the table's sentence.
+	bs := h.log.Breakers()
+	if bs != nil {
+		if err := bs.Wait(ctx, wal.ClassWrite, h.breakerPoll, BreakerWait); err != nil {
+			h.rejected.Inc(nil)
+			h.logger.ErrorContext(ctx, "commit refused, the write breaker stayed open", "repo", id, "error", err)
+			return nil, "reject " + contract.CodeStorageUnavailable + ": " + contract.Sentence(contract.CodeStorageUnavailable)
+		}
+	}
 	entry := wal.Entry{
 		Kind: wal.KindPush, Subject: auth.Subject(ctx), Actor: auth.Actor(ctx), Refs: refs, Pack: pack,
 		PushOptions: req.Options,
@@ -509,6 +619,11 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 			return nil, fmt.Sprintf("reject %s: %s moved to %s since you fetched; fetch first", contract.CodeNonFastForward, conflict.Ref, short(conflict.Actual))
 		}
 		h.logger.ErrorContext(ctx, "commit failed", "repo", id, "error", err)
+		if errors.Is(err, wal.ErrStorageOpen) || (bs != nil && !bs.Admits(wal.ClassWrite)) {
+			// Refused by the breaker, or the probe that failed and
+			// reopened it: the sentence, as at the advertisement.
+			return nil, "reject " + contract.CodeStorageUnavailable + ": " + contract.Sentence(contract.CodeStorageUnavailable)
+		}
 		return nil, "reject " + contract.CodeStorageUnavailable + ": the push was not recorded, retry"
 	}
 	return committed, "ok"

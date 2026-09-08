@@ -41,6 +41,7 @@ const (
 	CodeLFSObjectMismatch     = "lfs_object_mismatch"    // spec 010
 	CodeLFSObjectNotStored    = "lfs_object_not_stored"  // spec 010
 	CodeLFSLocksUnsupported   = "lfs_locks_unsupported"  // spec 010
+	CodeRepositoryUnavailable = "repository_unavailable" // spec 015
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -63,6 +64,7 @@ var sentences = map[string]string{
 	CodeLFSObjectMismatch:     "The uploaded object does not match its declared size.",
 	CodeLFSObjectNotStored:    "This object is not stored.",
 	CodeLFSLocksUnsupported:   "Locking is not supported.",
+	CodeRepositoryUnavailable: "This repository cannot be served until an operator restores it. Other repositories are not affected.",
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence
