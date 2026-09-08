@@ -38,8 +38,11 @@ var headerKinds = map[string]Kind{
 }
 
 // namedKinds are the kinds whose names have no shape of their own: a
-// backticked token is one of them only when a spec defines it.
-var namedKinds = []Kind{KindCode, KindEvent, KindFailpoint}
+// backticked token is one of them only when a spec defines it. Headers
+// are here because headerRe recognizes only Origo's own; a header a spec
+// defines under any other name, Retry-After, is resolved by its
+// definition wherever another spec names it.
+var namedKinds = []Kind{KindCode, KindEvent, KindHeader, KindFailpoint}
 
 // Name is one defined name.
 type Name struct {

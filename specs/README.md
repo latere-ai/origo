@@ -683,8 +683,8 @@ name, or when a spec names something no spec defines.
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
 | header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011 |
 | header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003 |
-| header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | - |
-| header | `Retry-After` | [003](003-protocol-contract.md) | - |
+| header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021 |
+| header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020 |
 | failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
 | failpoint | `events.before-enqueue` | [002](002-repository-scaffold.md) | 008 |
 <!-- specindex:end -->

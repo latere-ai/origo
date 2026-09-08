@@ -131,3 +131,25 @@ func TestReadmeTableIsCurrent(t *testing.T) {
 		t.Error("specs/README.md cross-reference table differs from the specs; run: cd tools/specindex && go run . -write")
 	}
 }
+
+// TestHeaderMentionOutsideOrigosOwnNames is the regression for the
+// header column: headerRe matches only Origo's own names, so a mention
+// of a header a spec defines under any other name reaches the fallback,
+// which resolves it from namedKinds.
+func TestHeaderMentionOutsideOrigosOwnNames(t *testing.T) {
+	dir := writeSpecs(t, map[string]string{
+		"003-a.md": front + "| Header | Meaning |\n|---|---|\n| `Retry-After` | the seconds to wait |\n",
+		"012-b.md": front + "A 429 carries `Retry-After` in whole seconds.\n",
+	})
+	idx, err := Build(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Findings) != 0 {
+		t.Errorf("findings %v, want none", idx.Findings)
+	}
+	want := "| header | `Retry-After` | [003](003-a.md) | 012 |\n"
+	if !strings.Contains(idx.Table(), want) {
+		t.Errorf("table:\n%swant the row %s", idx.Table(), want)
+	}
+}
