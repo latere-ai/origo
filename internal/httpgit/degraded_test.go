@@ -202,14 +202,14 @@ func TestReadBreakerServesStaleThenRefuses(t *testing.T) {
 	d.cutReads()
 	d.clock.Advance(time.Minute)
 	resp, body := d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if e := envelope(t, body); resp.StatusCode != 503 || e.Code != contract.CodeStorageUnavailable || resp.Header.Get(HeaderStale) != "" || e.Details["op"] != "head" {
-		t.Fatalf("the failing check: %d %s %+v", resp.StatusCode, resp.Header.Get(HeaderStale), e)
+	if e := envelope(t, body); resp.StatusCode != 503 || e.Code != contract.CodeStorageUnavailable || resp.Header.Get(contract.HeaderStale) != "" || e.Details["op"] != "head" {
+		t.Fatalf("the failing check: %d %s %+v", resp.StatusCode, resp.Header.Get(contract.HeaderStale), e)
 	}
 	// Open: the warm repository is served stale, aged from the last
 	// check that answered, and clones.
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 200 || resp.Header.Get(HeaderStale) != "60" {
-		t.Fatalf("stale advertisement: %d Origo-Stale %q", resp.StatusCode, resp.Header.Get(HeaderStale))
+	if resp.StatusCode != 200 || resp.Header.Get(contract.HeaderStale) != "60" {
+		t.Fatalf("stale advertisement: %d Origo-Stale %q", resp.StatusCode, resp.Header.Get(contract.HeaderStale))
 	}
 	stale := clone(t, d.url("/r/"+repoA+".git"))
 	if strings.TrimSpace(mustGit(t, stale, "rev-parse", "HEAD")) != c1 {
@@ -243,20 +243,20 @@ func TestReadBreakerServesStaleThenRefuses(t *testing.T) {
 		t.Fatalf("acquire for writing: %v", err)
 	}
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 200 || resp.Header.Get(HeaderStale) != "60" {
-		t.Fatalf("stale after the refused write: %d %q", resp.StatusCode, resp.Header.Get(HeaderStale))
+	if resp.StatusCode != 200 || resp.Header.Get(contract.HeaderStale) != "60" {
+		t.Fatalf("stale after the refused write: %d %q", resp.StatusCode, resp.Header.Get(contract.HeaderStale))
 	}
 	// Five minutes after the last check that answered: the probe of
 	// each window fails on the store, and past the bound the copy is
 	// refused.
 	d.clock.Advance(4 * time.Minute)
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 503 || resp.Header.Get(HeaderStale) != "" {
+	if resp.StatusCode != 503 || resp.Header.Get(contract.HeaderStale) != "" {
 		t.Fatalf("the probe: %d", resp.StatusCode)
 	}
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 200 || resp.Header.Get(HeaderStale) != "300" {
-		t.Fatalf("at the bound: %d %q", resp.StatusCode, resp.Header.Get(HeaderStale))
+	if resp.StatusCode != 200 || resp.Header.Get(contract.HeaderStale) != "300" {
+		t.Fatalf("at the bound: %d %q", resp.StatusCode, resp.Header.Get(contract.HeaderStale))
 	}
 	d.clock.Advance(time.Second)
 	resp, body = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
@@ -274,8 +274,8 @@ func TestReadBreakerServesStaleThenRefuses(t *testing.T) {
 	d.mem.SetFault(nil)
 	d.clock.Advance(30 * time.Second)
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 200 || resp.Header.Get(HeaderStale) != "" {
-		t.Fatalf("after recovery: %d %q", resp.StatusCode, resp.Header.Get(HeaderStale))
+	if resp.StatusCode != 200 || resp.Header.Get(contract.HeaderStale) != "" {
+		t.Fatalf("after recovery: %d %q", resp.StatusCode, resp.Header.Get(contract.HeaderStale))
 	}
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	if d.receives.Load() != receives+1 {
@@ -317,8 +317,8 @@ func TestWriteBreakerRefusesBeforeUpload(t *testing.T) {
 	}
 	// Reads are consistent: the read breaker is closed.
 	resp, _ = d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
-	if resp.StatusCode != 200 || resp.Header.Get(HeaderStale) != "" {
-		t.Fatalf("read under an open write breaker: %d %q", resp.StatusCode, resp.Header.Get(HeaderStale))
+	if resp.StatusCode != 200 || resp.Header.Get(contract.HeaderStale) != "" {
+		t.Fatalf("read under an open write breaker: %d %q", resp.StatusCode, resp.Header.Get(contract.HeaderStale))
 	}
 	clone(t, d.url("/r/"+repoA+".git"))
 	// A node with no breaker store refuses nothing here.

@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
@@ -388,7 +389,21 @@ func (h *Handler) tokens(w http.ResponseWriter, r *http.Request) {
 	httpjson.Write(w, http.StatusCreated, map[string]any{"token": token, "expires_at": expires})
 }
 
+// storageError answers a failure of the log: 503 repository_unavailable
+// naming the key for an integrity error of the log (spec 015), 503
+// storage_unavailable with the op, the key, and the error otherwise,
+// with Retry-After when the read breaker refused the call.
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
+	if ie, ok := errors.AsType[*wal.IntegrityError](err); ok {
+		h.logger.ErrorContext(r.Context(), "repository unavailable until restored", "path", r.URL.Path, "key", ie.Key, "error", ie.Err)
+		contract.Write(w, http.StatusServiceUnavailable, contract.CodeRepositoryUnavailable, map[string]any{"key": ie.Key, "error": ie.Err.Error()})
+		return
+	}
 	h.logger.ErrorContext(r.Context(), "repository operation failed", "path", r.URL.Path, "error", err)
-	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
+	if bs := h.log.Breakers(); bs != nil && errors.Is(err, wal.ErrStorageOpen) {
+		if d := bs.RetryAfter(wal.ClassRead); d > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(d/time.Second)))
+		}
+	}
+	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
 }

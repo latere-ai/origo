@@ -58,6 +58,7 @@ type harnessOption func(*harnessConfig)
 
 type harnessConfig struct {
 	store       *wal.MemStore
+	wrap        func(wal.Store) wal.Store
 	gitBin      string
 	readTimeout time.Duration
 	sink        *sink.Server
@@ -77,6 +78,12 @@ func withPlacement(p placement.Placer) harnessOption {
 // withStore shares a store between harnesses, two nodes over one log.
 func withStore(store *wal.MemStore) harnessOption {
 	return func(c *harnessConfig) { c.store = store }
+}
+
+// withWrap puts a wrapper, the breaker store of spec 015, between the
+// log and the store.
+func withWrap(wrap func(wal.Store) wal.Store) harnessOption {
+	return func(c *harnessConfig) { c.wrap = wrap }
 }
 
 // withGit runs every subprocess through the binary at path.
@@ -100,7 +107,11 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		store = wal.NewMemStore()
 	}
 	logger := slog.New(slog.DiscardHandler)
-	l := wal.New(wal.Options{Store: store, Logger: logger})
+	var logStore wal.Store = store
+	if cfg.wrap != nil {
+		logStore = cfg.wrap(store)
+	}
+	l := wal.New(wal.Options{Store: logStore, Logger: logger})
 	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, GitBin: cfg.gitBin})
 	if err != nil {
 		t.Fatal(err)

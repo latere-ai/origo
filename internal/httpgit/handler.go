@@ -230,15 +230,10 @@ func (h *Handler) acquire(w http.ResponseWriter, r *http.Request, id string, wri
 		return nil, nil, false
 	}
 	if l.Stale {
-		w.Header().Set(HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
+		w.Header().Set(contract.HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
 	}
 	return l.Repo, l.Release, true
 }
-
-// HeaderStale is the header of a response served from the local copy
-// without a currency check (spec 015): the whole seconds since the last
-// check that answered; absent on every consistent response.
-const HeaderStale = "Origo-Stale"
 
 // storageError answers a failure of the log: 503 repository_unavailable
 // naming the key for an integrity error of the log (spec 015), 503
@@ -339,7 +334,7 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 			h.refuseAdvertisement(w, service, wal.ClassRead)
 			return
 		}
-		w.Header().Set(HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
+		w.Header().Set(contract.HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
 	}
 	rp := l.Repo
 	cmd, cancel := h.gitCommand(r.Context(), r, rp, strings.TrimPrefix(service, "git-"), "--stateless-rpc", "--advertise-refs", rp.Dir)

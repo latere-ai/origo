@@ -23,6 +23,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/repo"
+	"github.com/latere-ai/origo/internal/wal"
 )
 
 // The bounds of the read API (spec 009).
@@ -164,7 +165,7 @@ func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, valida
 		writeReadError(w, err)
 		return nil, nil, false
 	}
-	rp, release, err := h.cache.Acquire(r.Context(), id, false)
+	l, err := h.cache.Lease(r.Context(), id, false)
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
@@ -173,6 +174,13 @@ func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, valida
 			h.storageError(w, r, err)
 		}
 		return nil, nil, false
+	}
+	rp, release := l.Repo, l.Release
+	// Served from the copy without a currency check while the read
+	// breaker is open (spec 015): Origo-Stale carries the whole seconds
+	// since the last check that answered, on every read endpoint alike.
+	if l.Stale {
+		w.Header().Set(contract.HeaderStale, strconv.Itoa(int(l.StaleFor/time.Second)))
 	}
 	etag := `"` + strconv.FormatUint(rp.Seq, 10) + `"`
 	w.Header().Set("ETag", etag)
@@ -223,7 +231,7 @@ func (rr *readRequest) fail(ctx context.Context, err error) {
 		return
 	}
 	rr.h.logger.ErrorContext(ctx, "read failed", "repo", rr.id, "operation", rr.op, "error", err)
-	contract.Write(rr.w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
+	contract.Write(rr.w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
 }
 
 // gitCommand builds a git subprocess against the repository under the

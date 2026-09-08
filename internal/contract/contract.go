@@ -22,6 +22,13 @@ const Version = "1"
 // Header is the response header naming the contract version.
 const Header = "Origo-Contract"
 
+// HeaderStale is the header of a response served from the local copy
+// without a currency check while the bucket is unreachable (spec 015):
+// the whole seconds since the last check that answered; absent on every
+// consistent response, so a consumer that must not read stale refuses
+// the response by this header.
+const HeaderStale = "Origo-Stale"
+
 // The stable error codes: spec 003's table and the codes later specs add
 // to it.
 const (
