@@ -277,7 +277,7 @@ hook and the node talk over two FIFOs in a per-request directory:
 
 | Variable | Set by | Meaning |
 |---|---|---|
-| `ORIGO_HOOK_DIR` | the node, on `git receive-pack` only | the directory holding the `updates` FIFO (the hook writes one line `quarantine <GIT_QUARANTINE_PATH>` and then the transaction git resolved, so the node can read the pushed objects before git migrates them) and the `verdict` FIFO (the node answers `ok` or `reject <code>: <message>`) |
+| `ORIGO_HOOK_DIR` | the node, on `git receive-pack` only | the directory holding the `updates` FIFO (the hook writes one line `quarantine <GIT_QUARANTINE_PATH>`, then the transaction git resolved, then the line `end`, so the node can read the pushed objects before git migrates them) and the `verdict` FIFO (the node answers `ok` or `reject <code>: <message>`); the node holds both ends of each FIFO open from before git starts, so no open of the hook or the node waits for the other side |
 
 Git quarantines and checks the objects, runs the hook, and the hook
 blocks on the verdict while the node writes the entry and commits the
@@ -509,3 +509,18 @@ Divergences from the first draft, all kept and now in the Design:
 - The sampled connectivity check runs on every 256th write open.
 - Without compaction the `entries` list grows by one row per push; the
   1 MiB ceiling holds for roughly ten thousand pushes.
+- The hook channel, fixed at its root on 2026-09-08: the node's blocking
+  open of the `updates` FIFO for reading met the hook's blocking open for
+  writing, and on macOS that rendezvous loses its wakeup about once in a
+  thousand (the hook's open, write, and close all complete between the
+  kernel counting the reader and putting it to sleep), so the request
+  ran into its timeout and the client's push hung on a response without
+  git's closing flush (`TestStalePushIsRefusedAndConcurrentBranchesLand`
+  on `macos-latest`, CI run 34227884820). The node now opens both ends
+  of each FIFO before git starts, the hook ends its updates with the
+  line `end` and opens the verdict FIFO first, and no open on either
+  side waits; `TestHookHandOffNeverSleepsInAnOpen` runs four thousand
+  bounded exchanges of the installed script and met the lost wakeup
+  under the first channel. A node that goes away mid-push now ends its
+  hook with `no verdict` instead of leaving it, and `git receive-pack`
+  with it, waiting in an open.

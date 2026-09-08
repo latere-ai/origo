@@ -137,3 +137,13 @@ committed: the commit log already holds that.
   the log holds: a compaction sets it to the bytes of its packs and a
   push adds its own, so the figure falls after a compaction and the
   quota and `stats` count bytes that exist.
+- A push no longer hangs on macOS about once in a thousand: the
+  hand-off between the node and its pre-receive hook used a FIFO open
+  rendezvous that loses its wakeup there. The node now holds both ends
+  of the hook's FIFOs, and a node that goes away mid-push ends its hook
+  and `git receive-pack` instead of leaving them waiting.
+- A node that starts before one of its issuers answers serves that
+  issuer's tokens from the first request after the issuer is up: the
+  first fetch is retried after a second, doubling to the minute, instead
+  of `issuer_unavailable` for a minute after a failed start-up fetch.
+

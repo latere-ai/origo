@@ -79,7 +79,7 @@ spec 003's table carries.
 | `exp` | in the future, with 60 seconds of skew | `expired` |
 | `nbf` | absent or in the past, with 60 seconds of skew | `nbf` |
 | `iat` | present and at most 24 hours old | `iat` |
-| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
+| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute by the loop and from one second on by a request, doubling per failure up to the minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
 | issuer scheme | an issuer URL is `https://`; `http://` is accepted only when the URL's host is a loopback address or the URL is listed in `ORIGO_OIDC_INSECURE_ISSUERS` (spec 002), which the kind overlay of spec 013 sets for the stub issuer and a production deployment never sets; any other `http://` issuer is a start-up failure naming it | |
 | credential forms | `Authorization: Bearer <token>`; basic auth with any username and the token as the password; basic auth with the token as the username and an empty password | |
 | verified-token cache | keyed by the SHA-256 of the token for the shorter of its lifetime and 5 minutes, so a busy client costs one signature check per 5 minutes; at most 65 536 entries, least recently used evicted | |
@@ -303,8 +303,9 @@ Divergences and interpretations, all kept:
   start, retries an unfetched issuer once a minute, and refreshes a set
   older than an hour; and a fetch from the request path when a token
   names an issuer with no keys or an unknown `kid`, at most once a
-  minute per issuer. The criterion's minute retry on a fake clock
-  drives the second.
+  minute per issuer once the set has been fetched (below for the
+  first fetch). The criterion's minute retry on a fake clock drives
+  the second.
 - The verified-token bound of `TestCachesAreBounded` writes 65 536
   entries the way `Verify` writes them and then verifies one real
   token, because 65 537 signatures do not fit the suite's budget; the
@@ -343,3 +344,18 @@ Divergences and interpretations, all kept:
   with the developer reason in `details`, and the unknown-route
   handler answers `invalid_request`; the sideband strings of a refused
   push are unchanged and stay with spec 021's code-table test.
+- The `issuer_unavailable` the kind stack met at start (spec 013's
+  Outcome, the `up-script` job, CI run 34207615785), fixed at its root
+  on 2026-09-08: the start-up fetch of a node that came up before its
+  issuer failed, and the request path then held the fetch a token could
+  trigger for the whole minute, so every token of that issuer was
+  refused for a minute after the issuer answered. Until an issuer's
+  first fetch succeeds, a failed attempt is retried after one second,
+  doubled per consecutive failure and capped at the minute
+  (`FirstRetryInterval`), on the request path and by the loop; a
+  fetched set keeps the minute cap
+  (`TestFirstFetchFailureBacksOffFromASecond`,
+  `TestIssuerUnavailableIsRetried`). Readiness stays independent of the
+  issuers: an unreachable issuer does not stop the node, and a readiness
+  that waited for its keys would hold a rollout for an outage the node
+  is built to ride out.
