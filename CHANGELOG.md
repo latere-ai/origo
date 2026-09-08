@@ -197,3 +197,15 @@ committed: the commit log already holds that.
   fire. A replica stays ready while its breaker is open. The kind
   overlay runs the slow proxy of `origo-stubs` in front of MinIO, with
   its control endpoint on host port 30085.
+- Limits and abuse controls (spec 012). A node accepts 600 requests a
+  minute per authenticated subject and answers 429 `rate_limited` with
+  `Retry-After` past that; it runs at most `ORIGO_MAX_GIT_PROCS` git
+  subprocesses at once, 64 by default, a request waiting five seconds
+  for a slot before the same 429 and a compaction skipping to its next
+  sweep. A repository is held to the authorizer's `quota_bytes`, 50 GiB
+  when it names none, measured as what the log holds plus the objects
+  under `lfs/`: a push past it is refused in git's own output with
+  `over_quota` and nothing is written, and an LFS upload batch past it
+  is 413. A single push is at most 2 GiB and its body is no longer
+  spooled past that. A repository-bound token's push is now held to the
+  quota of the subject that minted it rather than to the default.

@@ -73,6 +73,34 @@ the pressure. `origo_cache_bytes`, `origo_cache_repos`, and
 same volume is warm, one that moves starts cold and warms as requests
 arrive.
 
+## Limits
+
+Origo bounds what one client can take from a node. A caller sending
+more than 600 requests a minute gets 429 `rate_limited` with
+`Retry-After`, counted per subject per node, so one repeating build
+does not crowd out the rest; the table holds only the subjects that
+called in the last ten minutes.
+
+Each node runs at most `ORIGO_MAX_GIT_PROCS` git subprocesses at once,
+64 by default. A request waits up to five seconds for a slot and is
+then 429 as well; a compaction that finds no slot skips and runs on the
+next sweep, so background work never crowds out a clone. Raise the
+figure with the pod's CPU limit, not past it: every slot is a `git`
+process with the memory of the repository it serves.
+
+A repository is bounded by `quota_bytes`, the figure your authorizer
+answers with, 50 GiB when it names none. The measurement is what the
+log holds plus the objects under the repository's `lfs/` prefix, so a
+compaction lowers it and deleting LFS objects lowers it. A push past
+the limit is refused in git's own output with `over_quota` and nothing
+is written; the node's log line for it carries the figures. A single
+push is at most 2 GiB whatever the quota says.
+
+`origo_rate_limited_total{limit}` counts the refusals: `subject` for
+the rate, `subprocesses` for the slots. A rising `subprocesses` figure
+means the node is saturated and wants replicas or a higher cap; a
+rising `subject` figure means one caller is looping.
+
 ## When the bucket is unhealthy
 
 Every call to the bucket has a deadline, `ORIGO_STORAGE_TIMEOUT` (10
