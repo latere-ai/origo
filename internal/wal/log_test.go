@@ -4,6 +4,7 @@
 package wal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -508,5 +509,61 @@ func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 	orphans := countKeys(store, "/wal/") - writers*rounds
 	if orphans <= 0 {
 		t.Fatalf("%d orphans, expected some from lost rounds", orphans)
+	}
+}
+
+// TestHeadCheckIsLabelledAndCommitsAreAnnounced is spec 005's two
+// additions to the log: the currency check carries result 404, 200, or
+// error, so a test tells a check that found the copy current from one
+// that found a newer index, and every index object the log creates is
+// reported through OnCommit with its sequence.
+func TestHeadCheckIsLabelledAndCommitsAreAnnounced(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	reg := metrics.NewRegistry()
+	var announced []string
+	l := New(Options{Store: store, Metrics: reg, OnCommit: func(repo string, seq uint64) {
+		announced = append(announced, fmt.Sprintf("%s@%d", repo[:8], seq))
+	}})
+	base := createRepo(t, l, repoA)
+	if len(announced) != 0 {
+		t.Fatalf("CreateRepo announced %v", announced)
+	}
+	if ok, err := l.HasIndex(ctx, repoA, 1); err != nil || ok {
+		t.Fatalf("HEAD index/1: %v %v", ok, err)
+	}
+	if ok, err := l.HasIndex(ctx, repoA, 0); err != nil || !ok {
+		t.Fatalf("HEAD index/0: %v %v", ok, err)
+	}
+	store.SetFault(func(op, _ string) error {
+		if op == "Head" {
+			return errors.New("bucket down")
+		}
+		return nil
+	})
+	if _, err := l.HasIndex(ctx, repoA, 0); err == nil {
+		t.Fatal("HEAD under a fault answered")
+	}
+	store.SetFault(nil)
+	var text bytes.Buffer
+	reg.WritePrometheus(&text)
+	for _, want := range []string{
+		`origo_wal_head_check_seconds_count{result="404"} 1`,
+		`origo_wal_head_check_seconds_count{result="200"} 1`,
+		`origo_wal_head_check_seconds_count{result="error"} 1`,
+	} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("metrics lack %q:\n%s", want, text.String())
+		}
+	}
+	c, err := l.Commit(ctx, repoA, base, push("refs/heads/main", ZeroSHA, sha(1)), noCatchUp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Commit(ctx, repoA, c.Index, push("refs/heads/main", sha(1), sha(2)), noCatchUp); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(announced, ","); got != repoA[:8]+"@1,"+repoA[:8]+"@2" {
+		t.Fatalf("announced %s", got)
 	}
 }

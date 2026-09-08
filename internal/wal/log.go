@@ -43,6 +43,10 @@ type Options struct {
 	// Sleep waits between lost rounds. The wall clock by default; a test
 	// substitutes it.
 	Sleep func(context.Context, time.Duration)
+	// OnCommit is called with the repository and the sequence after
+	// every index object this log creates, once the hint is written.
+	// Gossip (spec 005) announces the sequence from it. Nil is no call.
+	OnCommit func(repo string, seq uint64)
 }
 
 // Log is the write-ahead log of every repository under one prefix.
@@ -54,6 +58,7 @@ type Log struct {
 	logger      *slog.Logger
 	maxAttempts int
 	sleep       func(context.Context, time.Duration)
+	onCommit    func(repo string, seq uint64)
 
 	commits   *metrics.Counter
 	conflicts *metrics.Counter
@@ -71,7 +76,7 @@ const (
 func New(o Options) *Log {
 	l := &Log{
 		store: o.Store, prefix: o.Prefix, now: o.Now, failpoint: o.Failpoint,
-		logger: o.Logger, maxAttempts: o.MaxCommitAttempts, sleep: o.Sleep,
+		logger: o.Logger, maxAttempts: o.MaxCommitAttempts, sleep: o.Sleep, onCommit: o.OnCommit,
 	}
 	if l.sleep == nil {
 		l.sleep = func(ctx context.Context, d time.Duration) { _ = wait.Sleep(ctx, d) }
@@ -105,6 +110,9 @@ func New(o Options) *Log {
 	// not at all, which is the shape spec 011's dashboards expect.
 	for _, c := range []*metrics.Counter{l.commits, l.conflicts, l.retries, l.entryByte} {
 		c.Add(nil, 0)
+	}
+	if l.onCommit == nil {
+		l.onCommit = func(string, uint64) {}
 	}
 	return l
 }
@@ -148,11 +156,21 @@ func (l *Log) ReadIndex(ctx context.Context, repo string, seq uint64) (*Index, e
 	return ix, nil
 }
 
-// HasIndex is the currency check: HEAD index/<seq>, one round trip.
+// HasIndex is the currency check: HEAD index/<seq>, one round trip,
+// timed on origo_wal_head_check_seconds{result} with 404 for a copy
+// found current, 200 for a newer index, and error for a check that did
+// not answer (spec 011, the label spec 005 adds).
 func (l *Log) HasIndex(ctx context.Context, repo string, seq uint64) (bool, error) {
 	start := time.Now()
 	_, err := l.store.Head(ctx, l.key(repo, IndexKey(seq)))
-	l.headCheck.Observe(nil, time.Since(start).Seconds())
+	result := "200"
+	switch {
+	case errors.Is(err, ErrNotFound):
+		result = "404"
+	case err != nil:
+		result = "error"
+	}
+	l.headCheck.Observe(map[string]string{"result": result}, time.Since(start).Seconds())
 	if errors.Is(err, ErrNotFound) {
 		return false, nil
 	}
@@ -407,6 +425,7 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 		if won {
 			l.commits.Inc(nil)
 			l.writeHint(ctx, repo, seq)
+			l.onCommit(repo, seq)
 			return &Committed{Index: next, Key: key, Header: hdr, EntryDuration: entryTime, IndexDuration: indexTime}, nil
 		}
 	}
