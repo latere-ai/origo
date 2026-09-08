@@ -125,7 +125,7 @@ makes. On a `v*` tag:
    every artifact and skips this step.
 4. `live`: the live run of spec 021, `TestContract` against
    `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` (spec 002) and that spec's
-   four-entry skip list, after step 3 and skipped when the secret is
+   six-entry skip list, after step 3 and skipped when the secret is
    unset; its report and timings are attached to the release.
 5. `publish`: the GitHub release with every artifact, the `CHANGELOG.md`
    section as the body, the smoke evidence when step 3 ran, the

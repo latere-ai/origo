@@ -313,23 +313,23 @@ name, or when a spec names something no spec defines.
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 021 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020 |
-| error code | `gone` | [019](019-repository-administration.md) | 003 |
+| error code | `gone` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003 |
-| error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003 |
+| error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021 |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | - |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | - |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | - |
-| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003 |
+| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021 |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020 |
-| error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020 |
-| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020 |
+| error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021 |
+| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021 |
 | error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020 |
 | error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 020 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019 |
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020 |
-| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014 |
-| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014 |
+| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 021 |
+| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 017, 021 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 013, 015, 017, 021 |
@@ -342,7 +342,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_DATA_DIR` | [002](002-repository-scaffold.md) | 004, 005, 016, 018 |
 | variable | `ORIGO_DEV_TOKEN` | [002](002-repository-scaffold.md) | 003, 007, 013 |
 | variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013 |
-| variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
+| variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 013, 014, 016, 019, 021 |
 | variable | `ORIGO_EGRESS_CA_BUNDLE` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 013, 016 |
 | variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 013, 018 |
@@ -429,7 +429,7 @@ name, or when a spec names something no spec defines.
 | event | `compacted` | [019](019-repository-administration.md) | - |
 | event | `deleted` | [019](019-repository-administration.md) | - |
 | event | `frozen` | [019](019-repository-administration.md) | - |
-| event | `imported` | [019](019-repository-administration.md) | 014 |
+| event | `imported` | [019](019-repository-administration.md) | 014, 021 |
 | event | `ping` | [018](018-installation.md) | 008 |
 | event | `push` | [008](008-push-events.md) | 003, 004, 009, 019, 020 |
 | event | `renamed` | [019](019-repository-administration.md) | - |

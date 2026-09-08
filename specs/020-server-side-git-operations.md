@@ -9,7 +9,7 @@ depends_on:
   - specs/009-read-api-and-archive.md
   - specs/012-limits-and-abuse.md
   - specs/019-repository-administration.md
-affects: [internal/api/, internal/repo/, internal/httpgit/, test/conformance/]
+affects: [internal/api/, internal/repo/, internal/httpgit/, internal/contract/, test/conformance/]
 effort: large
 created: 2026-09-06
 updated: 2026-09-08

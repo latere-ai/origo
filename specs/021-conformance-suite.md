@@ -57,6 +57,8 @@ conformance.Run(t, conformance.Target{
     Issuer:     "<the stub issuer's URL, for the delegation and token cases>",
     Authorizer: "<the stub authorizer's control URL, to flip allow and deny>",
     EventsSink: "<the stub sink's control URL, to read deliveries>",
+    Source:     "<a git source URL for the import and verify cases; empty on a live target>",
+    SourceToken: "<the bearer that source requires>",
     Fault:      <a Fault, to cut the bucket and delete an object; nil on a live target>,
     Skip:       []string{"<a subtest name>"},
 })
@@ -78,14 +80,26 @@ deletes by prefix, so a repository another test pushed beside it, spec
 017's release fixture among them, survives the run.
 
 Cases a target does not support are skipped by a `Skip` list on the
-target, never silently: each skipped case is reported by name. Two
+target, never silently: each skipped case is reported by name. Four
 groups skip on their own when the field they need is empty, because
 they drive the stubs and a live service has none: the delegation cases
-(`act` on a service token, which need `Issuer` to mint one) and the
+(`act` on a service token, which need `Issuer` to mint one), the
 deny-flipping cases (403 before lookup, the authorizer outage, and
-`authorizer_unavailable`, which need `Authorizer` to flip an answer).
-Two rows need a fault in the bucket that a caller outside the
-installation cannot cause: `storage_unavailable` (spec 003) needs the
+`authorizer_unavailable`, which need `Authorizer` to flip an answer),
+the quota row (`over_quota`, which needs `Authorizer` to set
+`quota_bytes` on a rule below the size of the push the case makes,
+because no target's default quota is small enough to fill in a test),
+and the source group (the `import` of spec 019 and the `verify` of
+spec 014, with `repo_importing`, `repo_not_empty`, and the `imported`
+event, which need `Source` and `SourceToken`: on the stack the source
+stub of spec 013 at `https://origo-stubs.origo.svc:8443/fixture.git`
+with `stub-source-token`, the address the nodes reach through
+`ORIGO_EGRESS_ALLOW`; the stub run leaves them empty and reports the
+group skipped, because a loopback source needs the `AllowLoopback`
+seam spec 016 restricts to `_test.go` files, and specs 019 and 014
+prove `import` and `verify` in-process in their own tests). Two rows
+need a fault in the bucket that a caller outside the installation
+cannot cause: `storage_unavailable` (spec 003) needs the
 bucket unreachable, and `repository_unavailable` (spec 015) needs a
 pack object gone. `Fault` is an interface with `CutStorage(t)`, which
 makes the bucket unreachable until the test ends, and
@@ -111,12 +125,23 @@ report with fewer or more skipped names is a failure of the run.
 |---|---|
 | the delegation group: `act` on a service token, the repository-bound token minted through delegation | needs `Issuer` to mint the token |
 | the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable` | needs `Authorizer` to flip an answer |
+| the quota row: `over_quota` | needs `Authorizer` to lower `quota_bytes` |
+| the source group: `import`, `verify`, `repo_importing`, `repo_not_empty`, the `imported` event | needs `Source` and `SourceToken` |
 | the `storage_unavailable` row of spec 003 | needs `Fault` to cut the bucket |
 | the `repository_unavailable` row of spec 015 | needs `Fault` to delete a pack object |
 
 Every other case runs against the live service, so the live run proves
 the surface and the stack run proves the surface, the trust logic, and
 the degraded rows.
+
+Two codes no target can produce inside a test run are checked from the
+code table alone and by no case of the suite: `gone` (spec 019), which
+needs the 7-day hold after a delete to pass, and `operation_timeout`
+(spec 009), which needs a git subprocess held past its deadline. For
+them the table check below is the whole proof: the code has a sentence
+and a status, and a literal in the code sends it. Every other row of
+the table is produced on a target by one case of the suite, skipped
+with its group when the field the group needs is empty.
 
 `TestContract` is the package's own test over `Run`. It carries the
 `e2e` build tag, like every test that needs a stack, so the unit suite
@@ -143,8 +168,16 @@ the two secrets and nothing else.
 
 `internal/contract` gains the code table as data: code, status, and
 the one sentence, for every row of the Code tables of spec 003 and of
-specs 007, 009, 010, 015, 019, and 020, which is every code the
-cross-reference in `specs/README.md` lists; spec 010's three rows are
+specs 007, 009, 010, 015, and 019, which is every code the
+cross-reference in `specs/README.md` lists except spec 020's; spec 020
+adds its rows, `invalid_change` and `merge_conflict`, and the literals
+that send them when it lands, and the rule below that a row no literal
+sends is a failure applies to the codes of a spec at `testing` or
+later, so the table never fails on a code whose handler is not built
+yet. The table check covers every row without a target: every code
+has one sentence and one status, and every literal in the code has a
+row; the suite's cases produce the rows on a target, except the two
+the paragraph above names. Spec 010's three rows are
 rendered in the LFS body shape and through `contract.Sentence`, never
 as an `httpjson.Error`, so for them the test asserts the `Sentence`
 call and no literal. `TestEveryCodeHasOneSentence`
@@ -156,7 +189,8 @@ the table holds, and its `Message` field must be a string literal equal
 to the table's sentence for that code. A `Message` built from an
 expression (`err.Error()`, a concatenation, a `fmt.Sprintf`) is a
 failure, because the reason belongs in `details`, and so is a table row
-no literal sends, so a dead row is noticed. Each failure names the file
+no literal sends, for a code of a spec at `testing` or later, so a dead
+row is noticed. Each failure names the file
 and line. The sideband and hook lines (`ERR <code>: <sentence>`,
 `reject <code>: <sentence>`) are rendered from the same table by
 `contract.Sentence(code)` and hold no sentence of their own, so the
@@ -213,7 +247,7 @@ flowchart LR
   C[TestContract] --> K[kind stack of spec 013<br/>ORIGO_TEST_URL, stubs, Fault<br/>Skip: none]
   C --> S[test/stubs/origo in-process<br/>s3test Fault<br/>Skip: none]
   C --> M[TestMutation of test/e2e: one node it starts with MinIO<br/>ORIGO_TEST_DROP_CAPABILITY<br/>must fail on that capability alone]
-  C --> L[ORIGO_LIVE_URL after a release<br/>no stubs, no Fault<br/>Skip: the four-entry list]
+  C --> L[ORIGO_LIVE_URL after a release<br/>no stubs, no Fault<br/>Skip: the six-entry list]
 ```
 
 | Run | Target | When |
@@ -235,7 +269,7 @@ assertions beyond the thresholds the owning specs name.
 - `TestContract` passes against the kind stack on every push to `main`
   inside spec 013's `e2e` job with nothing skipped, and against the
   installation `ORIGO_LIVE_URL` names after a release with exactly the
-  four entries of the skip list skipped and each reported by name
+  six entries of the skip list skipped and each reported by name
   (`verify.yml`; `release.yml`, the `live` job; the release evidence of
   spec 017).
 - With `Fault` wired, the `storage_unavailable` row answers 503 with
@@ -269,8 +303,9 @@ assertions beyond the thresholds the owning specs name.
   it runs in spec 013's `e2e` job beside `TestContract`).
 - Every `httpjson.Error` literal in the module carries a `Code` the
   table holds and a `Message` that is the string literal of the
-  table's sentence, every table row is sent by at least one literal or,
-  for spec 010's three LFS rows, by one `contract.Sentence` call,
+  table's sentence, every table row of a spec at `testing` or later is
+  sent by at least one literal or, for spec 010's three LFS rows, by
+  one `contract.Sentence` call,
   and a `Message` built from an expression fails with its file and
   line; the test fails on the tree as it stands today, on the
   lower-case sentences spec 003's Outcome lists, and passes once they
