@@ -31,7 +31,7 @@ jobs:
     if: github.event_name != 'schedule'
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
   specindex:
-    name: spec cross-reference table is current
+    name: spec cross-reference table and alert rules
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -40,6 +40,26 @@ jobs:
         with:
           go-version-file: go.mod
       - run: cd tools/specindex && go test -count=1 ./...
+      # The alerts of spec 011. promtool reads a Prometheus rules file,
+      # not a Kubernetes object, so specindex prints the rules document
+      # inside the PrometheusRule and fails first on an alert that names
+      # a metric no spec defines.
+      - name: Install promtool
+        env:
+          PROMTOOL_TARBALL: prometheus-3.5.0.linux-amd64.tar.gz
+          PROMTOOL_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSLo "$PROMTOOL_TARBALL" "https://github.com/prometheus/prometheus/releases/download/v3.5.0/$PROMTOOL_TARBALL"
+          echo "$PROMTOOL_SHA256  $PROMTOOL_TARBALL" | sha256sum -c -
+          tar xzf "$PROMTOOL_TARBALL"
+          sudo install "${PROMTOOL_TARBALL%.tar.gz}/promtool" /usr/local/bin/promtool
+          promtool --version
+      - name: Check the alert rules
+        run: |
+          mkdir -p out
+          (cd tools/specindex && go run . -rules ../../deploy/base/prometheusrule.yaml) > out/rules.yaml
+          promtool check rules out/rules.yaml
 
   # The integration tier and the e2e tier's one-node run, against a MinIO
   # beside the runner: every test that starts its own nodes and fits the

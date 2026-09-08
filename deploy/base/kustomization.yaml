@@ -11,6 +11,12 @@ resources:
   - poddisruptionbudget.yaml
   - hpa.yaml
 
+# prometheusrule.yaml is not a resource of the base: a PrometheusRule
+# needs the Prometheus operator's CustomResourceDefinition, which Origo
+# does not require and the kind stack does not install, so applying the
+# base to a cluster without it would fail. An installation that runs the
+# operator applies it beside the base (spec 011).
+
 labels:
   - includeSelectors: true
     pairs:

@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: MIT
+
+# The alerts of spec 011, one rule per row of that spec's table. Every
+# expression is over a metric spec 011 defines, which the specindex
+# module checks, and `promtool check rules` in the specindex job of
+# verify.yml parses the file on every push.
+#
+# The last alert is the only one over a metric Origo does not export:
+# kube-state-metrics publishes the autoscaler's replica counts, and an
+# installation without it does not fire it.
+#
+# The file is not a resource of the base's kustomization: a
+# PrometheusRule needs the Prometheus operator's CustomResourceDefinition
+# and Origo does not require one. An installation that runs the operator
+# applies this beside the base.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: origod
+spec:
+  groups:
+    - name: origod
+      rules:
+        - alert: OrigoStorageErrors
+          expr: rate(origo_storage_ops_total{result="error"}[5m]) / rate(origo_storage_ops_total[5m]) > 0.05
+          for: 5m
+          annotations:
+            summary: More than one object storage call in twenty is failing.
+        - alert: OrigoCommitStorm
+          expr: rate(origo_wal_commit_retries_total[5m]) > 10
+          for: 5m
+          annotations:
+            summary: A node is losing more than ten commit rounds a second to other writers.
+        - alert: OrigoDeadEvents
+          expr: increase(origo_events_dead_total[10m]) > 0
+          annotations:
+            summary: An event reached the dead-letter prefix; the sink refused it for the whole retry window.
+        - alert: OrigoSlowHeadCheck
+          expr: histogram_quantile(0.99, rate(origo_wal_head_check_seconds_bucket[5m])) > 0.05
+          for: 10m
+          annotations:
+            summary: The currency check before a read is above 50 ms at the 99th percentile.
+        - alert: OrigoCacheThrash
+          expr: rate(origo_evictions_total{reason="pressure"}[1m]) > 100/60
+          annotations:
+            summary: The cache is evicting under pressure more than a hundred times a minute; ORIGO_CACHE_BYTES is too small for the working set.
+        - alert: OrigoBreakerOpen
+          expr: origo_storage_breaker_state == 1
+          for: 1m
+          annotations:
+            summary: A storage breaker is open; reads are served stale and writes are refused.
+        - alert: OrigoStaleServing
+          expr: increase(origo_stale_responses_total[5m]) > 0
+          annotations:
+            summary: A response was served from a copy that may be behind the log.
+        - alert: OrigoLogIntegrity
+          expr: increase(origo_log_integrity_errors_total[5m]) > 0
+          annotations:
+            summary: A pack or entry the log names is missing or fails its digest.
+        - alert: OrigoSlowMaterialization
+          expr: histogram_quantile(0.99, rate(origo_repo_materialize_seconds_bucket[10m])) > 60
+          for: 10m
+          annotations:
+            summary: Bringing a local copy current takes over a minute at the 99th percentile.
+        - alert: OrigoReplicasPinned
+          expr: kube_horizontalpodautoscaler_status_current_replicas == kube_horizontalpodautoscaler_spec_max_replicas
+          for: 15m
+          annotations:
+            summary: The autoscaler has been at its maximum replica count for fifteen minutes.
