@@ -38,7 +38,10 @@ Two items were for the builder beyond the package. The receive path in
 `origo_push_duration_seconds{phase}` of spec 011 (`receive`, `entry`,
 `index`, `apply`), which phase 1 attributed to spec 004 and never
 recorded; this spec changes that path for the `forced` flag and the
-enqueue, so the four observations land with it. And every event kind
+enqueue, so the four observations land with it. `apply` spans the
+forced computation, the verdict, git's own reference update, and the
+local advance; the enqueue falls outside the four phases, and a
+refused push observes `receive` alone. And every event kind
 the deck defines goes through the one channel below: the
 administration kinds of spec 019 and the `verified` kind of spec 014
 are emitted through `Emit`, defined beside `Enqueue`, so one package
@@ -59,7 +62,7 @@ spec 014, which have no sequence:
 | `origo/events/<repo>/a-<id>.json` | an event without a sequence, the same content; `<id>` is the event's id, the UUID v5 of `<repo>:<kind>:<occurred_at>` under the namespace of the payload table, `<occurred_at>` the payload's `at` in RFC 3339 with second precision in UTC, so a repeated `Emit` of one operation writes the same key and is idempotent; a `PUT` of an existing key is a no-op rather than a second event |
 | `origo/events/<repo>/cursor` | `{"seq": n, "delivered": [{"id", "at"}]}`: `seq` is the highest `push` sequence delivered, monotonic per writer; `delivered` is the set of administration event ids delivered in the last 24 hours with their `at`, older entries dropped on every rewrite, so a delivery loop or a repair that finds an `a-<id>.json` whose id is in the set deletes it without delivering; written unconditionally |
 | `origo/events/dead/<repo>/<seq>.json`, `origo/events/dead/<repo>/a-<id>.json` | an event that exhausted the window, under the key it had |
-| `origo/events/nodes/<node>/<date>.log` | the node's journal for one UTC day, `<date>` in Go's `2006-01-02` layout: one line `<repo> <seq>` per `push` entry the node enqueued, in enqueue order; rewritten whole by the node from its in-memory copy; read by the repair sweep |
+| `origo/events/nodes/<node>/<date>.log` | the node's journal for one UTC day, `<date>` in Go's `2006-01-02` layout: one line `<repo> <seq>` per `push` entry the node enqueued, in enqueue order; rewritten whole by the node from its in-memory copy, which is seeded at start-up from the node's own objects of today and yesterday so a restart under the same name keeps the lines an earlier process wrote; read by the repair sweep |
 
 The payload is spec 003's, with `kind`:
 
@@ -90,13 +93,17 @@ and before it writes `ok` to the verdict FIFO: one `git merge-base
 reported on the `updates` FIFO (spec 004); exit 0 is a fast-forward, 1
 is forced, a create or a delete is never forced. The verdict is
 therefore `ok` only after the flag is known; the git subprocess deadline
-of spec 004 bounds the cost.
+of spec 004 bounds the cost. A push without a pack (a delete alone)
+runs no quarantine in git and the hook reports an empty path; no
+update of such a push needs the objects.
 
 ### Enqueue
 
 Enqueue is one function, `events.Enqueue(ctx, repo, entry)` in
-`internal/events`, given the committed entry's header and transaction,
-and it is the only path that writes an event object for a `push`
+`internal/events`, `entry` an `events.Entry{Header, Refs, Forced}`: the
+committed header, which `wal.Committed` carries so no caller reads the
+entry back, the transaction, and the references the receive path found
+forced. It is the only path that writes an event object for a `push`
 entry. Three callers: `internal/httpgit` after the verdict `ok` is
 delivered and `Cache.Advance` recorded the sequence; `internal/api`
 after the commit of a `default_branch` change and of an undelete (spec
@@ -124,12 +131,18 @@ names the repository to the sweep. The in-memory journal is flushed to
 `origo/events/nodes/<node>/<date>.log` every 10 seconds, and at once
 on the first line for a repository in a day; a flush that fails is
 logged and retried at the next tick, and the pushes it holds are
-covered once it lands. A day's object is at most one line per push, a
+covered once it lands. A node loads its own journals of today and
+yesterday into memory at start-up, before the start-up repair below,
+so the first flush after a restart rewrites the day with the earlier
+process's lines; a line already in memory is not taken twice. A day's object is at most one line per push, a
 few MiB for the busiest node; the sweep deletes journals older than 2
 days.
 
 `Emit` is the second function of the package, for events that have no
-entry: `events.Emit(ctx, repo, kind, payload)` fills the shared fields
+entry: `events.Emit(ctx, repo, kind, at, pusher, extra)` takes `at`
+and `pusher` as arguments, because the id is derived from `at` and
+every kind carries the same `pusher`, keeps `at` to the second in UTC
+so the payload's `at` and the id agree, fills the shared fields
 (`id` as the key table says, `kind`, `repo`, `owner`, `slug`, `at`,
 `pusher`) around the extra fields the caller gives, writes
 `origo/events/<repo>/a-<id>.json` with `attempts: 0` and `next_at` now,
@@ -178,6 +191,16 @@ increments, and the alert of spec 011 fires. The consumer treats
 delivery as at least once and keys on `id`: two nodes can deliver one
 event when a sweep overlaps a loop.
 
+Deliveries are one at a time per node, in key order, so a repository's
+events leave a node in sequence order while the sink answers, and a
+slow sink bounds the rate at one delivery per round trip. That is the
+rule: a consumer reads a repository's events in order in the common
+case, at-least-once means a retry can still arrive after a later
+event, and spec 005 spreads repositories over nodes, so a deployment's
+delivery rate grows with its nodes. Concurrent deliveries with the
+per-repository cursor serialised are a later spec's if a consumer
+needs them.
+
 ### Repair
 
 A sweep every `ORIGO_REPAIR_INTERVAL` (spec 002, default 10 minutes) on
@@ -187,11 +210,17 @@ does two things over `origo/events/`:
 1. Delivers every pending object, of every kind, whose `next_at` is
    more than 1 minute in the past, which is what a dead node left
    behind; an `a-<id>.json` whose id the cursor's `delivered` set holds
-   is deleted instead.
+   is deleted instead. An object whose modification time in the
+   listing is within the minute is skipped without a read, because
+   `next_at` is never before the write; every other pending object
+   costs one read per sweep.
 2. Reads the journals of nodes that are not in the live set of spec 005
-   and were last heard more than `ORIGO_REPAIR_UNHEARD` ago (spec 002,
-   default 5 minutes), or never heard since this node started, for
-   today and yesterday. For every repository
+   (the `events.Membership` interface, `LastHeard(node)`, which spec
+   005 wires; nil until then, so every other node counts as never
+   heard since this node started and a two-node harness repairs
+   without gossip) and were last heard more than `ORIGO_REPAIR_UNHEARD`
+   ago (spec 002, default 5 minutes), or never heard since this node
+   started, for today and yesterday. For every repository
    those journals name, it reads the newest index and, for each listed
    `push` entry with a sequence above the cursor and an `at` older than
    1 minute that has no event object, reads the entry head and writes
@@ -200,11 +229,22 @@ does two things over `origo/events/`:
    from the transaction as the payload table says, and `id` from
    `repo` and `seq` as the payload table says,
    so a consumer that received the original before the node died and
-   the repair after it sees one id. This covers a node that died
+   the repair after it sees one id. The object is written by
+   create-if-absent, so two sweeps over one entry produce one object,
+   and an entry whose event sits under `dead/` is skipped, because
+   rebuilding it would move it back under `dead/` on every sweep after
+   the window (the operator's replay is the move out of `dead/`, Not
+   in this spec). This covers a node that died
    between the index create and the enqueue, for a repository the
    journal names (Enqueue, above); an entry whose header carries
    `origo.event=off`, and an undelete, are skipped as the enqueue skips
-   them. This step rebuilds `push` events only: an event without a
+   them. Such an entry above the cursor is read again on every pass,
+   two `HEAD` requests and one entry-head read, because the cursor
+   moves only on a delivery; the cost is bounded by the journal's
+   life, since this step reads today's and yesterday's journals only:
+   the re-read ends at most two days after the dead node's last push
+   to the repository, 288 passes at the default interval, and at once
+   when the node is heard again. This step rebuilds `push` events only: an event without a
    sequence has no entry to rebuild from, and step 1 is what covers it.
    A node also runs this step
    once at start-up over its own journals, which covers a restart
@@ -245,7 +285,10 @@ moves an object back under `origo/events/<repo>/` to retry it.
   `ORIGO_GOSSIP_SECRET` set so the survivor's live set drops the dead
   node, and `ORIGO_REPAIR_UNHEARD` and `ORIGO_REPAIR_INTERVAL` set in
   seconds on both, `5s` and `10s`; one node carries the failpoint and
-  is killed by it, the other runs the sweep (proposed: `test/e2e`,
+  is killed by it, the other runs the sweep. A failpoint of spec 002
+  has no count, so the test starts the first node without it for the
+  first push and restarts it under its name and data directory with
+  it before the second (proposed: `test/e2e`,
   `TestSlowEventRepairAfterKill`, in the `e2e-slow` job of spec 013).
 - `Emit` called twice for one operation with one `at` writes one
   object under `a-<id>.json` and delivers one event; called for two
@@ -308,7 +351,7 @@ in-process sink, which is how it was verified on this machine.
 | the four phases of `origo_push_duration_seconds`, each once, within 10% of the request | `internal/httpgit`, `TestPushPhasesAreObserved` |
 | the sweep reads only unheard nodes' journals and only their repositories' indexes | `internal/events`, `TestRepairReadsOnlyDeadJournals` |
 | one id for the enqueue and the repair, two for two entries, equal to the UUID v5 the test computes | `internal/events`, `TestEventIDIsDeterministic` |
-| `pusher.sub` and `pusher.actor` from `act` and `sub`, `actor` empty without `act` | `internal/events`, `TestPusherCarriesSubjectAndActor` |
+| `pusher.sub` and `pusher.actor` from `act` and `sub`, `actor` empty without `act` | `internal/events`, `TestPusherCarriesSubjectAndActor`, from the entry header; the token's `act` and `sub` reaching the header is spec 007's `TestActClaimIsRecordedOnEntryAndAuthorizer` |
 | no `push` event for an undelete from either path, `undeleted` once; the `default_branch` change as one `HEAD` update with `kind_detail` | `internal/events`, `TestUndeleteEmitsNoPushEvent`, `TestDefaultBranchChangeIsAHeadUpdate`; the wiring in `internal/api`, `TestLifecycleEventsAreEmitted` |
 | the URL without the secret fails the start-up with the one message | `internal/config`, `TestEventsURLNeedsTheSecret` |
 | `origo.event=off` suppresses that push alone, from the enqueue and from the sweep | `internal/events`, `TestEventOffSuppressesOnlyThatPush` |
@@ -364,14 +407,14 @@ Divergences and interpretations, all kept:
   receive path's own enqueue is asserted by the `forced` test.
 - The dispatcher's default HTTP client sets an explicit transport of
   the node's outbound shape; `pkg/otel`'s instrumented client would
-  put the OpenTelemetry SDK on the node's build list, which spec 001's
-  dependency rule refuses.
+  put the OpenTelemetry SDK on the node's build list, which is spec
+  011's to add, and 011 wraps this transport when it lands.
 - Deliveries are one at a time per node, the one loop the Design
   names; a sink that answers slowly bounds the rate at one delivery per
-  round trip. Recorded as open below.
+  round trip.
 
-No criterion is deferred. Open, for a later spec if a consumer needs
-it: concurrent deliveries with the per-repository cursor serialised,
-and a cursor advance for a trailing `origo.event=off` entry, which the
-sweep otherwise re-reads on every pass for a dead node's repository
-until a later push is delivered.
+No criterion is deferred. The twelfth review round decided the two
+items the first build left open: deliveries stay one at a time per
+node, with the reason in the Deliver section, and the re-read of a
+trailing suppressed entry is bounded by the journal's life, stated in
+the Repair section.

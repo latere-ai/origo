@@ -216,7 +216,12 @@ one page:
 
 `ORIGO_FAILPOINT` names one point at which the node exits at once with
 status 3, so the end-to-end suite can kill a node between two writes. Every name the
-deck uses is here; the owning spec says what the suite asserts.
+deck uses is here; the owning spec says what the suite asserts. A
+failpoint has no count: the node exits the first time the point is
+reached, so a test that needs the point on a later operation of one
+node starts the node without it and restarts it under its name and
+data directory with it (spec 008's stack test); a conformance run
+(spec 021) assumes no count either.
 
 | Failpoint | Reached | Spec |
 |---|---|---|
