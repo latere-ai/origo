@@ -180,6 +180,7 @@ flowchart LR
   S021 --> S008
   S021 --> S009
   S021 --> S010
+  S021 --> S012
   S021 --> S013
   S021 --> S015
   S021 --> S019
@@ -202,10 +203,11 @@ Phase 2 is specs 007 and 013 and nothing else: the stubs are what
 replaces the phase 1 bearer, and the overlay and the CI jobs are what
 every later criterion runs on, so both exist before spec 005's cluster
 tests need them. The conformance suite is spec 021 and depends on
-every surface it asserts, spec 019 included, which is why it sits in
-phase 6 beside the release and installation specs that depend on it;
-none of the specs it depends on depends on 017 or 018, so there is no
-cycle.
+every surface it asserts, spec 019 included, and on spec 012, whose
+enforcement produces its `over_quota` and `rate_limited` rows, which
+is why it sits in phase 6 beside the release and installation specs
+that depend on it; none of the specs it depends on depends on 017 or
+018, so there is no cycle.
 
 ## Decisions across specs
 
@@ -256,6 +258,10 @@ deck and stated here so a reader sees them without the owning spec.
 | a cloud provider named as a deployment target, a tested bucket, or an overlay name (`digitalocean`, `aws`, DigitalOcean Spaces, AWS S3) is allowed; the naming rule bars other companies as sources or references | README | 001, 004, 016, 017, 018 |
 | the stub authorizer's outage is set over HTTP as well as by flag: `PUT /fail {"status"}` (0 clears), `POST /hang`, `POST /resume`, added by 013 to the package 007 built, so 021's stack run produces `authorizer_unavailable` through the host port; no Secret lives in `deploy/base`, the templates `origod-s3` and `origod-auth` stay in `deploy/bootstrap` | 013, 018 | 007, 021 |
 | 012 depends on 006, which builds `internal/compact` where `TestCompactionSkipsWhenNoSlot` lives; the build order is unchanged, 006 is in phase 3 and 012 in phase 4 | 012 | 006 |
+| a code-table row holds every status its spec's Code table lists (`repo_frozen`: 403 on a write, 409 on a second freeze); `contract.Status(code)` answers the first, and the call-site check accepts any status of the row | 021 | 003, 019, 020 |
+| the call-site rule of `TestEveryCodeHasOneSentence` is keyed on the spec that produces a code: `producers map[string]string` in the test, `over_quota` and `rate_limited` to 012, `ref_not_found` to 009, every other code to its owner; the test reads `status:` from `specs/<nnn>-*.md` or `specs/.archive/`; 021 depends on 012 | 021 | 003, 009, 012 |
+| the negative fixture is `test/conformance/testdata/negative/bad.go.txt`, outside `internal/contract`, fed to the walk by path; the status rule runs only on a `contract.Code*` identifier, so the fixture yields two findings, lines 16 and 17 | 021 | 003 |
+| a sideband line, `ERR` pkt-line, or hook verdict that carries a code is `<code>: <sentence>` exactly; the reference and the hashes of a refused push go to the handler's `info` log line, never the sideband; `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds it and 021 owns it | 021 | 003, 012, 015, 019 |
 
 ## Applied fix lists
 
@@ -306,6 +312,18 @@ small Go program". 007's Outcome names `-authorizer-token`. 018
 states that `tools/specindex` exports the package `specs` and
 `tools/apidoc` requires it through `replace ../specindex`. The
 naming rule below admits a cloud provider as a deployment target.
+
+The tenth round, on 021 alone: a code-table row holds every status
+its spec lists and `contract.Status` answers the first; the call-site
+rule is keyed on the producing spec through `producers` in the test,
+which reads the `status:` frontmatter, and 012 joins 021's
+dependencies for the `over_quota` row; the negative fixture is the
+file `test/conformance/testdata/negative/bad.go.txt`, given in full,
+and the status rule runs only on a `contract.Code*` identifier; a
+sideband line is `<code>: <sentence>` exactly, the reference and the
+hashes go to the `info` log line, and `TestRejectLinesAreTheTableSentences`
+in `internal/httpgit` holds the verdicts, with 003's Outcome aligned;
+021 stays `validated`.
 
 ## Later
 
@@ -385,29 +403,29 @@ name, or when a spec names something no spec defines.
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 021 |
-| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020 |
+| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021 |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 021 |
-| error code | `import_not_found` | [019](019-repository-administration.md) | 003 |
+| error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020 |
-| error code | `lfs_locks_unsupported` | [010](010-lfs.md) | - |
-| error code | `lfs_object_mismatch` | [010](010-lfs.md) | - |
-| error code | `lfs_object_not_stored` | [010](010-lfs.md) | - |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021 |
+| error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
+| error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
+| error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021 |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 020, 021 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021 |
 | error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021 |
-| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020 |
-| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 020 |
-| error code | `repo_exists` | [003](003-protocol-contract.md) | 019 |
-| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020 |
+| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 019, 020, 021 |
+| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 020, 021 |
+| error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
+| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 021 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 017, 021 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 005, 010, 013, 015, 017, 021 |
-| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010 |
+| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021 |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |

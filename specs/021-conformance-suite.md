@@ -7,7 +7,8 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/008-push-events.md
   - specs/009-read-api-and-archive.md
-  - specs/010-lfs.md
+    - specs/010-lfs.md
+  - specs/012-limits-and-abuse.md
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/015-degraded-storage.md
   - specs/019-repository-administration.md
@@ -45,9 +46,13 @@ listing the rows; every JSON envelope of `cmd/origod`,
 `internal/httpgit`, `internal/api`, and `internal/auth` is rendered
 through `contract.Write` with a `contract.Code*` constant, and the one
 `httpjson.Error` literal in the module is inside `internal/contract`.
-The status is not in the table: each call site passes it. The
-sideband strings of a refused push still carry sentences of their own
-(spec 003's Outcome, the divergence this spec owns). Spec 013's sink,
+The status is not in the table: each call site passes it. Three rows
+of the table have no call site because the spec that produces them is
+not built: `ref_not_found` (spec 009), `over_quota` and `rate_limited`
+(spec 012). The hook verdicts of a refused push in
+`internal/httpgit/handler.go` still carry sentences of their own, and
+the `non_fast_forward` verdict carries the reference and a hash (spec
+003's Outcome, the divergence this spec owns). Spec 013's sink,
 contract stub, and overlay, which the suite needs for its event and
 deny-flipping cases and for its CI run, are not built.
 
@@ -175,26 +180,32 @@ the two secrets and nothing else.
 
 ### The code table
 
-`internal/contract` gains the code table as data: code, status, and
-the one sentence, for every row of the Code tables of spec 003 and of
-specs 007, 009, 010, 015, and 019, which is every code the
-cross-reference in `specs/README.md` lists except spec 020's; spec 020
-adds its rows, `invalid_change` and `merge_conflict`, and the call
-sites that send them when it lands, and the rule below that a row no
-call site sends is a failure applies to the codes of a spec at `testing` or
-later, so the table never fails on a code whose handler is not built
-yet. The table check covers every row without a target: every code
+`internal/contract` gains the code table as data: code, every status
+the row lists, and the one sentence, for every row of the Code tables
+of spec 003 and of specs 007, 009, 010, 015, and 019, which is every
+code the cross-reference in `specs/README.md` lists except spec 020's;
+spec 020 adds its rows, `invalid_change` and `merge_conflict`, and the
+call sites that send them when it lands, and the rule below that a
+row no call site sends is a failure applies to the codes whose
+producing spec (the table below) is at `testing` or later, so the
+table never fails on a code whose handler is not built yet. The table check covers every row without a target: every code
 has one sentence and one status, and every call site passes a code of
 the table; the suite's cases produce the rows on a target, except the two
 the paragraph above names. Spec 010's three rows are
 rendered in the LFS body shape and through `contract.Sentence`, never
 through `contract.Write`, so for them a `contract.Sentence` call is the
-call site the rule below counts. The table gains the status beside the
-sentence: `contract.Status(code) int` answers the status of the owning
-spec's Code table and panics on an unknown code the way `Sentence`
-does. `contract.Write(w, status, code, details)` keeps its status
-argument, so no call site changes shape; the test below holds the
-argument to the table.
+call site the rule below counts. The table gains the statuses beside the sentence. A row holds every
+HTTP status the Status column of its spec's Code table lists, in the
+column's order: one for most codes, two for `repo_frozen` (403 on a
+write, 409 on a second freeze, spec 019); a code whose column names
+the sideband and one JSON status (`non_fast_forward`) holds the JSON
+status. `contract.Status(code) int` answers the first status of the
+row and panics on an unknown code the way `Sentence` does; the test
+below is in the package, reads the row itself, and accepts a call
+site whose status is any status of the row, so a handler sends
+`repo_frozen` under 403 or 409 and nothing else. `contract.Write(w,
+status, code, details)` keeps its status argument, so no call site
+changes shape; the test below holds the argument to the table.
 
 `TestEveryCodeHasOneSentence` walks every Go file of the module
 outside `tools/`, parses each with `go/parser`, and reads selectors
@@ -210,35 +221,113 @@ walk needs no type checker. It fails on:
   whose code argument is not a `contract.Code*` identifier (a string
   literal, a variable, an expression), because the constants are the
   table's keys and a string can name a code the table lacks;
-- a call of `contract.Write` whose status argument does not equal
-  `contract.Status(code)` for the code it passes: the argument is an
-  integer literal or an `http.Status*` selector, which the test
-  resolves by parsing the `net/http` package under `runtime.GOROOT()`
-  with the same parser for its `Status*` integer constants, and any
-  other form (a variable, a call) is a failure, so a handler cannot
-  send a code under a status its spec does not give it;
+- a call of `contract.Write` whose status argument is not a status of
+  the row of the code it passes: the argument is an integer literal or
+  an `http.Status*` selector, which the test resolves by parsing the
+  `net/http` package under `runtime.GOROOT()` with the same parser for
+  its `Status*` integer constants, and any other form (a variable, a
+  call) is a failure, so a handler cannot send a code under a status
+  its spec does not give it. This rule runs only when the code
+  argument is a `contract.Code*` identifier: a call the bullet above
+  already reports has no row to check against and yields one finding,
+  not two;
 - a code of the table with no call site of the three functions
-  anywhere in the module, for a code of a spec at `testing` or later,
-  so a dead row is noticed; a code of a spec still `validated`, spec
-  020's two today, may have none.
+  anywhere in the module, for a code whose producing spec is at
+  `testing` or `complete`, so a dead row is noticed; a code whose
+  producer is not there yet, spec 020's two and spec 012's two today,
+  may have none.
 
 Each failure names the file and line. The test also holds the table
-itself: every code constant has one sentence and one status, and
-`Codes()` lists every constant. A negative fixture in the test file,
-one Go source string carrying an `httpjson.Error` literal and a
-`contract.Write` call with the string `"repo_not_found"` for its code,
-goes through the same walk and must yield exactly those two findings,
-each with the fixture's file name and line, which is how the test
-proves it can fail on a tree that has neither.
+itself: every code constant has one sentence and at least one status,
+and `Codes()` lists every constant.
 
-The sideband and hook lines (`ERR <code>: <sentence>`, `reject <code>:
-<sentence>`) are rendered from the same table by `contract.Sentence`
-and hold no sentence of their own. The walk does not see a string a
-handler builds by hand, so the sideband divergence spec 003's Outcome
-lists is fixed by the builder rendering those lines through
-`contract.Sentence`, and the suite's `non_fast_forward` and
-`storage_unavailable` cases, which compare the line git reports to
-the table's sentence, are what hold them there. The suite compares
+The call-site rule is keyed on the spec that produces a code, not the
+spec that defines it, because three codes of spec 003's table are
+produced by handlers a later spec builds: `ref_not_found` by the read
+API of spec 009, `over_quota` and `rate_limited` by the enforcement of
+spec 012. The test holds `producers map[string]string`, code to spec
+number, which is the table below in full; a builder copies it. It
+reads the `status:` line of the frontmatter of `specs/<nnn>-*.md`
+under the module root, or under `specs/.archive/` where a terminal
+spec sits, for each number; a number found in neither, or a code in
+`producers` and not in `Codes()` or the reverse, is a failure, so a
+spec that adds a row adds it here. Spec 012 is a dependency of this
+spec for the same reason: the `over_quota` row of the suite needs its
+enforcement.
+
+| Producing spec | Codes |
+|---|---|
+| 003 | `invalid_request`, `unauthenticated`, `forbidden`, `repo_not_found`, `repo_exists`, `non_fast_forward`, `storage_unavailable` |
+| 007 | `authorizer_unavailable` |
+| 009 | `ref_not_found`, `blob_too_large`, `operation_timeout` |
+| 010 | `lfs_object_mismatch`, `lfs_object_not_stored`, `lfs_locks_unsupported` |
+| 012 | `over_quota`, `rate_limited` |
+| 015 | `repository_unavailable` |
+| 019 | `gone`, `repo_frozen`, `repo_importing`, `repo_not_empty`, `import_not_found` |
+| 020 | `merge_conflict`, `invalid_change` |
+
+The test proves it can fail on a negative fixture,
+`test/conformance/testdata/negative/bad.go.txt`. It sits outside
+`internal/contract`, because the literal rule exempts that package by
+directory, and ends in `.go.txt` so no Go tool parses it and the
+module walk, which reads `.go` files and skips `tools/` and every
+`testdata` directory, never sees it; the test feeds it to the same
+walk by path. The file is this and nothing else:
+
+```go
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
+// Package negative is the fixture TestEveryCodeHasOneSentence must fail on.
+package negative
+
+import (
+	"net/http"
+
+	"latere.ai/x/pkg/httpjson"
+
+	"github.com/latere-ai/origo/internal/contract"
+)
+
+func bad(w http.ResponseWriter) {
+	_ = httpjson.Error{Code: "not_found", Message: "Not found."}
+	contract.Write(w, http.StatusNotFound, "not_found", nil)
+}
+```
+
+The walk must yield exactly two findings, the literal at
+`test/conformance/testdata/negative/bad.go.txt:16` and the string
+code at `test/conformance/testdata/negative/bad.go.txt:17`, and no
+third: the status rule does not run on line 17 because its code
+argument is not a `contract.Code*` identifier, and the call-site rule
+does not run on the fixture because it is not part of the module
+walk. The test compares the findings to that list, file and line, so
+a walk that misses one or reports the status of line 17 fails.
+
+Every line git relays to the client that carries a code of the table,
+the hook verdict `reject <code>: <sentence>` of `internal/httpgit`
+(git prints it as `remote: <code>: <sentence>`), the `ERR <code>:
+<sentence>` pkt-line of specs 015 and 019, and the sideband
+`over_quota` of spec 012, is `<code>: <sentence>` exactly, the
+sentence read through `contract.Sentence` with nothing appended or
+substituted. The reference and the hashes of a refused push go to the
+handler's `info` log line for the rejected push (`repo`, `code`,
+`ref`, `expected`, `actual`), never the sideband; the storage error
+stays on the `commit failed` error line as today. This spec owns the
+rule and its test, which is where spec 003's Outcome points: the walk
+does not see a string a handler builds by hand, and the suite's
+`storage_unavailable` case cannot reach the verdict, because with the
+bucket cut `info/refs` answers 503 before a pack is sent, so
+`TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds the
+verdicts. It pushes twice through the handler over the in-memory
+store: once over a reference moved behind the client, and once with
+the store's fault set to fail the entry `Put` after the advertisement,
+and asserts that git's output carries `remote: <code>: <sentence>`
+for `non_fast_forward` and for `storage_unavailable`, the sentence
+equal to `contract.Sentence` of the code, and that the moved
+reference's name and the two hashes are on the `info` line and not in
+the output. The suite's `non_fast_forward` case compares the line git
+reports to the same sentence on every target. The suite compares
 every live response to the same table. The test walks the module
 from a root held in a test-only constant resolved from its own source
 file with `runtime.Caller`, never from the working directory, so the
@@ -346,14 +435,22 @@ assertions beyond the thresholds the owning specs name.
   it runs in spec 013's `e2e` job beside `TestContract`).
 - No `httpjson.Error` literal and no `httpjson.WriteError` call exists
   outside `internal/contract`, every `contract.Write`, `contract.Error`,
-  and `contract.Sentence` call passes a `contract.Code*` constant,
-  every `contract.Write` call passes the status `contract.Status`
-  answers for that code, and every code of a spec at `testing` or
-  later has at least one call site; the negative fixture, one Go
-  source string with an `httpjson.Error` literal and a `contract.Write`
-  call whose code is a string, yields exactly two findings, each with
-  the fixture's file name and line (proposed: `internal/contract`,
-  `TestEveryCodeHasOneSentence`).
+    and `contract.Sentence` call passes a `contract.Code*` constant,
+  every `contract.Write` call passes a status of that code's row
+  (`repo_frozen` under 403 or 409, every other code under its one
+  status), and every code whose producing spec is at `testing` or
+  later has at least one call site; the negative fixture
+  `test/conformance/testdata/negative/bad.go.txt` yields exactly two
+  findings, `bad.go.txt:16` for the `httpjson.Error` literal and
+  `bad.go.txt:17` for the string code, and no status finding
+  (proposed: `internal/contract`, `TestEveryCodeHasOneSentence`).
+- A push refused by the log reaches the client as `remote: <code>:
+  <sentence>` with the table's sentence and nothing else, for
+  `non_fast_forward` over a moved reference and for
+  `storage_unavailable` when the entry `Put` fails after the
+  advertisement, and the moved reference's name and hashes are on the
+  handler's `info` log line and not in git's output (proposed:
+  `internal/httpgit`, `TestRejectLinesAreTheTableSentences`).
 - A run against a shared installation leaves no repository behind and
   touches no other: after `TestContract`, `GET /v1/repos/{id}` answers
   404 for every id the run created, and a repository created beside
