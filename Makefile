@@ -68,7 +68,6 @@ DEV_S3_KEY ?= minioadmin
 DEV_S3_SECRET ?= minioadmin
 DEV_S3_BUCKET ?= origo
 DEV_S3_ENDPOINT ?= http://127.0.0.1:$(DEV_S3_PORT)
-DEV_DATA_DIR ?= $(CURDIR)/$(OUT_DIR)/data
 DEV_COMPOSE_ENV = DEV_PROJECT=$(DEV_PROJECT) DEV_S3_PORT=$(DEV_S3_PORT) \
                   DEV_S3_CONSOLE_PORT=$(DEV_S3_CONSOLE_PORT) DEV_S3_KEY=$(DEV_S3_KEY) \
                   DEV_S3_SECRET=$(DEV_S3_SECRET) DEV_S3_BUCKET=$(DEV_S3_BUCKET)
@@ -80,6 +79,10 @@ DEV_AUTHORIZER_PORT ?= $(shell expr $(DEV_PORT_BASE) + 5)
 DEV_SINK_PORT ?= $(shell expr $(DEV_PORT_BASE) + 6)
 DEV_ISSUER_URL = http://localhost:$(DEV_ISSUER_PORT)
 DEV_DIR = $(CURDIR)/$(OUT_DIR)/dev/$(DEV_PROJECT)
+# The cache is per project like the bucket: a cache warmed from one
+# project's bucket serves another's repositories from a state the other
+# bucket never held.
+DEV_DATA_DIR ?= $(DEV_DIR)/data
 DEV_TOKEN_KEY = $(DEV_DIR)/token-key.pem
 DEV_STUBS_PID = $(DEV_DIR)/stubs.pid
 DEV_STUBS_LOG = $(DEV_DIR)/stubs.log
@@ -102,12 +105,14 @@ DEV_SERVICE_ENV = ORIGO_S3_ENDPOINT=$(DEV_S3_ENDPOINT) ORIGO_S3_REGION=us-east-1
                   ORIGO_EVENTS_URL=http://127.0.0.1:$(DEV_SINK_PORT) ORIGO_EVENTS_SECRET=stub-sink-secret
 
 # stack-up starts MinIO and waits for a fact, not a duration: the health
-# endpoint answers and the one-shot container that made the bucket exited.
+# endpoint answers and this project's one-shot container that made the
+# bucket exited (the filter names the project, because another
+# checkout's init container satisfies a bare name).
 define stack-up
 	$(DEV_COMPOSE_ENV) $(COMPOSE) up -d >/dev/null
 	for i in $$(seq 1 60); do \
 		if curl -sf -o /dev/null "$(DEV_S3_ENDPOINT)/minio/health/live" \
-		   && $(DEV_ENGINE) ps -a --filter name=minio-init --format '{{.Status}}' 2>/dev/null | grep -qi 'exited (0)'; then \
+		   && $(DEV_ENGINE) ps -a --filter 'name=$(DEV_PROJECT)[-_]minio-init' --format '{{.Status}}' 2>/dev/null | grep -qi 'exited (0)'; then \
 			echo "MinIO is ready at $(DEV_S3_ENDPOINT) with bucket $(DEV_S3_BUCKET)"; break; \
 		fi; \
 		if [ $$i = 60 ]; then echo "MinIO did not become ready"; $(DEV_COMPOSE_ENV) $(COMPOSE) ps; exit 1; fi; \
