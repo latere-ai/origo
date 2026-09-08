@@ -35,14 +35,21 @@ live service after a release.
 ## Current state
 
 Nothing of this spec exists. `test/e2e` covers the flows of specs 003
-and 004 against one node with the phase 1 bearer; `internal/contract`
-holds the codes and the header and no table of sentences; the
-sentences the code sends are the `Message` fields of the
-`httpjson.Error` literals in `cmd/origod`, `internal/httpgit`, and
-`internal/api`, and spec 003's Outcome lists the ones that differ from
-the contract, which the code table test below is what fixes. Spec 013's
-stubs and overlay, which the suite needs for its delegation and
-deny-flipping cases and for its CI run, are not built either.
+and 004 against one node with the stub issuer and authorizer of spec
+007 in-process. `internal/contract` holds the codes, the header, and
+the code table as far as spec 007 took it: `sentences`, one user
+sentence per code of specs 003 and 007, read through
+`contract.Sentence(code)`, `contract.Error(code, details)`, and
+`contract.Write(w, status, code, details)`, and `contract.Codes()`
+listing the rows; every JSON envelope of `cmd/origod`,
+`internal/httpgit`, `internal/api`, and `internal/auth` is rendered
+through `contract.Write` with a `contract.Code*` constant, and the one
+`httpjson.Error` literal in the module is inside `internal/contract`.
+The status is not in the table: each call site passes it. The
+sideband strings of a refused push still carry sentences of their own
+(spec 003's Outcome, the divergence this spec owns). Spec 013's sink,
+contract stub, and overlay, which the suite needs for its event and
+deny-flipping cases and for its CI run, are not built.
 
 ## Design
 
@@ -112,8 +119,10 @@ the MinIO host port with the `ORIGO_TEST_S3_ENDPOINT` family the job
 exported; the stub run implements it on the `s3test.Server` behind
 the contract stub (spec 013 wires the stub through the S3 adapter to
 `latere.ai/x/pkg/s3/s3test` so the presigned transfers of spec 010
-resolve), `CutStorage` through the server's `Fail` for every request
-until the test ends and `DeleteObject` through the adapter's `Delete`,
+resolve), `CutStorage` through the server's `Fail(n, status)` as
+`Fail(math.MaxInt, 503)` with `Fail(0, 0)` registered on the test's
+cleanup, which is how that method covers every request until the test
+ends, and `DeleteObject` through the adapter's `Delete`,
 and a live target has none. `test/conformance` imports
 `test/e2e/cluster` only from files under the `e2e` build tag, the
 stack run's `Fault`, so the package a consumer imports, and
