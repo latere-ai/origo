@@ -40,6 +40,7 @@ import (
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
+	"github.com/latere-ai/origo/internal/tracing"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -305,6 +306,18 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The first of the push's five spans (spec 011). It is the request
+	// until the hook hands over the transaction; the two writes of the
+	// commit and the enqueue open their own under the request's span.
+	_, endReceive := tracing.Start(r.Context(), "receive", tracing.Repo(id))
+	receiveEnded := false
+	endReceiveOnce := func() {
+		if !receiveEnded {
+			receiveEnded = true
+			endReceive()
+		}
+	}
+	defer endReceiveOnce()
 	rp, release, ok := h.acquire(w, r, id, true)
 	if !ok {
 		return
@@ -366,6 +379,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	select {
 	case u := <-fromHook:
 		h.observe(phaseReceive, started)
+		endReceiveOnce()
 		refs = u.refs
 		verdict := "reject origo: no reference updates"
 		if u.err != nil {
@@ -401,12 +415,14 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		h.logger.WarnContext(r.Context(), "receive-pack ended with an error", "repo", id, "error", runErr, "stderr", stderr.String())
 	}
 	if committed != nil {
+		_, endApply := tracing.Start(r.Context(), "apply", tracing.Repo(id))
 		if runErr == nil {
 			if err := h.cache.Advance(rp, committed.Index); err != nil {
 				h.logger.ErrorContext(r.Context(), "local sequence not advanced", "repo", id, "error", err)
 			}
 		}
 		h.observe(phaseApply, started)
+		endApply()
 		h.pushes.Inc(nil)
 		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "forced", len(forced), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()), "actor", auth.Actor(r.Context()))
 		// The entry is in the log whatever git did after the verdict, so

@@ -29,6 +29,7 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/metrics"
+	"github.com/latere-ai/origo/internal/tracing"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -371,6 +372,8 @@ func (d *Dispatcher) Enqueue(ctx context.Context, repo string, e Entry) error {
 	if !d.Enabled() {
 		return nil
 	}
+	ctx, end := tracing.Start(ctx, "event.enqueue", tracing.Repo(repo))
+	defer end()
 	if err := d.fail(FailpointBeforeEnqueue); err != nil {
 		return err
 	}

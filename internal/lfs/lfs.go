@@ -29,6 +29,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/tracing"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -174,9 +175,17 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, code 
 	})
 }
 
-// requestID is a fresh UUID: nothing traces a request yet, and spec 011
-// is what puts a trace id on the context for this to read.
-func requestID(*http.Request) string { return uuid.NewString() }
+// requestID is the trace id of the request's span, so the LFS body and
+// the request log line name one request (spec 011). Without an exporter
+// configured, or on a request the sampler dropped, there is no span and
+// the id is a fresh UUID, which is what a client quoting it to an
+// operator needs either way.
+func requestID(r *http.Request) string {
+	if id := tracing.ID(r.Context()); id != "" {
+		return id
+	}
+	return uuid.NewString()
+}
 
 func write(w http.ResponseWriter, status int, body any) {
 	raw, err := json.Marshal(body)

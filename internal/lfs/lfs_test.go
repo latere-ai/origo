@@ -23,6 +23,14 @@ import (
 	"latere.ai/x/pkg/s3"
 	"latere.ai/x/pkg/s3/s3test"
 
+	"github.com/google/uuid"
+
+	otelglobal "go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/latere-ai/origo/internal/tracing"
+
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
@@ -935,5 +943,30 @@ func TestWriteFallsBackToAnEmptyObject(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != MediaType {
 		t.Errorf("Content-Type %q", ct)
+	}
+}
+
+// TestRequestIDIsTheTraceIDWhenThereIsOne is spec 010's builder item
+// closed by spec 011: the LFS body names the request by the trace id of
+// its span, and by a fresh UUID when nothing traced it.
+func TestRequestIDIsTheTraceIDWhenThereIsOne(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	prev := otelglobal.GetTracerProvider()
+	otelglobal.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)))
+	t.Cleanup(func() { otelglobal.SetTracerProvider(prev) })
+
+	ctx, end := tracing.Start(context.Background(), "request")
+	defer end()
+	traced := httptest.NewRequest(http.MethodPost, "/dev/hello.git/info/lfs/objects/batch", nil).WithContext(ctx)
+	if got := requestID(traced); got != tracing.ID(ctx) {
+		t.Fatalf("request_id %q, want the trace id %q", got, tracing.ID(ctx))
+	}
+	untraced := httptest.NewRequest(http.MethodPost, "/dev/hello.git/info/lfs/objects/batch", nil)
+	first, second := requestID(untraced), requestID(untraced)
+	if first == second || first == "" {
+		t.Fatalf("without a span the id is %q then %q", first, second)
+	}
+	if _, err := uuid.Parse(first); err != nil {
+		t.Fatalf("the fallback %q is not a UUID: %v", first, err)
 	}
 }

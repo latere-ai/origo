@@ -20,6 +20,7 @@ import (
 	"latere.ai/x/pkg/wait"
 
 	"github.com/latere-ai/origo/internal/metrics"
+	"github.com/latere-ai/origo/internal/tracing"
 )
 
 // Options configures a Log.
@@ -375,7 +376,9 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 			return nil, errors.New("wal: sequence space exhausted")
 		}
 		started := time.Now()
+		_, endEntry := tracing.Start(ctx, "entry.put", tracing.Repo(repo))
 		key, hdr, err := l.writeEntry(ctx, repo, seq, e)
+		endEntry()
 		entryTime += time.Since(started)
 		if err != nil {
 			return nil, err
@@ -393,7 +396,9 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 			return nil, err
 		}
 		started = time.Now()
+		_, endIndex := tracing.Start(ctx, "index.create", tracing.Repo(repo))
 		_, err = l.store.Create(ctx, l.key(repo, IndexKey(seq)), BytesBody(data))
+		endIndex()
 		indexTime += time.Since(started)
 		won := err == nil
 		if err != nil {

@@ -7,16 +7,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"latere.ai/x/pkg/health"
 	pkgmetrics "latere.ai/x/pkg/metrics"
+	"latere.ai/x/pkg/otel"
 	"latere.ai/x/pkg/wait"
 
 	"github.com/latere-ai/origo/internal/api"
@@ -29,6 +32,7 @@ import (
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
+	"github.com/latere-ai/origo/internal/tracing"
 	versionpkg "github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -94,6 +98,15 @@ type node struct {
 	checks     []readyCheck
 	background []func(context.Context) error
 
+	// flushTelemetry flushes the exporters at the end of the drain, so
+	// the spans and log records of the last requests leave the process.
+	// nil in a test that does not bootstrap telemetry.
+	flushTelemetry func(context.Context) error
+	// inFlightRequests is origo_requests_in_flight: the public
+	// listener's middleware counts up and down, the gauge reads it at
+	// scrape time.
+	inFlightRequests atomic.Int64
+
 	drainDelay time.Duration
 	draining   atomic.Bool
 
@@ -119,7 +132,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	store, err := wal.NewS3(wal.S3Options{
 		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
-		Client: &http.Client{Transport: storageTransport()},
+		Client: &http.Client{Transport: otel.Transport(storageTransport())},
 	})
 	if err != nil {
 		return nil, err
@@ -202,7 +215,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})
-	n.public = n.verifier.Middleware(app)
+	n.public = n.verifier.Middleware(capture(app))
 	return n, nil
 }
 
@@ -297,6 +310,12 @@ func (n *node) metricsHandler() http.Handler {
 // ingress, and the key set of spec 007. /livez and /metrics stay
 // internal. Every response of the listener carries the contract
 // version (spec 003).
+//
+// Three wrappers sit in front (spec 011), outermost first: the in-flight
+// gauge, which counts a request the moment it arrives; otel.Handler,
+// which opens the request's span, answers X-Trace-Id, and feeds the two
+// request metrics; and the request log line, inside the span so it
+// carries the trace id.
 func (n *node) publicHandler() http.Handler {
 	probes := n.internalHandler()
 	mux := http.NewServeMux()
@@ -304,8 +323,174 @@ func (n *node) publicHandler() http.Handler {
 	mux.Handle("GET /version", probes)
 	mux.Handle("GET /.well-known/jwks.json", n.signer.JWKS())
 	mux.Handle("/", n.public)
-	return contract.Middleware(mux)
+	traced := otel.Handler(n.requestLog(contract.Middleware(mux)), "origod",
+		otel.WithMetricsHook(n.recordRequest))
+	return n.inFlight(traced)
 }
+
+// inFlight counts the requests started and not finished on the public
+// listener and binds the gauge to that count, read at every scrape:
+// otel.Handler's metrics hook fires only after a request ends, so it
+// cannot answer how many are running.
+func (n *node) inFlight(next http.Handler) http.Handler {
+	n.metrics.RequestsInFlight.Bind(func() float64 { return float64(n.inFlightRequests.Load()) })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.inFlightRequests.Add(1)
+		defer n.inFlightRequests.Add(-1)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// recordRequest is otel.Handler's metrics hook: the route is the mux
+// pattern the request matched and the status class its bucket, the only
+// two labels of the request series (spec 011).
+func (n *node) recordRequest(_ context.Context, route, _, statusClass string, d time.Duration) {
+	labels := map[string]string{"route": route, "status_class": statusClass}
+	n.metrics.Requests.Inc(labels)
+	n.metrics.RequestDuration.Observe(labels, d.Seconds())
+}
+
+// requestLog writes the one line per request of spec 011. The fields are
+// the route, the method, the status, the duration, the repository the
+// request named, the identity behind it, the bytes each way, and the
+// trace id the response header carries; never a credential, never object
+// bytes. What the request named and who it was are known only after the
+// mux and the verifier have run, which is what the details a capture
+// middleware fills in are for.
+func (n *node) requestLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		in := &countingReader{from: r.Body}
+		if r.Body != nil {
+			r.Body = in
+		}
+		out := &countingWriter{ResponseWriter: w, status: http.StatusOK}
+		d := &details{}
+		r = r.WithContext(context.WithValue(r.Context(), detailsKey{}, d))
+		next.ServeHTTP(out, r)
+		ctx := r.Context()
+		n.logger.InfoContext(ctx, "request",
+			"route", routeOf(r), "method", r.Method, "status", out.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"repo", d.repo, "subject", d.subject, "actor", d.actor,
+			"bytes_in", in.n, "bytes_out", out.n, "trace_id", tracing.ID(ctx))
+	})
+}
+
+// details are the fields of the log line only the handlers know. The
+// request log installs one and capture, which runs behind the verifier,
+// fills it.
+type details struct {
+	repo    string
+	subject string
+	actor   string
+}
+
+type detailsKey struct{}
+
+// capture records the identity the verifier resolved and the repository
+// the mux matched, and puts the same three on the request's span, where
+// a repository id belongs and a metric label never does (spec 011).
+func capture(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		tracing.Set(ctx, tracing.Subject(auth.Subject(ctx)), tracing.Actor(auth.Actor(ctx)))
+		next.ServeHTTP(w, r)
+		d, _ := ctx.Value(detailsKey{}).(*details)
+		if d == nil {
+			return
+		}
+		d.subject, d.actor, d.repo = auth.Subject(ctx), auth.Actor(ctx), repoOf(r)
+		tracing.Set(ctx, tracing.Repo(d.repo))
+	})
+}
+
+// routeOf is the mux pattern the request matched, without its method,
+// and "" when nothing matched. It is the route label and the route field
+// of the log line: a template, never a path, so neither grows with the
+// repositories.
+func routeOf(r *http.Request) string {
+	if _, path, ok := strings.Cut(r.Pattern, " "); ok {
+		return path
+	}
+	return r.Pattern
+}
+
+// repoOf is what the request named its repository: the id of the id
+// form, or owner/slug of the label form (spec 003).
+func repoOf(r *http.Request) string {
+	if id := r.PathValue("id"); id != "" {
+		return id
+	}
+	if owner, slug := r.PathValue("owner"), r.PathValue("slug"); owner != "" {
+		return owner + "/" + slug
+	}
+	return ""
+}
+
+// countingReader counts the request bytes the handlers read.
+type countingReader struct {
+	from io.ReadCloser
+	n    int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	if c.from == nil {
+		return 0, io.EOF
+	}
+	n, err := c.from.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (c *countingReader) Close() error {
+	if c.from == nil {
+		return nil
+	}
+	return c.from.Close()
+}
+
+// countingWriter counts the response bytes and remembers the status. It
+// forwards Flush because the archive and the sideband stream through it,
+// and Unwrap so an http.ResponseController reaches the real writer.
+type countingWriter struct {
+	http.ResponseWriter
+	status int
+	n      int64
+	wrote  bool
+}
+
+func (c *countingWriter) WriteHeader(code int) {
+	if code >= 100 && code <= 199 && code != http.StatusSwitchingProtocols {
+		c.ResponseWriter.WriteHeader(code)
+		return
+	}
+	if c.wrote {
+		return
+	}
+	c.wrote, c.status = true, code
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	if !c.wrote {
+		c.WriteHeader(http.StatusOK)
+	}
+	n, err := c.ResponseWriter.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (c *countingWriter) Flush() {
+	if f, ok := c.ResponseWriter.(http.Flusher); ok {
+		if !c.wrote {
+			c.WriteHeader(http.StatusOK)
+		}
+		f.Flush()
+	}
+}
+
+func (c *countingWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
 // ready runs every check. During the drain window the answer is not
 // ready without running them: the replica is leaving.
@@ -390,6 +575,9 @@ func (n *node) run(ctx context.Context) error {
 	errs = append(errs, gossip.Close())
 	cancelBackground()
 	bg.Wait()
+	if n.flushTelemetry != nil {
+		errs = append(errs, n.flushTelemetry(shutdownCtx))
+	}
 	n.logger.InfoContext(shutdownCtx, "stopped")
 	return errors.Join(errs...)
 }
