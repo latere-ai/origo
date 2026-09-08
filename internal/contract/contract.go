@@ -38,6 +38,9 @@ const (
 	CodeAuthorizerUnavailable = "authorizer_unavailable" // spec 007
 	CodeBlobTooLarge          = "blob_too_large"         // spec 009
 	CodeOperationTimeout      = "operation_timeout"      // spec 009
+	CodeLFSObjectMismatch     = "lfs_object_mismatch"    // spec 010
+	CodeLFSObjectNotStored    = "lfs_object_not_stored"  // spec 010
+	CodeLFSLocksUnsupported   = "lfs_locks_unsupported"  // spec 010
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -57,6 +60,9 @@ var sentences = map[string]string{
 	CodeAuthorizerUnavailable: "Permissions cannot be checked right now. Nothing was lost. Try again in a few minutes.",
 	CodeBlobTooLarge:          "This file is larger than 50 MiB. Request it in ranges of at most 50 MiB.",
 	CodeOperationTimeout:      "The operation took too long and nothing was changed.",
+	CodeLFSObjectMismatch:     "The uploaded object does not match its declared size.",
+	CodeLFSObjectNotStored:    "This object is not stored.",
+	CodeLFSLocksUnsupported:   "Locking is not supported.",
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence
