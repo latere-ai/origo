@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"latere.ai/x/pkg/health"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/s3/s3test"
 
 	"github.com/latere-ai/origo/internal/api"
@@ -32,6 +32,7 @@ import (
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/lfs"
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -65,7 +66,8 @@ func New(t testing.TB) *Server {
 		sink:   sink.New(t),
 	}
 	logger := slog.New(slog.DiscardHandler)
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
+	set := metrics.Register(reg)
 	store, err := wal.NewS3(wal.S3Options{
 		Endpoint: s.bucket.URL(), Region: s3test.Region, Bucket: Bucket, Key: s3test.Key, Secret: s3test.Secret, PathStyle: true,
 		Client: &http.Client{Transport: &http.Transport{}},
@@ -74,7 +76,7 @@ func New(t testing.TB) *Server {
 		t.Fatal(err)
 	}
 	s.store = store
-	s.log = wal.New(wal.Options{Store: store, Prefix: config.Prefix, Metrics: reg, Logger: logger})
+	s.log = wal.New(wal.Options{Store: store, Prefix: config.Prefix, Metrics: set, Logger: logger})
 	cache, err := repo.New(repo.Options{Dir: t.TempDir(), Log: s.log, Logger: logger, Metrics: reg})
 	if err != nil {
 		t.Fatal(err)

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/health"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
 	"github.com/latere-ai/origo/internal/api"
@@ -26,6 +26,7 @@ import (
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/lfs"
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
@@ -67,9 +68,12 @@ type readyCheck struct {
 type node struct {
 	cfg    *config.Config
 	logger *slog.Logger
-	reg    *metrics.Registry
-	log    *wal.Log
-	cache  *repo.Cache
+	reg    *pkgmetrics.Registry
+	// metrics is every series of spec 011, registered once at start-up
+	// and handed to the packages that record them.
+	metrics *metrics.Set
+	log     *wal.Log
+	cache   *repo.Cache
 
 	// Placement (spec 005): the live set, the gossip over the socket run
 	// opens, and the evictor.
@@ -106,11 +110,12 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	n := &node{
 		cfg:        cfg,
 		logger:     logger,
-		reg:        metrics.NewRegistry(),
+		reg:        pkgmetrics.NewRegistry(),
 		exit:       os.Exit,
 		drainDelay: defaultDrainDelay,
 		started:    make(chan struct{}),
 	}
+	n.metrics = metrics.Register(n.reg)
 	store, err := wal.NewS3(wal.S3Options{
 		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
@@ -120,7 +125,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		return nil, err
 	}
 	n.log = wal.New(wal.Options{
-		Store: store, Prefix: config.Prefix, Metrics: n.reg, Logger: logger,
+		Store: store, Prefix: config.Prefix, Metrics: n.metrics, Logger: logger,
 		Failpoint: n.failpoint,
 		// Every index object this node creates is announced to the
 		// peers (spec 005); the gossip is built below, after the cache

@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
@@ -47,12 +49,12 @@ func noCatchUp(context.Context, *Index) error { return nil }
 func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	// The clock advances one second per call, so the entry's at and the
 	// pushed_at it sets are told apart from the clock of a later commit.
 	var ticks int
 	now := func() time.Time { ticks++; return time.Date(2026, 9, 6, 12, 0, ticks, 0, time.UTC) }
-	l := New(Options{Store: store, Metrics: reg, Now: now})
+	l := New(Options{Store: store, Metrics: metrics.Register(reg), Now: now})
 	base := createRepo(t, l, repoA)
 	if base.PushedAt != nil {
 		t.Fatalf("index 0 carries pushed_at %v", base.PushedAt)
@@ -448,8 +450,8 @@ func TestNewestFindsTheNewestIndex(t *testing.T) {
 func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
-	reg := metrics.NewRegistry()
-	l := New(Options{Store: store, Metrics: reg, Logger: slog.New(slog.DiscardHandler)})
+	reg := pkgmetrics.NewRegistry()
+	l := New(Options{Store: store, Metrics: metrics.Register(reg), Logger: slog.New(slog.DiscardHandler)})
 	base := createRepo(t, l, repoA)
 	const writers, rounds = 16, 20
 	var wg sync.WaitGroup
@@ -520,9 +522,9 @@ func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 func TestHeadCheckIsLabelledAndCommitsAreAnnounced(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
-	reg := metrics.NewRegistry()
+	reg := pkgmetrics.NewRegistry()
 	var announced []string
-	l := New(Options{Store: store, Metrics: reg, OnCommit: func(repo string, seq uint64) {
+	l := New(Options{Store: store, Metrics: metrics.Register(reg), OnCommit: func(repo string, seq uint64) {
 		announced = append(announced, fmt.Sprintf("%s@%d", repo[:8], seq))
 	}})
 	base := createRepo(t, l, repoA)

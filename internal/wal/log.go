@@ -15,9 +15,11 @@ import (
 	"strconv"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/wait"
+
+	"github.com/latere-ai/origo/internal/metrics"
 )
 
 // Options configures a Log.
@@ -28,8 +30,9 @@ type Options struct {
 	Prefix string
 	// Now stamps entries. The wall clock by default.
 	Now func() time.Time
-	// Metrics receives the log's series. A fresh registry by default.
-	Metrics *metrics.Registry
+	// Metrics holds the handles the log records through, registered by
+	// internal/metrics (spec 011). A set of its own by default.
+	Metrics *metrics.Set
 	// Failpoint, when set, is called with a name at each injectable point
 	// and aborts the operation with its error. Nil in every deployment.
 	Failpoint func(name string) error
@@ -60,11 +63,11 @@ type Log struct {
 	sleep       func(context.Context, time.Duration)
 	onCommit    func(repo string, seq uint64)
 
-	commits   *metrics.Counter
-	conflicts *metrics.Counter
-	retries   *metrics.Counter
-	entryByte *metrics.Counter
-	headCheck *metrics.Histogram
+	commits   *pkgmetrics.Counter
+	conflicts *pkgmetrics.Counter
+	retries   *pkgmetrics.Counter
+	entryByte *pkgmetrics.Counter
+	headCheck *pkgmetrics.Histogram
 }
 
 // Failpoint names. The end-to-end suite kills a node at them.
@@ -96,21 +99,12 @@ func New(o Options) *Log {
 	if l.maxAttempts <= 0 {
 		l.maxAttempts = 4096
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	l.commits = reg.Counter("origo_wal_commits_total", "index objects this node created")
-	l.conflicts = reg.Counter("origo_wal_commit_conflicts_total", "commits refused because a reference moved")
-	l.retries = reg.Counter("origo_wal_commit_retries_total", "commit rounds lost to another writer and replayed")
-	l.entryByte = reg.Counter("origo_wal_entry_bytes_total", "bytes written as entries")
-	l.headCheck = reg.Histogram("origo_wal_head_check_seconds", "latency of the HEAD currency check",
-		[]float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5})
-	// A scrape before the first event reads the series at 0 rather than
-	// not at all, which is the shape spec 011's dashboards expect.
-	for _, c := range []*metrics.Counter{l.commits, l.conflicts, l.retries, l.entryByte} {
-		c.Add(nil, 0)
-	}
+	l.commits, l.conflicts, l.retries = set.WALCommits, set.WALCommitConflicts, set.WALCommitRetries
+	l.entryByte, l.headCheck = set.WALEntryBytes, set.WALHeadCheck
 	if l.onCommit == nil {
 		l.onCommit = func(string, uint64) {}
 	}
