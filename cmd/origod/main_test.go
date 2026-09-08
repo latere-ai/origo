@@ -573,6 +573,31 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 	}
 }
 
+// TestTransportsBoundTheDial: a bucket or an issuer that drops packets
+// (192.0.2.1 is TEST-NET-1, routed nowhere) fails within the dial
+// timeout rather than the operating system's connect timeout.
+func TestTransportsBoundTheDial(t *testing.T) {
+	old := dialTimeout
+	dialTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { dialTimeout = old })
+	for name, transport := range map[string]*http.Transport{"storage": storageTransport(), "outbound": outboundTransport()} {
+		client := &http.Client{Transport: transport}
+		start := time.Now()
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://192.0.2.1:9/", nil)
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("%s: a black-holed address answered", name)
+		}
+		if took := time.Since(start); took > 3*time.Second {
+			t.Fatalf("%s: the dial took %s", name, took)
+		}
+	}
+	if dialTimeout = old; dialTimeout != 10*time.Second {
+		t.Fatalf("default dial timeout %s", dialTimeout)
+	}
+}
+
 func TestRunStopsOnSignalContext(t *testing.T) {
 	env := testEnv(t)
 	ctx, cancel := context.WithCancel(context.Background())

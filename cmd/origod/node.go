@@ -46,6 +46,13 @@ const (
 	idleTimeout       = 120 * time.Second
 )
 
+// dialTimeout bounds one connection attempt of the two outbound
+// transports. Without it a bucket or an issuer that drops packets holds
+// a request for the operating system's connect timeout, minutes, times
+// the client's retries; spec 015's ORIGO_STORAGE_TIMEOUT bounds the
+// whole operation once it lands. A variable so a test shortens it.
+var dialTimeout = 10 * time.Second
+
 // readyCheck is one named readiness dependency.
 type readyCheck struct {
 	name string
@@ -154,6 +161,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 // no proxy from the environment on a path that carries a bearer.
 func outboundTransport() *http.Transport {
 	return &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext,
 		MaxIdleConns:          16,
 		MaxIdleConnsPerHost:   16,
 		IdleConnTimeout:       90 * time.Second,
@@ -167,6 +175,7 @@ func outboundTransport() *http.Transport {
 // proxy from the environment on a path that carries credentials.
 func storageTransport() *http.Transport {
 	return &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext,
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   64,
 		IdleConnTimeout:       90 * time.Second,
