@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -239,18 +240,17 @@ func TestIssuerUnavailableIsRetried(t *testing.T) {
 	if got := reason(func() error { _, err := v.Verify(ctx, down.Mint(issuer.Claims{})); return err }()); got != ReasonIssuerUnavailable {
 		t.Fatalf("hung issuer: %q", got)
 	}
-	// The issuer answers again, but the minute has not passed: still
-	// refused, with no fetch.
+	// The issuer answers again, but the start-up attempt failed an
+	// instant ago: still refused, with no fetch. A second on, the
+	// request path fetches and the token verifies, without a restart
+	// and without waiting for the minute loop.
 	down.Resume()
 	if got := reason(func() error { _, err := v.Verify(ctx, down.Mint(issuer.Claims{})); return err }()); got != ReasonIssuerUnavailable {
-		t.Fatalf("before the minute: %q", got)
+		t.Fatalf("before the first back-off: %q", got)
 	}
-	// The minute retry, on the fake clock, fetches and the token verifies
-	// without a restart.
-	clk.Advance(RetryInterval)
-	v.refresh(ctx, false)
+	clk.Advance(FirstRetryInterval)
 	if p, err := v.Verify(ctx, down.Mint(issuer.Claims{Sub: "late"})); err != nil || p.Subject != "late" {
-		t.Fatalf("after the retry: %+v, %v", p, err)
+		t.Fatalf("after the first back-off: %+v, %v", p, err)
 	}
 	// An hour on, the refresh sees a rotation.
 	down.Rotate()
@@ -349,4 +349,100 @@ func FuzzParseToken(f *testing.F) {
 			t.Fatal("a fuzzed token verified")
 		}
 	})
+}
+
+// The start-up fetch of a node that came up before its issuer fails,
+// and the fetch a request could trigger was then held for the whole
+// minute of the retry interval: every token of the issuer was refused
+// with issuer_unavailable for a minute after the issuer answered, which
+// is what the kind stack of spec 013 met at start (up-script job). Until
+// the first fetch succeeds, the pause after a failure is one second,
+// doubled per consecutive failure and capped at the minute; after the
+// first success the minute cap of the unknown-kid refresh applies as
+// before.
+func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
+	if FirstRetryInterval != time.Second {
+		t.Fatal("the first retry is not a second")
+	}
+	clk := newClock()
+	var stub *issuer.Server
+	var attempts atomic.Int32
+	var down atomic.Bool
+	// The issuer behind a front that counts discovery fetches and
+	// answers 503 while down; the stub names the front as its issuer.
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/openid-configuration") {
+			attempts.Add(1)
+			if down.Load() {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
+		stub.Handler().ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	stub = issuer.NewHandler(issuer.WithIssuer(front.URL), issuer.WithClock(clk.Now))
+	v := newVerifier(t, clk, newKey(t), stub)
+	ctx := context.Background()
+	verify := func(sub string) (string, string) {
+		p, err := v.Verify(ctx, stub.Mint(issuer.Claims{Sub: sub}))
+		return p.Subject, reason(err)
+	}
+	down.Store(true)
+	v.refresh(ctx, true)
+	if attempts.Load() != 1 {
+		t.Fatalf("start-up attempts: %d", attempts.Load())
+	}
+	// Each pause is met on the request path: a request just before it
+	// is refused with no fetch, one at it fetches, fails, and doubles it.
+	want := int32(1)
+	for _, pause := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, RetryInterval, RetryInterval} {
+		clk.Advance(pause - time.Millisecond)
+		if _, got := verify("a"); got != ReasonIssuerUnavailable || attempts.Load() != want {
+			t.Fatalf("%v before the pause of %v: %q, %d attempts", pause-time.Millisecond, pause, got, attempts.Load())
+		}
+		clk.Advance(time.Millisecond)
+		want++
+		if _, got := verify("a"); got != ReasonIssuerUnavailable || attempts.Load() != want {
+			t.Fatalf("at the pause of %v: %q, %d attempts, want %d", pause, got, attempts.Load(), want)
+		}
+	}
+	// The issuer is up. Before the pause, still refused with no fetch; at
+	// it, the request fetches and verifies.
+	down.Store(false)
+	clk.Advance(RetryInterval - time.Millisecond)
+	if _, got := verify("b"); got != ReasonIssuerUnavailable || attempts.Load() != want {
+		t.Fatalf("up, before the pause: %q, %d attempts", got, attempts.Load())
+	}
+	clk.Advance(time.Millisecond)
+	want++
+	if sub, got := verify("b"); got != "" || sub != "b" || attempts.Load() != want {
+		t.Fatalf("up, at the pause: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
+	}
+	// Fetched once, the minute cap holds: a token naming a new kid is
+	// unknown_key without a fetch until the minute, whatever the
+	// failures before the success.
+	stub.Rotate()
+	clk.Advance(FirstRetryInterval)
+	if _, got := verify("c"); got != ReasonUnknownKey || attempts.Load() != want {
+		t.Fatalf("rotated, a second after the fetch: %q, %d attempts", got, attempts.Load())
+	}
+	clk.Advance(RetryInterval - FirstRetryInterval)
+	want++
+	if sub, got := verify("c"); got != "" || sub != "c" || attempts.Load() != want {
+		t.Fatalf("rotated, at the minute: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
+	}
+	// A failed refresh of a fetched set keeps the minute cap: the keys
+	// held serve, and the next attempt is a minute on.
+	down.Store(true)
+	stub.Rotate()
+	clk.Advance(RetryInterval)
+	want++
+	if _, got := verify("d"); got != ReasonUnknownKey || attempts.Load() != want {
+		t.Fatalf("refresh failed: %q, %d attempts, want %d", got, attempts.Load(), want)
+	}
+	clk.Advance(32 * time.Second)
+	if _, got := verify("d"); got != ReasonUnknownKey || attempts.Load() != want {
+		t.Fatalf("fetched set, 32 s after a failure: %q, %d attempts, want %d", got, attempts.Load(), want)
+	}
 }

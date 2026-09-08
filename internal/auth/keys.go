@@ -23,12 +23,19 @@ import (
 
 // Fetch budgets of spec 007: the discovery fetch and the JWKS fetch each
 // have five seconds, the key set is refreshed every hour, and a fetch is
-// attempted at most once a minute per issuer while it is unavailable or
-// a token names an unknown kid.
+// attempted at most once a minute per issuer while a token names an
+// unknown kid. Until an issuer's first fetch has succeeded, a failed
+// attempt is retried after FirstRetryInterval, doubled per consecutive
+// failure up to RetryInterval, on the request path as well as by the
+// minute loop: a node that started before its issuer answered would
+// otherwise refuse every token of that issuer for a minute after the
+// issuer came up, with issuer_unavailable, while the fetch a request
+// could trigger stood pinned by the start-up failure.
 const (
 	DefaultFetchTimeout = 5 * time.Second
 	RefreshInterval     = time.Hour
 	RetryInterval       = time.Minute
+	FirstRetryInterval  = time.Second
 )
 
 // maxDocumentBytes bounds a discovery document or a JWKS.
@@ -107,6 +114,7 @@ type keySet struct {
 	keys        map[string]crypto.PublicKey
 	fetched     bool
 	inflight    chan struct{} // closed when the fetch in flight ends; nil when none
+	failures    int           // consecutive failed attempts since the last success
 	lastAttempt time.Time
 	lastFetched time.Time
 }
@@ -119,16 +127,29 @@ func (i *keySet) keyFor(kid string) (crypto.PublicKey, bool) {
 }
 
 // due reports whether an attempt may start now: none is in flight and
-// the last one is at least RetryInterval old. A true answer claims the
+// the last one is at least retryAfter old. A true answer claims the
 // attempt, so the caller must fetch.
 func (i *keySet) due(now time.Time) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.inflight != nil || (!i.lastAttempt.IsZero() && now.Sub(i.lastAttempt) < RetryInterval) {
+	if i.inflight != nil || (!i.lastAttempt.IsZero() && now.Sub(i.lastAttempt) < i.retryAfter()) {
 		return false
 	}
 	i.inflight, i.lastAttempt = make(chan struct{}), now
 	return true
+}
+
+// retryAfter is the pause between attempts: RetryInterval once the set
+// has been fetched, and before that the back-off of the failures so
+// far, FirstRetryInterval doubled per consecutive failure and capped at
+// RetryInterval. Called with mu held.
+func (i *keySet) retryAfter() time.Duration {
+	if i.fetched || i.failures == 0 {
+		return RetryInterval
+	}
+	// Six doublings pass the cap; the shift stays small whatever the
+	// count.
+	return min(RetryInterval, FirstRetryInterval<<min(i.failures-1, 6))
 }
 
 // await blocks until the fetch in flight, if any, ends or ctx is done,
@@ -163,9 +184,10 @@ func (i *keySet) fetch(ctx context.Context, client *http.Client, timeout time.Du
 	close(i.inflight)
 	i.inflight = nil
 	if err != nil {
+		i.failures++
 		return err
 	}
-	i.keys, i.fetched, i.lastFetched = keys, true, now
+	i.keys, i.fetched, i.lastFetched, i.failures = keys, true, now, 0
 	return nil
 }
 
