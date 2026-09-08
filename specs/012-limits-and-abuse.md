@@ -1,12 +1,12 @@
 ---
 title: "Limits and abuse controls"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/004-write-ahead-log.md
   - specs/006-compaction.md
-affects: [internal/limits/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/]
+affects: [internal/limits/, internal/httpgit/, internal/api/, internal/lfs/, internal/auth/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
 updated: 2026-09-08
@@ -49,7 +49,7 @@ spec 010's interim rule ends.
 |---|---|---|---|
 | repository size | the authorizer's `quota_bytes`, default 50 GiB, against one figure: `size_bytes` of the held index as spec 004 defines it (the bytes of the listed packs plus the pack bytes of the entries since the last compaction, so a compaction lowers it and the quota counts what the log holds, not every byte ever pushed) plus the bytes under `lfs/` (the sum spec 010's listing produces, cached per repository for 60 seconds so a push does not list the prefix), plus the bytes the write adds | receive-pack, before the entry is written, with the pack's bytes as the addition; the LFS upload batch (spec 010) with the batch's sizes; an import (spec 019) with its pack bytes; a server-side operation (spec 020) with its pack's bytes | sideband `over_quota` with `details.limit: "repository"`, `bytes`, `max`; on the LFS batch, 413 with the LFS body of spec 010; on the JSON API, 413 `over_quota` |
 | single push | 2 GiB, one entry, one `PUT` (spec 004) | receive-pack, from `Content-Length` when present and while spooling | 413 `over_quota`, `details.limit: "push"` |
-| references | 100 000 commands per push and 100 000 references in the map after it | receive-pack | `over_quota`, `details.limit: "refs"` (phase 1 answers 400 `invalid_request` for the command count) |
+| references | 100 000 commands per push and 100 000 references in the map after it | receive-pack, both before git runs: the commands as the body is parsed, the count after the push from the held index and the commands | 413 `over_quota`, `details.limit: "refs"`, on the command count; the sideband `over_quota` on the count after the push (phase 1 answered 400 `invalid_request` for the command count) |
 | push options | 1 000 per push | receive-pack | 400 `invalid_request` |
 | requests per subject | 600 per minute, a token bucket per effective subject per node, burst 600; a bucket not touched for 10 minutes is evicted, so the table holds only active subjects | every route of the public listener after authentication | 429 `rate_limited` with `Retry-After` in whole seconds and `details.limit: "subject"` |
 | concurrent git subprocesses per node | `ORIGO_MAX_GIT_PROCS`, default 64, one semaphore shared by `internal/httpgit`, `internal/api`, and compaction | before a subprocess starts; a request waits at most 5 seconds for a slot; a compaction (spec 006) that waits more than 5 seconds skips this run and retries on the next sweep | 429 `rate_limited`, `details.limit: "subprocesses"` on a request; `origo_compactions_total{result="skipped"}` on a compaction |
@@ -101,3 +101,113 @@ Connection limits at the ingress. Bandwidth shaping.
   019's freeze case; this criterion passes when spec 021 lands and
   this spec's `depends_on` does not name it, because nothing here is
   built from it.
+
+## Outcome
+
+Built on 2026-09-08 as `internal/limits`, enforced by `internal/httpgit`
+(the push quota, the single-push bound, the reference cap, and a slot
+per smart HTTP subprocess), `internal/api` (a slot per read request),
+`internal/lfs` (the batch quota through the same measurement), and
+`cmd/origod` (the bucket table behind the verifier, the semaphore
+handed to compaction). `ORIGO_MAX_GIT_PROCS` is read by
+`internal/config`. Every criterion but the frozen-repository one, which
+spec 021 owns, has a passing test in the tree, which is why the spec is
+at `testing`.
+
+| Criterion | Test |
+|---|---|
+| a push past `quota_bytes` is refused with `over_quota`, no entry is written, the figures name the sizes, and the bytes under `lfs/` are what makes the difference | `internal/httpgit`, `TestPushOverQuotaWritesNothing`; `test/e2e`, `TestE2EPushOverQuota` against a built `origod` in the `integration` job |
+| a push past the single-push bound is 413 `over_quota` with `details.limit: "push"`, with the spool stopped at the limit | `internal/httpgit`, `TestPushOverTwoGiBIsRefused`, the bound lowered through `limits.Options` |
+| the 601st request of a subject in one minute is 429 with `Retry-After`, a second subject sees none, and a bucket idle for ten minutes is gone | `internal/limits`, `TestPerSubjectTokenBucket`, `TestIdleBucketsAreEvicted` |
+| with two slots a third caller waits and is then 429 `rate_limited` with `details.limit: "subprocesses"`, and a compaction that finds no slot skips and runs on the next sweep | `internal/limits`, `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`; `internal/httpgit`, `TestSubprocessSlotsAdmitAndRefuse`, `TestConcurrentPushesShareTheSubprocessCap`; `internal/api`, `TestReadWithoutASubprocessSlotIsRateLimited` |
+| a frozen repository accepts a clone and refuses a push with `repo_frozen` | spec 021's `TestContract`; deferred, as this spec's Acceptance criteria say |
+
+The reference row and the `lfs/` byte cache have no criterion of their
+own and are held by `TestPushOverTheReferenceCapIsRefused` and
+`TestReferencesAfterAPushAreCounted` in `internal/httpgit` and by
+`TestLFSBytesAreReusedForTheTTL` and `TestLFSBytesWalksEveryPage` in
+`internal/limits`. The bound token's figure is
+`internal/auth`, `TestBoundTokenWriteTakesTheMintersQuota`.
+
+Divergences and interpretations, each kept and the reason:
+
+- **A refused push carries the code and the sentence in the sideband
+  and its figures in the log line.** The Answer column asks for
+  `details.limit`, `bytes`, and `max` in the sideband, and the
+  decisions table of `specs/README.md` fixes a line that carries a code
+  as `<code>: <sentence>` exactly, with the figures of a refused push
+  on the handler's `info` line, and names this spec among the specs
+  that rely on it. The verdict is therefore
+  `over_quota: The request exceeds this repository's storage limit.`
+  and the `push refused` line carries `limit`, `bytes`, and `max`. The
+  criterion's "`details.bytes` and `max` name the sizes" is met there.
+- **A slot is admission control for a request's own subprocess, not for
+  every subprocess it starts.** The forced-flag `git merge-base` runs
+  of spec 008 and the materialization inside `repo.Cache.Acquire` run
+  while the request's own subprocess is alive; if they took slots of
+  their own, two concurrent pushes at `ORIGO_MAX_GIT_PROCS=2` would
+  wait for slots only each other can free and both fail after the wait.
+  `TestConcurrentPushesShareTheSubprocessCap` holds the rule.
+- **One slot covers a whole read request.** Spec 009 runs `rev-parse`
+  and then the operation in sequence under one budget; taking the slot
+  again between them would refuse a request that had already begun, so
+  `api.open` takes one slot and releases it with the read lock.
+- **A repository-bound token's authorizer call supplies the figure and
+  decides no access.** Spec 007 makes the token's scope the decision
+  and this spec asks only for `quota_bytes`, so a deny, an answer with
+  no figure, and an authorizer that produced no answer all leave
+  `auth.DefaultQuotaBytes` and write a warning rather than refusing a
+  push the scope allows. Spec 007's `TestRepositoryBoundTokenScope` now
+  expects the one authorizer call a bound write makes.
+- **The command cap answers 413 before git runs.** The row names the
+  code and the limit but no status; 413 is spec 003's status for
+  `over_quota` and the refusal happens while the body is parsed, before
+  any sideband exists. The second half of the row, the references the
+  index holds after the push, is counted from the held index and the
+  commands (`refsAfter`) at the same point and refused in the sideband
+  like the size rule.
+- **`origo_rate_limited_total` records `subject` and `subprocesses`
+  only.** The `repository` value of spec 011's vocabulary belongs to
+  the per-repository rate limits of specs 019 and 020, and `over_quota`
+  is a different code, not a rate-limited refusal.
+- **The handlers build the spec's limits when none are given.** A nil
+  `*limits.Limits` enforces nothing, which is the `compact.Slots` seam;
+  `httpgit.New`, `api.New`, and `lfs.New` therefore build one over the
+  log with this spec's defaults, so the bounds are what a node does
+  rather than something a caller opts into, and a test lowers a figure
+  through `limits.Options`.
+- **The `lfs/` sum moved out of `internal/lfs`.** The listing and its
+  paging are `limits.LFSBytes` behind the 60 second cache this spec
+  asks for, so the batch and the push measure the same figure and
+  neither lists twice in a minute. `internal/lfs` calls through it and
+  spec 010's `TestQuotaCountsEveryPageOfTheListing` still holds the
+  paging.
+- **A push whose `lfs/` sum cannot be read is refused.** The
+  measurement is a storage read, and a repository that cannot be
+  measured is not one a quota was checked against
+  (`TestQuotaFailsClosedWhenTheListingFails`).
+
+Items this spec closes for another:
+
+- Spec 010's builder item is done: `quota_bytes` for a
+  repository-bound token is the minting subject's figure from the
+  authorizer, not `auth.DefaultQuotaBytes`. Spec 010's Outcome records
+  it.
+- Spec 010's 60 second `lfs/` byte cache is built, as `limits.LFSBytes`.
+- Spec 006's `compact.Slots` seam is filled: `cmd/origod` passes the
+  node's semaphore, so a compaction and a request share one budget.
+
+Open, for whoever needs them settled:
+
+- The Design's Answer column for the reference row names no status and
+  no side for the "references in the map after it" half; this build
+  answers 413 for the command count and the sideband for the count
+  after the push.
+- Whether a repository-bound token's write should be refused while the
+  authorizer is unavailable, rather than falling back to the default
+  quota, is a question for spec 016's threat model: the figure is a
+  limit, not a permission, and refusing would take a build down on an
+  outage that spec 007 lets a bound token ride out.
+
+`latere.ai/x/pkg`: neither a token bucket nor a waiting semaphore is in
+the shared library; the README's items table carries the row.

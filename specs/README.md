@@ -61,7 +61,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | complete |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete |
-| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | validated |
+| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | testing |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | testing |
@@ -193,7 +193,7 @@ flowchart LR
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
-| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 015 built, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, at testing until the `e2e` job runs `TestClusterDegradedStorage`; 012 next |
+| 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 built, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, at testing until the `e2e` job runs `TestClusterDegradedStorage` |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
@@ -404,6 +404,7 @@ carried to that module's own queue; the workaround stays until it lands.
 | Item | Found by | Workaround here |
 |---|---|---|
 | `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
+| Neither a token bucket nor a semaphore a caller can wait on with a deadline is in the library. A rate limiter keyed on a caller, refilling at a rate with a burst and evicting an idle key, and a counting semaphore whose `Acquire(ctx, d)` reports whether a slot came free, are both generic and both wanted by any service that admits work | 012 | `internal/limits` holds both, with the values of spec 012's table; the metrics label, the `Retry-After` rendering, and the `lfs/` sum beside them are Origo's own |
 | `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library | 011 | `internal/tracing` is the one importer, the decision row above |
 
 ## Open source readiness
