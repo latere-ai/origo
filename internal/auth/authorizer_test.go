@@ -4,13 +4,17 @@
 package auth
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -193,7 +197,10 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 		t.Fatalf("refused: %+v, %d attempts", u, refusedT.attempts.Load())
 	}
 	// A connection the server closes before any response line is two
-	// attempts as well.
+	// attempts as well. Which error the transport returns depends on
+	// what lands first, the FIN at the read loop's peek, the reset at
+	// the write, or the EOF at the read of the response: every form is
+	// retryable, so the count does not depend on the race.
 	closing, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -244,6 +251,136 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	}
 	if retryable(errors.New("plain")) || retryable(&Unavailable{Status: 500}) || (&Unavailable{URL: "u"}).Error() == "" {
 		t.Fatal("retryable classification")
+	}
+}
+
+// closeReportingConn is a dialed connection that reports its Close and
+// accepts a Write after it, the way a kernel accepts bytes for a peer
+// that sent FIN and no RST yet: the case net/http documents for its
+// closed idle connection error.
+type closeReportingConn struct {
+	net.Conn
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (c *closeReportingConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
+func (c *closeReportingConn) Write(p []byte) (int, error) {
+	select {
+	case <-c.closed:
+		return len(p), nil
+	default:
+		return c.Conn.Write(p)
+	}
+}
+
+// keepAliveThenCloseServer serves one request on its first connection,
+// keeps the connection open until closeFirst is closed, then closes it.
+// Every later connection is served until the client closes it.
+func keepAliveThenCloseServer(t *testing.T, closeFirst <-chan struct{}) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	serve := func(conn net.Conn, first bool) {
+		defer func() { _ = conn.Close() }()
+		br := bufio.NewReader(conn)
+		for {
+			req, err := http.ReadRequest(br)
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, req.Body)
+			const body = `{"allow":true}`
+			_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+			if first {
+				<-closeFirst
+				return
+			}
+		}
+	}
+	go func() {
+		for n := 0; ; n++ {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go serve(conn, n == 0)
+		}
+	}()
+	return "http://" + ln.Addr().String()
+}
+
+// TestClosedIdleConnectionIsRetried reproduces the CI flake of run
+// 34202697213: the authorizer closes a kept-alive connection, and the
+// transport's read loop sees the FIN before the next request is
+// registered on the connection, so net/http returns its closed idle
+// connection error, which a POST is never retried on inside the
+// transport. The call failed before any response byte, so the client
+// retries once.
+//
+// The order is forced: the trace's GotConn runs after the idle
+// connection is handed to the request and before the request is
+// registered on it, so the test closes the server side there and waits
+// until the read loop has closed the client side.
+func TestClosedIdleConnectionIsRetried(t *testing.T) {
+	closeFirst := make(chan struct{})
+	url := keepAliveThenCloseServer(t, closeFirst)
+	var (
+		mu   sync.Mutex
+		dial *closeReportingConn
+	)
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		c := &closeReportingConn{Conn: conn, closed: make(chan struct{})}
+		mu.Lock()
+		dial = c
+		mu.Unlock()
+		return c, nil
+	}}
+	counting := &countingTransport{next: transport}
+	c := newClient(t, url, "t", counting, newClock(), nil)
+	var reused atomic.Int64
+	var closeOnce sync.Once
+	ctx := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		if !info.Reused {
+			return
+		}
+		reused.Add(1)
+		closeOnce.Do(func() { close(closeFirst) })
+		mu.Lock()
+		conn := dial
+		mu.Unlock()
+		select {
+		case <-conn.closed:
+		case <-time.After(5 * time.Second):
+			t.Error("the transport did not close the idle connection the server closed")
+		}
+	}})
+	if d, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil || !d.Allow || counting.attempts.Load() != 1 {
+		t.Fatalf("first call: %+v, %v, %d attempts", d, err, counting.attempts.Load())
+	}
+	// A second subject, so the answer is not the cache's.
+	d, err := c.Authorize(ctx, request("bob", "", repoA, ActionRead))
+	if reused.Load() != 1 {
+		t.Fatalf("the second call did not reuse the connection: %d", reused.Load())
+	}
+	if err != nil || !d.Allow || counting.attempts.Load() != 3 {
+		t.Fatalf("closed idle connection: %+v, %v, %d attempts", d, err, counting.attempts.Load())
+	}
+	// The classification, on the error as http.Client.Do shapes it.
+	shaped := &Unavailable{URL: url, Err: fmt.Errorf("Post %q: %w", url, errors.New(serverClosedIdle))}
+	if !retryable(shaped) || retryable(&Unavailable{URL: url, Err: errors.New("http: server closed idle connection early")}) {
+		t.Fatal("closed idle classification")
 	}
 }
 

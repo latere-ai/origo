@@ -260,10 +260,21 @@ func (c *Client) once(ctx context.Context, body []byte) (Decision, error) {
 	return d, nil
 }
 
+// serverClosedIdle is the text of net/http's errServerClosedIdle: the
+// transport's read loop saw the peer's FIN while no response was
+// expected on the connection, that is before the request was
+// registered on it. net/http returns the sentinel undecorated when the
+// connection was fresh, or when it was reused and the request is not
+// replayable (a POST), and both apply here. The sentinel is unexported
+// and a plain errors.New, so no type or wrapped value reaches the
+// caller; the string, compared exactly, is the only handle.
+const serverClosedIdle = "http: server closed idle connection"
+
 // retryable reports whether the call failed before a response line
 // arrived: a refused or reset connection, a dial timeout, or a
-// connection closed without a response. A timeout after the request
-// was sent, a non-200, and a body that does not parse are not.
+// connection closed without a response (an EOF read, or the closed
+// idle connection of net/http). A timeout after the request was sent,
+// a non-200, and a body that does not parse are not.
 func retryable(err error) bool {
 	var u *Unavailable
 	if !errors.As(err, &u) || u.Err == nil || u.Status != 0 {
@@ -277,5 +288,17 @@ func retryable(err error) bool {
 		return false
 	}
 	return errors.Is(u.Err, syscall.ECONNRESET) || errors.Is(u.Err, syscall.ECONNREFUSED) ||
-		errors.Is(u.Err, io.EOF) || errors.Is(u.Err, io.ErrUnexpectedEOF)
+		errors.Is(u.Err, io.EOF) || errors.Is(u.Err, io.ErrUnexpectedEOF) || isServerClosedIdle(u.Err)
+}
+
+// isServerClosedIdle reports whether err, or an error it wraps, is
+// net/http's closed idle connection. The sentinel arrives inside the
+// *url.Error of http.Client.Do.
+func isServerClosedIdle(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if e.Error() == serverClosedIdle {
+			return true
+		}
+	}
+	return false
 }
