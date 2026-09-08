@@ -274,3 +274,40 @@ func TestDecideCarriesTheQuota(t *testing.T) {
 		t.Fatalf("outage = %+v, %v", d, err)
 	}
 }
+
+// TestDecideCarriesTheReplicas is spec 005's reading of the guard: an
+// allow from the authorizer carries its replicas value, a
+// repository-bound token, which never asks the authorizer, carries the
+// default of 1, and a deny carries no decision.
+func TestDecideCarriesTheReplicas(t *testing.T) {
+	stub := authorizer.New(t)
+	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "read", Replicas: 3})
+	stub.Deny(authorizer.Rule{Subject: "bob", Repo: repoA, Action: "read"}, "no")
+	client, err := NewClient(ClientOptions{URL: stub.URL(), Token: stub.Token(), HTTP: &http.Client{Transport: &http.Transport{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := NewGuard(client, nil)
+	ctx := context.Background()
+	d, err := g.Decide(ctx, Principal{Subject: "alice"}, RepoRef{ID: repoA}, ActionRead)
+	if err != nil || !d.Allow || d.Replicas != 3 {
+		t.Fatalf("alice: %+v %v", d, err)
+	}
+	if _, err := g.Decide(ctx, Principal{Subject: "bob"}, RepoRef{ID: repoA}, ActionRead); err == nil {
+		t.Fatal("bob was allowed")
+	}
+	d, err = g.Decide(ctx, Principal{Subject: "ci", Bound: &Bound{Repo: repoA, Scope: ScopeRead}}, RepoRef{ID: repoA}, ActionRead)
+	if err != nil || !d.Allow || d.Replicas != DefaultReplicas || len(stub.Requests()) != 2 {
+		t.Fatalf("bound: %+v %v, %d authorizer calls", d, err, len(stub.Requests()))
+	}
+	req := httptest.NewRequest("GET", "/", nil).WithContext(WithPrincipal(ctx, Principal{Subject: "alice"}))
+	rec := httptest.NewRecorder()
+	if d, ok := g.Admit(rec, req, RepoRef{ID: repoA}, ActionRead); !ok || d.Replicas != 3 {
+		t.Fatalf("Admit: %+v %v", d, ok)
+	}
+	req = httptest.NewRequest("GET", "/", nil).WithContext(WithPrincipal(ctx, Principal{Subject: "bob"}))
+	rec = httptest.NewRecorder()
+	if _, ok := g.Admit(rec, req, RepoRef{ID: repoA}, ActionRead); ok || rec.Code != 403 {
+		t.Fatalf("Admit of a deny: %v %d", ok, rec.Code)
+	}
+}

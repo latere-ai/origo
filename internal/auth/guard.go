@@ -52,10 +52,11 @@ func (g *Guard) Authorize(ctx context.Context, p Principal, repo RepoRef, action
 }
 
 // Decide is Authorize with the decision behind the allow, for a handler
-// that reads a field of it: the LFS batch reads QuotaBytes (spec 010).
-// A repository-bound token is decided by its own scope and the
-// authorizer never sees it, so the decision it yields carries the
-// defaults of spec 007's table.
+// that reads a field of it: the LFS batch reads QuotaBytes (spec 010),
+// the Origo-Prefer header reads Replicas (spec 005). A repository-bound
+// token is decided by its own scope and the authorizer never sees it,
+// so the decision it yields carries the defaults of spec 007's table,
+// which is k = 1 for placement.
 func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Action) (Decision, error) {
 	if b := p.Bound; b != nil {
 		if repo.ID == "" || repo.ID != b.Repo {
@@ -94,12 +95,19 @@ func (s Scope) allows(action Action) bool {
 // when no decision could be made. It reports whether the handler may go
 // on.
 func (g *Guard) Allow(w http.ResponseWriter, r *http.Request, repo RepoRef, action Action) bool {
-	err := g.Authorize(r.Context(), FromContext(r.Context()), repo, action)
+	_, ok := g.Admit(w, r, repo, action)
+	return ok
+}
+
+// Admit is Allow with the decision, for a handler that needs the
+// replicas value of the allow (spec 005's Origo-Prefer header).
+func (g *Guard) Admit(w http.ResponseWriter, r *http.Request, repo RepoRef, action Action) (Decision, bool) {
+	d, err := g.Decide(r.Context(), FromContext(r.Context()), repo, action)
 	if err == nil {
-		return true
+		return d, true
 	}
 	WriteRefusal(w, r, err, g.logger)
-	return false
+	return Decision{}, false
 }
 
 // WriteRefusal renders a *Denied or an *Unavailable.
