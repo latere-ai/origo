@@ -190,8 +190,8 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 	}
 	if json.Valid(raw) {
 		d.Body = raw
-	} else {
-		d.Body, _ = json.Marshal(string(raw))
+	} else if quoted, err := json.Marshal(string(raw)); err == nil {
+		d.Body = quoted
 	}
 	var fields struct {
 		Repo string `json:"repo"`

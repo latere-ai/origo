@@ -56,19 +56,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	o, err := parse(args, stderr)
 	if err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(stderr, "origo-stubs:", err)
+			_, _ = fmt.Fprintln(stderr, "origo-stubs:", err)
 		}
 		return 2
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
-	stubs, err := build(o)
+	stubs, err := build(ctx, o)
 	if err != nil {
-		fmt.Fprintln(stderr, "origo-stubs:", err)
+		_, _ = fmt.Fprintln(stderr, "origo-stubs:", err)
 		return 1
 	}
 	defer stubs.close()
 	if err := stubs.serve(ctx, stdout, logger); err != nil {
-		fmt.Fprintln(stderr, "origo-stubs:", err)
+		_, _ = fmt.Fprintln(stderr, "origo-stubs:", err)
 		return 1
 	}
 	return 0
@@ -132,8 +132,9 @@ type stubs struct {
 	listeners  []listener
 }
 
-// build constructs every stub from the options without listening.
-func build(o options) (*stubs, error) {
+// build constructs every stub from the options without listening; the
+// source unpacks its fixture under ctx.
+func build(ctx context.Context, o options) (*stubs, error) {
 	s := &stubs{}
 	issuerOpts := []issuer.Option{issuer.WithIssuer(o.issuerURL)}
 	if o.key != "" {
@@ -175,7 +176,7 @@ func build(o options) (*stubs, error) {
 			return nil, err
 		}
 		s.sourceRoot = root
-		src, err := source.NewHandler(root, sourceOpts...)
+		src, err := source.NewHandler(ctx, root, sourceOpts...)
 		if err != nil {
 			s.close()
 			return nil, fmt.Errorf("source: %w", err)
@@ -225,7 +226,7 @@ func (s *stubs) serve(ctx context.Context, stdout io.Writer, logger *slog.Logger
 		lns = append(lns, ln)
 		srv := &http.Server{Handler: l.handler, ReadHeaderTimeout: 10 * time.Second, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn)}
 		servers = append(servers, srv)
-		fmt.Fprintf(stdout, "%s listening on %s\n", l.name, ln.Addr())
+		_, _ = fmt.Fprintf(stdout, "%s listening on %s\n", l.name, ln.Addr())
 		go func() {
 			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				failed <- fmt.Errorf("%s: %w", l.name, err)
@@ -242,9 +243,9 @@ func (s *stubs) serve(ctx context.Context, stdout io.Writer, logger *slog.Logger
 			return fmt.Errorf("slowproxy data: %w", err)
 		}
 		proxyLn = ln
-		fmt.Fprintf(stdout, "slowproxy data listening on %s\n", ln.Addr())
+		_, _ = fmt.Fprintf(stdout, "slowproxy data listening on %s\n", ln.Addr())
 		go func() {
-			if err := s.proxy.serve(ln); err != nil {
+			if err := s.proxy.serve(ctx, ln); err != nil {
 				failed <- fmt.Errorf("slowproxy data: %w", err)
 			}
 		}()

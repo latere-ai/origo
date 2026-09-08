@@ -43,8 +43,8 @@ func (p *slowproxy) control() http.Handler {
 }
 
 // serve forwards every accepted connection to the target until the
-// listener closes.
-func (p *slowproxy) serve(ln net.Listener) error {
+// listener closes; ctx bounds each dial of the target.
+func (p *slowproxy) serve(ctx context.Context, ln net.Listener) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -53,20 +53,20 @@ func (p *slowproxy) serve(ln net.Listener) error {
 			}
 			return err
 		}
-		go p.forward(conn)
+		go p.forward(ctx, conn)
 	}
 }
 
-func (p *slowproxy) forward(client net.Conn) {
-	defer client.Close()
+func (p *slowproxy) forward(ctx context.Context, client net.Conn) {
+	defer func() { _ = client.Close() }()
 	var d net.Dialer
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	upstream, err := d.DialContext(ctx, "tcp", p.target)
+	upstream, err := d.DialContext(dialCtx, "tcp", p.target)
 	if err != nil {
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 	p.track(client, true)
 	p.track(upstream, true)
 	defer p.track(client, false)

@@ -262,38 +262,38 @@ func TestOptionsAndErrors(t *testing.T) {
 		}
 	}
 	first := source.New(t)
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA([]byte("nope"), nil)); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA([]byte("nope"), nil)); err == nil {
 		t.Fatal("a CA that is not PEM")
 	}
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA(first.CA(), []byte("nope"))); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA(first.CA(), []byte("nope"))); err == nil {
 		t.Fatal("a key that is not PEM")
 	}
 	rsaKey, _ := x509.MarshalPKCS8PrivateKey(mustRSA(t))
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA(first.CA(), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: rsaKey}))); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA(first.CA(), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: rsaKey}))); err == nil {
 		t.Fatal("a key that is not EC")
 	}
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA(first.CA(), []byte("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n"))); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA(first.CA(), []byte("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n"))); err == nil {
 		t.Fatal("a key that does not parse")
 	}
 	cert, _ := newCA(t, false)
 	_, otherKey := newCA(t, false)
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA(cert, otherKey)); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA(cert, otherKey)); err == nil {
 		t.Fatal("a key that is not the certificate's")
 	}
-	if _, err := source.NewHandler(t.TempDir(), source.WithCA([]byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"), nil)); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithCA([]byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"), nil)); err == nil {
 		t.Fatal("a certificate that does not parse")
 	}
-	if _, err := source.NewHandler(t.TempDir(), source.WithGit(filepath.Join(t.TempDir(), "nogit"))); err == nil {
+	if _, err := source.NewHandler(context.Background(), t.TempDir(), source.WithGit(filepath.Join(t.TempDir(), "nogit"))); err == nil {
 		t.Fatal("a git that does not exist")
 	}
 	file := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.NewHandler(filepath.Join(file, "x")); err == nil {
+	if _, err := source.NewHandler(context.Background(), filepath.Join(file, "x")); err == nil {
 		t.Fatal("a root under a file")
 	}
-	h, err := source.NewHandler(t.TempDir())
+	h, err := source.NewHandler(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

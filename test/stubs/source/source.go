@@ -110,7 +110,7 @@ type Server struct {
 // a temporary directory, and stops it with the test.
 func New(t testing.TB, opts ...Option) *Server {
 	t.Helper()
-	s, err := NewHandler(t.TempDir(), opts...)
+	s, err := NewHandler(context.Background(), t.TempDir(), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +123,8 @@ func New(t testing.TB, opts ...Option) *Server {
 
 // NewHandler builds a stub without a listener, its repositories under
 // root, for a binary that serves Handler under TLSConfig itself. The
-// fixture is unpacked into root at once.
-func NewHandler(root string, opts ...Option) (*Server, error) {
+// fixture is unpacked into root at once, under ctx.
+func NewHandler(ctx context.Context, root string, opts ...Option) (*Server, error) {
 	s := &Server{root: root, token: DefaultToken, git: "git", mux: http.NewServeMux()}
 	for _, o := range opts {
 		o(s)
@@ -140,7 +140,7 @@ func NewHandler(root string, opts ...Option) (*Server, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	if err := s.AddRepo("fixture", fixtureBundle); err != nil {
+	if err := s.addRepo(ctx, "fixture", fixtureBundle); err != nil {
 		return nil, fmt.Errorf("fixture: %w", err)
 	}
 	s.backend = &cgi.Handler{
@@ -201,6 +201,10 @@ var repoName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // AddRepo unpacks a bundle as the bare repository <name>.git.
 func (s *Server) AddRepo(name string, bundle []byte) error {
+	return s.addRepo(context.Background(), name, bundle)
+}
+
+func (s *Server) addRepo(ctx context.Context, name string, bundle []byte) error {
 	if !repoName.MatchString(name) || name == "." || name == ".." {
 		return fmt.Errorf("invalid repository name %q", name)
 	}
@@ -212,17 +216,17 @@ func (s *Server) AddRepo(name string, bundle []byte) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.Write(bundle); err != nil {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if _, err := s.run(s.root, nil, "clone", "-q", "--bare", tmp.Name(), dir); err != nil {
+	if _, err := s.run(ctx, s.root, nil, "clone", "-q", "--bare", tmp.Name(), dir); err != nil {
 		return err
 	}
-	if _, err := s.run(dir, nil, "symbolic-ref", "HEAD", "refs/heads/main"); err != nil {
+	if _, err := s.run(ctx, dir, nil, "symbolic-ref", "HEAD", "refs/heads/main"); err != nil {
 		return err
 	}
 	return nil
@@ -232,6 +236,10 @@ func (s *Server) AddRepo(name string, bundle []byte) error {
 // write of spec 014's cut-over test, and returns its id. The branch
 // must exist.
 func (s *Server) Commit(repo, branch string) (string, error) {
+	return s.commit(context.Background(), repo, branch)
+}
+
+func (s *Server) commit(ctx context.Context, repo, branch string) (string, error) {
 	if !repoName.MatchString(repo) {
 		return "", fmt.Errorf("invalid repository name %q", repo)
 	}
@@ -243,32 +251,32 @@ func (s *Server) Commit(repo, branch string) (string, error) {
 	s.late++
 	n := s.late
 	s.mu.Unlock()
-	tip, err := s.run(dir, nil, "rev-parse", "--verify", "-q", "refs/heads/"+branch)
+	tip, err := s.run(ctx, dir, nil, "rev-parse", "--verify", "-q", "refs/heads/"+branch)
 	if err != nil {
 		return "", fmt.Errorf("no branch %s on %s", branch, repo)
 	}
-	blob, err := s.run(dir, fmt.Appendf(nil, "late write %d\n", n), "hash-object", "-w", "--stdin")
+	blob, err := s.run(ctx, dir, fmt.Appendf(nil, "late write %d\n", n), "hash-object", "-w", "--stdin")
 	if err != nil {
 		return "", err
 	}
 	index := filepath.Join(s.root, ".index-"+strconv.Itoa(n))
-	defer os.Remove(index)
+	defer func() { _ = os.Remove(index) }()
 	indexEnv := "GIT_INDEX_FILE=" + index
-	if _, err := s.run(dir, nil, "-c", "core.bare=true", "read-tree", tip, "--", indexEnv); err != nil {
+	if _, err := s.run(ctx, dir, nil, "-c", "core.bare=true", "read-tree", tip, "--", indexEnv); err != nil {
 		return "", err
 	}
-	if _, err := s.run(dir, nil, "update-index", "--add", "--cacheinfo", "100644,"+blob+",late-writes.txt", "--", indexEnv); err != nil {
+	if _, err := s.run(ctx, dir, nil, "update-index", "--add", "--cacheinfo", "100644,"+blob+",late-writes.txt", "--", indexEnv); err != nil {
 		return "", err
 	}
-	tree, err := s.run(dir, nil, "write-tree", "--", indexEnv)
+	tree, err := s.run(ctx, dir, nil, "write-tree", "--", indexEnv)
 	if err != nil {
 		return "", err
 	}
-	commit, err := s.run(dir, nil, "commit-tree", tree, "-p", tip, "-m", "late write "+strconv.Itoa(n))
+	commit, err := s.run(ctx, dir, nil, "commit-tree", tree, "-p", tip, "-m", "late write "+strconv.Itoa(n))
 	if err != nil {
 		return "", err
 	}
-	if _, err := s.run(dir, nil, "update-ref", "refs/heads/"+branch, commit, tip); err != nil {
+	if _, err := s.run(ctx, dir, nil, "update-ref", "refs/heads/"+branch, commit, tip); err != nil {
 		return "", err
 	}
 	return commit, nil
@@ -277,13 +285,13 @@ func (s *Server) Commit(repo, branch string) (string, error) {
 // run runs git in dir. An argument after "--" that starts with
 // GIT_INDEX_FILE= is an environment entry, which is how Commit gives a
 // plumbing command its own index.
-func (s *Server) run(dir string, stdin []byte, args ...string) (string, error) {
+func (s *Server) run(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
 	env := gitEnv(s.root)
 	if i := slices.Index(args, "--"); i >= 0 && i+1 < len(args) && strings.HasPrefix(args[i+1], "GIT_INDEX_FILE=") {
 		env = append(env, args[i+1:]...)
 		args = args[:i]
 	}
-	cmd := exec.CommandContext(context.Background(), s.git, args...)
+	cmd := exec.CommandContext(ctx, s.git, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	if stdin != nil {
@@ -292,7 +300,7 @@ func (s *Server) run(dir string, stdin []byte, args ...string) (string, error) {
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(out.String()), nil
 }
@@ -348,7 +356,7 @@ func (s *Server) postCommit(w http.ResponseWriter, r *http.Request) {
 	if body.Branch == "" {
 		body.Branch = "main"
 	}
-	commit, err := s.Commit(body.Repo, body.Branch)
+	commit, err := s.commit(r.Context(), body.Repo, body.Branch)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -370,7 +378,7 @@ func (s *Server) postRepos(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bundle must be base64: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.AddRepo(body.Name, bundle); err != nil {
+	if err := s.addRepo(r.Context(), body.Name, bundle); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

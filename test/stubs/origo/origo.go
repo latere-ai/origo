@@ -67,7 +67,7 @@ func New(t testing.TB) *Server {
 	reg := metrics.NewRegistry()
 	store, err := wal.NewS3(wal.S3Options{
 		Endpoint: s.bucket.URL(), Region: s3test.Region, Bucket: Bucket, Key: s3test.Key, Secret: s3test.Secret, PathStyle: true,
-		Client: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
+		Client: &http.Client{Transport: &http.Transport{}},
 	})
 	if err != nil {
 		t.Fatal(err)
