@@ -279,6 +279,7 @@ it:
 | `ApplyManifestExpectRefusal(t, path)` | `kubectl apply -f <path>` of a manifest under `test/e2e/testdata/` that admission must refuse: fails the test when the apply succeeds, and returns `kubectl`'s stderr, the refusal text, for the test to assert on; registers no cleanup because nothing was created | 016's refused pod (`privileged-pod.yaml`) |
 | `HPAStatus(t, name)` | `kubectl get hpa <name> -o json` and returns the current and desired replica counts | 005's autoscaler and replica cases |
 | `Apply(t, overlay)` | `kubectl apply -k <overlay>` and waits for the rollout, which restores the stack after a test changed it | 005 after its replica cases, any test that applied a manifest the cleanup of `ApplyManifest` cannot undo |
+| `Get(t, kind, name)` | `kubectl get <kind> <name> -o json` in the namespace and returns the bytes, for a test that asserts on an object the overlay applied rather than on the stack's behaviour | 016's pod security context and its gossip NetworkPolicy `origod-gossip` |
 
 `test/e2e/testdata/` holds every fault manifest, one file per fault,
 and the CA file `up.sh` writes; a cluster criterion of another spec
@@ -398,13 +399,14 @@ authorizer packages (spec 007, to the table above). The slow proxy
   whatever happened, skipped when `kind` is not on `PATH`; the `e2e`
   and `e2e-slow` jobs' own set-up step is the same script on the
   cluster their tests use).
-- `test/e2e/cluster` runs each of its five functions against the
+- `test/e2e/cluster` runs each of its six functions against the
   stack: `DeletePod` of node 2 returns once the replacement pod is
   ready, `ApplyManifest` of `test/e2e/testdata/cut-storage.yaml` makes
   a node answer 503 `storage_unavailable` and its cleanup restores the
   answer, `ApplyManifestExpectRefusal` of `privileged-pod.yaml`
   returns the refusal text and leaves no pod behind, `HPAStatus`
-  reports the counts `kubectl` shows, and `Apply` of the overlay
+  reports the counts `kubectl` shows, `Get` of the StatefulSet
+  `origod` returns JSON naming three replicas, and `Apply` of the overlay
   restores the replica count after an `hpa-2.yaml`
   (proposed: `test/e2e`, `TestClusterHelperDrivesKubectl`).
 - The `build`, `integration`, `e2e`, `e2e-slow`, `up-script`, and
