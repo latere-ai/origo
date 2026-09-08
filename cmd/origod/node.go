@@ -133,7 +133,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		started:    make(chan struct{}),
 	}
 	n.metrics = metrics.Register(n.reg)
-	store, err := wal.NewS3(wal.S3Options{
+	s3, err := wal.NewS3(wal.S3Options{
 		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
 		Client: &http.Client{Transport: otel.Transport(storageTransport())},
@@ -141,6 +141,10 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Every call to the bucket runs under ORIGO_STORAGE_TIMEOUT and the
+	// two breakers of spec 015, which count one success or failure per
+	// call and refuse at once while open.
+	store := wal.NewBreakerStore(wal.BreakerOptions{Store: s3, Timeout: cfg.StorageTimeout, Metrics: n.metrics})
 	n.log = wal.New(wal.Options{
 		Store: store, Prefix: config.Prefix, Metrics: n.metrics, Logger: logger,
 		Failpoint: n.failpoint,
@@ -149,12 +153,12 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		// it needs, and no commit runs before run has bound it.
 		OnCommit: func(repo string, seq uint64) { n.gossip.Announce(repo, seq) },
 	})
-	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.metrics})
+	n.cache, err = repo.New(repo.Options{Dir: cfg.DataDir, Log: n.log, Logger: logger, Metrics: n.metrics, StaleMax: cfg.StaleMax})
 	if err != nil {
 		return nil, err
 	}
 	n.checks = append(n.checks,
-		readyCheck{name: "storage", fn: n.log.Ping},
+		readyCheck{name: "storage", fn: n.storageReady},
 		readyCheck{name: "disk", fn: n.diskWritable},
 	)
 	n.background = append(n.background, n.sweep)
@@ -287,6 +291,24 @@ func (n *node) sweep(ctx context.Context) error {
 		}
 	})
 	return ctx.Err()
+}
+
+// storageReady is the storage check of readiness: one listing under
+// the prefix through the breaker store. A read breaker that is open
+// (spec 015) is not a reason to leave the rotation: the node serves
+// warm repositories stale and refuses writes with a message that says
+// to retry, and a replica out of the endpoint list would show a client
+// neither; the listing that the breaker refuses is the one that opened
+// it, so the failure is already counted and the alert already fires.
+// A listing that fails while the breaker is closed, the bucket slow or
+// gone before five calls have failed, makes the replica unready as
+// before, and every such listing counts toward the breaker.
+func (n *node) storageReady(ctx context.Context) error {
+	err := n.log.Ping(ctx)
+	if errors.Is(err, wal.ErrStorageOpen) {
+		return nil
+	}
+	return err
 }
 
 // diskWritable proves the data directory accepts a write. A read-only
