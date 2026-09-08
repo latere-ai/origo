@@ -34,6 +34,15 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// An LFS object and its marker (spec 010): the sweeper never touches
+	// lfs/, whatever its age, and the purge takes it with the prefix.
+	lfsObject := l.key(repoA, "lfs/"+strings.Repeat("ab", 32))
+	lfsMarker := l.key(repoA, "lfs/verified/"+strings.Repeat("ab", 32))
+	for _, k := range []string{lfsObject, lfsMarker} {
+		if _, err := store.Put(ctx, k, BytesBody([]byte("lfs"))); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rep, err := l.Sweep(ctx, repoA, time.Hour)
 	if err != nil || len(rep.Deleted) != 0 {
 		t.Fatalf("young orphans swept: %+v, %v", rep, err)
@@ -45,6 +54,11 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 	}
 	if _, err := store.Head(ctx, l.key(repoA, c.Key)); err != nil {
 		t.Fatal("the committed entry was swept")
+	}
+	for _, k := range []string{lfsObject, lfsMarker} {
+		if _, err := store.Head(ctx, k); err != nil {
+			t.Fatalf("the sweeper removed %s", k)
+		}
 	}
 	for _, k := range []string{lost, inflight} {
 		if _, err := store.Head(ctx, k); !errors.Is(err, ErrNotFound) {
@@ -102,6 +116,12 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 	rep, err = l.Sweep(ctx, repoA, time.Hour)
 	if err != nil || !rep.Purged {
 		t.Fatalf("purge: %+v, %v", rep, err)
+	}
+	// The purge removes lfs/ with the rest of the prefix (spec 010).
+	for _, k := range []string{lfsObject, lfsMarker} {
+		if _, err := store.Head(ctx, k); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s survived the purge", k)
+		}
 	}
 	if n := len(store.Keys()); n != 0 {
 		t.Fatalf("%d keys survived the purge: %v", n, store.Keys())
