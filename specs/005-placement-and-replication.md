@@ -1,6 +1,6 @@
 ---
 title: "Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -463,5 +463,17 @@ Items for other specs:
 
 The cluster criteria are proved by the `e2e` and `e2e-slow` jobs of
 spec 013; the kind stack cannot run on this machine (spec 013's
-Outcome). The spec stays at `testing` until both jobs are green on
-`main` with these tests, and the Outcome then records the run.
+Outcome). Both jobs are green on `main` at `ee6a5c6` (run
+34241628620), with every other job, and the spec is complete. Four
+rounds on the stack preceded it, each a defect found by the jobs and
+fixed at its root: `up.sh` waited for the identity path through the
+balanced port alone (spec 013's Outcome records the fix); the
+overlay's pods requested the base's 250m CPU and a fourth could not
+schedule; a node that had joined a second earlier answered a
+different `Origo-Prefer` until it heard the others; and a joined
+batch with one object in two entries was refused by `index-pack`.
+On the runner, the read load measured 3.4 to 9.7 clones per second
+of the 10 MiB repository at 2 replicas and 4.6 to 10.2 at 4, with
+the push every second beside it, and 8 replicas scheduled once the
+request was lowered; the figures vary with the runner and nothing
+about them is asserted, as the criterion says.
