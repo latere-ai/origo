@@ -140,7 +140,7 @@ LFS upload; `admin` for `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`,
 `POST /v1/repos` the `repo` object carries the id, owner, and slug the
 body names.
 
-Response 200 `{"allow": true, "ttl": 60, "replicas": 1, "quota_bytes": 53687091200}`
+Response 200 `{"allow": true, "ttl": 60, "replicas": 1, "quota_bytes": 53687091200, "requests_per_minute": 600}`
 or 200 `{"allow": false, "reason": "…"}`. One rule of the contract binds
 every authorizer: the repository id
 `00000000-0000-0000-0000-000000000001` is reserved and must be denied
@@ -148,7 +148,12 @@ for every subject and action, because `origod check` (spec 018) sends
 it with an empty subject and treats an allow as a misconfigured
 authorizer; the stub of spec 013 denies it. `ttl` defaults to 60 seconds
 and is capped at 600; `replicas` (spec 005) defaults to 1; `quota_bytes`
-(spec 012) defaults to 53687091200. An allow is cached per
+(spec 012) defaults to 53687091200. `requests_per_minute` (spec 012) is
+optional and names the rate this subject alone is bucketed at on the
+node; absent, the subject is bucketed at the value of
+`ORIGO_REQUESTS_PER_MINUTE`. It is for a subject that drives many
+repositories, which spec 020 names as its case; the node does not read
+it yet, and spec 020's builder adds it under that spec's item. An allow is cached per
 `(subject, actor, repo id, action)` for `ttl`; a deny for 5 seconds; an
 answer for an unresolved name (empty id) is not cached. Each cache
 holds at most 65 536 entries and evicts the least recently used. The

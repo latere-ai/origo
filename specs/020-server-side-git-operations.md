@@ -43,6 +43,17 @@ Spec 009 serves refs, commits, trees, and blobs. Spec 004's receive path
 turns a pack and a transaction into an entry. Nothing creates a commit
 without a client.
 
+One item for the builder, from spec 012: a subject that drives many
+repositories through these routes needs a request rate of its own. Spec
+012's per-subject bucket is one figure for the node,
+`ORIGO_REQUESTS_PER_MINUTE`, 600 by default, which is 300 back-to-back
+pushes a minute under one token; a tool that walks a fleet of
+repositories crosses it while every human client stays far below. The
+authorizer answers the figure: spec 007's response carries an optional
+`requests_per_minute`, absent meaning the variable's value, and this
+spec's builder makes the bucket read it, so a consumer raises the rate
+for its own tooling without raising it for every caller of the node.
+
 ## Design
 
 ### Common shape
