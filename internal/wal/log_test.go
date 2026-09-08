@@ -118,18 +118,45 @@ func TestCommitWritesOneEntryAndOneIndex(t *testing.T) {
 	if err != nil || c4.Index.DeletedAt == nil {
 		t.Fatalf("delete: %+v, %v", c4, err)
 	}
+	// Three pushes carrying a pack each: size_bytes is their sum, and a
+	// delete adds nothing to it.
+	pushed := 3 * int64(len("PACK"+sha(1)))
+	if c3.Index.SizeBytes != pushed || c4.Index.SizeBytes != pushed {
+		t.Fatalf("size_bytes after three pushes %d and a delete %d, want %d", c3.Index.SizeBytes, c4.Index.SizeBytes, pushed)
+	}
 	// A delete copies pushed_at forward: the newest push is still c3's.
 	if c4.Index.PushedAt == nil || !c4.Index.PushedAt.Equal(*c3.Index.PushedAt) || c4.Index.DeletedAt.Equal(*c4.Index.PushedAt) {
 		t.Fatalf("delete: pushed_at %v, c3 %v, deleted_at %v", c4.Index.PushedAt, c3.Index.PushedAt, c4.Index.DeletedAt)
 	}
 	c5, err := l.Commit(ctx, repoA, c4.Index, Entry{Kind: KindPush}, noCatchUp)
-	if err != nil || c5.Index.DeletedAt != nil {
+	if err != nil || c5.Index.DeletedAt != nil || c5.Index.SizeBytes != pushed {
 		t.Fatalf("undelete: %+v, %v", c5, err)
 	}
-	// Compaction replaces the pack list and folds the entries.
-	c6, err := l.Commit(ctx, repoA, c5.Index, Entry{Kind: KindCompact, Packs: []string{"packs/" + sha(9) + ".pack"}, CompactedThrough: 5}, noCatchUp)
+	// Compaction replaces the pack list, folds the entries, and sets
+	// size_bytes to the bytes of the packs it lists, which the writer
+	// passes as PacksBytes: the figure falls to what the log holds.
+	c6, err := l.Commit(ctx, repoA, c5.Index, Entry{Kind: KindCompact, Packs: []string{"packs/" + sha(9) + ".pack"}, PacksBytes: 77, CompactedThrough: 5}, noCatchUp)
 	if err != nil || c6.Index.CompactedThrough != 5 || len(c6.Index.Entries) != 1 || len(c6.Index.Packs) != 1 {
 		t.Fatalf("compact: %+v, %v", c6.Index, err)
+	}
+	if c6.Index.SizeBytes != 77 {
+		t.Fatalf("size_bytes after compaction = %d, want the packs' 77 bytes", c6.Index.SizeBytes)
+	}
+	// The next push adds its own pack bytes to that, and PacksBytes on a
+	// push is ignored.
+	e7 := push("refs/heads/main", sha(1), sha(7))
+	e7.PacksBytes = 1 << 40
+	c7, err := l.Commit(ctx, repoA, c6.Index, e7, noCatchUp)
+	if err != nil || c7.Index.SizeBytes != 77+int64(len("PACK"+sha(7))) {
+		t.Fatalf("push after compaction: size_bytes %d, want %d, %v", c7.Index.SizeBytes, 77+len("PACK"+sha(7)), err)
+	}
+	// A compaction that claims negative bytes is refused by the index
+	// parser before anything is created.
+	if _, err := l.Commit(ctx, repoA, c7.Index, Entry{Kind: KindCompact, Packs: []string{"packs/" + sha(9) + ".pack"}, PacksBytes: -1, CompactedThrough: 7}, noCatchUp); err == nil || !strings.Contains(err.Error(), "size_bytes negative") {
+		t.Fatalf("negative PacksBytes: %v", err)
+	}
+	if n := countKeys(store, IndexKey(8)); n != 0 {
+		t.Fatal("a refused compaction created an index object")
 	}
 }
 

@@ -283,6 +283,11 @@ type Entry struct {
 	// Packs replaces the index's pack list; compaction sets it. Nil keeps
 	// the list.
 	Packs []string
+	// PacksBytes is the size of the .pack objects Packs lists, which the
+	// writer of a compact entry knows because it uploaded them. A compact
+	// commit sets the index's size_bytes to it; every other kind ignores
+	// it.
+	PacksBytes int64
 	// CompactedThrough is set by compaction; zero keeps the value.
 	CompactedThrough uint64
 	// Deleted marks the repository deleted (KindDelete) or, when false on
@@ -466,7 +471,16 @@ func (l *Log) nextIndex(base *Index, seq uint64, key string, at time.Time, e Ent
 		next.Entries = nil
 	}
 	next.Entries = append(next.Entries, ie)
-	next.SizeBytes += e.Pack.Size
+	// size_bytes is what the log holds: the listed packs plus the pack
+	// bytes of the entries since the last compaction. A compaction
+	// resets it to its packs, so the figure falls to what a fresh
+	// materialization downloads; a push adds its own pack, a delete and
+	// an empty push add 0.
+	if e.Kind == KindCompact {
+		next.SizeBytes = e.PacksBytes
+	} else {
+		next.SizeBytes += e.Pack.Size
+	}
 	if e.Kind == KindPush {
 		// The newest push's at; every other kind copies it forward
 		// through Clone.
