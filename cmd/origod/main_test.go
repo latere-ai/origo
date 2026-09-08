@@ -621,3 +621,48 @@ func TestRunStopsOnSignalContext(t *testing.T) {
 		t.Fatal("run did not return")
 	}
 }
+
+// TestEventsLoopRunsWithTheSink: with ORIGO_EVENTS_URL and the secret
+// set the node runs the dispatcher, whose start-up reads its own
+// journals from the bucket and whose sweep lists the events prefix on
+// the repair interval; without the URL the dispatcher is off and lists
+// nothing.
+func TestEventsLoopRunsWithTheSink(t *testing.T) {
+	env := testEnv(t)
+	url, lists := fakeBucket(t)
+	env["ORIGO_S3_ENDPOINT"] = url
+	env["ORIGO_S3_PATH_STYLE"] = "1"
+	env["ORIGO_SWEEP_INTERVAL"] = "0"
+	env["ORIGO_EVENTS_URL"] = "http://127.0.0.1:1"
+	env["ORIGO_EVENTS_SECRET"] = "k"
+	env["ORIGO_REPAIR_INTERVAL"] = "20ms"
+	env["ORIGO_NODE_NAME"] = "node-1"
+	n, stop := startNode(t, env)
+	if !n.events.Enabled() {
+		t.Fatal("events off with the sink configured")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for lists.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() < 2 {
+		t.Fatalf("the repair sweep listed %d times", lists.Load())
+	}
+	delete(env, "ORIGO_EVENTS_URL")
+	delete(env, "ORIGO_EVENTS_SECRET")
+	before := lists.Load()
+	n, stop = startNode(t, env)
+	if n.events.Enabled() {
+		t.Fatal("events on without a sink")
+	}
+	time.Sleep(60 * time.Millisecond)
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() != before {
+		t.Fatalf("the dispatcher swept with events off: %d listings", lists.Load()-before)
+	}
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/repo"
 	versionpkg "github.com/latere-ai/origo/internal/version"
@@ -75,6 +76,7 @@ type node struct {
 
 	verifier *auth.Verifier
 	signer   *auth.Signer
+	events   *events.Dispatcher
 
 	public     http.Handler
 	checks     []readyCheck
@@ -142,13 +144,16 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	guard := auth.NewGuard(authorizer, logger)
 	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), nil)
 	n.background = append(n.background, n.verifier.Run)
+	if err := n.newEvents(); err != nil {
+		return nil, err
+	}
 
 	// The application surface: smart HTTP and the repository API behind
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard}).Register(app)
-	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer}).Register(app)
+	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.reg, Guard: guard, Events: n.events}).Register(app)
+	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events}).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})
