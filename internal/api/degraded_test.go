@@ -84,3 +84,47 @@ func TestReadAPIServesStaleAndRepositoryUnavailable(t *testing.T) {
 		t.Fatalf("GET with the entry gone: %d", status)
 	}
 }
+
+// TestWriteRefusedByTheWriteBreakerCarriesRetryAfter: a create refused
+// by the write breaker answers Retry-After from that breaker's open
+// window, while the read breaker stays closed. Reading the closed read
+// breaker, whose window is zero, sends no header at all, which is what
+// this held before the class was taken from the operation.
+func TestWriteRefusedByTheWriteBreakerCarriesRetryAfter(t *testing.T) {
+	var bs *wal.BreakerStore
+	h := newHarness(t, withWrap(func(s wal.Store) wal.Store {
+		bs = wal.NewBreakerStore(wal.BreakerOptions{Store: s, Threshold: 1, OpenFor: 30 * time.Second})
+		return bs
+	}))
+	// Writes go away; reads keep answering, so only the write breaker
+	// opens.
+	h.store.SetFault(func(op, _ string) error {
+		if op == "Create" || op == "Put" || op == "Delete" {
+			return errors.New("unreachable")
+		}
+		return nil
+	})
+	body := `{"id":"` + repoA + `","owner":"acme","slug":"app"}`
+	if status, out := h.do("POST", "/v1/repos", body); status != 503 {
+		t.Fatalf("the failing create: %d %v", status, out)
+	}
+	if bs.Admits(wal.ClassWrite) {
+		t.Fatal("the write breaker did not open")
+	}
+	if !bs.Admits(wal.ClassRead) {
+		t.Fatal("the read breaker opened; the test needs it closed")
+	}
+	status, out, header := h.doHeader("POST", "/v1/repos", body)
+	retry, err := strconv.Atoi(header.Get("Retry-After"))
+	d := details(out)
+	if status != 503 || d["error"] != "breaker open" || d["op"] != "create" {
+		t.Fatalf("the refused create: %d %v", status, out)
+	}
+	if err != nil || retry < 1 || retry > 30 {
+		t.Fatalf("Retry-After %q on a write refused by the write breaker", header.Get("Retry-After"))
+	}
+	// A read is unaffected and carries no Retry-After.
+	if status, _, header := h.doHeader("GET", "/v1/repos/"+repoA, ""); header.Get("Retry-After") != "" {
+		t.Fatalf("a read carried Retry-After: %d %q", status, header.Get("Retry-After"))
+	}
+}

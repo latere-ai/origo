@@ -491,3 +491,16 @@ rotation, the pooled connections that hid a replica leaving the
 endpoint list, the cleanup order that deleted the repository the
 health wait read, the cancelled fetch masking the worker's error, and
 the caller's cancellation counted as the bucket's failure.
+
+One defect of this build, found by review and fixed on 2026-09-08 by
+spec 012's builder: `Retry-After` on a 503 `storage_unavailable` was
+read from the read breaker whatever operation had been refused, so a
+write refused by an open write breaker while the read breaker was
+closed carried no header at all, the closed breaker's remaining
+window being zero. The class now comes from the operation the
+`OpError` names: `wal.ClassOf` over `opClass`, the one place the
+mapping lives, which `BreakerStore.call` also reads in place of the
+class each method passed. `internal/wal`,
+`TestClassOfIsTheOperationsClass`; `internal/api`,
+`TestWriteRefusedByTheWriteBreakerCarriesRetryAfter`;
+`internal/httpgit`, `TestStorageErrorTakesTheClassOfTheFailedOperation`.

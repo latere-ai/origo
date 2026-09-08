@@ -402,7 +402,7 @@ func (h *Handler) tokens(w http.ResponseWriter, r *http.Request) {
 // storageError answers a failure of the log: 503 repository_unavailable
 // naming the key for an integrity error of the log (spec 015), 503
 // storage_unavailable with the op, the key, and the error otherwise,
-// with Retry-After when the read breaker refused the call.
+// with Retry-After when a breaker refused the call.
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	if ie, ok := errors.AsType[*wal.IntegrityError](err); ok {
 		h.logger.ErrorContext(r.Context(), "repository unavailable until restored", "path", r.URL.Path, "key", ie.Key, "error", ie.Err)
@@ -410,10 +410,22 @@ func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error
 		return
 	}
 	h.logger.ErrorContext(r.Context(), "repository operation failed", "path", r.URL.Path, "error", err)
-	if bs := h.log.Breakers(); bs != nil && errors.Is(err, wal.ErrStorageOpen) {
-		if d := bs.RetryAfter(wal.ClassRead); d > 0 {
-			w.Header().Set("Retry-After", strconv.Itoa(int(d/time.Second)))
-		}
-	}
+	h.retryAfter(w, err)
 	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
+}
+
+// retryAfter sets Retry-After to the whole seconds that remain of the
+// open window of the breaker that refused the call (spec 015). The
+// class comes from the operation the error names, never from an
+// assumption: a create refused while only the write breaker is open
+// would otherwise read the closed read breaker, whose window is zero,
+// and answer no header at all.
+func (h *Handler) retryAfter(w http.ResponseWriter, err error) {
+	bs := h.log.Breakers()
+	if bs == nil || !errors.Is(err, wal.ErrStorageOpen) {
+		return
+	}
+	if d := bs.RetryAfter(wal.ClassOf(err)); d > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(d/time.Second)))
+	}
 }

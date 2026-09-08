@@ -263,7 +263,11 @@ func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error
 	}
 	h.logger.ErrorContext(r.Context(), "repository unavailable", "path", r.URL.Path, "error", err)
 	if errors.Is(err, wal.ErrStorageOpen) {
-		h.retryAfter(w, wal.ClassRead)
+		// The class is the one the failed operation belongs to, never
+		// an assumption: a write refused while only the write breaker
+		// is open would otherwise read the closed read breaker's
+		// window, which is zero, and carry no header.
+		h.retryAfter(w, wal.ClassOf(err))
 	}
 	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
 }

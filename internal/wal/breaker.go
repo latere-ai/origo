@@ -65,6 +65,32 @@ func (e *OpError) Error() string {
 
 func (e *OpError) Unwrap() error { return e.Err }
 
+// opClass is the breaker class of a store operation: the three that
+// change the bucket are writes, the three that read it are reads. It is
+// the one place the mapping lives, so a call and a Retry-After for the
+// same operation cannot name different breakers.
+func opClass(op string) Class {
+	switch op {
+	case "create", "put", "delete":
+		return ClassWrite
+	}
+	return ClassRead
+}
+
+// ClassOf is the breaker class behind a failed call, read off the
+// operation its OpError names. A handler answering Retry-After takes
+// the class from here rather than assuming one, because the class that
+// refused is the class whose open window remains: a write refused while
+// the read breaker is closed would otherwise be told to retry after
+// zero seconds. An error that carries no OpError reads as the read
+// class, which is every failure that never reached the store.
+func ClassOf(err error) Class {
+	if oe, ok := errors.AsType[*OpError](err); ok {
+		return opClass(oe.Op)
+	}
+	return ClassRead
+}
+
 // ErrorDetails is the developer fields of a storage_unavailable envelope
 // for err: op, key, and error when the call ran under the BreakerStore,
 // error alone otherwise.
@@ -314,8 +340,8 @@ func (b *BreakerStore) Wait(ctx context.Context, c Class, poll, limit time.Durat
 // call the caller's own context ended is neither a success nor a
 // failure toward the breaker: the bucket did not fail it, and a client
 // that went away says nothing about the bucket.
-func (b *BreakerStore) call(ctx context.Context, c Class, op, key string, fn func(context.Context) error) error {
-	br := b.breaker(c)
+func (b *BreakerStore) call(ctx context.Context, op, key string, fn func(context.Context) error) error {
+	br := b.breaker(opClass(op))
 	if !br.Allow() {
 		b.ops.Inc(map[string]string{"op": op, "result": "error"})
 		return &OpError{Op: op, Key: key, Err: ErrStorageOpen}
@@ -363,7 +389,7 @@ func (b *BreakerStore) deadline(ctx context.Context) (context.Context, context.C
 
 // Create implements Store under the write breaker.
 func (b *BreakerStore) Create(ctx context.Context, key string, body Body) (etag string, err error) {
-	err = b.call(ctx, ClassWrite, "create", key, func(ctx context.Context) error {
+	err = b.call(ctx, "create", key, func(ctx context.Context) error {
 		ctx, cancel := b.deadline(ctx)
 		defer cancel()
 		var cerr error
@@ -375,7 +401,7 @@ func (b *BreakerStore) Create(ctx context.Context, key string, body Body) (etag 
 
 // Put implements Store under the write breaker.
 func (b *BreakerStore) Put(ctx context.Context, key string, body Body) (etag string, err error) {
-	err = b.call(ctx, ClassWrite, "put", key, func(ctx context.Context) error {
+	err = b.call(ctx, "put", key, func(ctx context.Context) error {
 		ctx, cancel := b.deadline(ctx)
 		defer cancel()
 		var perr error
@@ -387,7 +413,7 @@ func (b *BreakerStore) Put(ctx context.Context, key string, body Body) (etag str
 
 // Delete implements Store under the write breaker.
 func (b *BreakerStore) Delete(ctx context.Context, key string) error {
-	return b.call(ctx, ClassWrite, "delete", key, func(ctx context.Context) error {
+	return b.call(ctx, "delete", key, func(ctx context.Context) error {
 		ctx, cancel := b.deadline(ctx)
 		defer cancel()
 		return b.store.Delete(ctx, key)
@@ -396,7 +422,7 @@ func (b *BreakerStore) Delete(ctx context.Context, key string) error {
 
 // Head implements Store under the read breaker.
 func (b *BreakerStore) Head(ctx context.Context, key string) (o Object, err error) {
-	err = b.call(ctx, ClassRead, "head", key, func(ctx context.Context) error {
+	err = b.call(ctx, "head", key, func(ctx context.Context) error {
 		ctx, cancel := b.deadline(ctx)
 		defer cancel()
 		var herr error
@@ -408,7 +434,7 @@ func (b *BreakerStore) Head(ctx context.Context, key string) (o Object, err erro
 
 // List implements Store under the read breaker.
 func (b *BreakerStore) List(ctx context.Context, opts ListOptions) (res ListResult, err error) {
-	err = b.call(ctx, ClassRead, "list", opts.Prefix, func(ctx context.Context) error {
+	err = b.call(ctx, "list", opts.Prefix, func(ctx context.Context) error {
 		ctx, cancel := b.deadline(ctx)
 		defer cancel()
 		var lerr error
@@ -425,7 +451,7 @@ func (b *BreakerStore) List(ctx context.Context, opts ListOptions) (res ListResu
 // stopped once the call returns and the request's context is released
 // when the body is closed.
 func (b *BreakerStore) Get(ctx context.Context, key, ifNoneMatch string) (rc io.ReadCloser, o Object, err error) {
-	err = b.call(ctx, ClassRead, "get", key, func(ctx context.Context) error {
+	err = b.call(ctx, "get", key, func(ctx context.Context) error {
 		ctx, cancel := context.WithCancelCause(ctx)
 		timer := time.AfterFunc(b.timeout, func() { cancel(context.DeadlineExceeded) })
 		body, obj, gerr := b.store.Get(ctx, key, ifNoneMatch)

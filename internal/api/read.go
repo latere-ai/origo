@@ -242,6 +242,7 @@ func (rr *readRequest) fail(ctx context.Context, err error) {
 		return
 	}
 	rr.h.logger.ErrorContext(ctx, "read failed", "repo", rr.id, "operation", rr.op, "error", err)
+	rr.h.retryAfter(rr.w, err)
 	contract.Write(rr.w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
 }
 

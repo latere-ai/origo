@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -459,5 +460,40 @@ func TestIntegrityErrorIsRepositoryUnavailable(t *testing.T) {
 	d.reg.WritePrometheus(&text)
 	if !strings.Contains(text.String(), "origo_log_integrity_errors_total 1") {
 		t.Fatalf("metrics:\n%s", text.String())
+	}
+}
+
+// TestStorageErrorTakesTheClassOfTheFailedOperation: the smart HTTP
+// handler answers Retry-After from the breaker that refused, not from
+// the read breaker. With the write breaker open and the read breaker
+// closed, a refused write carries the write breaker's remaining window;
+// reading the closed read breaker, whose window is zero, sends no
+// header at all.
+func TestStorageErrorTakesTheClassOfTheFailedOperation(t *testing.T) {
+	d := newDegradedNode(t, time.Minute)
+	d.openWrites()
+	if !d.bs.Admits(wal.ClassRead) {
+		t.Fatal("the read breaker opened; the test needs it closed")
+	}
+	// The error a refused write actually produces, from the store.
+	_, err := d.bs.Put(context.Background(), "origo/probe-2", wal.BytesBody(nil))
+	if !errors.Is(err, wal.ErrStorageOpen) {
+		t.Fatalf("the refused write: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	d.h.storageError(rec, httptest.NewRequest("POST", "/r/"+repoA+".git/git-receive-pack", nil), err)
+	if rec.Code != 503 || envelope(t, rec.Body.Bytes()).Details["op"] != "put" {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	retry, convErr := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if convErr != nil || retry < 1 {
+		t.Fatalf("Retry-After %q on a write refused by the write breaker", rec.Header().Get("Retry-After"))
+	}
+	// A read refused while only the write breaker is open never happens,
+	// and an error that names no operation reads as the read class.
+	rec = httptest.NewRecorder()
+	d.h.storageError(rec, httptest.NewRequest("GET", "/r/"+repoA+".git/info/refs", nil), wal.ErrStorageOpen)
+	if got := rec.Header().Get("Retry-After"); got != "" {
+		t.Errorf("Retry-After %q from the closed read breaker", got)
 	}
 }

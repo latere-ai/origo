@@ -464,3 +464,41 @@ func TestReadIndexReportsACorruptObjectAsIntegrity(t *testing.T) {
 		t.Fatal("a log over the wrapper reports none")
 	}
 }
+
+// TestClassOfIsTheOperationsClass: every store operation belongs to the
+// breaker its call runs under, and ClassOf reads that class back off a
+// failed call, so a handler answering Retry-After names the breaker
+// that refused. An error naming no operation is a read.
+func TestClassOfIsTheOperationsClass(t *testing.T) {
+	for op, want := range map[string]Class{
+		"create": ClassWrite, "put": ClassWrite, "delete": ClassWrite,
+		"head": ClassRead, "get": ClassRead, "list": ClassRead,
+	} {
+		if got := ClassOf(&OpError{Op: op, Err: ErrStorageOpen}); got != want {
+			t.Errorf("ClassOf(%s) = %s, want %s", op, got, want)
+		}
+	}
+	if got := ClassOf(ErrStorageOpen); got != ClassRead {
+		t.Errorf("an error naming no operation is %s, want %s", got, ClassRead)
+	}
+	// The class a call runs under is the same mapping: a refused write
+	// carries the write operation and opens the write breaker alone.
+	mem := NewMemStore()
+	mem.SetFault(func(op, _ string) error {
+		if op == "Put" {
+			return errors.New("unreachable")
+		}
+		return nil
+	})
+	bs := NewBreakerStore(BreakerOptions{Store: mem, Threshold: 1, OpenFor: time.Minute})
+	if _, err := bs.Put(context.Background(), "origo/probe", BytesBody(nil)); err == nil {
+		t.Fatal("the failing write answered")
+	}
+	_, err := bs.Put(context.Background(), "origo/probe", BytesBody(nil))
+	if !errors.Is(err, ErrStorageOpen) || ClassOf(err) != ClassWrite {
+		t.Fatalf("the refused write: %v, class %s", err, ClassOf(err))
+	}
+	if bs.RetryAfter(ClassWrite) <= 0 || bs.RetryAfter(ClassRead) != 0 {
+		t.Fatalf("windows: write %s, read %s", bs.RetryAfter(ClassWrite), bs.RetryAfter(ClassRead))
+	}
+}
