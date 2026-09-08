@@ -84,7 +84,11 @@ func keyOf(t *testing.T, s *issuer.Server, kid string) any {
 		case "EC":
 			x, _ := base64.RawURLEncoding.DecodeString(key["x"].(string))
 			y, _ := base64.RawURLEncoding.DecodeString(key["y"].(string))
-			return &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}
+			pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), append(append([]byte{4}, x...), y...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return pub
 		case "RSA":
 			n, _ := base64.RawURLEncoding.DecodeString(key["n"].(string))
 			e, _ := base64.RawURLEncoding.DecodeString(key["e"].(string))

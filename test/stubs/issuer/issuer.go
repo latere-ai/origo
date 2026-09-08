@@ -243,8 +243,14 @@ func (s *Server) Mint(c Claims) string {
 	if c.Nbf != 0 {
 		claims["nbf"] = c.Nbf
 	}
-	header, _ := json.Marshal(map[string]string{"alg": c.Alg, "kid": c.Kid, "typ": "JWT"})
-	body, _ := json.Marshal(claims)
+	header, err := json.Marshal(map[string]string{"alg": c.Alg, "kid": c.Kid, "typ": "JWT"})
+	if err != nil {
+		panic(err)
+	}
+	body, err := json.Marshal(claims)
+	if err != nil {
+		panic(err)
+	}
 	signing := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(body)
 	return signing + "." + base64.RawURLEncoding.EncodeToString(key.sign([]byte(signing)))
 }
@@ -300,7 +306,9 @@ func (s *Server) mint(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) generate() signingKey {
@@ -360,12 +368,13 @@ func (k signingKey) jwk() map[string]string {
 			"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.rsa.E)).Bytes()),
 		}
 	}
-	x := make([]byte, 32)
-	y := make([]byte, 32)
-	k.ec.X.FillBytes(x)
-	k.ec.Y.FillBytes(y)
+	// The uncompressed point: 0x04, then x and y of 32 bytes each.
+	point, err := k.ec.PublicKey.Bytes()
+	if err != nil {
+		panic(err)
+	}
 	return map[string]string{
 		"kty": "EC", "crv": "P-256", "kid": k.kid, "alg": "ES256", "use": "sig",
-		"x": base64.RawURLEncoding.EncodeToString(x), "y": base64.RawURLEncoding.EncodeToString(y),
+		"x": base64.RawURLEncoding.EncodeToString(point[1:33]), "y": base64.RawURLEncoding.EncodeToString(point[33:65]),
 	}
 }
