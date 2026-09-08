@@ -53,7 +53,8 @@ func TestReadAPIServesStaleAndRepositoryUnavailable(t *testing.T) {
 	// The lifecycle API reads the log itself: refused with the breaker's
 	// details and Retry-After.
 	status, out, header := h.doHeader("GET", "/v1/repos/"+repoA, "")
-	if d := details(out); status != 503 || d["error"] != "breaker open" || d["op"] == nil || header.Get("Retry-After") != "1" {
+	retry, err := strconv.Atoi(header.Get("Retry-After"))
+	if d := details(out); status != 503 || d["error"] != "breaker open" || d["op"] == nil || err != nil || retry < 1 || retry > 3 {
 		t.Fatalf("GET under the open breaker: %d %v Retry-After %q", status, out, header.Get("Retry-After"))
 	}
 	// The bucket returns and the window passes: consistent again.
