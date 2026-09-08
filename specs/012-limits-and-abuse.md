@@ -193,6 +193,19 @@ Divergences and interpretations, each kept and the reason:
   measured is not one a quota was checked against
   (`TestQuotaFailsClosedWhenTheListingFails`).
 
+- **The cluster scenarios take a subject each.** `test/e2e`'s
+  `adminToken` minted one `dev` subject for the whole job, which made
+  every scenario one caller of one bucket: the first cluster run of
+  this build refused `TestClusterCompactionKeepsFetchLatencyFlat`,
+  `TestClusterDegradedStorage`, and `TestClusterNodeRemovalUnderReadLoad`
+  with `rate_limited`, the limit working rather than the scenarios
+  failing. The token is now minted for a subject naming the test, one
+  bucket per scenario, which is what a live installation's callers are;
+  specs 002 and 013 say so where they name the default. The figure the
+  Design fixes, 600 a minute, is below what a single identity doing
+  bulk work asks for, and a consumer that pushes a repository fleet
+  under one service token will meet it.
+
 Items this spec closes for another:
 
 - Spec 010's builder item is done: `quota_bytes` for a
