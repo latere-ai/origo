@@ -118,6 +118,10 @@ type node struct {
 	// (spec 015), so a replica that never reached the bucket, one
 	// started against a wrong endpoint, is never in rotation.
 	storageSeen atomic.Bool
+	// ping is the readiness listing in flight, shared by every probe
+	// that arrives while it runs.
+	pingMu sync.Mutex
+	ping   *pingCall
 
 	mu           sync.Mutex
 	publicAddr   string
@@ -298,6 +302,13 @@ func (n *node) sweep(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// pingCall is one readiness listing: done closes when it ends and err
+// is its verdict.
+type pingCall struct {
+	done chan struct{}
+	err  error
+}
+
 // storageReady is the storage check of readiness: one listing under
 // the prefix through the breaker store. A read breaker that is open
 // (spec 015) is not a reason to leave the rotation once the bucket has
@@ -309,16 +320,41 @@ func (n *node) sweep(ctx context.Context) error {
 // never answered has nothing warm and stays unready until a probe
 // succeeds. A listing that fails while the breaker is closed, the
 // bucket slow or gone before five calls have failed, makes the replica
-// unready as before, and every such listing counts toward the breaker.
+// unready as before.
+//
+// The listing runs detached from the probe's own budget, under the
+// storage deadline alone, and every probe that arrives while it runs
+// shares it: the breaker counts what the bucket did to the listing,
+// never what the probe's 2 second budget did, so the listings of an
+// unready replica are what opens its breaker when no request reaches
+// it. A probe whose budget ends first reports the wait as its error.
 func (n *node) storageReady(ctx context.Context) error {
-	err := n.log.Ping(ctx)
+	n.pingMu.Lock()
+	p := n.ping
+	if p == nil {
+		p = &pingCall{done: make(chan struct{})}
+		n.ping = p
+		go func() {
+			p.err = n.log.Ping(context.WithoutCancel(ctx))
+			n.pingMu.Lock()
+			n.ping = nil
+			n.pingMu.Unlock()
+			close(p.done)
+		}()
+	}
+	n.pingMu.Unlock()
+	select {
+	case <-p.done:
+	case <-ctx.Done():
+		return fmt.Errorf("listing still running: %w", ctx.Err())
+	}
 	switch {
-	case err == nil:
+	case p.err == nil:
 		n.storageSeen.Store(true)
-	case errors.Is(err, wal.ErrStorageOpen) && n.storageSeen.Load():
+	case errors.Is(p.err, wal.ErrStorageOpen) && n.storageSeen.Load():
 		return nil
 	}
-	return err
+	return p.err
 }
 
 // diskWritable proves the data directory accepts a write. A read-only

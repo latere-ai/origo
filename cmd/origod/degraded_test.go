@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -69,7 +70,11 @@ func TestReadyzStaysReadyWhileTheBreakerIsOpen(t *testing.T) {
 
 // TestStorageTimeoutBoundsTheReadinessListing: a bucket that accepts
 // the connection and never answers fails the listing at
-// ORIGO_STORAGE_TIMEOUT, well inside the probe's own budget.
+// ORIGO_STORAGE_TIMEOUT, whatever the probe's own budget does: a
+// deadline inside the budget answers the probe at the deadline, and
+// one past it answers the probe from its budget while the listing runs
+// on, shared by the probes that arrive meanwhile, and counts toward
+// the breaker when it ends.
 func TestStorageTimeoutBoundsTheReadinessListing(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))
@@ -79,11 +84,37 @@ func TestStorageTimeoutBoundsTheReadinessListing(t *testing.T) {
 	env["ORIGO_S3_PATH_STYLE"] = "1"
 	env["ORIGO_STORAGE_TIMEOUT"] = "100ms"
 	n, stop := startNode(t, env)
-	defer func() { _ = stop() }()
 	_, internal, _ := n.addrs()
 	started := time.Now()
 	code, body := probe(t, "http://"+internal+"/readyz")
 	if took := time.Since(started); code != 503 || !strings.Contains(body, "storage") || took > 1500*time.Millisecond {
 		t.Fatalf("hanging bucket: %d %q after %s", code, body, took)
 	}
+	_ = stop()
+
+	env["ORIGO_STORAGE_TIMEOUT"] = "3s"
+	n, stop = startNode(t, env)
+	defer func() { _ = stop() }()
+	_, internal, _ = n.addrs()
+	var wg sync.WaitGroup
+	codes := make([]int, 3)
+	started = time.Now()
+	for i := range codes {
+		wg.Go(func() { codes[i], _ = probe(t, "http://"+internal+"/readyz") })
+	}
+	wg.Wait()
+	if took := time.Since(started); took > 2900*time.Millisecond || codes[0] != 503 || codes[1] != 503 || codes[2] != 503 {
+		t.Fatalf("probes past their budget: %v after %s", codes, took)
+	}
+	// The one listing the three probes shared ends at its deadline and
+	// counts once.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, text := probe(t, "http://"+internal+"/metrics"); strings.Contains(text, `origo_storage_ops_total{op="list",result="error"} 1`) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_, text := probe(t, "http://"+internal+"/metrics")
+	t.Fatalf("the shared listing did not count once:\n%s", text)
 }
