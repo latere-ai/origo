@@ -23,10 +23,12 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"github.com/latere-ai/origo/test/stubs/sink"
 )
 
 const (
@@ -57,6 +59,12 @@ type harnessConfig struct {
 	store       *wal.MemStore
 	gitBin      string
 	readTimeout time.Duration
+	sink        *sink.Server
+}
+
+// withSink runs an event dispatcher delivering to the stub sink.
+func withSink(s *sink.Server) harnessOption {
+	return func(c *harnessConfig) { c.sink = s }
 }
 
 // withStore shares a store between harnesses, two nodes over one log.
@@ -102,8 +110,18 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	h := &harness{t: t, store: store, log: l, cache: cache, authz: authz, key: key, principal: auth.Principal{Subject: "alice"}}
 	h.guard = auth.NewGuard(client, logger)
 	h.signer = auth.NewSigner(key, issuer, nil)
+	var dispatcher *events.Dispatcher
+	if cfg.sink != nil {
+		dispatcher, err = events.New(events.Options{Log: l, Node: "n1", URL: cfg.sink.URL(), Secret: cfg.sink.Secret(), Logger: logger})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		go func() { _ = dispatcher.Run(ctx) }()
+	}
 	mux := http.NewServeMux()
-	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout}).Register(mux)
+	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher}).Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
@@ -521,4 +539,56 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 		}
 	}()
 	New(Options{Cache: h.cache})
+}
+
+// TestLifecycleEventsAreEmitted is the wiring of spec 008 in this
+// package: a PATCH of default_branch enqueues one push event with the
+// single HEAD update and kind_detail default_branch, and an undelete
+// emits undeleted once and no push event, both with the caller as the
+// pusher.
+func TestLifecycleEventsAreEmitted(t *testing.T) {
+	s := sink.New(t)
+	h := newHarness(t, withSink(s))
+	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	if status, _ := h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`); status != 201 {
+		t.Fatalf("create: %d", status)
+	}
+	if status, _ := h.do("PATCH", "/v1/repos/"+repoA, `{"default_branch":"dev"}`); status != 200 {
+		t.Fatalf("patch: %d", status)
+	}
+	got, ok := s.Wait(repoA, events.KindPush, 1, 10*time.Second)
+	if !ok {
+		t.Fatal("no push event for the default_branch change")
+	}
+	var p events.Push
+	if err := json.Unmarshal(got[0].Body, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Seq != 1 || p.KindDetail != events.DetailDefaultBranch || len(p.Updates) != 1 || p.Updates[0] != (events.Update{Ref: "HEAD", Before: "ref: refs/heads/main", After: "ref: refs/heads/dev"}) || p.Pusher != (events.Pusher{Sub: "alice", Actor: "svc"}) || !got[0].Verified {
+		t.Fatalf("event %+v", p)
+	}
+	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
+		t.Fatalf("delete: %d", status)
+	}
+	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/undelete", ""); status != 200 {
+		t.Fatalf("undelete: %d", status)
+	}
+	und, ok := s.Wait(repoA, "undeleted", 1, 10*time.Second)
+	if !ok {
+		t.Fatal("undeleted not delivered")
+	}
+	var body map[string]any
+	_ = json.Unmarshal(und[0].Body, &body)
+	if body["kind"] != "undeleted" || body["owner"] != "acme" || body["pusher"].(map[string]any)["sub"] != "alice" || und[0].ID != events.EmitID(repoA, "undeleted", time.Time{}) && und[0].ID != body["id"] {
+		t.Fatalf("undeleted %s", und[0].Body)
+	}
+	// A second undelete of a live repository commits nothing and emits
+	// nothing; the push event count stays at one.
+	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/undelete", ""); status != 200 {
+		t.Fatal("second undelete")
+	}
+	time.Sleep(50 * time.Millisecond)
+	if len(s.Deliveries(repoA, events.KindPush)) != 1 || len(s.Deliveries(repoA, "undeleted")) != 1 {
+		t.Fatalf("deliveries %+v", s.Deliveries(repoA, ""))
+	}
 }

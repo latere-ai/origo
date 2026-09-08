@@ -22,6 +22,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -37,6 +38,10 @@ type Options struct {
 	// ReadTimeout is the budget of the git subprocesses of one read
 	// request; DefaultReadTimeout when zero.
 	ReadTimeout time.Duration
+	// Events carries the push event of a default_branch change and the
+	// undeleted event of an undelete (spec 008); nil, or one with no
+	// sink, sends nothing.
+	Events *events.Dispatcher
 }
 
 // Handler serves /v1/repos.
@@ -46,6 +51,7 @@ type Handler struct {
 	logger *slog.Logger
 	guard  *auth.Guard
 	signer *auth.Signer
+	events *events.Dispatcher
 
 	readTimeout time.Duration
 }
@@ -63,7 +69,7 @@ func New(o Options) *Handler {
 	if timeout == 0 {
 		timeout = DefaultReadTimeout
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, readTimeout: timeout}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, readTimeout: timeout, events: o.Events}
 }
 
 // Register mounts the routes.
@@ -276,6 +282,9 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ix = c.Index
+		// One push event with the single HEAD update (spec 008); a
+		// failed enqueue is logged by the dispatcher and repaired.
+		_ = h.events.Enqueue(r.Context(), m.ID, events.Entry{Header: c.Header, Refs: entry.Refs})
 	}
 	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }
@@ -316,6 +325,11 @@ func (h *Handler) undelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ix = c.Index
+		// The undelete's push entry produces no push event, from the
+		// enqueue or from the repair sweep; its one event is spec 019's
+		// undeleted, emitted after the write and before the response.
+		_ = h.events.Enqueue(r.Context(), m.ID, events.Entry{Header: c.Header})
+		_ = h.events.Emit(r.Context(), m.ID, "undeleted", c.Header.At, events.Pusher{Sub: entry.Subject, Actor: entry.Actor}, nil)
 	}
 	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }
