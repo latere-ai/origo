@@ -148,6 +148,9 @@ func New(o Options) *Handler {
 	if set == nil {
 		set = metrics.Register(nil)
 	}
+	if h.limits == nil {
+		h.limits = limits.New(limits.Options{Log: h.log, Metrics: set, Logger: h.logger})
+	}
 	h.pushes, h.rejected, h.fetches, h.phases = set.Pushes, set.PushesRejected, set.Fetches, set.PushDuration
 	return h
 }

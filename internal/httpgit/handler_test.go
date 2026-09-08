@@ -35,6 +35,7 @@ import (
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/gittest"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -71,9 +72,35 @@ func newGuard(t *testing.T, logger *slog.Logger) (*auth.Guard, *authorizer.Serve
 	return auth.NewGuard(client, logger), authz
 }
 
-func newNode(t *testing.T, store wal.Store) *node {
+// nodeConfig is what a test changes about a node: the bounds of spec
+// 012 it enforces and where its log records go.
+type nodeConfig struct {
+	limits *limits.Options
+	logger *slog.Logger
+}
+
+type nodeOption func(*nodeConfig)
+
+// withLimits gives the node the bounds of spec 012, so a test drives a
+// semaphore of two slots or a push bound of a kilobyte instead of two
+// gibibytes.
+func withLimits(o limits.Options) nodeOption {
+	return func(c *nodeConfig) { c.limits = &o }
+}
+
+// withLog keeps the node's log records, so a test reads the figures of
+// a refused push off the line that carries them.
+func withLog(records *logRecords) nodeOption {
+	return func(c *nodeConfig) { c.logger = slog.New(records) }
+}
+
+func newNode(t *testing.T, store wal.Store, options ...nodeOption) *node {
 	t.Helper()
-	logger := slog.New(slog.DiscardHandler)
+	cfg := nodeConfig{logger: slog.New(slog.DiscardHandler)}
+	for _, o := range options {
+		o(&cfg)
+	}
+	logger := cfg.logger
 	reg := pkgmetrics.NewRegistry()
 	set := metrics.Register(reg)
 	l := wal.New(wal.Options{Store: store, Logger: logger, Metrics: set})
@@ -82,7 +109,12 @@ func newNode(t *testing.T, store wal.Store) *node {
 		t.Fatal(err)
 	}
 	guard, authz := newGuard(t, logger)
-	h := New(Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard})
+	opts := Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard}
+	if cfg.limits != nil {
+		cfg.limits.Metrics, cfg.limits.Logger, cfg.limits.Log = set, logger, l
+		opts.Limits = limits.New(*cfg.limits)
+	}
+	h := New(opts)
 	mux := http.NewServeMux()
 	h.Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the

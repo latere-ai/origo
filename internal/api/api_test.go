@@ -25,6 +25,7 @@ import (
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/wal"
@@ -48,6 +49,7 @@ type harness struct {
 	guard  *auth.Guard
 	key    *ecdsa.PrivateKey
 	signer *auth.Signer
+	limits *limits.Limits
 
 	mu        sync.Mutex
 	principal auth.Principal
@@ -63,6 +65,7 @@ type harnessConfig struct {
 	readTimeout time.Duration
 	sink        *sink.Server
 	placement   placement.Placer
+	limits      *limits.Options
 }
 
 // withSink runs an event dispatcher delivering to the stub sink.
@@ -92,6 +95,12 @@ func withGit(path string) harnessOption {
 }
 
 // withReadTimeout lowers the read API's budget.
+// withLimits gives the handler the bounds of spec 012, so a test drives
+// a subprocess semaphore of one slot.
+func withLimits(o limits.Options) harnessOption {
+	return func(c *harnessConfig) { c.limits = &o }
+}
+
 func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
 }
@@ -138,8 +147,12 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		t.Cleanup(cancel)
 		go func() { _ = dispatcher.Run(ctx) }()
 	}
+	if cfg.limits != nil {
+		cfg.limits.Log, cfg.limits.Logger = l, logger
+		h.limits = limits.New(*cfg.limits)
+	}
 	mux := http.NewServeMux()
-	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement}).Register(mux)
+	New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits}).Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.

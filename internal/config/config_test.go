@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/latere-ai/origo/internal/limits"
 )
 
 func env(m map[string]string) Getenv {
@@ -109,6 +111,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if len(cfg.OIDCIssuers) != 1 || cfg.AuthorizerURL != "https://authz.example" || cfg.TokenKey == nil || cfg.TokenKey.Curve != elliptic.P256() {
 		t.Fatalf("spec 007 values: %+v", cfg)
 	}
+	if cfg.MaxGitProcs != limits.DefaultMaxGitProcs {
+		t.Fatalf("MaxGitProcs = %d, want the default %d", cfg.MaxGitProcs, limits.DefaultMaxGitProcs)
+	}
 }
 
 func TestLoadReadsEveryOptionalValue(t *testing.T) {
@@ -134,6 +139,7 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_REPAIR_INTERVAL"] = "10s"
 	m["ORIGO_REPAIR_UNHEARD"] = "5s"
 	m["ORIGO_S3_PUBLIC_ENDPOINT"] = "http://localhost:30900"
+	m["ORIGO_MAX_GIT_PROCS"] = "8"
 	cfg, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +167,9 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	}
 	if cfg.SweepInterval != time.Second || cfg.SweepMinAge != 0 || cfg.Failpoint != "commit.before-index" {
 		t.Fatalf("development values: %+v", cfg)
+	}
+	if cfg.MaxGitProcs != 8 {
+		t.Fatalf("MaxGitProcs = %d", cfg.MaxGitProcs)
 	}
 	if cfg.RepairInterval != 10*time.Second || cfg.RepairUnheard != 5*time.Second {
 		t.Fatalf("repair values: %+v", cfg)
@@ -224,6 +233,7 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 	m["ORIGO_AUTHORIZER_URL"] = "authz.example"
 	m["ORIGO_TOKEN_KEY"] = "not a key"
 	m["ORIGO_OIDC_ISSUERS"] = "issuer.example"
+	m["ORIGO_MAX_GIT_PROCS"] = "0"
 	_, err := Load(env(m))
 	if err == nil {
 		t.Fatal("expected an error")
@@ -233,6 +243,7 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 		"ORIGO_SWEEP_INTERVAL must be a duration", "ORIGO_SWEEP_MIN_AGE must be a duration",
 		"ORIGO_AUTHORIZER_URL must be an absolute", "ORIGO_TOKEN_KEY must be a PEM-encoded ECDSA P-256 private key",
 		"ORIGO_OIDC_ISSUERS: issuer.example is not an absolute",
+		"ORIGO_MAX_GIT_PROCS must be a positive integer",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err, want)

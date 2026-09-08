@@ -28,6 +28,7 @@ import (
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/gittest"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
 )
@@ -929,5 +930,38 @@ func TestCommitScannerAndTreeParsing(t *testing.T) {
 	rec := &readError{status: 400, code: contract.CodeInvalid, details: map[string]any{"reason": "x"}}
 	if rec.Error() == "" {
 		t.Fatal("Error")
+	}
+}
+
+// TestReadWithoutASubprocessSlotIsRateLimited is spec 012's semaphore
+// on the read API: a request that finds no slot inside the wait is 429
+// rate_limited with details.limit "subprocesses", not the 504 a spent
+// budget answers, and it starts no subprocess. One slot covers the
+// whole read, so the request that got one runs both its subprocesses.
+func TestReadWithoutASubprocessSlotIsRateLimited(t *testing.T) {
+	f := loadFixture(t)
+	h := newHarness(t, withLimits(limits.Options{MaxGitProcs: 1, SlotWait: 20 * time.Millisecond}))
+	h.seed(f)
+	held, ok := h.limits.Slots().Acquire(context.Background(), time.Second)
+	if !ok {
+		t.Fatal("the test could not take the one slot")
+	}
+	resp := h.get("/v1/repos/" + repoA + "/refs")
+	if resp.status != http.StatusTooManyRequests || code(resp.json()) != contract.CodeRateLimited {
+		t.Fatalf("%d %s", resp.status, resp.body)
+	}
+	if d := details(resp.json()); d["limit"] != "subprocesses" || d["retry_after"] != float64(1) {
+		t.Errorf("details: %+v", d)
+	}
+	if resp.header.Get("Retry-After") == "" {
+		t.Error("no Retry-After")
+	}
+	held()
+	if resp := h.get("/v1/repos/" + repoA + "/refs"); resp.status != http.StatusOK {
+		t.Fatalf("after the slot was freed: %d %s", resp.status, resp.body)
+	}
+	// The slot is given back when the read ends, whatever it answered.
+	if held := h.limits.Slots().Held(); held != 0 {
+		t.Fatalf("%d slots held after the read", held)
 	}
 }

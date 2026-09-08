@@ -49,7 +49,8 @@ type Options struct {
 	// sink, sends nothing.
 	Events *events.Dispatcher
 	// Limits holds the subprocess semaphore of spec 012, taken once per
-	// read request and held across its subprocesses; nil takes none.
+	// read request and held across its subprocesses; one of its own,
+	// with the spec's defaults, when nil.
 	Limits *limits.Limits
 }
 
@@ -80,7 +81,11 @@ func New(o Options) *Handler {
 	if timeout == 0 {
 		timeout = DefaultReadTimeout
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: o.Limits}
+	bounds := o.Limits
+	if bounds == nil {
+		bounds = limits.New(limits.Options{Log: o.Cache.Log(), Logger: logger})
+	}
+	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds}
 }
 
 // Register mounts the routes.
