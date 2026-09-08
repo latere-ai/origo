@@ -45,6 +45,21 @@ otel_client:
 modernize:
   disable: []
 
+# Spec 001's last criterion, owned by spec 013: the build list of
+# ./cmd/origod reaches no cloud SDK and no Kubernetes client. The allow
+# list is latere.ai/x/pkg and the standard library, so a new dependency
+# is a decision recorded here.
+depcheck:
+  packages:
+    github.com/latere-ai/origo/cmd/origod:
+      decision: >-
+        the node reaches latere.ai/x/pkg and the standard library and
+        nothing else, so the binary carries no cloud SDK and no
+        Kubernetes client (spec 001)
+      allow:
+        latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
+        github.com/google/uuid: reached through latere.ai/x/pkg, which names events and deliveries with it; not a cloud SDK
+
 license:
   spdx: MIT
   holder: Latere AI
