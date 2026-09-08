@@ -8,9 +8,13 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net"
@@ -26,9 +30,9 @@ import (
 
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/wal"
+	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"github.com/latere-ai/origo/test/stubs/issuer"
 )
-
-const token = "e2e-token"
 
 var (
 	buildOnce sync.Once
@@ -65,12 +69,21 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// stack is the bucket every node of a test shares.
+// stack is the bucket every node of a test shares, and the identity
+// beside it: the stub issuer and the stub authorizer of spec 007 run
+// in-process, the node's signing key is generated here, and token is
+// one the issuer minted for the dev subject, which the authorizer
+// allows on everything.
 type stack struct {
 	endpoint, region, bucket, key, secret string
 	pathStyle                             bool
 	store                                 *wal.S3
 	log                                   *wal.Log
+
+	issuer   *issuer.Server
+	authz    *authorizer.Server
+	tokenKey string
+	token    string
 }
 
 func requireStack(t *testing.T) *stack {
@@ -83,6 +96,18 @@ func requireStack(t *testing.T) *stack {
 	if s.endpoint == "" {
 		t.Skip("ORIGO_TEST_S3_ENDPOINT is not set")
 	}
+	s.issuer = issuer.New(t)
+	s.authz = authorizer.New(t)
+	s.token = s.issuer.Mint(issuer.Claims{Sub: "dev"})
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.tokenKey = string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
 	store, err := wal.NewS3(wal.S3Options{
 		Endpoint: s.endpoint, Region: s.region, Bucket: s.bucket, Key: s.key, Secret: s.secret, PathStyle: s.pathStyle,
 		Client: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
@@ -181,7 +206,9 @@ func (n *node) start() {
 		"ORIGO_S3_ENDPOINT": n.s.endpoint, "ORIGO_S3_REGION": n.s.region, "ORIGO_S3_BUCKET": n.s.bucket,
 		"ORIGO_S3_KEY": n.s.key, "ORIGO_S3_SECRET": n.s.secret, "ORIGO_DATA_DIR": n.dataDir,
 		"ORIGO_PUBLIC_URL": "http://" + n.public, "ORIGO_PUBLIC_ADDR": n.public,
-		"ORIGO_INTERNAL_ADDR": n.internal, "ORIGO_GOSSIP_ADDR": "127.0.0.1:0", "ORIGO_DEV_TOKEN": token,
+		"ORIGO_INTERNAL_ADDR": n.internal, "ORIGO_GOSSIP_ADDR": "127.0.0.1:0",
+		"ORIGO_OIDC_ISSUERS": n.s.issuer.URL(), "ORIGO_AUTHORIZER_URL": n.s.authz.URL(),
+		"ORIGO_AUTHORIZER_TOKEN": n.s.authz.Token(), "ORIGO_TOKEN_KEY": n.s.tokenKey,
 		"PATH": os.Getenv("PATH"),
 	}
 	if n.s.pathStyle {
@@ -261,14 +288,14 @@ func (n *node) wait() error {
 }
 
 func (n *node) url(id string) string {
-	return "http://x:" + token + "@" + n.public + "/r/" + id + ".git"
+	return "http://x:" + n.s.token + "@" + n.public + "/r/" + id + ".git"
 }
 
 // api calls the repository API and returns the status and body.
 func (n *node) api(method, path, body string) (int, map[string]any) {
 	n.t.Helper()
 	req, _ := http.NewRequestWithContext(context.Background(), method, "http://"+n.public+path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+n.s.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		n.t.Fatal(err)
