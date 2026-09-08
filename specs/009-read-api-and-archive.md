@@ -78,8 +78,8 @@ accepted here, meaning the whole tree, and refused by spec 020.
 
 | Method | Path | Response and bounds |
 |---|---|---|
-| GET | `/v1/repos/{id}/refs` | `?prefix=refs/heads/` (default `refs/`); `[{"name", "sha", "peeled"}]` from `git for-each-ref`, `peeled` the tag's target or null; at most 10 000 entries, `Origo-Truncated: true` past that |
-| GET | `/v1/repos/{id}/commits` | `?ref=<sha or name>` (default `HEAD`) `&path=&since=&until=&limit=&cursor=`; newest first in `git rev-list` order; `limit` default 50, at most 200; `since` and `until` RFC 3339; `cursor` is the sha of the last commit of the previous page: the node walks `git rev-list --end-of-options <ref>` from the start, discards output up to and including the cursor, and returns the next `limit` commits, so a page is exact whatever the graph and `--skip` is never used; a cursor not in the walk is 400 `invalid_request` with `details.reason: "cursor"`; `{"commits": [{"sha", "parents", "author": {"name", "email", "at"}, "committer": {…}, "message", "trailers": [{"key", "value"}]}], "next_cursor"}`, `trailers` from `git interpret-trailers --parse` in the order they appear with duplicate keys kept, empty when there are none; a repository whose `ref` does not exist because it has no commit yet (the default `HEAD` of an empty repository) answers 200 with `commits: []` and `next_cursor: null`, while a named `ref` that does not exist in a repository with history is 404 `ref_not_found` |
+| GET | `/v1/repos/{id}/refs` | `?prefix=refs/heads/` (default `refs/`), a string prefix of the full name, so `refs/tags/v1` lists `refs/tags/v1` and `refs/tags/v1.2`; `[{"name", "sha", "peeled"}]` from `git for-each-ref` over the directory of the prefix, the node filtering the names, because a `for-each-ref` pattern matches a whole name or a directory and `refs/tags/v1` as a pattern would list nothing; `peeled` the tag's target or null; at most 10 000 entries, `Origo-Truncated: true` past that |
+| GET | `/v1/repos/{id}/commits` | `?ref=<sha or name>` (default `HEAD`) `&path=&since=&until=&limit=&cursor=`; newest first in `git rev-list` order; `limit` default 50, at most 200; `since` and `until` RFC 3339; `cursor` is the sha of the last commit of the previous page: the node walks `git rev-list --end-of-options <ref>` from the start, discards output up to and including the cursor, and returns the next `limit` commits, so a page is exact whatever the graph and `--skip` is never used; a cursor not in the walk is 400 `invalid_request` with `details.reason: "cursor"`; `{"commits": [{"sha", "parents", "author": {"name", "email", "at"}, "committer": {…}, "message", "trailers": [{"key", "value"}]}], "next_cursor"}`, `trailers` from `%(trailers:only,unfold)` in the format of the same `rev-list`, git's own trailer parser as `interpret-trailers --parse` runs it, so a page is one subprocess and not one per commit, in the order they appear with duplicate keys kept, empty when there are none; a repository whose `ref` does not exist because it has no commit yet (the default `HEAD` of an empty repository) answers 200 with `commits: []` and `next_cursor: null`, while a named `ref` that does not exist in a repository with history is 404 `ref_not_found` |
 | GET | `/v1/repos/{id}/commits/{sha}` | the commit as above plus `"stats": {"files", "additions", "deletions"}` from `git show --numstat`; binary files count as a file with 0 lines |
 | GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=&base=&head=`; `text/x-diff` from `git diff -M --no-color --end-of-options <base> <head> -- <path>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
 | GET | `/v1/repos/{id}/tree/{sha}` | `?path=&recursive=0&cursor=`; `{"entries": [{"path", "mode", "type", "sha", "size"}], "next_cursor"}` from `git ls-tree -l`; 5 000 entries per page, `cursor` the last path |
@@ -106,20 +106,32 @@ null for a repository with no push, and the rule for an index object
 written before the field existed); spec 019's `stats` reports the same
 value.
 
-Every operation runs one git subprocess with a 30 second deadline,
-`--no-pager`, and the environment of spec 016, under the per-node
-subprocess cap `ORIGO_MAX_GIT_PROCS` (spec 012), beyond which the answer
-is 429 `rate_limited`. A subprocess that reaches the deadline is
-killed and the answer is 504 `operation_timeout`, defined in the table
-above and answered wherever a subprocess of the JSON API reaches its
-budget (specs 012, 020), with `details.operation` the endpoint's last
-path segment and `details.budget_seconds` the budget that ran out, 30
-here; a streamed response (`compare`, `blob`, the archive) whose
+Every operation runs two git subprocesses in sequence, `git rev-parse
+--verify` for the name and then the operation, under one deadline,
+`api.DefaultReadTimeout` of 30 seconds unless the `ReadTimeout` option
+lowers it, with `--no-pager` and the environment of spec 016, under
+the per-node subprocess cap `ORIGO_MAX_GIT_PROCS` (spec 012), beyond
+which the answer is 429 `rate_limited`. A subprocess that reaches the
+deadline is killed and the answer is 504 `operation_timeout`, defined
+in the table above and answered wherever a subprocess of the JSON API
+reaches its budget (specs 012, 020), with `details.operation` the
+endpoint's name, `refs`, `commits` for both log endpoints, `compare`,
+`tree`, `blob`, or `archive`, and `details.budget_seconds` the budget
+in force, 30 by default; a streamed response (`compare`, `blob`, the archive) whose
 subprocess is killed after the first byte is cut short, which the
 client sees as a truncated body and not as a status.
 
 The archive is what a build system should fetch for a single commit: one
 request, no negotiation, reproducible bytes.
+
+The read routes share the public mux with the label form of smart HTTP
+(`/{owner}/{slug}/info/refs`, spec 003). Go's mux refuses that pattern
+beside `/v1/repos/{id}/refs`, because both match `/v1/repos/info/refs`
+and neither is more specific, and the reserved owner `v1` of spec 003
+does not change what the mux sees. So the label form is one wildcard
+route in `internal/httpgit`, `/{owner}/{slug}/{service...}`, dispatched
+on the method and the service; the reservation is what keeps the two
+apart on the wire.
 
 ## Not in this spec
 
@@ -166,11 +178,12 @@ Search. Blame. Rendering of any kind. Paging on `refs` beyond the cap.
   seed-corpus test on every push and for 40 seconds under `make fuzz`
   (spec 013) on the weekly schedule (proposed: `internal/api`,
   `TestPathRules`, `FuzzValidPath`).
-- A `compare` whose subprocess is held past 30 seconds by a fixture
-  answers 504 `operation_timeout` with `details.budget_seconds: 30`
-  and no subprocess is left running (proposed: `internal/api`,
-  `TestReadDeadlineIsOperationTimeout`, with the deadline lowered by an
-  option in the test).
+- A `compare` whose subprocess is held past the budget by a fixture
+  answers 504 `operation_timeout` with `details.operation: "compare"`
+  and `details.budget_seconds` equal to the budget in force, one
+  second under the `ReadTimeout` option in the test, and no subprocess
+  is left running; `api.DefaultReadTimeout` is 30 seconds (proposed:
+  `internal/api`, `TestReadDeadlineIsOperationTimeout`).
 - A 60 MiB blob answers 413 `blob_too_large` without `Range` and 206
   with `Range: bytes=0-1023` (proposed: `internal/api`, `TestBlobRange`).
 - A second request with `If-None-Match` equal to the `ETag` answers 304
@@ -202,7 +215,7 @@ Every endpoint runs against a built `origod` with the stub issuer and
 authorizer in `test/e2e`, `TestE2EReadAPI`, and every read route is in
 the route sweep of spec 007 (`cmd/origod`, `TestEveryRouteRequiresAToken`).
 
-Divergences and interpretations, all kept:
+Divergences and interpretations, all kept and now in the Design:
 
 - `Origo-Commit` peels a tag: `commits`, `commits/{sha}`, and the
   archive resolve `<name>^{commit}`, `tree` and `compare` resolve
