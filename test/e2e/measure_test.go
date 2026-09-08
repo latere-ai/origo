@@ -17,8 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
+	"github.com/latere-ai/origo/test/e2e/cluster"
 )
 
 // TestMeasure records the three numbers spec 004's Outcome carries:
@@ -36,6 +35,26 @@ func TestMeasure(t *testing.T) {
 	t.Run("head currency check", func(t *testing.T) { measureHead(t, s) })
 	t.Run("materialize 1000 entries", func(t *testing.T) { measureMaterialize(t, s) })
 	t.Run("archive 1 GiB tree", func(t *testing.T) { measureArchive(t, s) })
+	t.Run("clones per second over replicas", measureReplicas)
+}
+
+// measureReplicas is the one check TestMeasure carries (spec 005): the
+// clones per second of the read load rise monotonically over 2, 4, and
+// 8 replicas of the kind stack. It skips without the stack.
+func measureReplicas(t *testing.T) {
+	requireCluster(t)
+	overlay := renderedOverlay(t)
+	t.Cleanup(func() { cluster.Apply(t, overlay) })
+	token := adminToken(t)
+	id := tenMiBRepo(t, token)
+	var rates []float64
+	for _, n := range []int{2, 4, 8} {
+		rates = append(rates, readLoadAt(t, token, id, n))
+	}
+	t.Logf("MEASURE clones/s at 2, 4, 8 replicas: %.2f %.2f %.2f", rates[0], rates[1], rates[2])
+	if !(rates[0] < rates[1] && rates[1] < rates[2]) {
+		t.Fatalf("clones per second are not monotonic over the replica counts: %v", rates)
+	}
 }
 
 func percentiles(d []time.Duration) (p50, p99 time.Duration) {
@@ -117,41 +136,16 @@ func measureHead(t *testing.T, s *stack) {
 	t.Logf("MEASURE head: 404 (current) p50 %s p99 %s; 200 (newer exists) p50 %s p99 %s; %d samples each", m50, m99, h50, h99, samples)
 }
 
-// measureMaterialize writes 1000 entries through the log, then times a
-// node with an empty disk serving the first advertisement, which is the
-// materialization, and a full clone.
+// measureMaterialize writes 1000 entries through the log with the
+// fixture builder of TestE2EMaterializeThousandEntriesUnderBudget, then
+// times a node with an empty disk serving the first advertisement,
+// which is the materialization, and a full clone.
 func measureMaterialize(t *testing.T, s *stack) {
 	id := newID(t)
 	n := startNode(t, s, "", nil)
 	n.createRepo(id, "bench", "materialize-"+id[:8])
-	src := gittest.NewSource(t)
-	base, _, err := s.log.Newest(context.Background(), id, 0, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	held := base
-	prev := ""
 	start := time.Now()
-	for i := range 1000 {
-		buf := make([]byte, 1024)
-		_, _ = rand.Read(buf)
-		c := src.Commit("payload", string(buf), fmt.Sprintf("c%d", i))
-		var pack []byte
-		old := wal.ZeroSHA
-		if prev == "" {
-			pack = src.Pack(c)
-		} else {
-			pack = src.Pack(c, prev)
-			old = prev
-		}
-		e := wal.Entry{Kind: wal.KindPush, Refs: []wal.RefUpdate{{Ref: "refs/heads/main", Old: old, New: c}}, Pack: wal.BytesBody(pack)}
-		committed, err := s.log.Commit(context.Background(), id, held, e, func(context.Context, *wal.Index) error { return nil })
-		if err != nil {
-			t.Fatal(err)
-		}
-		held = committed.Index
-		prev = c
-	}
+	writeEntries(t, s, id, 1000)
 	t.Logf("MEASURE wrote 1000 entries in %s", time.Since(start))
 	n.stop()
 	fresh := startNode(t, s, "", nil)
