@@ -18,7 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/sink"
@@ -71,7 +73,7 @@ type harness struct {
 	log   *wal.Log
 	sink  *sink.Server
 	clock *clock
-	reg   *metrics.Registry
+	reg   *pkgmetrics.Registry
 	d     *Dispatcher
 }
 
@@ -84,8 +86,8 @@ func newHarnessOn(t *testing.T, store *wal.MemStore, s *sink.Server, c *clock, n
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
 	l := wal.New(wal.Options{Store: store, Now: c.Now, Logger: logger})
-	reg := metrics.NewRegistry()
-	o := Options{Log: l, Node: node, URL: s.URL(), Secret: s.Secret(), Now: c.Now, Metrics: reg, Logger: logger, RepairInterval: 10 * time.Second, RepairUnheard: 5 * time.Second}
+	reg := pkgmetrics.NewRegistry()
+	o := Options{Log: l, Node: node, URL: s.URL(), Secret: s.Secret(), Now: c.Now, Metrics: metrics.Register(reg), Logger: logger, RepairInterval: 10 * time.Second, RepairUnheard: 5 * time.Second}
 	for _, f := range opts {
 		f(&o)
 	}

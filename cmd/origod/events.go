@@ -20,7 +20,7 @@ func (n *node) newEvents() error {
 		Log: n.log, Node: n.cfg.NodeName, URL: n.cfg.EventsURL, Secret: n.cfg.EventsSecret,
 		Client:         &http.Client{Transport: outboundTransport(), Timeout: events.DeliveryTimeout},
 		RepairInterval: n.cfg.RepairInterval, RepairUnheard: n.cfg.RepairUnheard,
-		Metrics: n.reg, Logger: n.logger, Failpoint: n.failpoint,
+		Metrics: n.metrics, Logger: n.logger, Failpoint: n.failpoint,
 	})
 	if err != nil {
 		return err

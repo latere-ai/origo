@@ -26,8 +26,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"latere.ai/x/pkg/metrics"
+	pkgmetrics "latere.ai/x/pkg/metrics"
 
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -248,7 +249,7 @@ type Options struct {
 	// ORIGO_REPAIR_UNHEARD; 10 and 5 minutes by default.
 	RepairInterval time.Duration
 	RepairUnheard  time.Duration
-	Metrics        *metrics.Registry
+	Metrics        *metrics.Set
 	Logger         *slog.Logger
 	// Failpoint, when set, is called at FailpointBeforeEnqueue and aborts
 	// the enqueue with its error. Nil in every deployment.
@@ -273,8 +274,8 @@ type Dispatcher struct {
 	repairInterval time.Duration
 	repairUnheard  time.Duration
 
-	delivered *metrics.Counter
-	dead      *metrics.Counter
+	delivered *pkgmetrics.Counter
+	dead      *pkgmetrics.Counter
 
 	// queue is every pending key this node delivers, with its due time,
 	// and wake tells the loop the queue changed.
@@ -330,14 +331,11 @@ func New(o Options) (*Dispatcher, error) {
 	if d.repairUnheard <= 0 {
 		d.repairUnheard = 5 * time.Minute
 	}
-	reg := o.Metrics
-	if reg == nil {
-		reg = metrics.NewRegistry()
+	set := o.Metrics
+	if set == nil {
+		set = metrics.Register(nil)
 	}
-	d.delivered = reg.Counter("origo_events_delivered_total", "events answered 2xx by the sink")
-	d.dead = reg.Counter("origo_events_dead_total", "events moved to the dead-letter prefix after the window")
-	d.delivered.Add(nil, 0)
-	d.dead.Add(nil, 0)
+	d.delivered, d.dead = set.EventsDelivered, set.EventsDead
 	d.journal = newJournal()
 	return d, nil
 }
