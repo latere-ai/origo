@@ -809,14 +809,26 @@ func (c *Cache) applyEntries(ctx context.Context, r *Repo, entries []wal.IndexEn
 	cond.Broadcast()
 	wg.Wait()
 	// A worker's failure cancels the context, and the indexer may have
-	// been running git on an earlier batch at that moment; the worker's
-	// error is the cause and is what the caller sees, not the cancelled
-	// run.
+	// been running git on an earlier batch, or another worker fetching
+	// an earlier entry, at that moment; the worker's error is the cause
+	// and is what the caller sees, not a cancelled run or a cancelled
+	// fetch. A context the caller ended leaves only cancellations, and
+	// the first is reported.
 	if err != nil {
+		var first error
 		for _, sp := range ready {
-			if sp != nil && sp.err != nil {
+			if sp == nil || sp.err == nil {
+				continue
+			}
+			if !errors.Is(sp.err, context.Canceled) {
 				return sp.err
 			}
+			if first == nil {
+				first = sp.err
+			}
+		}
+		if first != nil {
+			return first
 		}
 	}
 	return err

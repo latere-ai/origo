@@ -658,9 +658,12 @@ type failingReader struct{}
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 
 // TestWorkerErrorIsNotMaskedByTheCancelledIndexer: a worker's failure
-// cancels the indexer, which may be running git on an earlier batch;
-// the caller sees the worker's error, not the cancelled run. Two
-// entries, the second one gone from the log.
+// cancels the indexer, which may be running git on an earlier batch,
+// and the other workers, which may be fetching an earlier entry; the
+// caller sees the worker's error, not a cancelled run or a cancelled
+// fetch. Two entries, the second one gone from the log, first with a
+// store that answers at once and then with one whose fetch of the
+// first entry is still under way when the second fails.
 func TestWorkerErrorIsNotMaskedByTheCancelledIndexer(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -668,16 +671,27 @@ func TestWorkerErrorIsNotMaskedByTheCancelledIndexer(t *testing.T) {
 	h.push("refs/heads/main", wal.ZeroSHA, c1, h.src.Pack(c1))
 	c2 := h.src.Commit("b.txt", "two", "second")
 	ix := h.push("refs/heads/main", c1, c2, h.src.Pack(c2, c1))
-	if err := h.store.Delete(ctx, h.log.RepoPrefix(repoA)+ix.Entry); err != nil {
+	gone := h.log.RepoPrefix(repoA) + ix.Entry
+	if err := h.store.Delete(ctx, gone); err != nil {
 		t.Fatal(err)
 	}
-	for range 20 {
-		_, _, err := h.cache.Acquire(ctx, repoA, false)
-		if err == nil {
-			t.Fatal("materialized without the second entry")
+	for _, latency := range []time.Duration{0, 50 * time.Millisecond} {
+		h.store.SetLatency(latency)
+		for range 10 {
+			_, _, err := h.cache.Acquire(ctx, repoA, false)
+			if err == nil {
+				t.Fatal("materialized without the second entry")
+			}
+			if errors.Is(err, context.Canceled) || !errors.Is(err, wal.ErrNotFound) || !strings.Contains(err.Error(), gone) {
+				t.Fatalf("latency %s: the worker's error is masked: %v", latency, err)
+			}
 		}
-		if errors.Is(err, context.Canceled) || !errors.Is(err, wal.ErrNotFound) {
-			t.Fatalf("the worker's error is masked: %v", err)
-		}
+	}
+	// A context the caller ended is reported as its cancellation.
+	h.store.SetLatency(time.Second)
+	cctx, cancel := context.WithCancel(ctx)
+	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+	if _, _, err := h.cache.Acquire(cctx, repoA, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("caller's cancellation: %v", err)
 	}
 }
