@@ -157,7 +157,19 @@ type Config struct {
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
 	Failpoint string
+	// DropCapability is ORIGO_TEST_DROP_CAPABILITY (spec 021): one
+	// git-controlled capability of spec 003's table the node stops
+	// advertising, for the mutation job that proves the conformance
+	// suite notices. One of DropCapabilities; empty in every deployment.
+	DropCapability string
 }
+
+// DropCapabilities is the set ORIGO_TEST_DROP_CAPABILITY takes its value
+// from: the capabilities the node controls through the repository
+// configuration internal/repo writes. shallow, deepen-since, deepen-not,
+// and report-status-v2 are advertised by git whatever the configuration
+// and are not in the set.
+var DropCapabilities = []string{"filter", "allow-tip-sha1-in-want", "allow-reachable-sha1-in-want", "atomic", "push-options"}
 
 // Getenv is the source of variables; a test substitutes a map.
 type Getenv func(string) string
@@ -191,6 +203,10 @@ func Load(getenv Getenv) (*Config, error) {
 		InternalAddr:    orDefault(getenv("ORIGO_INTERNAL_ADDR"), DefaultInternalAddr),
 		GossipAddr:      orDefault(getenv("ORIGO_GOSSIP_ADDR"), DefaultGossipAddr),
 		Failpoint:       getenv("ORIGO_FAILPOINT"),
+		DropCapability:  getenv("ORIGO_TEST_DROP_CAPABILITY"),
+	}
+	if cfg.DropCapability != "" && !slices.Contains(DropCapabilities, cfg.DropCapability) {
+		problems = append(problems, "ORIGO_TEST_DROP_CAPABILITY must be one of "+strings.Join(DropCapabilities, ", "))
 	}
 	cfg.S3PublicEndpoint = orDefault(getenv("ORIGO_S3_PUBLIC_ENDPOINT"), cfg.S3Endpoint)
 	if getenv("ORIGO_DEV_TOKEN") != "" {

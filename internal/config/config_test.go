@@ -375,3 +375,25 @@ func TestDiskSizeReportsAMissingPath(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+// TestDropCapabilityIsOneOfTheSet is spec 021's rule for
+// ORIGO_TEST_DROP_CAPABILITY: each name of the set is read, and any
+// other value refuses start-up with the one message.
+func TestDropCapabilityIsOneOfTheSet(t *testing.T) {
+	for _, name := range DropCapabilities {
+		m := complete(t)
+		m["ORIGO_TEST_DROP_CAPABILITY"] = name
+		cfg, err := Load(env(m))
+		if err != nil || cfg.DropCapability != name {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	m := complete(t)
+	m["ORIGO_TEST_DROP_CAPABILITY"] = "shallow"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ORIGO_TEST_DROP_CAPABILITY must be one of filter, allow-tip-sha1-in-want") {
+		t.Fatalf("shallow accepted: %v", err)
+	}
+	if cfg, err := Load(env(complete(t))); err != nil || cfg.DropCapability != "" {
+		t.Fatalf("unset: %v %q", err, cfg.DropCapability)
+	}
+}

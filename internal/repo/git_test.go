@@ -61,3 +61,31 @@ func TestBareRepositoryConfiguration(t *testing.T) {
 		}
 	}
 }
+
+// TestDropCapabilityTurnsItsKeyOff is spec 021's mutation seam: with
+// DropCapability set, the repository the cache initializes carries that
+// capability's key off and every other capability on, and the two
+// sha1-in-want capabilities share one key.
+func TestDropCapabilityTurnsItsKeyOff(t *testing.T) {
+	for name, key := range capabilityKeys {
+		c := newHarness(t).cache
+		c.dropCapability = name
+		r := &Repo{ID: repoA, Dir: filepath.Join(t.TempDir(), "bare")}
+		if err := c.initBare(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range []string{"uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant", "receive.advertiseAtomic", "receive.advertisePushOptions"} {
+			out, err := c.git.Run(context.Background(), r.Dir, nil, "config", "--get", k)
+			want := "true"
+			if k == key {
+				want = "false"
+			}
+			if err != nil || strings.TrimSpace(string(out)) != want {
+				t.Errorf("%s dropped: %s = %q, want %s (%v)", name, k, out, want, err)
+			}
+		}
+	}
+	if c := newHarness(t).cache; c.dropCapability != "" {
+		t.Fatal("a cache built without the option drops a capability")
+	}
+}

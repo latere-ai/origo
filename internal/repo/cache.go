@@ -65,8 +65,25 @@ type Options struct {
 	// measured from the last check that answered. DefaultStaleMax when
 	// zero.
 	StaleMax time.Duration
-	Logger   *slog.Logger
-	Metrics  *metrics.Set
+	// DropCapability is ORIGO_TEST_DROP_CAPABILITY (spec 021): the one
+	// capability of spec 003's table whose repository configuration
+	// key is written off instead of on, so the node stops advertising
+	// it. Empty in every deployment; the mutation job sets it.
+	DropCapability string
+	Logger         *slog.Logger
+	Metrics        *metrics.Set
+}
+
+// capabilityKeys is the repository configuration key behind each
+// git-controlled capability of spec 003's table. allow-tip-sha1-in-want
+// and allow-reachable-sha1-in-want share one key, so dropping either
+// drops both.
+var capabilityKeys = map[string]string{
+	"filter":                       "uploadpack.allowFilter",
+	"allow-tip-sha1-in-want":       "uploadpack.allowAnySHA1InWant",
+	"allow-reachable-sha1-in-want": "uploadpack.allowAnySHA1InWant",
+	"atomic":                       "receive.advertiseAtomic",
+	"push-options":                 "receive.advertisePushOptions",
 }
 
 // DefaultStaleMax is ORIGO_STALE_MAX's default.
@@ -84,7 +101,9 @@ type Cache struct {
 	workers   int
 	now       func() time.Time
 	staleMax  time.Duration
-	logger    *slog.Logger
+	// dropCapability is Options.DropCapability.
+	dropCapability string
+	logger         *slog.Logger
 	// maxBatchEntries and maxBatchBytes are the batch bounds of
 	// applyEntries, the constants below; a test lowers them.
 	maxBatchEntries int
@@ -214,7 +233,7 @@ func New(o Options) (*Cache, error) {
 	}
 	c := &Cache{
 		dir: o.Dir, log: o.Log, git: &Git{Bin: path, Home: home, Timeout: timeout},
-		fsckEvery: fsckEvery, workers: workers, now: now, staleMax: staleMax, logger: logger, repos: map[string]*Repo{},
+		fsckEvery: fsckEvery, workers: workers, now: now, staleMax: staleMax, dropCapability: o.DropCapability, logger: logger, repos: map[string]*Repo{},
 		maxBatchEntries: MaxBatchEntries, maxBatchBytes: MaxBatchBytes,
 		materialized: set.RepoMaterialized, applied: set.RepoEntriesApplied,
 		rebuilt: set.RepoRebuilt, materialize: set.RepoMaterialize,
@@ -639,7 +658,9 @@ func (c *Cache) initBare(ctx context.Context, r *Repo) error {
 	// transfer, a tree entry that would name the git directory on an
 	// NTFS or HFS+ file system is refused (spec 016), the local copy is
 	// never garbage collected on its own (compaction is a log entry,
-	// spec 006), and the capabilities spec 003 promises are advertised.
+	// spec 006), and the capabilities spec 003 promises are advertised,
+	// except the one the mutation job of spec 021 drops.
+	dropped := capabilityKeys[c.dropCapability]
 	for _, kv := range [][2]string{
 		{"core.protectNTFS", "true"},
 		{"core.protectHFS", "true"},
@@ -652,6 +673,9 @@ func (c *Cache) initBare(ctx context.Context, r *Repo) error {
 		{"uploadpack.allowFilter", "true"},
 		{"uploadpack.allowAnySHA1InWant", "true"},
 	} {
+		if kv[0] == dropped {
+			kv[1] = "false"
+		}
 		if _, err := c.git.Run(ctx, r.Dir, nil, "config", kv[0], kv[1]); err != nil {
 			return err
 		}
