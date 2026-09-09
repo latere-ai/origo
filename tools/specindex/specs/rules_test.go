@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: MIT
 
-package main
+package specs
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const rulePath = "../../deploy/base/prometheusrule.yaml"
+const rulePath = "../../../deploy/base/prometheusrule.yaml"
 
 // TestAlertRulesNameDefinedMetrics is spec 011's alert criterion in this
 // module: every Origo metric an alert names is a metric the deck defines,
@@ -24,7 +24,7 @@ func TestAlertRulesNameDefinedMetrics(t *testing.T) {
 	if len(rules) != 10 {
 		t.Errorf("%d alerts, spec 011's table has 10", len(rules))
 	}
-	idx, err := Build("../../specs")
+	idx, err := Build("../../../specs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestAlertRulesNameDefinedMetrics(t *testing.T) {
 }
 
 func TestRulesReportsAnUndefinedMetricAndAMalformedFile(t *testing.T) {
-	idx, err := Build("../../specs")
+	idx, err := Build("../../../specs")
 	if err != nil {
 		t.Fatal(err)
 	}

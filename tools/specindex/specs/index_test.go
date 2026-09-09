@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: MIT
 
-package main
+package specs
 
 import (
 	"os"
@@ -116,14 +116,14 @@ func TestSpliceAndCurrentRoundTrip(t *testing.T) {
 // TestReadmeTableIsCurrent is the drift check: the deck has no findings
 // and the table in specs/README.md equals what the specs define.
 func TestReadmeTableIsCurrent(t *testing.T) {
-	idx, err := Build("../../specs")
+	idx, err := Build("../../../specs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range idx.Findings {
 		t.Error(f)
 	}
-	current, err := Current("../../specs/README.md")
+	current, err := Current("../../../specs/README.md")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: MIT
 
-package main
+// Package specs parses the spec deck: the names each spec defines, the
+// specs that mention them, and the rows the definitions live in. Command
+// specindex renders the cross-reference table from it and tools/apidoc
+// renders docs/api.md from the same data, so one parser reads every
+// table and a shape neither recognizes is a finding in both.
+package specs
 
 import (
 	"errors"
@@ -50,7 +55,18 @@ type Name struct {
 	Name  string
 	Owner string   // the spec number, "004"
 	Also  []string // other spec numbers that mention it
+	// Header and Row are the defining table's header cells and the
+	// cells of the row that defines this name, as the spec writes them,
+	// so a renderer reproduces the table rather than inventing one.
+	// Line is the row's line number in the spec, the order a reader
+	// meets it in.
+	Header []string
+	Row    []string
+	Line   int
 }
+
+// File is the spec file that owns a number, "004-write-ahead-log.md".
+func (idx *Index) File(num string) string { return idx.files[num] }
 
 // Index is the deck's names and the findings against them.
 type Index struct {
@@ -83,9 +99,12 @@ type mention struct {
 }
 
 type definition struct {
-	kind Kind
-	name string
-	spec string
+	kind   Kind
+	name   string
+	spec   string
+	header []string
+	row    []string
+	line   int
 }
 
 // Build reads every numbered spec under dir and indexes it.
@@ -116,15 +135,18 @@ func Build(dir string) (*Index, error) {
 	sort.Strings(idx.specs)
 
 	owner := map[Kind]map[string]string{}
+	def := map[Kind]map[string]definition{}
 	for _, d := range defs {
 		if owner[d.kind] == nil {
 			owner[d.kind] = map[string]string{}
+			def[d.kind] = map[string]definition{}
 		}
 		if prev, ok := owner[d.kind][d.name]; ok && prev != d.spec {
 			idx.Findings = append(idx.Findings, fmt.Sprintf("%s %q is defined by %s and by %s", d.kind, d.name, prev, d.spec))
 			continue
 		}
 		owner[d.kind][d.name] = d.spec
+		def[d.kind][d.name] = d
 	}
 	also := map[Kind]map[string]map[string]bool{}
 	for _, m := range mentions {
@@ -169,7 +191,11 @@ func Build(dir string) (*Index, error) {
 				refs = append(refs, s)
 			}
 			sort.Strings(refs)
-			idx.Names = append(idx.Names, Name{Kind: k, Name: n, Owner: owner[k][n], Also: refs})
+			d := def[k][n]
+			idx.Names = append(idx.Names, Name{
+				Kind: k, Name: n, Owner: owner[k][n], Also: refs,
+				Header: d.header, Row: d.row, Line: d.line,
+			})
 		}
 	}
 	sort.Strings(idx.Findings)
@@ -180,12 +206,12 @@ func Build(dir string) (*Index, error) {
 func scan(num, body string) ([]definition, []mention) {
 	var defs []definition
 	var mentions []mention
-	defined := map[string]bool{} // "kind\x00name" defined in this spec
+	seenHere := map[string]bool{} // "kind\x00name" defined in this spec
 	body = stripFrontmatter(body)
 	seen := map[string]bool{}
 	note := func(k Kind, name string) {
 		key := string(k) + "\x00" + name
-		if defined[key] || seen[key] {
+		if seenHere[key] || seen[key] {
 			return
 		}
 		seen[key] = true
@@ -207,6 +233,7 @@ func scan(num, body string) ([]definition, []mention) {
 			if len(row) == 0 {
 				continue
 			}
+			defined := slices.Clone(row)
 			var names []string
 			if byMethod {
 				if len(row) < 2 {
@@ -222,8 +249,8 @@ func scan(num, body string) ([]definition, []mention) {
 				}
 			}
 			for _, n := range names {
-				defs = append(defs, definition{kind: kind, name: n, spec: num})
-				defined[string(kind)+"\x00"+n] = true
+				defs = append(defs, definition{kind: kind, name: n, spec: num, header: header, row: defined, line: j + 1})
+				seenHere[string(kind)+"\x00"+n] = true
 			}
 			// The rest of the row is prose and may mention other names.
 			rest := row[1:]
