@@ -831,10 +831,15 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	work := clone(t, srv.URL+"/r/"+repoA+".git")
-	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("one"), 0o644); err != nil {
+	// A pack of a few megabytes, so the four phases are the request's
+	// time and the fixed cost outside them, the enqueue and the hook
+	// channel, stays under the 10% band on a loaded runner; a one-line
+	// push is short enough for that cost to be a fifth of it under the
+	// race detector.
+	if err := os.WriteFile(filepath.Join(work, "a.bin"), gittest.Bytes(4<<20, 8), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mustGit(t, work, "add", "a.txt")
+	mustGit(t, work, "add", "a.bin")
 	mustGit(t, work, "commit", "-q", "-m", "first")
 	if count, _ := pushHistogram(n.reg); len(count) != 0 {
 		t.Fatalf("observations before a push: %v", count)

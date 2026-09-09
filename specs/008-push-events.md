@@ -418,3 +418,10 @@ items the first build left open: deliveries stay one at a time per
 node, with the reason in the Deliver section, and the re-read of a
 trailing suppressed entry is bounded by the journal's life, stated in
 the Repair section.
+
+`TestPushPhasesAreObserved` measured its 10% band on a one-line push,
+short enough under the race detector on a loaded runner for the fixed
+cost outside the four phases, the enqueue and the hook channel, to be
+a fifth of the request; spec 016's build on 2026-09-09 made the push
+a 4 MiB pack, so the phases are the request's time and the band holds
+the criterion rather than the runner's noise.
