@@ -580,7 +580,7 @@ name, or when a spec names something no spec defines.
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021 |
-| error code | `gone` | [019](019-repository-administration.md) | 003, 021 |
+| error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021 |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021 |
@@ -719,7 +719,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/export.bundle` | [019](019-repository-administration.md) | - |
 | endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | - |
-| endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | - |
+| endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010 |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
