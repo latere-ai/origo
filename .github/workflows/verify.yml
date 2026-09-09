@@ -76,6 +76,33 @@ jobs:
           mkdir -p out
           (cd tools/specindex && go run . -rules ../../deploy/base/prometheusrule.yaml) > out/rules.yaml
           promtool check rules out/rules.yaml
+      # The two generated pages: docs/configuration.md from
+      # internal/config and docs/api.md from the specs' endpoint, header,
+      # and code tables. A change to a variable or to a spec table that
+      # was not regenerated shows up here as a documentation diff on the
+      # same push.
+      - name: The generated documentation is current
+        run: |
+          make docs
+          git diff --exit-code docs/
+
+  # `kustomize build` over everything under deploy/. The two cloud
+  # overlays are never applied here, because this repository has no cloud
+  # account; what CI can prove about them is that they render.
+  overlays:
+    name: the manifests render
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Render every overlay
+        run: |
+          set -euo pipefail
+          for target in base prod examples/kind examples/digitalocean examples/aws; do
+            kubectl kustomize "deploy/$target" > /dev/null
+            echo "deploy/$target renders"
+          done
 
   # The integration tier and the e2e tier's one-node run, against a MinIO
   # beside the runner: every test that starts its own nodes and fits the
@@ -258,6 +285,61 @@ jobs:
           install_only: true
       - name: Run the up-script check
         run: go test -count=1 -timeout 12m -tags=e2e ./test/e2e/... -run 'TestClusterUpScript'
+
+  # Spec 018's install job: docs/install.md is walked against a cluster
+  # an operator would have, from the candidate build of this push. The
+  # cluster is created with `kind create cluster`, not with up.sh,
+  # because an operator has a cluster and no script of ours, and Cilium
+  # is installed because kind.yaml turns the default CNI off and a real
+  # cluster arrives with one. The overlay applied is the kind example
+  # without its test-source component, which is what the document's
+  # ORIGO_INSTALL_MANIFESTS names, so the installation carries no test
+  # source.
+  #
+  # It ends with TestContract through ORIGO_LIVE_URL: from the suite's
+  # side an installation with no stub wiring is a live one, and the six
+  # groups of spec 021's skip list are exactly the cases that need it.
+  install:
+    name: install from the documentation
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: candidate-images
+          path: out/images
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          install_only: true
+      - name: Create a bare cluster with the candidate images
+        run: |
+          set -euo pipefail
+          . deploy/examples/kind/versions.env
+          kind create cluster --name origo --config deploy/examples/kind/kind.yaml
+          helm repo add cilium https://helm.cilium.io --force-update
+          helm install cilium cilium/cilium --version "$CILIUM_CHART_VERSION" \
+            --namespace kube-system --set ipam.mode=kubernetes
+          kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
+          kind load image-archive --name origo out/images/origod.tar
+          kind load image-archive --name origo out/images/origo-stubs.tar
+      - name: Walk docs/install.md
+        env:
+          ORIGO_INSTALL_IMAGE: ghcr.io/latere-ai/origod:candidate
+          ORIGO_INSTALL_MANIFESTS: deploy/examples/kind
+        run: tools/docs/run-blocks.sh docs/install.md
+      - name: The conformance suite against the installation
+        run: |
+          set -euo pipefail
+          token=$(curl -sf -X POST http://localhost:30081/mint -d '{"sub":"install"}' \
+            | sed 's/.*"token":"\([^"]*\)".*/\1/')
+          ORIGO_LIVE_URL=http://localhost:30180 ORIGO_LIVE_TOKEN="$token" \
+            go test -v -count=1 -timeout 15m -tags=e2e ./test/conformance/... -run 'TestContract'
 
   # Spec 021's mutation job: one node of its own per dropped capability,
   # against MinIO and no stack. The five capabilities are the set

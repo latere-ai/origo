@@ -16,9 +16,9 @@
 #                   deploy/prod applied, the rollout waited for, the smoke
 #   live            spec 021's run against ORIGO_LIVE_URL
 #   publish         the GitHub release with every artifact and the evidence
+#   install-release docs/install.md walked against the published images
+#                   and the published deploy archive, on a bare cluster
 #   release-verify  a clean runner verifying what was published
-#
-# Spec 018 adds `install-release` after `publish`.
 name: Release
 
 on:
@@ -367,7 +367,9 @@ jobs:
         run: |
           set -euo pipefail
           kubectl apply -k deploy/prod/
-          kubectl -n origo set image deployment/origod "origod=${ORIGOD_IMAGE}:${TAG}"
+          # Every container of the workload, which is the node and the
+          # check that runs in front of it; both are this one image.
+          kubectl -n origo set image deployment/origod "*=${ORIGOD_IMAGE}:${TAG}"
           kubectl -n origo rollout status deployment/origod --timeout=600s
       - name: Smoke the live service
         id: smoke
@@ -483,8 +485,78 @@ jobs:
               --title "Origo $TAG" --notes-file body.md assets/*
           fi
 
-  # Step 6 is spec 018's install-release job, which runs here once 018
-  # lands.
+  # Step 6. The installation document walked against the release that
+  # was just published, with nothing from this pipeline's own build: the
+  # images are pulled from the registry and the manifests come out of
+  # deploy-<version>.tar.gz downloaded from the release. A push proves
+  # the commands against a candidate build; this proves them against
+  # what an operator downloads, which is the claim the release notes
+  # make. It runs after publish because the archive it reads is a
+  # release asset.
+  install-release:
+    name: install from the release artifacts
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The repository is private, so pulling the published images needs a
+    # token that can read the registry.
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          install_only: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Download the release's deploy archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$TAG" --pattern "deploy-${TAG}.tar.gz" --dir "$RUNNER_TEMP/release"
+          tar -xzf "$RUNNER_TEMP/release/deploy-${TAG}.tar.gz" -C "$RUNNER_TEMP/release"
+          test -f "$RUNNER_TEMP/release/deploy/examples/kind/kustomization.yaml"
+      - name: Create a bare cluster with the published images
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          . deploy/examples/kind/versions.env
+          kind create cluster --name origo --config deploy/examples/kind/kind.yaml
+          helm repo add cilium https://helm.cilium.io --force-update
+          helm install cilium cilium/cilium --version "$CILIUM_CHART_VERSION" \
+            --namespace kube-system --set ipam.mode=kubernetes
+          kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
+          for image in "${ORIGOD_IMAGE}:${TAG}" "${STUBS_IMAGE}:${TAG}"; do
+            docker pull "$image"
+            kind load docker-image --name origo "$image"
+          done
+      - name: Walk docs/install.md against the release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ORIGO_INSTALL_IMAGE="${ORIGOD_IMAGE}:${TAG}" \
+          ORIGO_INSTALL_MANIFESTS="$RUNNER_TEMP/release/deploy/examples/kind" \
+            tools/docs/run-blocks.sh docs/install.md
+      - name: The conformance suite against the installation
+        run: |
+          set -euo pipefail
+          token=$(curl -sf -X POST http://localhost:30081/mint -d '{"sub":"install-release"}' \
+            | sed 's/.*"token":"\([^"]*\)".*/\1/')
+          ORIGO_LIVE_URL=http://localhost:30180 ORIGO_LIVE_TOKEN="$token" \
+            go test -v -count=1 -timeout 15m -tags=e2e ./test/conformance/... -run 'TestContract'
+
   #
   # Step 7. What was published, checked from a clean runner with no
   # artifact of the build: the signatures against the workflow identity,
