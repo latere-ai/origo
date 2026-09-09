@@ -1,0 +1,32 @@
+# The ingress-nginx controller from the DigitalOcean marketplace, with a
+# certificate cert-manager issues. Change git.example.com to your own
+# hostname in both places and point its DNS record at the load balancer
+# the controller created.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: origod
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # A push body is a packfile of any size and a clone takes minutes.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - git.example.com
+      secretName: origod-tls
+  rules:
+    - host: git.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http

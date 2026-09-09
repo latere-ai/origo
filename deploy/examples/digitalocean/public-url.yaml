@@ -1,0 +1,25 @@
+# The origin clients see, which must be the hostname in ingress.yaml.
+# Both containers read it: the node serves it in clone URLs and signs
+# repository-bound tokens with it, and the check refuses to start a pod
+# without it.
+#
+# A Spaces bucket is reachable from the internet under the same endpoint
+# the nodes use, so ORIGO_S3_PUBLIC_ENDPOINT is not set here: Git LFS
+# transfers are signed against ORIGO_S3_ENDPOINT from the Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.example.com
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.example.com

@@ -1,0 +1,21 @@
+# The base's Ingress with the settings ingress-nginx needs from a git
+# remote: no body size limit, because a push body is a packfile of any
+# size, a long read and send timeout, because a clone of a large
+# repository takes minutes, and request buffering off, so a push streams
+# through instead of landing on the controller's disk first. Another
+# controller has its own names for the four; this file is the shape an
+# operator copies.
+#
+# The stack itself runs no ingress controller: the tests reach the nodes
+# through the host ports of the ports table, and this object is inert
+# there. It is in the overlay because the overlay is what an operator
+# reads to see where a controller's settings go.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: origod
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"

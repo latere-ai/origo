@@ -1,25 +1,21 @@
-# git.latere.ai is Latere's hostname; an operator sets their own here and in
-# ORIGO_PUBLIC_URL. A push body is a packfile of any size and a clone can
-# take minutes, so the body limit is off and the read timeout is long.
+# The route into the service, with no controller's name on it: no
+# ingress class, no certificate-manager annotation, and no host, because
+# each of the three is the operator's and none is the same on two
+# installations. An overlay adds them (deploy/prod, and both example
+# overlays under deploy/examples).
+#
+# Every ingress controller needs two settings beside those: no body size
+# limit, because a push body is a packfile of any size, and a long read
+# timeout, because a clone of a large repository takes minutes. The names
+# differ per controller, so they live in the overlay too; the kind
+# example carries the ingress-nginx form.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: origod
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
 spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - git.latere.ai
-      secretName: origod-tls
   rules:
-    - host: git.latere.ai
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix

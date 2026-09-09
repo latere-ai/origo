@@ -46,6 +46,51 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      # origod check runs before the node does, against the same
+      # configuration: it reaches the bucket, proves the conditional
+      # create the log is linearized by, fetches every issuer's key set,
+      # asks the authorizer about the reserved probe id, delivers a
+      # signed ping to the event sink, and reads git's version. A pod
+      # whose installation is misconfigured never reports ready, and the
+      # failing requirement is the first line of `kubectl logs -c
+      # check`. Its environment is the node's, because a check against
+      # another environment checks nothing.
+      initContainers:
+        - name: check
+          image: ghcr.io/latere-ai/origod:unreleased
+          imagePullPolicy: IfNotPresent
+          args: [check]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: ORIGO_DATA_DIR
+              value: /var/lib/origo
+            - name: ORIGO_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ORIGO_GOSSIP_PEERS
+              value: origod-gossip
+          envFrom:
+            - secretRef:
+                name: origod-s3
+            - secretRef:
+                name: origod-auth
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/origo
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: origod
           # The release pipeline replaces this with the tag it built. The
@@ -70,8 +115,6 @@ spec:
               containerPort: 7946
               protocol: UDP
           env:
-            - name: ORIGO_PUBLIC_URL
-              value: https://git.latere.ai
             - name: ORIGO_DATA_DIR
               value: /var/lib/origo
             - name: ORIGO_NODE_NAME

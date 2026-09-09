@@ -1,0 +1,16 @@
+# The origin clients see. It is not in the base because it is the one
+# value no default can be right for: it signs repository-bound tokens and
+# appears in every clone URL, so a node without it refuses to start
+# rather than serving another installation's name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.latere.ai

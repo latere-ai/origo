@@ -3,6 +3,11 @@
 # deploy/prod/` and then sets the image to the tag it built. A resource that
 # cannot be re-applied belongs in deploy/bootstrap/, which the pipeline
 # never reads.
+#
+# The base is provider-neutral: the hostname, the ingress class, the
+# certificate issuer, and the controller's own settings are here, and so
+# is ORIGO_PUBLIC_URL. An operator's overlay is these two patches with
+# their own names in them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -10,3 +15,7 @@ namespace: origo
 
 resources:
   - ../base
+
+patches:
+  - path: ingress.yaml
+  - path: public-url.yaml

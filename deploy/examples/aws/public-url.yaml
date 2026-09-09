@@ -1,0 +1,24 @@
+# The origin clients see, which must be the hostname in ingress.yaml.
+# Both containers read it: the node serves it in clone URLs and signs
+# repository-bound tokens with it, and the check refuses to start a pod
+# without it.
+#
+# The ALB health check reaches /readyz on the public listener, so no
+# further port is opened.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.example.com
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.example.com

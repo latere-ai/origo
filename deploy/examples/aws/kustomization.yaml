@@ -1,0 +1,25 @@
+# An installation on EKS with an S3 bucket behind an Application Load
+# Balancer.
+#
+# Copy this directory, change the names marked below, create the two
+# Secrets (deploy/bootstrap/secrets.example.yaml) and the signing key
+# (docs/install.md), and apply it. Nothing here is applied by CI: this
+# repository has no cloud account, so the overlay is checked by
+# `kustomize build` and proved by an operator's own cluster.
+#
+# What to change:
+#   ingress.yaml     the hostname and the certificate ARN
+#   public-url.yaml  the same hostname
+#   the Secret origod-s3: the S3 endpoint, region, bucket, and keys
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: origo
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress.yaml
+  - path: public-url.yaml
+  - path: replicas.yaml
