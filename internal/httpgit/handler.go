@@ -647,10 +647,16 @@ func (h *Handler) forcedUpdates(ctx context.Context, rp *repo.Repo, refs []wal.R
 // verdict for the hook: "ok", or "reject <code>: <message>", which git
 // relays to the client as the hook's stderr.
 func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []wal.RefUpdate, req *receiveRequest, spoolPath string) (*wal.Committed, string) {
+	// The pack's digests name the entry and travel in its header, so
+	// computing them is part of writing the entry: the time counts
+	// toward the entry phase (spec 011), not to the gap between the
+	// phases, which grows with the pack otherwise.
+	hashing := time.Now()
 	pack, err := packBody(spoolPath, req.PackOffset, req.PackSize)
 	if err != nil {
 		return nil, "reject " + contract.CodeStorageUnavailable + ": " + err.Error()
 	}
+	hashed := time.Since(hashing)
 	if h.beforeCommit != nil {
 		h.beforeCommit()
 	}
@@ -687,6 +693,7 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 		}
 		return nil, "reject " + contract.CodeStorageUnavailable + ": the push was not recorded, retry"
 	}
+	committed.EntryDuration += hashed
 	return committed, "ok"
 }
 

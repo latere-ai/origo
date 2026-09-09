@@ -38,10 +38,11 @@ Two items were for the builder beyond the package. The receive path in
 `origo_push_duration_seconds{phase}` of spec 011 (`receive`, `entry`,
 `index`, `apply`), which phase 1 attributed to spec 004 and never
 recorded; this spec changes that path for the `forced` flag and the
-enqueue, so the four observations land with it. `apply` spans the
-forced computation, the verdict, git's own reference update, and the
-local advance; the enqueue falls outside the four phases, and a
-refused push observes `receive` alone. And every event kind
+enqueue, so the four observations land with it. `entry` spans the
+pack's digests, which name the entry, and the entry write; `apply`
+spans the forced computation, the verdict, git's own reference
+update, and the local advance; the enqueue falls outside the four
+phases, and a refused push observes `receive` alone. And every event kind
 the deck defines goes through the one channel below: the
 administration kinds of spec 019 and the `verified` kind of spec 014
 are emitted through `Emit`, defined beside `Enqueue`, so one package
@@ -419,9 +420,14 @@ node, with the reason in the Deliver section, and the re-read of a
 trailing suppressed entry is bounded by the journal's life, stated in
 the Repair section.
 
+Two defects in the phases, found by the gates of a push run and fixed
+by spec 016's build on 2026-09-09. The pack's digests, computed by the
+receive path to name the entry before `Log.Commit` writes it, were
+counted toward no phase, so the gap between `receive` and `entry`
+grew with the pack: 11% of a 4 MiB push on the runner. The digest
+counts toward `entry` now, which the Design states. And
 `TestPushPhasesAreObserved` measured its 10% band on a one-line push,
 short enough under the race detector on a loaded runner for the fixed
-cost outside the four phases, the enqueue and the hook channel, to be
-a fifth of the request; spec 016's build on 2026-09-09 made the push
-a 4 MiB pack, so the phases are the request's time and the band holds
-the criterion rather than the runner's noise.
+cost outside the phases, the enqueue and the hook channel, to be a
+fifth of the request; it pushes a 4 MiB pack now and logs the ratio,
+98% and above on the runner and locally.

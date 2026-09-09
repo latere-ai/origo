@@ -831,11 +831,12 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	work := clone(t, srv.URL+"/r/"+repoA+".git")
-	// A pack of a few megabytes, so the four phases are the request's
-	// time and the fixed cost outside them, the enqueue and the hook
+	// A pack of a few megabytes, so the request is the push's work and
+	// the fixed cost outside the four phases, the enqueue and the hook
 	// channel, stays under the 10% band on a loaded runner; a one-line
 	// push is short enough for that cost to be a fifth of it under the
-	// race detector.
+	// race detector. The pack's digest counts toward the entry phase,
+	// so the band holds whatever the pack's size.
 	if err := os.WriteFile(filepath.Join(work, "a.bin"), gittest.Bytes(4<<20, 8), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -856,7 +857,9 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	if len(count) != 4 {
 		t.Errorf("phases %v", count)
 	}
-	if ratio := total / requestTime.Seconds(); ratio < 0.9 || ratio > 1.1 {
+	ratio := total / requestTime.Seconds()
+	t.Logf("phases sum to %.1f%% of the request's %v", ratio*100, requestTime)
+	if ratio < 0.9 || ratio > 1.1 {
 		t.Fatalf("phases sum to %.1f%% of the request's %v", ratio*100, requestTime)
 	}
 	// A refused push observes receive and nothing else.
