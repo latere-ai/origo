@@ -5,6 +5,12 @@ for one. You will hear back within three business days, and a fix for a
 high severity issue ships within thirty days. Credit in the release notes
 on request.
 
+Fixes go to the two most recent minor release series. Until the first
+release, `main` is the only supported line.
+
+Fixes go to the two most recent minor release series. Until the first
+release, `main` is the only supported line.
+
 What Origo protects, against whom, and how each threat is answered is
 written down in the
 [threat model](specs/016-security-and-threat-model.md), so a reviewer
