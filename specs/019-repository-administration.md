@@ -1,6 +1,6 @@
 ---
 title: "Repository administration: rename, transfer, freeze, delete, undelete, import, export, and garbage collection"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -283,3 +283,116 @@ than weekly.
   for the responses).
 - Every operation delivers one event of its kind with the listed fields
   (proposed: `internal/events`, `TestAdministrationEvents`).
+
+## Outcome
+
+Built on 2026-09-09 in eleven commits: the five codes, the `meta`
+fields with the purge tombstone, the three operations with their
+events, the frozen push path, `stats` and `gc`, the bundle export, the
+import, the orphan sweep, the node's wiring, the cluster tests, and the
+documentation.
+
+| Criterion | Test |
+|---|---|
+| each operation's success path, its 403, and its state conflict | `internal/api`, `TestAdministrationOperations` (transfer, freeze twice, unfreeze, `stats`, `gc`); `TestPurgedRepositoryIsGone` (410 `gone` after the purge); `TestImportRefusals` (404 `import_not_found`, the egress refusal, the 403); `TestExportRoundTrip` (409 `repo_not_empty`); `TestImportLeaseExpires` (409 `repo_importing`); `internal/httpgit`, `TestFrozenRepositoryRefusesAtInfoRefs` (a push during an import). The conformance cases of spec 021 are deferred to it |
+| a push to a frozen repository is refused at `info/refs` with the `ERR repo_frozen` pkt-line before any pack is sent, the hook's verdict refuses one sent without the advertisement, the push path reads `meta` once, and a clone succeeds throughout | `internal/httpgit`, `TestFrozenRepositoryRefusesAtInfoRefs`, with a store that counts `meta` reads |
+| an export held past the deadline is cut and the client refuses the result | `internal/api`, `TestExportDeadline`; `TestExportServesTheWholeRepository` for the whole file |
+| with three nodes the weekly sweep runs on the name that sorts first and on the next once it leaves, the others report the gauges from `origo/sweep/latest`, and an object under a prefix the sweep does not understand is reported by key and counted | `internal/api`, `TestOrphanSweepRunsOnOneNode`, `TestSweepLoopRunsInItsHour`, `TestSweepReportFailuresAreLogged`, `TestSweepLeavesARepositoryItCannotRead` |
+| an import of the 5 000-commit fixture from the in-cluster source completes as one `compact` entry, reports `done` with the source's reference count and the uploaded packs' bytes, every request carried the bearer, and a clone matches the source's `rev-list --all` | `test/e2e`, `TestClusterImportFixture`, in the `e2e` job |
+| a node killed during an import leaves the lease, another node reports `running` for 45 minutes and then `failed` with `import node lost` and accepts a new import; a node restarted under the same name clears its own at start-up | `internal/api`, `TestImportLeaseExpires`, `TestRestartClearsOwnImportLeases`, `TestClearLeaseFailureIsLogged` |
+| a `gc` away from the primary schedules and compacts nothing, one on the primary while a run goes answers 202 with the start time, and a second within an hour of any compaction is 429 with `details.limit: "repository"` | `internal/api`, `TestGcRoutesToThePrimary`, `TestStatsFailures` |
+| `PATCH` with `owner` emits `renamed` and `transfer` emits `transferred`, both with `pusher` | `internal/api`, `TestRenameAndTransferEvents` |
+| an export re-imported into a fresh repository has identical `rev-list --all` | `internal/api`, `TestExportRoundTrip` |
+| after 500 pushes a `gc` is 429 `rate_limited` with the repository limit, `size_bytes` after the background run is within 10% of a fresh mirror's packs, and one sweep reports no orphan | `test/e2e`, `TestClusterGcBoundsStorage`, in the `e2e` job |
+| a purged repository answers 410 `gone` on every endpoint, its id is refused by `POST /v1/repos`, and its name is accepted | `internal/wal`, `TestPurgeLeavesATombstone`; `internal/api`, `TestPurgedRepositoryIsGone` |
+| every operation delivers one event of its kind with the listed fields | `internal/api`, `TestAdministrationEvents`, `TestRenameAndTransferEvents`, `TestExportRoundTrip` (the `imported` event) |
+
+Divergences and interpretations, each kept, with the reason:
+
+- **The push path's `meta` is cached for 60 seconds and the hook's
+  verdict reads that cache.** The Design asks for one `meta` read
+  across the advertisement and the `git-receive-pack` that follows it
+  and, in the same sentence, for the verdict to read `meta` under the
+  write lock; a normal push cannot do both in one read. The criterion
+  is the testable sentence and it counts the reads, so the cache is
+  what the verdict reads too: `deleted_at` stays fresh, because it is
+  on the index the verdict acquires anyway, while a freeze that lands
+  inside the window is caught at the pusher's next advertisement rather
+  than by the verdict. `internal/httpgit/frozen.go` holds the rule and
+  `MetaTTL` names the window.
+- **`TestRenameAndTransferEvents` and `TestAdministrationEvents` live
+  in `internal/api`, not the proposed `internal/events`.** The
+  operations are handlers, and `internal/api` imports `internal/events`,
+  so a test of the handlers inside that package cannot compile; an
+  external test package there would rebuild the whole handler harness
+  for nothing. The events themselves are asserted through the stub sink
+  either way.
+- **`git bundle verify` reads the header and the prerequisites, never
+  the pack.** The criterion's sentence therefore holds for a cut inside
+  the bundle's signature, which `TestExportDeadline` asserts; a cut
+  inside the pack, the likelier one, is refused by `git clone` from the
+  bundle, which the same test asserts beside it.
+- **An export of a repository with no reference is 404
+  `ref_not_found`.** `git bundle create` refuses to write an empty
+  bundle, and that is a state of the repository rather than a failure
+  of the node, so it is not a 503.
+- **A frozen push is the `ERR` pkt-line and an importing push is 409.**
+  The freeze row states the pkt-line shape; the import row states 409
+  `repo_importing`, which is what a consumer driving a migration reads.
+  Both travel as the hook's verdict for a `git-receive-pack` sent
+  without an advertisement.
+- **The import entry carries no subject.** The run outlives the request
+  that started it, so the entry's `subject` and `actor` are empty and
+  the identity of the caller travels on the `imported` event instead,
+  which is where the Design puts it.
+- **The orphan sweep is `api.Sweeper`, built over a `*wal.Log`
+  alone.** `TestClusterGcBoundsStorage` runs one sweep over the stack's
+  bucket from the runner, which a method on the handler would have
+  needed a cache, a guard, and a signer for.
+- **`stats.refs` counts `HEAD`**, because it is the size of the index's
+  reference map, which is what the index holds.
+
+Spec defects found while building, each implemented as written and left
+for the spec that closes them:
+
+- `wal.IndexEntry` carries no timestamp, so `compacted_at` and the
+  `gc` hour both cost one `GET` of the newest `compact` entry's head.
+  The object is two lines, a `compact` entry having no pack of its own,
+  so the read is cheap; a field on the index row would be a spec 004
+  change and is not made here.
+- `started_at` is null once an import finishes and `finished_at` is
+  null for one that failed, because `meta` clears `importing_since` at
+  the end and sets `imported_at` on success alone. The endpoint serves
+  what `meta` holds; a spec that wants both figures after the fact adds
+  a field.
+
+Items this spec closes for others:
+
+- Spec 004: the purge no longer removes `meta`. It rewrites it with
+  `purged_at` and deletes the name, which is what makes `gone` possible
+  and keeps the id unique forever;
+  `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames` expects the
+  tombstone as the one surviving key. Spec 004's Outcome records it.
+- Spec 006: `compact.Manager.GC`, `compact.Figures`, and
+  `compact.Manager.Primary` are consumed by the `gc` endpoint, and
+  `compacted_at` is the `at` of the newest `compact` entry the index
+  names, as that Outcome's item said.
+- Spec 010: the orphan sweep and `lfs_bytes` are built here. An LFS
+  object with no `lfs/verified/<oid>` marker is deleted 7 days after
+  its upload, and `stats.lfs_bytes` is the sum `limits.LFSBytes`
+  measures.
+- Spec 016: that an `import` runs through the pinned dialer with
+  `-c transfer.fsckObjects=true` on the command line, and that neither
+  the source URL nor its bearer reaches git's arguments, is asserted by
+  `internal/api`, `TestExportRoundTrip`.
+
+Deferred: the conformance cases of the first criterion are spec 021's
+`TestContract`, which owns the code table and the stub; spec 014's
+`TestSourceTokenIsNeverLogged` asserts in-process that the bearer
+appears in no log line.
+
+Items for `latere.ai/x/pkg`: none. `pkg/cache` is the push path's
+`meta` cache, `pkg/wait` the sweep's ticker, and `pkg/hostmatch` the
+egress list through spec 016's dialer.
+
+Stack proof: pending the dispatched run of `verify.yml` on main.

@@ -428,7 +428,9 @@ Items for other specs:
 - Spec 019: `compact.Manager.GC`, `compact.Figures`, and
   `compact.Manager.Primary` are what the `gc` endpoint and `stats`
   need; `compacted_at` is the `at` of the newest `compact` entry the
-  index names.
+  index names. Consumed on 2026-09-09: `POST /v1/repos/{id}/gc` drives
+  all three, and `compacted_at` costs one `GET` of that entry's head,
+  because the index row carries no timestamp (spec 019's Outcome).
 - Spec 011: nothing. `origo_compactions_total{result}` and
   `origo_compaction_seconds` were already in `internal/metrics`, so
   `internal/compact` records through the `metrics.Set` handles and

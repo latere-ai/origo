@@ -214,6 +214,31 @@ committed: the commit log already holds that.
   component ends in a dot, is refused. The gossip port admits UDP from
   the `origod` pods alone (`deploy/base/networkpolicy.yaml`), and
   `SECURITY.md` at the root says how to report a vulnerability.
+- Repository administration (spec 019). `/v1/repos/{id}` carries the
+  operations a repository needs over years: `transfer` moves it to
+  another owner without changing its id, `freeze` and `unfreeze` stop
+  and resume pushes, `import` mirrors an existing `https` repository in
+  with its whole history as one log entry, `export.bundle` streams the
+  whole repository as one `git bundle`, `stats` reports `size_bytes`,
+  `lfs_bytes`, `packs`, `entries_since_compaction`, `refs`,
+  `pushed_at`, and `compacted_at`, and `gc` compacts now. A rename or a
+  transfer changes the clone URL at once and the old URL answers 404,
+  never a redirect. A push to a frozen repository is refused at
+  `info/refs` before the client uploads anything, and git prints
+  `remote error: repo_frozen`, while clones go on. An import needs the
+  source host on `ORIGO_EGRESS_ALLOW`, runs with `transfer.fsckObjects`
+  and a 30 minute budget, and holds the repository until it finishes;
+  a node that dies mid-import frees it after 45 minutes, and one that
+  restarts under the same name frees it at start-up. A repository whose
+  7 day delete hold has passed now answers 410 `gone` on every
+  endpoint: its id stays taken forever and its owner and slug are free
+  again. Once a week, on Sunday at 03:00 UTC, one node lists the whole
+  bucket prefix and reports `origo_orphan_objects` and
+  `origo_storage_bytes`, deleting an object nothing names after seven
+  days and an unverified LFS object seven days after its upload. Each
+  operation sends an event of its own kind: `renamed`, `transferred`,
+  `frozen`, `unfrozen`, `deleted`, `undeleted`, `imported`, and
+  `compacted`.
 - Limits and abuse controls (spec 012). A node accepts
   `ORIGO_REQUESTS_PER_MINUTE` requests a minute per authenticated
   subject, 600 by default and `0` to turn the limit off, names the

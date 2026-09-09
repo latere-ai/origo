@@ -370,6 +370,10 @@ to `auth.DefaultQuotaBytes` and went through; it is refused with
 Deferred: that `import` and `verify` run through the dialer with
 `-c transfer.fsckObjects=true` is asserted by specs 019 and 014 in
 their own criteria; the bill of materials and provenance by spec 017.
+Spec 019 closed the import half on 2026-09-09: `internal/api`,
+`TestExportRoundTrip` asserts the clone's exact command line and that
+neither the source's `https` URL nor its bearer reaches git's
+arguments.
 
 Stack proof: `TestClusterPodSecurityContext` passed in the `e2e` job
 of the dispatched run 34296753008 of `verify.yml` on main, at commit

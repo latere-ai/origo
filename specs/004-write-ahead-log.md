@@ -479,6 +479,14 @@ remaining item. `TestSlowMaterializeTenThousandEntries` (the ninth)
 needs the packs of spec 006 and runs in the `e2e-slow` job. The tenth
 is spec 017's release checklist recording the Spaces probe.
 
+One change spec 019 made to this spec's Design on 2026-09-09, recorded
+in its Outcome: the purge no longer removes `meta`. It deletes every
+other object under the prefix, rewrites `meta` with `purged_at`, and
+deletes the name, so the id stays taken forever, every endpoint answers
+410 `gone` rather than 404, and the owner and slug are free again
+(`TestPurgeLeavesATombstone`, and the tombstone as the one surviving
+key in `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`).
+
 One divergence stands open on purpose: the Sweeper table's index row,
 rewritten on 2026-09-08 when the currency check's rule was settled, is
 ahead of `internal/wal/sweep.go`, which still deletes index objects
