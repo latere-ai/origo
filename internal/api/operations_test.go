@@ -783,3 +783,156 @@ func TestAuthorizerRateBucketsTheSubject(t *testing.T) {
 	}
 	h.as(auth.Principal{Subject: "alice"})
 }
+
+// TestOperationsOnAnEmptyRepositoryAndAnActor covers the first commit
+// of a repository with no history, the actor trailer, and the refusal
+// of from: null on a repository that already has one.
+func TestOperationsOnAnEmptyRepositoryAndAnActor(t *testing.T) {
+	h := newHarness(t)
+	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	empty := newID(7)
+	if status, out := h.do("POST", "/v1/repos", `{"id":"`+empty+`","owner":"acme","slug":"empty"}`); status != 201 {
+		t.Fatalf("create: %d %v", status, out)
+	}
+	body := `{"branch":"main","create_branch":true,"from":null,"expected_head":null,` + author +
+		`,"message":"First","changes":[{"path":"README.md","content":"` + b64("# first\n") + `"}]}`
+	status, out := h.do("POST", "/v1/repos/"+empty+"/commits", body)
+	if status != 201 {
+		t.Fatalf("first commit: %d %v", status, out)
+	}
+	r := h.get("/v1/repos/" + empty + "/commits/" + out["commit"].(string))
+	first := r.json()
+	if len(first["parents"].([]any)) != 0 {
+		t.Fatalf("the first commit has parents: %v", first["parents"])
+	}
+	trailers, _ := first["trailers"].([]any)
+	if len(trailers) != 2 || trailers[1].(map[string]any)["key"] != "Origo-Actor" || trailers[1].(map[string]any)["value"] != "svc" {
+		t.Fatalf("trailers: %v", trailers)
+	}
+	// The same request on a repository that has history is refused.
+	o := seedOps(t, h, repoA)
+	status, out = o.post("commits", `{"branch":"other","create_branch":true,"from":null,"expected_head":null,`+author+`,"message":"m","changes":[{"path":"a","content":"`+b64("a")+`"}]}`)
+	if status != 400 || code(out) != contract.CodeInvalid || details(out)["field"] != "from" {
+		t.Fatalf("from null with history: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "alice"})
+}
+
+// TestOperationsRefuseAPackPastThePushLimit holds the single-push bound
+// of spec 012 on an operation's own pack.
+func TestOperationsRefuseAPackPastThePushLimit(t *testing.T) {
+	h := newHarness(t, withLimits(limits.Options{MaxPushBytes: 1}))
+	o := seedOps(t, h, repoA)
+	status, out := o.post("commits", `{"branch":"main","expected_head":"`+o.main+`",`+author+`,"message":"m","changes":[{"path":"a","content":"`+b64("a")+`"}]}`)
+	if status != 413 || code(out) != contract.CodeOverQuota || details(out)["limit"] != limits.LimitPush {
+		t.Fatalf("push limit: %d %v", status, out)
+	}
+}
+
+// TestOperationsSurviveGitFailures: a failed step before the commit is
+// 503 and writes nothing, and a branch the copy could not move after
+// the entry landed still answers 201, because the log is the truth and
+// the next currency check reconciles the reference.
+func TestOperationsSurviveGitFailures(t *testing.T) {
+	spy := newSpyGit(t)
+	h := newHarness(t, withGit(spy.bin()))
+	o := seedOps(t, h, repoA)
+	body := func(head, path string) string {
+		return `{"branch":"main","expected_head":"` + head + `",` + author + `,"message":"m","changes":[{"path":"` + path + `","content":"` + b64("x") + `"}]}`
+	}
+	// The copy is materialized first, so the failures below are the
+	// operation's own subprocesses.
+	status, out := o.post("commits", body(o.main, "warm.txt"))
+	if status != 201 {
+		t.Fatalf("warm: %d %v", status, out)
+	}
+	head := out["commit"].(string)
+
+	for _, step := range []string{"write-tree", "pack-objects", "index-pack"} {
+		spy.failOn(step)
+		status, out := o.post("commits", body(head, step+".txt"))
+		if status != 503 || code(out) != contract.CodeStorageUnavailable {
+			t.Fatalf("%s: %d %v", step, status, out)
+		}
+		ix, _, _ := h.log.Newest(context.Background(), o.id, 0, false)
+		if ix.Refs["refs/heads/main"] != head {
+			t.Fatalf("%s: the branch moved", step)
+		}
+	}
+	spy.failOn("update-ref")
+	status, out = o.post("commits", body(head, "moved.txt"))
+	if status != 201 {
+		t.Fatalf("update-ref: %d %v", status, out)
+	}
+	spy.failOn("none")
+	// The log holds the commit and the next read of the repository sees
+	// the reference, reconciled from the index.
+	ix, _, _ := h.log.Newest(context.Background(), o.id, 0, false)
+	if ix.Refs["refs/heads/main"] != out["commit"] {
+		t.Fatalf("the entry did not move the reference: %v", ix.Refs["refs/heads/main"])
+	}
+	if r := h.get("/v1/repos/" + o.id + "/refs?prefix=refs/heads/main"); !strings.Contains(string(r.body), out["commit"].(string)) {
+		t.Fatalf("the copy was not reconciled: %s", r.body)
+	}
+}
+
+// TestRevertOfAMergeTakesTheMainline covers the mainline of a merge
+// commit and a dry run of a merge.
+func TestRevertOfAMergeTakesTheMainline(t *testing.T) {
+	h := newHarness(t)
+	o := seedOps(t, h, repoA)
+	// A branch with a merge commit on it, pushed as a client would.
+	gittest.Run(t, o.src.Dir, nil, "checkout", "-q", "-b", "mline", o.main)
+	o.src.Commit("mm.txt", "mm\n", "On mline")
+	merged := o.src.Merge("feature", "Merge feature into mline")
+	if err := pushRef(h, o, "refs/heads/mline", wal.ZeroSHA, merged); err != nil {
+		t.Fatal(err)
+	}
+	status, out := o.post("revert", `{"branch":"mline","expected_head":"`+merged+`","commits":["`+merged+`"],"mainline":1,`+author+`}`)
+	if status != 201 {
+		t.Fatalf("revert of a merge: %d %v", status, out)
+	}
+	// The revert undid the second parent's file.
+	r := h.get("/v1/repos/" + o.id + "/tree/-?ref=refs/heads/mline")
+	if strings.Contains(string(r.body), "src/b.txt") {
+		t.Fatalf("the merge was not reverted: %s", r.body)
+	}
+
+	// A dry run of a merge answers without committing.
+	seq := func() uint64 {
+		ix, _, _ := h.log.Newest(context.Background(), o.id, 0, false)
+		return ix.Seq
+	}
+	before := seq()
+	status, out = o.post("merge", `{"branch":"main","expected_head":"`+o.main+`","source":"feature","strategy":"merge_commit","dry_run":true,`+author+`}`)
+	if status != 200 || out["committed"] != false || out["entry_seq"] != nil {
+		t.Fatalf("dry merge: %d %v", status, out)
+	}
+	if seq() != before {
+		t.Fatal("a dry merge committed an entry")
+	}
+	o.src.Checkout("main")
+}
+
+// TestOperationsOnADeletedRepository answers 404 before any work.
+func TestOperationsOnADeletedRepository(t *testing.T) {
+	h := newHarness(t)
+	o := seedOps(t, h, repoA)
+	if status, out := h.do("DELETE", "/v1/repos/"+o.id, ""); status != 202 {
+		t.Fatalf("delete: %d %v", status, out)
+	}
+	if status, out := o.post("commits", `{"branch":"main","expected_head":"`+o.main+`",`+author+`,"message":"m","changes":[{"path":"a","content":"`+b64("a")+`"}]}`); status != 404 {
+		t.Fatalf("deleted: %d %v", status, out)
+	}
+}
+
+// TestOperationErrorsCarryTheirText holds the developer sentence of the
+// two failures the operations raise inside themselves.
+func TestOperationErrorsCarryTheirText(t *testing.T) {
+	if got := (&changeError{index: 2, reason: ReasonPath}).Error(); !strings.Contains(got, ReasonPath) {
+		t.Errorf("changeError: %q", got)
+	}
+	if got := (&mergeConflict{commit: "abc", paths: []string{"a", "b"}}).Error(); !strings.Contains(got, "a, b") {
+		t.Errorf("mergeConflict: %q", got)
+	}
+}
