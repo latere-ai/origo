@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"latere.ai/x/pkg/otel"
@@ -36,14 +37,53 @@ func main() {
 	os.Exit(run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
 }
 
-// run parses the command line, loads the configuration, and serves until
-// ctx ends. It returns the process exit code so tests drive it without a
-// subprocess: 0 on a clean stop, 1 on a start-up or runtime failure, 2 on a
-// usage error.
+// run dispatches the subcommand and returns the process exit code, so
+// tests drive it without a subprocess: 0 on a clean stop, 1 on a
+// start-up or runtime failure, 2 on a usage error.
+//
+// The subcommand table is spec 002's. serve is the default and reads
+// the node's whole configuration; migrate is spec 014's batch client
+// and reads three variables and none of the node's, so the load of the
+// node's table happens inside serve and an operator running migrate
+// from a laptop is not asked for a bucket. check is spec 018's and is
+// not built, so it is an unknown subcommand like any other.
 func run(ctx context.Context, args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("origod", flag.ContinueOnError)
+	name, rest := subcommand(args)
+	switch name {
+	case "", "serve":
+		return serve(ctx, rest, getenv, stdout, stderr)
+	case "migrate":
+		return migrate(ctx, rest, getenv, stdout, stderr)
+	default:
+		_, _ = fmt.Fprintf(stderr, "origod: unknown subcommand %q; serve (the default) and migrate\n", name)
+		return 2
+	}
+}
+
+// subcommand is spec 002's rule: the first argument that does not start
+// with a dash names the subcommand, and the arguments around it are the
+// subcommand's own.
+func subcommand(args []string) (string, []string) {
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			rest := make([]string, 0, len(args)-1)
+			rest = append(rest, args[:i]...)
+			return a, append(rest, args[i+1:]...)
+		}
+	}
+	return "", args
+}
+
+// versionFlag adds the -version flag every subcommand shares.
+func versionFlag(fs *flag.FlagSet) *bool {
+	return fs.Bool("version", false, "print the build identity and exit")
+}
+
+// serve is the node: the listeners and the loops of spec 002.
+func serve(ctx context.Context, args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("origod serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	showVersion := fs.Bool("version", false, "print the build identity and exit")
+	showVersion := versionFlag(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
