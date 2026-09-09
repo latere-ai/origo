@@ -295,8 +295,8 @@ var (
 func defined(rel string) bool {
 	if m := repoKeyRe.FindStringSubmatch(rel); m != nil {
 		rest := m[2]
-		switch {
-		case rest == "meta", rest == wal.LatestKey:
+		switch rest {
+		case "meta", wal.LatestKey:
 			return true
 		}
 		for _, p := range []string{"wal/", "index/", "packs/", "lfs/"} {
