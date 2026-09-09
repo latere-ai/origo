@@ -446,7 +446,9 @@ run green.
 The spec stays at `testing` by the lifecycle rule of
 `specs/README.md`: what remains is a criterion another spec owns the
 test for. The import criterion's second half, that the source bearer
-appears in no process argument and no log line, is spec 014's
-`TestSourceTokenIsNeverLogged`, and the first criterion's conformance
-cases are spec 021's `TestContract`, the way specs 003, 004, and 016
-wait.
+appears in no process argument and no log line, landed with spec 014 on
+2026-09-09: `TestSourceTokenIsNeverLogged` in `internal/api` runs an
+import and a verify against the stub source and asserts the bearer is
+in no line the node wrote, no git argument, no event, and no request
+the stub recorded. The first criterion's conformance cases are spec
+021's `TestContract`, the way specs 003, 004, and 016 wait.

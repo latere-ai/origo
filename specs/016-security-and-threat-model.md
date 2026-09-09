@@ -44,8 +44,9 @@ with `origod-http` beside it. `SECURITY.md` exists at the root with
 the disclosure process. The gate runs `vuln` on every push. Not yet: a
 bill of materials and provenance, spec 017's first criterion, the
 `release-verify` job of `release.yml` at which `cosign verify` and
-`gh attestation verify` accept the image; and the dialer's callers,
-`import` and `verify`, specs 019 and 014.
+`gh attestation verify` accept the image. Both callers of the dialer
+have landed: `import` with spec 019 and `verify` with spec 014, whose
+`TestSourceTokenIsNeverLogged` covers the bearer of both.
 
 The item spec 012 left to this build is done: `Guard.quota` in
 `internal/auth` returns the `*Unavailable` of an authorizer that
@@ -392,8 +393,12 @@ divergence above as its rule, the two validator defects are recorded
 in spec 004's Outcome, and `SECURITY.md` states the supported releases.
 The spec stays at `testing` by the lifecycle rule of `specs/README.md`:
 what remains is a criterion another spec owns the test for, the bill
-of materials (spec 017) and the dialer under `import` and `verify`
-(specs 019, 014), the way specs 003 and 004 wait.
+of materials (spec 017), the way specs 003 and 004 wait. The dialer's
+half is done: spec 019 asserted `import` and spec 014 asserted `verify`
+on 2026-09-09, `TestSourceTokenIsNeverLogged` in `internal/api` holding
+the bearer of both, and `cmd/origod` reaches `AllowLoopback` only
+through a `_test.go` replacement of its `newHandler` variable, which
+`TestAllowLoopbackIsSetOnlyByTests` proves.
 Coverage at `5fa8275`: `internal/api` 93.1%, `internal/auth` 96.4%,
 `internal/config` 99.4%, `internal/httpgit` 93.8%, `internal/repo`
 93.6%, `internal/wal` 97.8%, `cmd/origod` 94.8%.

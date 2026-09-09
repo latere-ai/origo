@@ -1,6 +1,6 @@
 ---
 title: "Migration of existing repositories from a prior host"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/events/, cmd/origod/, test/e2e/, docs/migration.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -78,7 +78,7 @@ stateDiagram-v2
 | importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: one entry, 30 minute budget, `transfer.fsckObjects`, the source host in `ORIGO_EGRESS_ALLOW`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
 | verifying | `verify` (below) compares the two sides and records the result in `meta` | none |
 | mirrored | serves reads; writes are allowed but the prior host has not yet sent any; Origo's copy is never frozen by this protocol | keeps serving both |
-| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; its mounts clone from Origo |
+| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; the 308 target carries a token the prior host mints as the URL's user info, `https://x:<token>@<origo>/r/<id>.git/…`, because git's HTTP client drops an `Authorization` header on a redirect that changes the host and every route of Origo is authenticated; its mounts clone from Origo |
 
 A repository whose verification finds a difference is imported again
 after the operator fixes the cause. The import refuses a non-empty
@@ -93,7 +93,7 @@ history, spec 004).
 
 | Method | Path | Behaviour |
 |---|---|---|
-| POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source or one the egress rules of spec 016 refuse |
+| POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source, one the egress rules of spec 016 refuse, or one that does not answer `ls-remote`, which is the caller's input and carries `field: "source"` in `details` |
 
 The node runs `git ls-remote --end-of-options <source>` with the token
 and the egress proxy in the environment the way spec 019's import does,
@@ -101,7 +101,9 @@ the proxy terminating the source's TLS and trusting
 `ORIGO_EGRESS_CA_BUNDLE` beside the system roots (spec 016) and
 passing `-c transfer.fsckObjects=true` on git's command line, not as a
 `GIT_CONFIG_*` key, because it is no secret (spec 016), drops the peeled
-lines (`<ref>^{}`, which name a tag's target and not a reference), and
+lines (`<ref>^{}`, which name a tag's target and not a reference) and
+the `HEAD` line, whose value on the other side is a name and not a
+hash, and
 runs `git for-each-ref` on its own copy, and compares every reference
 by name and hash; `equal` is true when the two maps are identical. It
 then counts
@@ -142,7 +144,12 @@ The manifest is JSON lines, one object per repository:
 {"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME"}
 ```
 
-`id` is the repository's id on Origo and must be a UUID (spec 003). A
+The whole manifest is read and held to that shape before any call: a
+line whose `id` is not a UUID, whose owner or slug is not a label, whose
+`source` is not an https URL, or whose `token_env` names an empty
+variable is a usage error, exit 2, with the line number on standard
+error and no request to Origo and no report file written. `id` is the
+repository's id on Origo and must be a UUID (spec 003). A
 prior host whose own ids are not UUIDs mints one per repository when
 it writes the manifest, records it on its own record, and may carry
 the old id in `prior_id`, which Origo never reads and the report
@@ -255,3 +262,82 @@ host's data model.
   `tools/docs/run-blocks.sh docs/migration.md`, the script spec 013
   owns under "Documents as tests", with the stack's `ORIGO_TEST_URL`
   and `ORIGO_TEST_ADMIN_TOKEN` in the environment).
+
+## Outcome
+
+Built. `verify` is `internal/api/verify.go`, the batch client is
+`cmd/origod/migrate.go` behind the subcommand dispatcher of spec 002,
+which this spec built, and the runbook is `docs/migration.md`, whose
+shell blocks are its own test.
+
+| Criterion | Test |
+|---|---|
+| `verify` on an identical fixture is `equal` with the counts equal, the copy's reachable-object count, `verified_at` and `verified_equal` in `meta`, and a diverged reference after one commit on the source | `internal/api`, `TestVerifyDetectsADivergedReference` |
+| `origod migrate` over 20 fixture repositories with parallelism 4 reaches `mirrored`, writes the documented report line with `prior_id`, reports `skipped` on a second run without importing again, exits 1 on an unreachable source naming it in `error`, and refuses a manifest id that is not a UUID before it calls Origo | `cmd/origod`, `TestMigrateBatchIsResumableAndReportsFailures` |
+| The source bearer of `verify` and of spec 019's `import` is in no log line, no process argument, and no URL | `internal/api`, `TestSourceTokenIsNeverLogged` |
+| A write on the source between import and verification is caught, and a fresh id and a second import reach `mirrored` | `test/e2e`, `TestClusterMigrationCatchesALateWrite` |
+| A 308 from a stub prior host makes `git clone` and `git push` against the old URL succeed against Origo with no client change | `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo` |
+| `verified` events are delivered with the documented payload | `internal/events`, `TestVerifiedEventPayload` |
+| The shell blocks of `docs/migration.md` run unchanged against the stack and end with every repository `mirrored` | `test/e2e`, `TestClusterMigrationDocCommandsRun` |
+
+Beside those: `TestVerifyRefusals` and `TestParseLsRemote` in
+`internal/api`, `TestMigrateUsageAndConfiguration`,
+`TestManifestIsHeldToTheShape`, and `TestMigrateRefusalsAreReported` in
+`cmd/origod`, and the `POST /v1/repos/{id}/verify` line in
+`TestEveryRouteRequiresAToken` of spec 016's route sweep.
+
+Coverage: `internal/api` 91.1%, `cmd/origod` 92.9%, `internal/events`
+and `internal/wal` unchanged.
+
+The stack proof is the dispatched run 34342546925 of `verify.yml` on
+main, which ran `TestClusterMigrationCatchesALateWrite` and
+`TestClusterMigrationDocCommandsRun` in the `e2e` job.
+
+### Divergences
+
+- The comparison drops the `HEAD` line of `ls-remote` beside the peeled
+  lines. `git ls-remote` advertises `HEAD` with the hash it resolves to
+  and `git for-each-ref` does not list it at all, so an identical
+  repository would answer `equal: false` on `HEAD` alone. The Design
+  above now states the rule, and `TestParseLsRemote` holds it.
+- A source that does not answer `ls-remote` is 400 `invalid_request`
+  with `field: "source"`. The spec named only the two refusals decided
+  before any connection; the code table has no code for a source that
+  is down, and the source is the caller's input, so the same code
+  carries it with the step in the developer register. The endpoint row
+  above states it.
+- The 308 of the cut-over carries the Origo token as the redirect
+  target's user info. Git's HTTP client drops an `Authorization` header
+  on a redirect that changes the host, and every route of Origo is
+  authenticated, so a client with no Origo credential of its own is
+  asked for one and the criterion's "no client change" fails. The prior
+  host already mints the import bearer, so it mints this one too. The
+  phase table, `docs/migration.md`, and the criterion's test state it.
+- A manifest line the command refuses is a usage error, exit 2, with no
+  request to Origo and no report file, rather than a `failed` report
+  line: the criterion says the refusal comes before Origo is called,
+  and exit 2 is what spec 002 gives a usage error. The Design states it.
+- The subcommand dispatcher of spec 002 was not in the tree, so this
+  spec built it: `serve` (the default, which is where the node's
+  configuration is now loaded, so `migrate` reads none of it) and
+  `migrate`. `check` stays spec 018's and is an unknown subcommand
+  until it lands. Spec 002's Outcome records it.
+- `AllowLoopback` reaches `cmd/origod` through `newHandler`, the
+  package variable holding `api.New` that `migrate_test.go` replaces
+  with a wrapper setting the field, so the field is written in a
+  `_test.go` file and nowhere else and spec 016's
+  `TestAllowLoopbackIsSetOnlyByTests` holds. The source stub of spec 013
+  gained `WithSANs`, because the batch test reaches it under
+  `origo-source.localhost`: a single-label name is not a valid
+  `ORIGO_EGRESS_ALLOW` entry and the Go resolver answers a `.localhost`
+  name with the loopback address.
+- The report's `seconds` is the whole drive of one repository, rounded
+  to the millisecond.
+
+### Open
+
+- The manifest carries no per-repository `default_branch`; a registered
+  repository takes `main` and the import's `HEAD` transaction moves it
+  to the source's own symbolic target, so the field would change
+  nothing. A prior host whose repositories are not created by this
+  command sets it through `PATCH /v1/repos/{id}` itself.

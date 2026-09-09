@@ -136,10 +136,11 @@ configuration table and shares the `-version` flag:
 | `check` | the node's variables | one line per requirement of the installation, exit 1 on any failure | 018 |
 | `migrate -manifest <file> -report <file>` | `ORIGO_MIGRATE_URL`, `ORIGO_MIGRATE_TOKEN_ENV`, `ORIGO_MIGRATE_PARALLEL` and none of the node's | drives a batch of imports against an Origo as a client | 014 |
 
-An unknown subcommand is a usage error, exit 2. The dispatcher is not
-in the tree: `cmd/origod` parses flags and serves (Outcome). Spec 018
-builds it, with `check` as its first subcommand, and spec 014's
-`migrate` joins it there; this spec keeps the table.
+An unknown subcommand is a usage error, exit 2. Spec 014 built the
+dispatcher with `serve` and `migrate`; `check` is spec 018's and is an
+unknown subcommand until it lands. The node's configuration is loaded
+inside `serve`, so a subcommand that reads none of it runs without a
+bucket. This spec keeps the table.
 
 ### Configuration
 
@@ -333,11 +334,15 @@ Divergences from the first draft:
 - `deploy/base` has no HorizontalPodAutoscaler and no PrometheusRule yet;
   they land with specs 005 and 011. The PodDisruptionBudget keeps
   `minAvailable: 1`.
-- The subcommand table is the design and the dispatcher is not built:
-  `cmd/origod` takes flags only and serves. Spec 018 builds the
-  dispatcher with `check` as its first subcommand, and spec 014's
-  `migrate` joins it; this spec keeps the table and the configuration
-  rule that every subcommand shares.
+- The subcommand table was the design and the dispatcher was not built
+  until spec 014 needed `migrate`. It built the dispatcher of the
+  Design above on 2026-09-09: the first argument that does not start
+  with a dash names the subcommand, `serve` is the default and is where
+  `config.Load` now runs, `migrate` is spec 014's, every subcommand
+  shares `-version`, and anything else is exit 2
+  (`cmd/origod`, `TestMigrateUsageAndConfiguration`). Spec 018 adds
+  `check` to it. This spec keeps the table and the configuration rule
+  that every subcommand shares.
 - A defect fixed by spec 013 on 2026-09-08: the storage and outbound
   transports of `cmd/origod` had no dial timeout, so a bucket or an
   issuer that drops packets held a request for the operating system's

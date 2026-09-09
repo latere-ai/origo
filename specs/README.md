@@ -69,7 +69,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | testing |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
-| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
+| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | testing |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
@@ -202,7 +202,7 @@ flowchart LR
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's `TestContract` covers the conformance cases of its first criterion and 014's `TestSourceTokenIsNeverLogged` asserts that the source bearer appears in no process argument and no log line |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
-| 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
+| 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | built and at testing: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; `TestClusterMigrationCatchesALateWrite` and `TestClusterMigrationDocCommandsRun` waiting on a dispatched `e2e` run |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; at testing until 021's suite runs the four `TestContract/020` cases it defers |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
@@ -223,7 +223,7 @@ deck and stated here so a reader sees them without the owning spec.
 | Decision | Owner | Relied on by |
 |---|---|---|
 | the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces; both Dockerfiles move to it under 017 | 017 | 002, 018, 020 |
-| `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all; the dispatcher is not built, 018 builds it with `check` first and 014's `migrate` joins it | 002 | 014, 018 |
+| `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all; 014 built the dispatcher with `serve` and `migrate`, `serve` being where the node's configuration is loaded, and 018 adds `check` | 002 | 014, 018 |
 | `ORIGO_TOKEN_KEY` is required in every mode; `make dev` and the kind overlay generate one at start | 002, 007 | 013, 016, 018 |
 | `ORIGO_GOSSIP_SECRET` is required only when `ORIGO_GOSSIP_PEERS` is set; a single node runs with neither | 002, 005 | 013, 016, 018 |
 | the index object carries `pushed_at`; the read API and `stats` serve it from there | 004 | 003, 009, 019 |
@@ -747,7 +747,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
-| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
+| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 014, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 019 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | - |

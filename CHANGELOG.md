@@ -277,3 +277,16 @@ committed: the commit log already holds that.
   007), the rate that subject alone is bucketed at on the node: a tool
   that drives a fleet of repositories takes a figure of its own without
   raising `ORIGO_REQUESTS_PER_MINUTE` for every caller.
+- Migration from another git host (spec 014).
+  `POST /v1/repos/{id}/verify` compares a source with Origo's copy and
+  answers whether every reference matches, which references differ with
+  the hash on each side, and how many objects Origo's copy holds; the
+  verdict is `verified_at` and `verified_equal` on `GET /v1/repos/{id}`
+  and a `verified` webhook event. `origod` now dispatches subcommands:
+  `serve` is the default, and `origod migrate -manifest <file> -report
+  <file>` drives a whole manifest of repositories from registration to
+  mirrored against `ORIGO_MIGRATE_URL` with the bearer
+  `ORIGO_MIGRATE_TOKEN_ENV` names, `ORIGO_MIGRATE_PARALLEL` at once,
+  writing one JSON line per repository and resuming from Origo's own
+  state on a second run. `docs/migration.md` is the runbook, including
+  the cut-over that keeps a prior host's clone URLs working.
