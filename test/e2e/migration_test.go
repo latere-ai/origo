@@ -56,13 +56,18 @@ func TestE2EOldCloneURLRedirectsToOrigo(t *testing.T) {
 	commitFile(t, seeded, "a.txt", "one", "first")
 	mustGit(t, seeded, "push", "-q", "origin", "HEAD:refs/heads/main")
 
+	// The prior host after its cut-over. Its 308 carries the credential
+	// Origo takes as the URL's user info, because curl drops an
+	// Authorization header on a redirect that changes the host and
+	// every route of Origo is authenticated: the prior host mints the
+	// token, which is what leaves the client unchanged.
 	const oldPath = "/acme/api.git"
-	old := priorHost(t, oldPath, "http://"+n.public+"/r/"+id+".git") + oldPath
-	bearer := "http.extraHeader=Authorization: Bearer " + s.token
+	old := priorHost(t, oldPath, "http://x:"+s.token+"@"+n.public+"/r/"+id+".git") + oldPath
 
-	// A clone of the old URL is a clone of Origo.
+	// A clone of the old URL is a clone of Origo, with nothing on the
+	// client naming Origo.
 	work := filepath.Join(t.TempDir(), "old")
-	mustGit(t, t.TempDir(), "-c", bearer, "clone", "-q", old, work)
+	mustGit(t, t.TempDir(), "clone", "-q", old, work)
 	if got, want := gittest.RevList(t, work), gittest.RevList(t, seeded); got != want {
 		t.Fatalf("the clone of the old URL differs:\n%s\nwant\n%s", got, want)
 	}
@@ -72,7 +77,7 @@ func TestE2EOldCloneURLRedirectsToOrigo(t *testing.T) {
 
 	// A push to the old URL lands in Origo, which the API reports.
 	commitFile(t, work, "b.txt", "two", "second")
-	mustGit(t, work, "-c", bearer, "push", "-q", "origin", "HEAD:refs/heads/main")
+	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	head := mustGit(t, work, "rev-parse", "HEAD")
 	if status, out := n.api("GET", "/v1/repos/"+id, ""); status != 200 || out["head"] != head {
 		t.Fatalf("after the push through the old URL: %d %v", status, out)

@@ -172,9 +172,17 @@ is the prior host's step, in this order:
 3. Point the old clone URLs at Origo. Answer HTTP 308 from
    `<old>/info/refs`, `<old>/git-upload-pack`, and
    `<old>/git-receive-pack` to the same paths under Origo's URL, or
-   proxy them. Git follows the redirect and rewrites its remote for the
+   proxy them. Git follows the redirect and rewrites its base for the
    rest of the session, so a clone and a push against the old URL keep
    working with no change on any developer's machine.
+
+   Put a token for Origo in the redirect target as the URL's user
+   info, `https://x:<token>@<origo>/r/<id>.git/info/refs`: every route
+   of Origo is authenticated, and git's HTTP client drops an
+   `Authorization` header on a redirect that changes the host, so a
+   client that carries no Origo credential of its own would be asked
+   for one. Minting that token is the prior host's step, as minting
+   the import bearer was.
 4. Leave the redirect up for at least 30 days, then remove it.
 5. Point anything that mounts or clones the repository at Origo.
 
