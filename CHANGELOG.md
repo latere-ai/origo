@@ -330,3 +330,29 @@ committed: the commit log already holds that.
   writing one JSON line per repository and resuming from Origo's own
   state on a second run. `docs/migration.md` is the runbook, including
   the cut-over that keeps a prior host's clone URLs working.
+
+- Installing Origo (spec 018). `docs/install.md` takes an operator with
+  a cluster and a bucket to a first clone and push: what to prepare,
+  the bucket and its credentials, the OIDC issuer and the authorization
+  endpoint they run, the overlay, the signing key no manifest can
+  carry, the apply, the check, and a table of what each failure means.
+  Its commands are run against a bare cluster on every push, so a step
+  that drifts from the manifests fails the build.
+- `origod check` reaches everything a node depends on and prints one
+  line per requirement, exiting non-zero on any failure: the bucket,
+  the conditional create the log is linearized by, every issuer's
+  discovery document and key set, the authorization endpoint's answer
+  to the reserved probe id, a signed `ping` to the event sink, the
+  cache directory against `ORIGO_CACHE_BYTES`, and git against the 2.40
+  floor. It runs as an init container, so a misconfigured pod never
+  reports ready.
+- `deploy/base` is provider-neutral: no ingress class, no
+  certificate-manager annotation, no hostname, and no controller's own
+  settings, each of which an overlay supplies. `deploy/examples`
+  carries `digitalocean` and `aws` beside `kind`, and `deploy/prod`
+  holds the values that used to sit in the base.
+- Two generated reference pages: `docs/configuration.md`, every
+  variable with its default, its constraints, and the subsystem that
+  reads it, from `internal/config`; and `docs/api.md`, the endpoint,
+  header, and code tables a consumer codes against. `make docs` writes
+  both and a drift in either fails the same push.
