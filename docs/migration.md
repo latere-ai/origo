@@ -67,11 +67,22 @@ would find in a log:
 ```sh
 curl -sf -X POST "$ORIGO_URL/v1/repos/$ID/import" -H "$AUTH" -H "$JSON" \
 	-d "{\"source\":\"$SOURCE_URL\",\"token\":\"$SOURCE_TOKEN\"}" >/dev/null
-until [ "$(curl -sf "$ORIGO_URL/v1/repos/$ID/import" -H "$AUTH" | jq -r .state)" != "running" ]; do
+STATE=running
+for _ in $(seq 1 900); do
+	STATE=$(curl -sf "$ORIGO_URL/v1/repos/$ID/import" -H "$AUTH" | jq -r .state || echo unread)
+	case "$STATE" in
+	done) break ;;
+	failed) curl -sf "$ORIGO_URL/v1/repos/$ID/import" -H "$AUTH" | jq . ; break ;;
+	esac
 	sleep 2
 done
-curl -sf "$ORIGO_URL/v1/repos/$ID/import" -H "$AUTH" | jq -e '.state == "done"' >/dev/null
+test "$STATE" = done
 ```
+
+A read that does not answer is `unread` and the loop asks again: one
+request that fails is a node rolling, not an import that failed. Only
+`failed` is a failure, and the state carries git's own message from the
+prior host in `error`.
 
 Verify it. This reads both sides and writes to neither: it lists the
 prior host's references, lists Origo's, and answers whether the two are

@@ -81,14 +81,10 @@ func loadMigrateOptions(getenv config.Getenv) (migrateOptions, error) {
 		problems = append(problems, "ORIGO_MIGRATE_URL: an absolute http or https URL")
 	}
 	name := strings.TrimSpace(getenv("ORIGO_MIGRATE_TOKEN_ENV"))
-	switch {
-	case name == "":
+	if name == "" {
 		problems = append(problems, "missing ORIGO_MIGRATE_TOKEN_ENV")
-	default:
-		o.Token = getenv(name)
-		if o.Token == "" {
-			problems = append(problems, "ORIGO_MIGRATE_TOKEN_ENV names "+name+", which is empty")
-		}
+	} else if o.Token = getenv(name); o.Token == "" {
+		problems = append(problems, "ORIGO_MIGRATE_TOKEN_ENV names "+name+", which is empty")
 	}
 	o.Parallel = 4
 	if raw := strings.TrimSpace(getenv("ORIGO_MIGRATE_PARALLEL")); raw != "" {
