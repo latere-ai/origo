@@ -174,6 +174,22 @@ jobs:
       # rate_limited row is reachable on one node alone; a live
       # installation runs at 600, where the balanced ingress is the
       # target.
+      # Spec 017's compatibility criterion beside the suite: the fixture
+      # the latest release attached, when there is one, downloaded into
+      # the path ORIGO_PREVIOUS_RELEASE_FIXTURE names; unset, the test
+      # skips, which is the case before the first release and on a fork.
+      - name: Download the latest release's fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous"
+          if gh release download --repo "$GITHUB_REPOSITORY" --pattern 'fixture-*.tar.gz' --dir "$RUNNER_TEMP/previous"; then
+            fixture=$(ls "$RUNNER_TEMP/previous"/fixture-*.tar.gz | head -1)
+            echo "ORIGO_PREVIOUS_RELEASE_FIXTURE=$fixture" >> "$GITHUB_ENV"
+            echo "previous release fixture: $fixture"
+          else
+            echo "no release carries a fixture; TestPreviousReleaseFixture skips"
+          fi
       - name: Run the conformance suite against the stack
         env:
           ORIGO_TEST_URL: http://localhost:30180
@@ -183,7 +199,7 @@ jobs:
           ORIGO_TEST_S3_KEY: minioadmin
           ORIGO_TEST_S3_SECRET: minioadmin
           ORIGO_TEST_S3_PATH_STYLE: "1"
-        run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack'
+        run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture' -v
 
   # The slow scenarios on the same stack, with git-lfs for spec 010.
   e2e-slow:

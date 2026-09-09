@@ -7,7 +7,6 @@ package conformance_test
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -224,18 +223,6 @@ func consumerFlow(t *testing.T, base, token, id string) []answer {
 	out = append(out, call("undelete", "POST", "/v1/repos/"+id+"/undelete", ""))
 	out = append(out, call("delete-again", "DELETE", "/v1/repos/"+id, ""))
 	return out
-}
-
-func newID(t *testing.T) string {
-	t.Helper()
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		t.Fatal(err)
-	}
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
-	h := fmt.Sprintf("%x", b[:])
-	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
 // TestSameAnswersOnStubAndStack is spec 003's criterion, owned by spec

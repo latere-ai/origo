@@ -87,10 +87,11 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	// Each test job's go test lines carry its selections and nothing
 	// else: one prefix per job, and for the e2e job the conformance
 	// suite of spec 021 beside its prefix, in a line of its own that
-	// selects the package's two stack tests by name.
+	// selects the package's two stack tests and spec 017's previous
+	// release fixture test by name.
 	selections := map[string][]string{
 		"integration": {"make test-tiers"},
-		"e2e":         {"-run 'TestCluster' -skip 'TestClusterUpScript'", "./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack'"},
+		"e2e":         {"-run 'TestCluster' -skip 'TestClusterUpScript'", "./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture'"},
 		"e2e-slow":    {"-run 'TestSlow'"},
 		"up-script":   {"-run 'TestClusterUpScript'"},
 		"mutation":    {"-run 'TestMutation'"},
