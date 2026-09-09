@@ -9,6 +9,6 @@ For people who run or use an Origo installation. Contributors read
 | `configuration.md` | every variable with its default, generated from the code (spec 018) | planned |
 | [`migration.md`](migration.md) | moving repositories in from another git host (spec 014) | current |
 | [`operations.md`](operations.md) | running it: backup, restore, upgrade, scale, outages | current |
-| `upgrades/` | steps for a major upgrade, one file per major (spec 017) | none needed yet |
+| [`upgrades/`](upgrades/README.md) | what a version promises, how to upgrade and roll back, and the steps for a major upgrade, one file per major (spec 017) | current; no major upgrade yet |
 | `api.md` | the endpoints, headers, and error codes a consumer relies on, generated from the specs by `make docs` (spec 018) | planned |
 | [`spikes/`](spikes/) | measurements that decided a design | current |
