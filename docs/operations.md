@@ -87,8 +87,8 @@ unless the list says otherwise, and each sends an event to
 | `POST /v1/repos/{id}/freeze` | stops the repository accepting pushes. A push is refused at `info/refs`, before the client uploads anything, and git prints `remote error: repo_frozen: ...`; clones and fetches go on. A second freeze is 409 |
 | `POST /v1/repos/{id}/unfreeze` | lets pushes through again. 200 whether or not it was frozen |
 | `POST /v1/repos/{id}/import` | brings an existing repository in from an `https` source with its history. 202 at once; the run has 30 minutes and the repository's quota. Poll `GET /v1/repos/{id}/import` for `running`, `done`, or `failed` |
-| `GET /v1/repos/{id}/export.bundle` | the whole repository as one `git bundle`, action `read`. Verify what you receive with `git bundle verify` and `git clone`: a bundle cut by the 10 minute budget is a truncated file, not an error status |
-| `GET /v1/repos/{id}/stats` | `size_bytes`, `lfs_bytes`, `packs`, `entries_since_compaction`, `refs`, `pushed_at`, `compacted_at`, action `read` |
+| `GET /v1/repos/{id}/export.bundle` | the whole repository as one `git bundle`, action `read`. Verify what you receive with `git bundle verify` and `git clone`: a bundle cut by the 10 minute budget is a truncated file, not an error status. A repository with no reference has nothing to bundle and answers 404 `ref_not_found` |
+| `GET /v1/repos/{id}/stats` | `size_bytes`, `lfs_bytes`, `packs`, `entries_since_compaction`, `refs`, `pushed_at`, `compacted_at`, action `read`. `refs` counts `HEAD` with the references |
 | `POST /v1/repos/{id}/gc` | compacts now. On the repository's primary it waits up to 10 seconds and answers the before and after figures, or 202 `running`; on any other node it answers 202 `scheduled` naming the primary, which compacts within ten minutes. A repository compacted within the last hour, by a `gc` or by a threshold, is 429 `rate_limited` with `details.limit: "repository"` |
 
 An import needs the source host on `ORIGO_EGRESS_ALLOW`; a host that is

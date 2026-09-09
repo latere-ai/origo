@@ -60,9 +60,9 @@ rules of spec 008; after the purge it answers 410 `gone`.
 | POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defence for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository size rule of spec 012 (`quota_bytes` over packs and LFS bytes) as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
-| GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `import_not_found` when none of them is; `refs` and `bytes` are `meta`'s `import_refs` and `import_bytes`, written with `imported_at`: the length of the import entry's reference transaction and the bytes of the uploaded `.pack` files, the entry's `PacksBytes`, because the entry itself carries no pack and its `pack_bytes` is 0; action `read` |
-| GET | `/v1/repos/{id}/export.bundle` | `git bundle create - --all` streamed as `application/x-git-bundle`: the complete repository in one portable file; action `read`; the subprocess runs under a 10 minute deadline (spec 012), and a bundle cut by the deadline is a truncated body the client's `git bundle verify` refuses, never a status, because the headers are sent with the first byte |
-| GET | `/v1/repos/{id}/stats` | `{"size_bytes", "lfs_bytes", "packs", "entries_since_compaction", "refs", "pushed_at", "compacted_at"}` from the newest index and one listing of `lfs/`: `size_bytes` is the index object's `size_bytes` as spec 004 defines it, the bytes of the listed packs plus the pack bytes of the entries since the last compaction, which a `compact` commit sets and a push adds to, so the figure falls after a `gc`; `pushed_at` is the index object's `pushed_at` (spec 004), `compacted_at` the `at` of the newest `compact` entry the index names, null when it names none; action `read` |
+| GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `import_not_found` when none of them is; `refs` and `bytes` are `meta`'s `import_refs` and `import_bytes`, written with `imported_at`: the length of the import entry's reference transaction and the bytes of the uploaded `.pack` files, the entry's `PacksBytes`, because the entry itself carries no pack and its `pack_bytes` is 0; the endpoint serves what `meta` holds, so `started_at` is null once an import has finished and `finished_at` is null for one that failed; action `read` |
+| GET | `/v1/repos/{id}/export.bundle` | `git bundle create - --all` streamed as `application/x-git-bundle`: the complete repository in one portable file; action `read`; the subprocess runs under a 10 minute deadline (spec 012), and a bundle cut by the deadline is a truncated body the client refuses, never a status, because the headers are sent with the first byte: `git bundle verify` reads the header and the prerequisites, so it refuses a cut inside those, and a `git clone` from the bundle refuses a cut inside the pack; a repository with no reference is 404 `ref_not_found` (spec 003), because `git bundle create` writes no empty bundle and an empty repository is a state and not a failure of the node |
+| GET | `/v1/repos/{id}/stats` | `{"size_bytes", "lfs_bytes", "packs", "entries_since_compaction", "refs", "pushed_at", "compacted_at"}` from the newest index and one listing of `lfs/`: `size_bytes` is the index object's `size_bytes` as spec 004 defines it, the bytes of the listed packs plus the pack bytes of the entries since the last compaction, which a `compact` commit sets and a push adds to, so the figure falls after a `gc`; `pushed_at` is the index object's `pushed_at` (spec 004), `compacted_at` the `at` of the newest `compact` entry the index names, null when it names none, read from that entry's head because `wal.IndexEntry` carries no time of its own; `refs` is the size of the index's reference map and counts `HEAD` with them; action `read` |
 | POST | `/v1/repos/{id}/gc` | on the repository's compaction primary (spec 005), starts compaction now (spec 006) and waits for it at most 10 seconds: 200 `{"before": {"packs", "entries", "size_bytes"}, "after": {…}}` when it finished, else 202 `{"status": "running", "details": {"running": true, "started_at": "<RFC 3339>"}}`, the same answer when a compaction was already running, and the caller polls `stats`; never longer than 10 seconds, because an ingress cuts a longer response (spec 006); on any other node, forwards nothing and compacts nothing: it creates the request object of spec 006 and answers 202 `{"status": "scheduled", "details": {"primary": "<node name>", "within_seconds": 600}}`, and the primary's sweep compacts within 10 minutes; 429 `rate_limited` with `Retry-After` and `details.limit: "repository"`, `details.retry_after` when a compaction ran on the repository within the last hour, a threshold compaction counting the same as a `gc`, counted on `origo_rate_limited_total{limit="repository"}`; emits `compacted` from the node that compacted |
 
 | Code | Status | Message | Details |
@@ -78,9 +78,15 @@ allowed the request, and caches it for that request and the
 `git-receive-pack` that follows it (keyed by the request's token hash
 and repository id for 60 seconds, the advertisement's lifetime in git),
 so `frozen_at`, `importing_since`, and `deleted_at` are checked at the
-advertisement with no second `meta` read at the upload; a state that
-changes between the two is caught by the hook's verdict, which reads
-the newest index and `meta` under the write lock before it commits.
+advertisement with no second `meta` read at the upload. The hook's
+verdict reads that cache and the newest index under the write lock
+before it commits, which is `internal/httpgit/frozen.go` with
+`MetaTTL` as the window: `deleted_at` is on the index the verdict
+acquires anyway and so is always fresh, while a freeze that lands
+inside the window is caught at the pusher's next advertisement rather
+than by the verdict. One read across the two requests and a verdict
+reading `meta` again under the lock cannot both hold, and the read
+count is what the criterion below measures.
 
 ### Import
 
@@ -114,7 +120,9 @@ transaction never names a reference that does not change. The index
 object after it lists the packs and one entry, and any node materializes
 it by step 2 of spec 004. There is no
 batching and no ordering to get right: the mirror is the state, and
-the history arrives as packs. The whole run is bounded by 30 minutes
+the history arrives as packs. The entry carries no subject and no
+actor: the run outlives the request that started it, so the caller's
+identity travels on the `imported` event instead. The whole run is bounded by 30 minutes
 and by `quota_bytes` over the pack bytes; over either, nothing is
 committed, the scratch directory is removed, and `import_error` says
 which.
@@ -163,7 +171,10 @@ metadata names and older than a day is an orphan, and so is every
 object under `origo/` outside them, which the sweep reports with its
 key so an operator sees what wrote it. It reports the orphan count as
 `origo_orphan_objects`, deletes the orphans after 7 days, and reports
-the bytes under the prefix as `origo_storage_bytes`. The sweep runs on Sundays at 03:00 UTC on one
+the bytes under the prefix as `origo_storage_bytes`. The sweep is
+`api.Sweeper` over a `*wal.Log` alone rather than a method on the
+handler, so a test and the cluster job can run one over a bucket
+without a cache, a guard, or a signer. The sweep runs on Sundays at 03:00 UTC on one
 node: the one whose `ORIGO_NODE_NAME` sorts first in the live set of
 spec 005 at that hour, so an installation of any size lists the
 prefix once a week and a node that leaves hands the sweep to the next
@@ -259,8 +270,10 @@ than weekly.
   any compaction is 429 with `details.limit: "repository"` (proposed:
   `internal/api`, `TestGcRoutesToThePrimary`).
 - `PATCH` with `owner` emits `renamed` and `transfer` emits
-  `transferred`, both with `pusher` (proposed: `internal/events`,
-  `TestRenameAndTransferEvents`).
+  `transferred`, both with `pusher` (`internal/api`,
+  `TestRenameAndTransferEvents`: the operations are handlers, and a
+  test of them inside `internal/events` cannot compile against a
+  package that imports it).
 - An export re-imported into a fresh repository has identical
   `rev-list --all` (proposed: `internal/api`, `TestExportRoundTrip`).
 - After 500 pushes, a `gc` answers 429 `rate_limited` with
@@ -282,7 +295,7 @@ than weekly.
   objects and the name; `internal/api`, `TestPurgedRepositoryIsGone`
   for the responses).
 - Every operation delivers one event of its kind with the listed fields
-  (proposed: `internal/events`, `TestAdministrationEvents`).
+  (`internal/api`, `TestAdministrationEvents`).
 
 ## Outcome
 
