@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The conformance suite (spec 021): `test/conformance` runs the whole
+  contract against any base URL, a live Origo, the contract stub, or a
+  consumer's own stub, one subtest per row of every table, and deletes
+  what it created. `RateLimit-Limit` is what its rate-limit case reads.
+  The code table in `internal/contract` carries every status beside
+  every sentence, and a test walks the module so no handler sends a
+  code under another status or with a sentence of its own. A push the
+  log refuses reaches git as `remote: <code>: <sentence>` with the
+  table's sentence and nothing else; the reference and the hashes go to
+  the node's log. `ORIGO_TEST_DROP_CAPABILITY`, for the mutation job,
+  turns one advertised capability off. The contract stub serves push
+  events, the limits, and compaction, so a consumer's tests meet the
+  whole contract in-process.
+
 - `origod` starts from typed configuration and refuses to start with one
   message that names every missing variable.
 - Three listeners: the public surface on `:8080`, `/livez`, `/readyz`,

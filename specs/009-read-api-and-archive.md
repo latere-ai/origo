@@ -219,6 +219,17 @@ Every endpoint runs against a built `origod` with the stub issuer and
 authorizer in `test/e2e`, `TestE2EReadAPI`, and every read route is in
 the route sweep of spec 007 (`cmd/origod`, `TestEveryRouteRequiresAToken`).
 
+Two items from spec 021's code-table test, 2026-09-09: `writeReadError`
+answered a read refused by an unexpected error with
+`storage_unavailable` under 500, a status the code's row does not
+list, and answers 503 now (`internal/contract`,
+`TestEveryCodeHasOneSentence` fails on the old status); and the 416 of
+a `Range` past the end of the blob, which the Design names and no Code
+table lists, is a status of the `invalid_request` row in
+`internal/contract`, so the walk accepts the one call site that sends
+it. The read rows also run against the stub and the stack in spec
+021's suite (`test/conformance`, `TestContract/009/*`).
+
 Divergences and interpretations, all kept and now in the Design:
 
 - `Origo-Commit` peels a tag: `commits`, `commits/{sha}`, and the

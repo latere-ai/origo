@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/contract/, internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -282,13 +282,18 @@ the table's sentence for every code and the validation reason, the
 unknown-route handler in `cmd/origod` answers 400 `invalid_request`
 with `details.reason: "no such route"`.
 
-Divergence to fix, owned by spec 021's code-table test:
-
-- The sideband for a refused commit is `storage_unavailable: the push
-  was not recorded, retry`, and for a moved reference
-  `non_fast_forward: <ref> moved to <sha> since you fetched; fetch
-  first`; both become the table's sentences exactly, `<code>: <sentence>`
-  and nothing appended, and the reference and the hashes go to the
-  handler's `info` log line for the rejected push, never the sideband
-  (spec 021, `TestRejectLinesAreTheTableSentences` in
-  `internal/httpgit`).
+Divergence fixed by spec 021 on 2026-09-09: the sideband for a refused
+commit was `storage_unavailable: the push was not recorded, retry`,
+and for a moved reference `non_fast_forward: <ref> moved to <sha>
+since you fetched; fetch first`; both are the table's sentences
+exactly, `<code>: <sentence>` through `contract.Line`, and the
+reference and the hashes are on the handler's `push refused` info
+line, never the sideband (`internal/httpgit`,
+`TestRejectLinesAreTheTableSentences`). The conformance suite of spec
+021 now exercises every row of every table above against the stub
+(`test/stubs/origo`, `TestStubConforms`) and the stack (`test/conformance`,
+`TestContract`, `TestSameAnswersOnStubAndStack`, in spec 013's `e2e`
+job), and the code table holds every status beside every sentence
+(`internal/contract`, `TestEveryCodeHasOneSentence`); the first three
+criteria close with spec 021's stack proof, and this spec stays at
+`testing` until spec 021's live run has run once.

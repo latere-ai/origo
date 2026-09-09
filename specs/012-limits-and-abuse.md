@@ -172,9 +172,10 @@ per smart HTTP subprocess), `internal/api` (a slot per read request),
 `internal/lfs` (the batch quota through the same measurement), and
 `cmd/origod` (the bucket table behind the verifier, the semaphore
 handed to compaction). `ORIGO_MAX_GIT_PROCS` is read by
-`internal/config`. Every criterion but the frozen-repository one, which
-spec 021 owns, has a passing test in the tree, which is why the spec is
-at `testing`.
+`internal/config`. Every criterion has a passing test in the tree, the
+frozen-repository one through spec 021's suite since 2026-09-09; the
+spec stays at `testing` until that suite's stack run is cited as green
+by spec 021.
 
 | Criterion | Test |
 |---|---|
@@ -182,7 +183,7 @@ at `testing`.
 | a push past the single-push bound is 413 `over_quota` with `details.limit: "push"`, with the spool stopped at the limit | `internal/httpgit`, `TestPushOverTwoGiBIsRefused`, the bound lowered through `limits.Options` |
 | the 601st request of a subject in one minute is 429 with `Retry-After`, a second subject sees none, and a bucket idle for ten minutes is gone | `internal/limits`, `TestPerSubjectTokenBucket`, `TestIdleBucketsAreEvicted` |
 | with two slots a third caller waits and is then 429 `rate_limited` with `details.limit: "subprocesses"`, and a compaction that finds no slot skips and runs on the next sweep | `internal/limits`, `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`; `internal/httpgit`, `TestSubprocessSlotsAdmitAndRefuse`, `TestConcurrentPushesShareTheSubprocessCap`; `internal/api`, `TestReadWithoutASubprocessSlotIsRateLimited` |
-| a frozen repository accepts a clone and refuses a push with `repo_frozen` | spec 021's `TestContract`; deferred, as this spec's Acceptance criteria say |
+| a frozen repository accepts a clone and refuses a push with `repo_frozen` | spec 021's `TestContract/019/freeze` in `test/conformance`, run against the stub by `TestStubConforms` and against the stack in the `e2e` job: the clone succeeds, the push is refused at `info/refs` with `remote error: repo_frozen: <sentence>`, a second freeze is 409, and a push lands after the unfreeze (closed 2026-09-09) |
 
 The reference row and the `lfs/` byte cache have no criterion of their
 own and are held by `TestPushOverTheReferenceCapIsRefused` and

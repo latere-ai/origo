@@ -1,6 +1,6 @@
 ---
 title: "Conformance suite: the contract as executable tests"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -35,27 +35,12 @@ live service after a release.
 
 ## Current state
 
-Nothing of this spec exists. `test/e2e` covers the flows of specs 003
-and 004 against one node with the stub issuer and authorizer of spec
-007 in-process. `internal/contract` holds the codes, the header, and
-the code table as far as spec 009 took it: `sentences`, one user
-sentence per code of specs 003, 007, and 009, read through
-`contract.Sentence(code)`, `contract.Error(code, details)`, and
-`contract.Write(w, status, code, details)`, and `contract.Codes()`
-listing the rows; every JSON envelope of `cmd/origod`,
-`internal/httpgit`, `internal/api`, and `internal/auth` is rendered
-through `contract.Write` with a `contract.Code*` constant, and the one
-`httpjson.Error` literal in the module is inside `internal/contract`.
-The status is not in the table: each call site passes it. Every row of
-the table has a call site: `ref_not_found` gained its with the read API
-of spec 009, and `over_quota` and `rate_limited` with the limits of
-spec 012, which is at `testing` and therefore inside the call-site rule
-of `TestEveryCodeHasOneSentence`. The hook verdicts of a refused push in
-`internal/httpgit/handler.go` still carry sentences of their own, and
-the `non_fast_forward` verdict carries the reference and a hash (spec
-003's Outcome, the divergence this spec owns). Spec 013's sink,
-contract stub, and overlay, which the suite needs for its event and
-deny-flipping cases and for its CI run, are not built.
+Built on 2026-09-09; the Outcome below records what landed. The suite
+is `test/conformance`, the code table with its statuses is
+`internal/contract`, the mutation seam is `ORIGO_TEST_DROP_CAPABILITY`
+through `internal/config` and `internal/repo`, and the stub of spec 013
+serves the whole contract in-process. The spec is at `testing` until
+the live run of a release has run once and spec 020 adds its cases.
 
 ## Design
 
@@ -469,3 +454,170 @@ assertions beyond the thresholds the owning specs name.
   404 for every id the run created, and a repository created beside
   the run under a `conformance-` slug by the test itself still answers
   200 (proposed: `test/conformance`, `TestRunCleansUp`).
+
+## Outcome
+
+Built on 2026-09-09 in eight commits: the code table's statuses with
+`Status`, `Statuses`, `Line`, and `Refusal`, and the `go/ast` walk with
+its negative fixture; the 503 of a read's fallback failure; the
+sideband rule with `TestRejectLinesAreTheTableSentences`;
+`ORIGO_TEST_DROP_CAPABILITY` in `internal/config` and `internal/repo`
+with the node's wiring; the stub's events, limits, compaction, and
+`Fault`; `test/conformance` with its four tests; `TestMutation` with
+the jobs of `verify.yml` and the `live` job of `release.yml`.
+
+| Criterion | Test |
+|---|---|
+| `TestContract` against the kind stack with nothing skipped, and against `ORIGO_LIVE_URL` with exactly the six groups skipped and each reported by name | `test/conformance`, `TestContract`, in the `e2e` job for the stack, which asserts an empty skip list when the `Fault` is wired; the live run is the `live` job of `release.yml`, which asserts the six groups and runs at the next release |
+| `storage_unavailable` under the cut and `repository_unavailable` with `details.key` naming the deleted object, through `Fault`; skipped and reported without one | `test/conformance`, `TestContract/003/storage_unavailable` and `TestContract/015/repository_unavailable`; on the stub through `TestStubConforms`, on the stack in the `e2e` job, skipped and reported in `TestContract`'s live run |
+| removing one capability fails `conformance.Run` on its subtests alone, an unknown value refuses start-up, five runs inside 20 minutes | `test/e2e`, `TestMutation` (about 30 seconds a run against MinIO) and `TestMutationsCoverTheSet`; `verify.yml`, the `mutation` job over the five names; `internal/config`, `TestDropCapabilityIsOneOfTheSet`; `internal/repo`, `TestDropCapabilityTurnsItsKeyOff` |
+| the contract stub passes with an empty `Skip` list, the LFS rows included | `test/stubs/origo`, `TestStubConforms`: 60 cases pass, the source group alone skips itself |
+| a consumer's tests written against the stub pass unchanged against a live node | `test/conformance`, `TestSameAnswersOnStubAndStack`, in the `e2e` job |
+| the code table walk and the negative fixture | `internal/contract`, `TestEveryCodeHasOneSentence`, `TestTableWalkFailsOnTheNegativeFixture` (findings at `bad.go.txt:16` and `:17` and no third), `TestTableWalkReportsEveryRule` |
+| `remote: <code>: <sentence>` for `non_fast_forward` and `storage_unavailable`, the reference and hashes on the `info` line | `internal/httpgit`, `TestRejectLinesAreTheTableSentences` |
+| a run leaves no repository behind and touches no other | `test/conformance`, `TestRunCleansUp` |
+
+Divergences and interpretations, each kept, with the reason:
+
+- **The walk checks five functions, not three.** `contract.Refuse`
+  and `contract.Line` are the other two ways a code leaves the table:
+  `Refuse` prepares an envelope where the code is chosen for a handler
+  that renders it elsewhere (the read API's `readError`, the LFS
+  failures, the frozen and importing refusals), and `Line` is the
+  sideband form. A checked set of three would let a code reach a
+  response through either unchecked.
+- **The `invalid_request` row carries 416 beside 400.** Spec 009's blob
+  endpoint answers a `Range` past the end of the blob with 416 and
+  `Content-Range`, a status its Design names and no Code table lists;
+  the row holds it so the walk accepts the one call site rather than
+  the endpoint losing the status HTTP gives that refusal.
+- **`Fault.DeleteObject` takes a key prefix and answers the key.** An
+  entry object is `wal/<seq>.<nonce>.entry` and the suite knows the
+  sequence and never the nonce, so the fault resolves the one object
+  under the prefix; the `repository_unavailable` case deletes the entry
+  that carries a fresh push's pack, which is the pack object of a
+  repository that was never compacted, and asserts `details.key` names
+  it.
+- **The `repository_unavailable` case deletes and undeletes the
+  repository around the deletion.** A node warm for the repository
+  serves it from its copy whatever the bucket holds; the delete evicts
+  the copy on every node at its next currency check and the undelete
+  makes the next request materialize again, so the missing object is
+  met on the stub's one node and on any cold node of the stack, where
+  the request is repeated until the balancer reaches one.
+- **The `rate_limited` case goes past the figure when a balancer
+  spreads the subject.** It sends one request more than `RateLimit-Limit`
+  first; behind the stack's balanced port each of the three nodes holds
+  a bucket of its own, so the case goes on, to four times the figure,
+  until one node refuses. With `Issuer` set it runs under a subject of
+  its own; on a live target it runs last, under the run's token, and
+  the cleanup waits out `Retry-After`.
+- **The push event rows are asserted where a sink can be read.** The
+  live run has no `EventsSink`, and spec 021's six groups name none for
+  events, so the cases of spec 008 and the event assertions of specs
+  007 and 019 assert the operation everywhere and the delivery only
+  with a sink, recording each delivery they could not observe in
+  `Report.Unverified`; `TestStubConforms` and the stack run require
+  that list empty. A seventh group would have made the live skip list
+  seven entries, which the criterion forbids; this is a spec defect for
+  the deck to settle.
+- **`fetch-by-hash` runs under protocol version 0.** Protocol v2 lets a
+  client want any object whatever `uploadpack.allowAnySHA1InWant` says,
+  so only v0 proves the two sha1-in-want rows, and the mutation of
+  either capability drops both, because one configuration key advertises
+  both.
+- **The `non_fast_forward` case moves the reference from a `pre-push`
+  hook.** git refuses a stale push on the client before sending it, so
+  the server's refusal is reached only when the reference moves between
+  the advertisement and the pack; a `pre-push` hook in the second clone
+  runs the first clone's push at exactly that point, which is
+  deterministic and pure git. `TestRejectLinesAreTheTableSentences`
+  uses the same device.
+- **The freeze case pushes through fresh repository-bound tokens.** The
+  push path reads a pusher's `meta` once per advertisement window (spec
+  019's rule, 60 seconds), so a pusher who pushed before the freeze is
+  refused only at the next window; the case mints a write token for the
+  push after the freeze and another after the unfreeze, which is what a
+  pusher who has not pushed in the last minute sees.
+- **The `e2e` job runs the suite in a `go test` line of its own.**
+  `TestContract` and `TestSameAnswersOnStubAndStack` keep the names the
+  spec gives them, which spec 013's prefix rule (`TestCluster`) would
+  not select, so the job's second line selects the two by name and
+  `TestE2EJobsSelectByPrefix` admits it beside the prefix line.
+- **The `live` job of `release.yml` runs after the reusable release
+  workflow.** The deploy and publish steps live inside
+  `latere-ai/ci`'s `service-release.yml`, so the job cannot sit between
+  them until spec 017 restructures the pipeline; the test skips when
+  `ORIGO_LIVE_URL` is unset, so a fork runs no live run.
+- **`TestMutation` runs the suite in a second process of the test
+  binary.** A failed subtest fails the test that ran it, so the run
+  whose failure is the expected outcome happens in a child process,
+  `TestMutationRun`, which writes `Report` to a file the parent reads;
+  no variable of spec 002 is added, the two names are private to the
+  binary.
+- **Test files are walked too.** The spec says every Go file of the
+  module; the suite therefore holds its own `sentences` table, one
+  `contract.Sentence` call per constant, and compares every response to
+  it, and the LFS tests of spec 010 take a `Refusal` in place of a
+  status and a code.
+- **The cursor reason is read as a prefix.** Spec 009 names
+  `details.reason: "cursor"` and its test asserts
+  `cursor: not a commit of this walk`; the developer register is the
+  handler's, so the case asserts the prefix.
+- **`gc` accepts 200 or 202.** Whether the first `gc` of a fresh
+  repository runs inside the wait or is scheduled depends on which node
+  answers; the case asserts the shape of either and the 429 of a second
+  `gc` after a run.
+- **The `atomic-push` case asserts a three-reference atomic push
+  lands as one push.** A push with a stale reference under `--atomic`
+  is refused by git on the client, so the server's atomicity is proved
+  by the capability row and the one event of the multi-reference push.
+- **Coverage of `test/conformance` goes through `check`.** A suite's
+  failure branches are statements a green run never takes; the simple
+  assertions fail through one helper, so the package clears the floor
+  (91.8%) without an exemption and every assertion stays.
+
+Defects found in existing code, fixed at the root in their own
+commits:
+
+- `internal/api`'s `writeReadError` sent `storage_unavailable` under
+  500, a status the row does not list; it is 503 now, and
+  `TestEveryCodeHasOneSentence` fails on the old status (spec 009's
+  Outcome records it).
+- The sideband of spec 003's Outcome: the `non_fast_forward` and
+  `storage_unavailable` verdicts carried text of their own; both are
+  `contract.Line` of the code now, with the reference, the expected and
+  actual hashes on the `push refused` info line and the storage error
+  on the `commit failed` error line.
+
+Deferred, each named on its criterion:
+
+- The live run, which needs a release: the `live` job of `release.yml`
+  runs `TestContract` against `ORIGO_LIVE_URL` and asserts the six
+  groups; this spec reaches `complete` once one has run green.
+- Spec 020's four cases, which 020 adds with its handlers; its two
+  rows are in the table and exempt from the call-site rule while 020
+  is short of `testing`.
+- Spec 014's `verify` case of the source group, which 014 adds with
+  its endpoint.
+
+Open, for the deck:
+
+- A push of `refs/heads/HEAD` is accepted: git's `check-ref-format
+  --branch` refuses a branch named `HEAD` while `receive-pack` and
+  `wal.ValidRefName` admit it, and spec 003 says a push to `HEAD` is
+  refused. The suite asserts no push to `HEAD`; the owner of the
+  reference grammar (specs 004 and 016) decides.
+- `test/conformance` and `test/stubs/origo` import `internal/`
+  packages, so a module outside this one cannot import them; a
+  consumer runs the suite from this module's tree today. Either the
+  code table moves to a public package or the suite ships as a
+  binary.
+- A freeze is enforced for a pusher who pushed in the last minute only
+  at the next advertisement window (spec 019's rule); the suite works
+  around it with fresh tokens, and a consumer that freezes a busy
+  repository should know.
+
+Items for `latere.ai/x/pkg`: none.
+
+Stack proof: pending the dispatched run of `verify.yml` on `main`.

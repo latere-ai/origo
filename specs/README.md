@@ -76,7 +76,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing |
-| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | validated |
+| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing |
 
 ## Dependency graph
 
@@ -201,7 +201,7 @@ flowchart LR
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's `TestContract` covers the conformance cases of its first criterion and 014's `TestSourceTokenIsNeverLogged` asserts that the source bearer appears in no process argument and no log line |
-| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
+| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | 021 built and at testing: `test/conformance` with 60 cases green against the stub (`TestStubConforms`, `TestRunCleansUp`), the code table with every status and the `go/ast` walk, the sideband rule, the mutation seam and `TestMutation` green for all five capabilities against MinIO, the `e2e` job running `TestContract` and `TestSameAnswersOnStubAndStack`, the `live` job in `release.yml`; at testing until a release's live run and 020's cases |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | built and at testing: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; `TestClusterMigrationCatchesALateWrite` and `TestClusterMigrationDocCommandsRun` waiting on a dispatched `e2e` run |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; at testing until 021's suite runs the four `TestContract/020` cases it defers |
 
@@ -273,7 +273,11 @@ deck and stated here so a reader sees them without the owning spec.
 | the 600 a minute default stays: it bounds one subject to 300 back-to-back pushes a minute, an operator raises `ORIGO_REQUESTS_PER_MINUTE` for a fleet of tooling under one token, and a subject that drives many repositories takes a figure of its own from the authorizer's optional `requests_per_minute`, absent meaning the variable's value | 007 | 012, 020 |
 | the call-site rule of `TestEveryCodeHasOneSentence` is keyed on the spec that produces a code: `producers map[string]string` in the test, `over_quota` and `rate_limited` to 012, `ref_not_found` to 009, every other code to its owner; the test reads `status:` from `specs/<nnn>-*.md` or `specs/.archive/`; 021 depends on 012 | 021 | 003, 009, 012 |
 | the negative fixture is `test/conformance/testdata/negative/bad.go.txt`, outside `internal/contract`, fed to the walk by path; the status rule runs only on a `contract.Code*` identifier, so the fixture yields two findings, lines 16 and 17 | 021 | 003 |
-| a sideband line, `ERR` pkt-line, or hook verdict that carries a code is `<code>: <sentence>` exactly; the reference and the hashes of a refused push go to the handler's `info` log line, never the sideband; `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds it and 021 owns it | 021 | 003, 012, 015, 019 |
+| a sideband line, `ERR` pkt-line, or hook verdict that carries a code is `<code>: <sentence>` exactly, `contract.Line` of the code; the reference and the hashes of a refused push go to the handler's `info` log line, never the sideband; `TestRejectLinesAreTheTableSentences` in `internal/httpgit` holds it and 021 owns it | 021 | 003, 012, 015, 019 |
+| the code-table walk checks five functions: `contract.Write`, `Error`, `Sentence`, and the two the build added, `Refuse` (an envelope prepared where the code is chosen, rendered elsewhere) and `Line` (the sideband form); the `invalid_request` row carries 416 beside 400 for spec 009's `Range` refusal | 021 | 003, 009, 010, 019, 020 |
+| `Fault.DeleteObject(t, prefix)` deletes the one object under a key prefix and answers its key, because an entry key carries a nonce the suite cannot know; the `repository_unavailable` case deletes and undeletes the repository around it so every node materializes again | 021 | 013, 015 |
+| the push event rows of 008 and the event assertions of 007 and 019 assert the delivery only where `EventsSink` is set and record it in `Report.Unverified` otherwise; the live run has no sink and the skip list stays at six | 021 | 008, 017 |
+| `TestMutation` runs `conformance.Run` in a second process of its test binary (`TestMutationRun`), because a failed subtest fails the test that ran it; the `e2e` job runs `TestContract` and `TestSameAnswersOnStubAndStack` in a `go test` line of its own beside the `TestCluster` prefix | 021 | 013 |
 | a failpoint of `ORIGO_FAILPOINT` has no count: the node exits the first time the point is reached; a test that needs it on a later operation restarts the node under its name and data directory with it | 002 | 008, 021 |
 | an upload batch omits `actions` for an object the store holds, `lfs/verified/<oid>` present and naming the declared size, the batch API's rule; the quota counts a held object's bytes once | 010 | 021 |
 | `quota_bytes` for a repository-bound token is `auth.DefaultQuotaBytes` until 012 asks the authorizer for the minter's figure; 007's claim set carries no quota | 010, 012 | 007 |
@@ -623,7 +627,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021 |
-| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 010, 012, 013, 015, 017, 021 |
+| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 021 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021 |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
@@ -775,7 +779,7 @@ name, or when a spec names something no spec defines.
 | header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011 |
 | header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003 |
 | header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021 |
-| header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020 |
+| header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021 |
 | failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
 | failpoint | `events.before-enqueue` | [002](002-repository-scaffold.md) | 008 |
 <!-- specindex:end -->
