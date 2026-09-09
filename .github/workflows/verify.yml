@@ -1,17 +1,21 @@
 # Every push to main and every pull request runs the gate (the shared
-# pipeline of latere-ai/ci), the spec cross-reference test, and the
-# integration tier of spec 013 against MinIO. Every tag runs the cluster
-# tiers: the build of the two candidate images once, the cluster tiers on
-# the kind stack from those images, the up-script check, and the mutation
-# job of spec 021. Those tiers cost about half the minutes of a run and
-# bill on every push while the release is the point where they decide
-# anything, so a tag runs them and a push does not; workflow_dispatch runs
-# them from main on demand. The fuzz job runs on the weekly schedule and
-# nowhere else. Each job selects its tests by name prefix and nothing
-# else, and no job but build has a docker build step. Every run on the
-# stack passes -v, so the log names the tests that ran and a spec's
-# stack proof is read from the run rather than argued from the
-# package's wall-clock time (spec 017).
+# pipeline of latere-ai/ci), the spec cross-reference test, the render of
+# the example overlays, the integration tier of spec 013 against MinIO,
+# the build of the two candidate images, and the install job of spec 018,
+# which walks docs/install.md against a bare cluster from that build. The
+# cluster tiers on the kind stack, the up-script check, and the mutation
+# job of spec 021 run on a tag: they cost about half the minutes of a run
+# and the release is the point where they decide anything, so a tag runs
+# them and a push does not; workflow_dispatch runs them from main on
+# demand. The install job is the one exception, because a push has no
+# release to install from and the document has to stay true on the push
+# that changes it; on a tag its place is taken by install-release in
+# release.yml, which installs the published artifacts. The fuzz job runs
+# on the weekly schedule and nowhere else. Each job selects its tests by
+# name prefix and nothing else, and no job but build has a docker build
+# step. Every run on the stack passes -v, so the log names the tests that
+# ran and a spec's stack proof is read from the run rather than argued
+# from the package's wall-clock time (spec 017).
 name: verify
 on:
   push:
@@ -133,10 +137,14 @@ jobs:
         run: make test-tiers
 
   # The two candidate images, built once from the push's tree and shared
-  # with every job that needs them as docker save tarballs.
+  # with every job that needs them as docker save tarballs. It runs
+  # everywhere but the weekly schedule, because the install job below
+  # runs on every push: the cluster tiers that bill the minutes are the
+  # ones that stay on a tag, and one image build is what the install
+  # job needs to walk the document from the tree it was written for.
   build:
     name: build the candidate images
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -287,7 +295,10 @@ jobs:
         run: go test -count=1 -timeout 12m -tags=e2e ./test/e2e/... -run 'TestClusterUpScript'
 
   # Spec 018's install job: docs/install.md is walked against a cluster
-  # an operator would have, from the candidate build of this push. The
+  # an operator would have, from the candidate build of this push. It
+  # runs on every push and not on a tag, because a push has no release
+  # to install from and a tag has install-release in release.yml, which
+  # installs the published artifacts instead. The
   # cluster is created with `kind create cluster`, not with up.sh,
   # because an operator has a cluster and no script of ours, and Cilium
   # is installed because kind.yaml turns the default CNI off and a real
@@ -301,7 +312,7 @@ jobs:
   # groups of spec 021's skip list are exactly the cases that need it.
   install:
     name: install from the documentation
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
