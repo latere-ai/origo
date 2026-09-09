@@ -305,6 +305,19 @@ func (h *Handler) refuseAdvertisement(w http.ResponseWriter, service string, cla
 	_ = writePkt(w, "ERR "+contract.CodeStorageUnavailable+": "+contract.Sentence(contract.CodeStorageUnavailable)+"\n")
 }
 
+// advertisementError answers a storage failure on a push's info/refs.
+// An open breaker is the ERR pkt-line git shows the user (spec 015);
+// any other failure is the JSON envelope. Every storage read this path
+// makes before the pack goes through it, the meta of spec 019 and the
+// lease alike, so one push sees one shape whichever read failed.
+func (h *Handler) advertisementError(w http.ResponseWriter, r *http.Request, service string, err error) {
+	if errors.Is(err, wal.ErrStorageOpen) {
+		h.refuseAdvertisement(w, service, wal.ClassRead)
+		return
+	}
+	h.storageError(w, r, err)
+}
+
 // gitCommand builds a git service subprocess against the repository
 // with the client's protocol version and the request deadline.
 func (h *Handler) gitCommand(ctx context.Context, r *http.Request, rp *repo.Repo, args ...string) (*exec.Cmd, context.CancelFunc) {
@@ -353,7 +366,7 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, wal.ErrNotFound):
 		case err != nil:
-			h.storageError(w, r, err)
+			h.advertisementError(w, r, service, err)
 			return
 		default:
 			if code, details := stateRefusal(m); code != "" {
@@ -368,8 +381,8 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
 			contract.Write(w, http.StatusNotFound, contract.CodeRepoNotFound, map[string]any{"id": id})
-		case action == auth.ActionWrite && errors.Is(err, wal.ErrStorageOpen):
-			h.refuseAdvertisement(w, service, wal.ClassRead)
+		case action == auth.ActionWrite:
+			h.advertisementError(w, r, service, err)
 		default:
 			h.storageError(w, r, err)
 		}

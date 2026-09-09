@@ -497,3 +497,36 @@ func TestStorageErrorTakesTheClassOfTheFailedOperation(t *testing.T) {
 		t.Errorf("Retry-After %q from the closed read breaker", got)
 	}
 }
+
+// TestPushAdvertisementRefusesWithoutACachedMeta is the shape of a push
+// refused at info/refs when the meta of spec 019 is not in the push's
+// cache: the meta read is the first storage call of the advertisement,
+// so an open read breaker refuses it before the lease is asked, and the
+// answer has to be the ERR pkt-line the lease's refusal is, not the
+// JSON envelope a caller of the API would read.
+func TestPushAdvertisementRefusesWithoutACachedMeta(t *testing.T) {
+	d := newDegradedNode(t, 5*time.Minute)
+	d.warm()
+	d.cutReads()
+	d.clock.Advance(time.Minute)
+	// The failing check opens the read breaker.
+	d.get("/r/" + repoA + ".git/info/refs?service=git-upload-pack")
+	if d.bs.Admits(wal.ClassRead) {
+		t.Fatal("the read breaker is not open")
+	}
+	// A push whose token names no cached meta: a fresh Authorization
+	// header is a key of its own.
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", d.url("/r/"+repoA+".git/info/refs?service=git-receive-pack"), nil)
+	req.Header.Set("Authorization", "Bearer a-token-of-its-own")
+	resp, err := d.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	lines := pktLines(t, body)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/x-git-receive-pack-advertisement" || resp.Header.Get("Retry-After") == "" ||
+		len(lines) != 3 || lines[2] != "ERR storage_unavailable: "+contract.Sentence(contract.CodeStorageUnavailable)+"\n" {
+		t.Fatalf("push advertisement: %d %s Retry-After %q %q", resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("Retry-After"), body)
+	}
+}
