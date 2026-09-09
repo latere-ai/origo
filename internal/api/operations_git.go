@@ -57,6 +57,10 @@ type operation struct {
 	haves  []string
 	dryRun bool
 	author identityRequest
+	// subject and actor are the effective identity of the request,
+	// read once: they name the entry's writer, the commit's trailers,
+	// and the log line.
+	subject, actor string
 }
 
 // mergeConflict is a merge, cherry-pick, or revert git could not apply.
@@ -76,8 +80,9 @@ func (e *mergeConflict) Error() string {
 func (o *operation) run(w http.ResponseWriter, r *http.Request, branch string, c *common, build func(*operation) (string, error)) {
 	h := o.h
 	o.w, o.r, o.branch, o.dryRun, o.author = w, r, branch, c.DryRun, *c.Author
+	o.subject, o.actor = auth.Subject(r.Context()), auth.Actor(r.Context())
 	expectedHead := c.ExpectedHead
-	ctx, cancel := context.WithTimeout(o.r.Context(), o.budget)
+	ctx, cancel := context.WithTimeout(r.Context(), o.budget)
 	defer cancel()
 	o.ctx = ctx
 	l, err := h.cache.Lease(ctx, o.id, true)
@@ -92,7 +97,7 @@ func (o *operation) run(w http.ResponseWriter, r *http.Request, branch string, c
 	}
 	defer l.Release()
 	o.repo = l.Repo
-	o.base = l.Repo.Index
+	o.base = l.Index
 	// The branch the request declared, against the copy the currency
 	// check just brought up to date: a caller that read the branch
 	// before someone else moved it is refused here rather than after
@@ -269,9 +274,9 @@ func (o *operation) commitTree(tree, message string, parents ...string) (string,
 func (o *operation) message(body string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(body, "\n"))
-	b.WriteString("\n\nOrigo-Subject: " + auth.Subject(o.r.Context()) + "\n")
-	if actor := auth.Actor(o.r.Context()); actor != "" {
-		b.WriteString("Origo-Actor: " + actor + "\n")
+	b.WriteString("\n\nOrigo-Subject: " + o.subject + "\n")
+	if o.actor != "" {
+		b.WriteString("Origo-Actor: " + o.actor + "\n")
 	}
 	return b.String()
 }
@@ -573,7 +578,7 @@ func (o *operation) finish(tip string, expectedHead *string) {
 	}
 	refs := []wal.RefUpdate{{Ref: o.branch, Old: old, New: tip}}
 	entry := wal.Entry{
-		Kind: wal.KindPush, Subject: auth.Subject(o.r.Context()), Actor: auth.Actor(o.r.Context()),
+		Kind: wal.KindPush, Subject: o.subject, Actor: o.actor,
 		Refs: refs, Pack: pack, PushOptions: []string{"origo.operation=" + o.name},
 	}
 	committed, err := o.h.log.Commit(o.ctx, o.id, o.base, entry, func(ctx context.Context, ix *wal.Index) error {
@@ -594,7 +599,7 @@ func (o *operation) finish(tip string, expectedHead *string) {
 	}
 	o.h.logger.InfoContext(o.ctx, "server-side operation", "repo", o.id, "operation", o.name,
 		"seq", committed.Index.Seq, "ref", o.branch, "commit", tip, "pack_bytes", pack.Size,
-		"subject", auth.Subject(o.r.Context()), "actor", auth.Actor(o.r.Context()))
+		"subject", o.subject, "actor", o.actor)
 	_ = o.h.events.Enqueue(o.ctx, o.id, events.Entry{Header: committed.Header, Refs: refs})
 	seq := committed.Index.Seq
 	res.EntrySeq = &seq
@@ -660,7 +665,7 @@ func (o *operation) withinLimits(size int64) bool {
 
 func (o *operation) overQuota(limit string, size, max int64) {
 	o.h.logger.InfoContext(o.ctx, "operation refused", "repo", o.id, "operation", o.name,
-		"limit", limit, "bytes", size, "max", max, "subject", auth.Subject(o.r.Context()))
+		"limit", limit, "bytes", size, "max", max, "subject", o.subject)
 	contract.Write(o.w, http.StatusRequestEntityTooLarge, contract.CodeOverQuota, map[string]any{
 		"limit": limit, "bytes": size, "max": max,
 	})
