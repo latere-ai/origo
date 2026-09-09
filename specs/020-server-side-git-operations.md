@@ -253,7 +253,7 @@ and the per-subject rate in `internal/limits` and `internal/auth`.
 | A path the read rules refuse and an empty one are 400 `invalid_change` with `index` and `reason: "path"`, and no subprocess starts | `internal/api`, `TestChangePathsUseTheReadRules` |
 | Twenty concurrent requests with one `expected_head` make one commit and nineteen `non_fast_forward` answers | `internal/api`, `TestConcurrentCommitsSerializeOnExpectedHead` |
 | No request body panics a handler | `internal/api`, `FuzzOperationBody` |
-| The conformance suite gains one case per row of the Operations table | deferred, below |
+| The conformance suite gains one case per row of the Operations table | `test/conformance`, `TestContract/020/commits`, `/merge`, `/cherry-pick`, `/revert`, spec 021's to own and to run |
 
 Four more tests carry what the criteria do not name:
 `TestOperationRefusalsAndBudget` (every `invalid_request` and
@@ -305,23 +305,61 @@ Outcome records it.
   node's own. Every argument a request supplies still follows
   `--end-of-options`, and a value starting with `-` is refused before
   any subprocess starts.
+- **A pick names its base through the sides, not through
+  `--merge-base`.** The Mechanics say `git merge-tree --write-tree` for
+  a cherry-pick and a revert, whose three-way base is the picked
+  commit's parent (its own commit for a revert) and not the merge base
+  of the two sides. `--merge-base=<commit>` says exactly that and git
+  learned it after the git of the runtime image, so the first build was
+  503 on the stack while it passed against the toolchain's git. Each
+  side is re-parented onto the base as a commit of its own instead:
+  the merge base of that pair is the base the pick needs, and the merge
+  asks git for nothing the image does not have. The two commits are
+  unreachable, are outside the entry's pack, and cost two objects per
+  picked commit. `TestPicksNameNoMergeBaseOption` reads every
+  invocation an operation made and fails on the option.
 - **`git update-index` is given the operation's own empty directory as
   `GIT_WORK_TREE`.** The command insists on a work tree whatever it is
   asked to do and the warm copy is bare. Nothing is read from the
   directory, the index is the only thing the call changes, and the
   directory is removed with the rest of the workspace.
 
-### Deferred
+### The conformance criterion and the stack proof
 
-The conformance criterion, one case per row of the Operations table
-under `test/conformance`, waits on spec 021: the suite's harness,
-`Target`, and skip groups are that spec's and had not landed when this
-one was built. Spec 021 owns the four cases
-(`TestContract/020/commits`, `/merge`, `/cherry-pick`, `/revert`) and
-this spec stays at `testing` until they run, the way specs 003 and 004
-wait on the suite. Spec 021's code table gains the rows for
-`merge_conflict` and `invalid_change`, whose call sites are now in the
-tree.
+The four cases are in the tree. Spec 021 landed beside this spec and
+its builder wrote them on the suite's own harness, which is the right
+side of the line: the harness, `Target`, and the skip groups are that
+spec's, and `test/conformance/cases020.go` holds one case per row of
+the Operations table, each running the row's success path against a
+repository the case pushes, with `invalid_change`, `merge_conflict`,
+and the `non_fast_forward` of a stale `expected_head` beside it. Spec
+021's code table carries the two rows and their statuses, and the four
+call sites pass `contract.Code*` constants through `contract.Write`
+and `contract.Refuse`, which the walk of
+`TestEveryCodeHasOneSentence` reads.
+
+The stack proof is the dispatched run 34353736553 on `ae3d036`, in
+which the four `TestContract/020` cases passed against the kind stack
+and every job but one was green: the gate, the integration tier, the
+mutation job, the `e2e-slow` cluster tier, the up-script check, and the
+`e2e` job's own cluster scenarios. The `e2e` job's conformance step
+failed on `019/gc` and `012/rate_limited`, two cases of other specs,
+and on the `TestSameAnswersOnStubAndStack` that follows them; none of
+the three is this spec's and none touches its routes.
+
+Two dispatched runs came before it. The run 34344691822, on `fabe944`,
+was green in every job with this spec's own tests in the tree and
+before the four conformance cases existed. The run 34347920915, the
+first with the cases, failed the `e2e` job on `020/cherry-pick` and
+`020/revert`, which is how the `--merge-base` defect below was found:
+the cases caught a difference between the toolchain's git and the
+runtime image's that no test running against the local git could
+have.
+
+This spec stays at `testing` until spec 021 reaches `complete`, the
+way specs 003 and 004 wait on the suite: what remains is the run of
+the four cases against the installation `ORIGO_LIVE_URL` names, which
+spec 021 owns.
 
 ### Open
 
@@ -364,6 +402,14 @@ that keeps its own rules; each is a candidate for a later round.
 
 ### Spec defects
 
+- The Limits section says `git merge-tree --write-tree` with conflict
+  output as data needs git 2.40, which is the floor `origod check` will
+  require. That is true of the form this spec uses, and the divergence
+  above is what keeps it true: `--merge-base` needs 2.41, above the
+  2.39 of the `bookworm-slim` runtime image, which the decision row of
+  spec 017 moves to `trixie-slim` and git 2.47 in a later phase. A
+  reader of the Mechanics should not have to work out which options of
+  `merge-tree` the floor admits.
 - The frontmatter's `affects` named neither `internal/limits/` nor
   `internal/auth/`, which the builder item from spec 012 changes, nor
   `cmd/origod/`, which the route sweep of spec 016 obliges every new
