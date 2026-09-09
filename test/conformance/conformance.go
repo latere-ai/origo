@@ -312,7 +312,7 @@ func (s *session) do(t testing.TB, r request) response {
 		url = s.target.URL + r.path
 	}
 	req, err := http.NewRequestWithContext(context.Background(), r.method, url, strings.NewReader(r.body))
-	check(t, !(err != nil), "%v", err)
+	failIf(t, err != nil, "%v", err)
 	if r.token != "" {
 		req.Header.Set("Authorization", "Bearer "+r.token)
 	}
@@ -323,7 +323,7 @@ func (s *session) do(t testing.TB, r request) response {
 		req.Header.Set(k, v)
 	}
 	resp, err := s.client.Do(req)
-	check(t, !(err != nil), "%s %s: %v", r.method, r.path, err)
+	failIf(t, err != nil, "%s %s: %v", r.method, r.path, err)
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	out := response{status: resp.StatusCode, header: resp.Header, body: raw}
@@ -369,7 +369,7 @@ var sentences = map[string]string{
 func sentence(t testing.TB, code string) string {
 	t.Helper()
 	s, ok := sentences[code]
-	check(t, !(!ok), "no sentence for %s", code)
+	failIf(t, !ok, "no sentence for %s", code)
 	return s
 }
 
@@ -377,16 +377,16 @@ func sentence(t testing.TB, code string) string {
 // the table's sentence, and answers its details.
 func expectError(t testing.TB, r response, status int, code string) map[string]any {
 	t.Helper()
-	check(t, !(r.status != status || r.code() != code || r.message() != sentence(t, code)), "want %d %s %q, got %d %s %q: %s", status, code, sentence(t, code), r.status, r.code(), r.message(), r.body)
-	check(t, !(r.header.Get(contract.Header) != contract.Version), "%s %q on the refusal, want %q", contract.Header, r.header.Get(contract.Header), contract.Version)
+	failIf(t, r.status != status || r.code() != code || r.message() != sentence(t, code), "want %d %s %q, got %d %s %q: %s", status, code, sentence(t, code), r.status, r.code(), r.message(), r.body)
+	failIf(t, r.header.Get(contract.Header) != contract.Version, "%s %q on the refusal, want %q", contract.Header, r.header.Get(contract.Header), contract.Version)
 	return r.details()
 }
 
 // expectStatus asserts a status and the contract header.
 func expectStatus(t testing.TB, r response, status int) {
 	t.Helper()
-	check(t, !(r.status != status), "status %d, want %d: %s", r.status, status, r.body)
-	check(t, !(r.header.Get(contract.Header) != contract.Version), "%s %q, want %q", contract.Header, r.header.Get(contract.Header), contract.Version)
+	failIf(t, r.status != status, "status %d, want %d: %s", r.status, status, r.body)
+	failIf(t, r.header.Get(contract.Header) != contract.Version, "%s %q, want %q", contract.Header, r.header.Get(contract.Header), contract.Version)
 }
 
 // create makes a repository under the conformance owner with a fresh
@@ -481,7 +481,7 @@ func git(t testing.TB, dir string, args ...string) (string, error) {
 func mustGit(t testing.TB, dir string, args ...string) string {
 	t.Helper()
 	out, err := git(t, dir, args...)
-	check(t, !(err != nil), "git %s: %v\n%s", strings.Join(args, " "), err, redact(out))
+	failIf(t, err != nil, "git %s: %v\n%s", strings.Join(args, " "), err, redact(out))
 	return strings.TrimSpace(out)
 }
 
@@ -563,15 +563,15 @@ func obj(v any) map[string]any {
 func mustJSON(t testing.TB, v any) string {
 	t.Helper()
 	raw, err := json.Marshal(v)
-	check(t, !(err != nil), "%v", err)
+	failIf(t, err != nil, "%v", err)
 	return string(raw)
 }
 
-// check fails the test with the message unless ok holds: the one
-// place every assertion of the suite fails through.
-func check(t testing.TB, ok bool, format string, args ...any) {
+// failIf fails the test with the message when the condition holds:
+// the one place every assertion of the suite fails through.
+func failIf(t testing.TB, failed bool, format string, args ...any) {
 	t.Helper()
-	if !ok {
+	if failed {
 		t.Fatalf(format, args...)
 	}
 }

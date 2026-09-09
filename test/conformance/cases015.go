@@ -42,7 +42,7 @@ func case015RepositoryUnavailable(t *testing.T, s *session) {
 		}
 	}
 	d := expectError(t, r, http.StatusServiceUnavailable, contract.CodeRepositoryUnavailable)
-	check(t, !(d["key"] != key), "details.key %v, want %s", d["key"], key)
+	failIf(t, d["key"] != key, "details.key %v, want %s", d["key"], key)
 	// Another repository is served.
 	expectStatus(t, s.call(t, "GET", "/v1/repos/"+s.fixture.id+"/refs", ""), http.StatusOK)
 }

@@ -28,7 +28,7 @@ func (s *session) mint(t testing.TB, sub, act string) string {
 	}
 	r := s.as(t, "", "POST", s.target.Issuer+"/mint", body)
 	token, _ := r.json["token"].(string)
-	check(t, !(r.status != http.StatusOK || token == ""), "mint at %s: %d %s", s.target.Issuer, r.status, r.body)
+	failIf(t, r.status != http.StatusOK || token == "", "mint at %s: %d %s", s.target.Issuer, r.status, r.body)
 	return token
 }
 
@@ -63,7 +63,7 @@ func (s *session) failAuthorizer(t testing.TB, status int) {
 func (s *session) deliveries(t testing.TB, repo, kind string) []sink.Delivery {
 	t.Helper()
 	r := s.as(t, "", "GET", s.target.EventsSink+"/deliveries?repo="+repo+"&kind="+kind, "")
-	check(t, !(r.status != http.StatusOK), "deliveries at %s: %d %s", s.target.EventsSink, r.status, r.body)
+	failIf(t, r.status != http.StatusOK, "deliveries at %s: %d %s", s.target.EventsSink, r.status, r.body)
 	var out []sink.Delivery
 	if err := json.Unmarshal(r.body, &out); err != nil {
 		t.Fatalf("deliveries: %v: %s", err, r.body)
@@ -86,7 +86,7 @@ func (s *session) expectEvent(t *testing.T, repo, kind string, n int) (sink.Deli
 		return len(got) >= n
 	})
 	d := got[n-1]
-	check(t, !(!d.Verified || d.Kind != kind || d.Repo != repo || d.ID == "" || d.Headers.Get(sink.HeaderDelivery) != d.ID || d.Headers.Get(sink.HeaderEvent) != kind), "delivery of %s: %+v", kind, d)
+	failIf(t, !d.Verified || d.Kind != kind || d.Repo != repo || d.ID == "" || d.Headers.Get(sink.HeaderDelivery) != d.ID || d.Headers.Get(sink.HeaderEvent) != kind, "delivery of %s: %+v", kind, d)
 	return d, true
 }
 

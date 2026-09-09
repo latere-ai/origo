@@ -46,7 +46,7 @@ func cases003() []testCase {
 	}
 	for _, c := range capabilities {
 		cases = append(cases, testCase{name: "capability/" + c.name, run: func(t *testing.T, s *session) {
-			check(t, !(!strings.Contains(s.advertisement(t, s.fixture.id, c.service), " "+c.name+" ")), "%s does not advertise %s", c.service, c.name)
+			failIf(t, !strings.Contains(s.advertisement(t, s.fixture.id, c.service), " "+c.name+" "), "%s does not advertise %s", c.service, c.name)
 		}})
 	}
 	return append(cases,
@@ -71,7 +71,7 @@ func (s *session) advertisement(t *testing.T, id, service string) string {
 	}
 	// The first reference line carries the capabilities after a NUL.
 	_, caps, ok := strings.Cut(string(r.body), "\x00")
-	check(t, !(!ok), "no capability line in the advertisement:\n%s", r.body)
+	failIf(t, !ok, "no capability line in the advertisement:\n%s", r.body)
 	line, _, _ := strings.Cut(caps, "\n")
 	return " " + strings.TrimSpace(line) + " "
 }
@@ -79,7 +79,7 @@ func (s *session) advertisement(t *testing.T, id, service string) string {
 func case003Version(t *testing.T, s *session) {
 	r := s.as(t, "", "GET", "/version", "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["version"] == nil), "/version: %s", r.body)
+	failIf(t, r.json["version"] == nil, "/version: %s", r.body)
 	expectStatus(t, s.as(t, "", "GET", "/readyz", ""), http.StatusOK)
 }
 
@@ -87,17 +87,17 @@ func case003Unauthenticated(t *testing.T, s *session) {
 	for _, path := range []string{"/v1/repos/" + s.fixture.id, "/r/" + s.fixture.id + ".git/info/refs?service=git-upload-pack"} {
 		r := s.as(t, "", "GET", path, "")
 		d := expectError(t, r, http.StatusUnauthorized, contract.CodeUnauthenticated)
-		check(t, !(r.header.Get("WWW-Authenticate") != `Basic realm="origo"` || d["reason"] != "missing"), "%s: %v %v", path, r.header.Get("WWW-Authenticate"), d)
+		failIf(t, r.header.Get("WWW-Authenticate") != `Basic realm="origo"` || d["reason"] != "missing", "%s: %v %v", path, r.header.Get("WWW-Authenticate"), d)
 	}
 	d := expectError(t, s.as(t, "not-a-token", "GET", "/v1/repos/"+s.fixture.id, ""), http.StatusUnauthorized, contract.CodeUnauthenticated)
-	check(t, !(d["reason"] != "malformed"), "malformed token: %v", d)
+	failIf(t, d["reason"] != "malformed", "malformed token: %v", d)
 }
 
 func case003InvalidRequest(t *testing.T, s *session) {
 	d := expectError(t, s.call(t, "POST", "/v1/repos", `{"id":"nope","owner":"a","slug":"b"}`), http.StatusBadRequest, contract.CodeInvalid)
-	check(t, !(d["field"] != "id" || d["reason"] == nil), "bad id: %v", d)
+	failIf(t, d["field"] != "id" || d["reason"] == nil, "bad id: %v", d)
 	d = expectError(t, s.call(t, "GET", "/r/"+s.fixture.id+".git/info/refs?service=git-nope", ""), http.StatusBadRequest, contract.CodeInvalid)
-	check(t, !(d["field"] != "service"), "bad service: %v", d)
+	failIf(t, d["field"] != "service", "bad service: %v", d)
 	expectError(t, s.call(t, "POST", "/v1/repos", `{"id":"`+newID(t)+`","owner":"r","slug":"x"}`), http.StatusBadRequest, contract.CodeInvalid)
 	expectError(t, s.call(t, "POST", "/v1/repos", `{"unknown":1}`), http.StatusBadRequest, contract.CodeInvalid)
 }
@@ -112,7 +112,7 @@ func case003Lifecycle(t *testing.T, s *session) {
 	r := s.call(t, "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, Owner, slug))
 	s.record(id)
 	expectStatus(t, r, http.StatusCreated)
-	check(t, !(r.json["id"] != id || r.json["owner"] != Owner || r.json["slug"] != slug || r.json["default_branch"] != "main" || r.json["head"] != "" || r.json["pushed_at"] != nil || r.json["frozen_at"] != nil), "representation: %s", r.body)
+	failIf(t, r.json["id"] != id || r.json["owner"] != Owner || r.json["slug"] != slug || r.json["default_branch"] != "main" || r.json["head"] != "" || r.json["pushed_at"] != nil || r.json["frozen_at"] != nil, "representation: %s", r.body)
 	for _, k := range representation {
 		if _, ok := r.json[k]; !ok {
 			t.Fatalf("representation lacks %s: %s", k, r.body)
@@ -120,54 +120,54 @@ func case003Lifecycle(t *testing.T, s *session) {
 	}
 	r = s.call(t, "GET", "/v1/repos/"+id, "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["id"] != id || r.json["size_bytes"] != float64(0)), "get: %s", r.body)
+	failIf(t, r.json["id"] != id || r.json["size_bytes"] != float64(0), "get: %s", r.body)
 	// A rename takes effect at once and the old URL answers 404.
 	expectStatus(t, s.call(t, "GET", "/"+Owner+"/"+slug+".git/info/refs?service=git-upload-pack", ""), http.StatusOK)
 	r = s.call(t, "PATCH", "/v1/repos/"+id, `{"slug":"`+slug+`-renamed"}`)
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["slug"] != slug+"-renamed"), "rename: %s", r.body)
+	failIf(t, r.json["slug"] != slug+"-renamed", "rename: %s", r.body)
 	expectError(t, s.call(t, "GET", "/"+Owner+"/"+slug+".git/info/refs?service=git-upload-pack", ""), http.StatusNotFound, contract.CodeRepoNotFound)
 	expectStatus(t, s.call(t, "GET", "/"+Owner+"/"+slug+"-renamed.git/info/refs?service=git-upload-pack", ""), http.StatusOK)
 	// default_branch moves HEAD through the log.
 	r = s.call(t, "PATCH", "/v1/repos/"+id, `{"default_branch":"trunk"}`)
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["default_branch"] != "trunk"), "default_branch: %s", r.body)
+	failIf(t, r.json["default_branch"] != "trunk", "default_branch: %s", r.body)
 	// Delete, the hold, a repeated delete, undelete.
 	r = s.call(t, "DELETE", "/v1/repos/"+id, "")
 	expectStatus(t, r, http.StatusAccepted)
 	deletedAt, purgeAfter := r.json["deleted_at"], r.json["purge_after"]
-	check(t, !(r.json["id"] != id || deletedAt == nil || purgeAfter == nil), "delete: %s", r.body)
+	failIf(t, r.json["id"] != id || deletedAt == nil || purgeAfter == nil, "delete: %s", r.body)
 	da, err := time.Parse(time.RFC3339Nano, str(deletedAt))
 	pa, err2 := time.Parse(time.RFC3339Nano, str(purgeAfter))
-	check(t, !(err != nil || err2 != nil || pa.Sub(da) != 7*24*time.Hour), "hold: %v %v %v %v", deletedAt, purgeAfter, err, err2)
+	failIf(t, err != nil || err2 != nil || pa.Sub(da) != 7*24*time.Hour, "hold: %v %v %v %v", deletedAt, purgeAfter, err, err2)
 	expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusNotFound, contract.CodeRepoNotFound)
 	expectError(t, s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-upload-pack", ""), http.StatusNotFound, contract.CodeRepoNotFound)
 	r = s.call(t, "DELETE", "/v1/repos/"+id, "")
 	expectStatus(t, r, http.StatusAccepted)
-	check(t, !(r.json["deleted_at"] != deletedAt || r.json["purge_after"] != purgeAfter), "repeated delete: %s", r.body)
+	failIf(t, r.json["deleted_at"] != deletedAt || r.json["purge_after"] != purgeAfter, "repeated delete: %s", r.body)
 	r = s.call(t, "POST", "/v1/repos/"+id+"/undelete", "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["id"] != id || r.json["default_branch"] != "trunk"), "undelete: %s", r.body)
+	failIf(t, r.json["id"] != id || r.json["default_branch"] != "trunk", "undelete: %s", r.body)
 	expectStatus(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusOK)
 }
 
 func case003RepoNotFound(t *testing.T, s *session) {
 	id := newID(t)
 	d := expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusNotFound, contract.CodeRepoNotFound)
-	check(t, !(d["id"] != id), "details: %v", d)
+	failIf(t, d["id"] != id, "details: %v", d)
 	expectError(t, s.call(t, "GET", "/v1/repos/not-a-uuid", ""), http.StatusNotFound, contract.CodeRepoNotFound)
 	d = expectError(t, s.call(t, "GET", "/"+Owner+"/"+SlugPrefix+"nowhere.git/info/refs?service=git-upload-pack", ""), http.StatusNotFound, contract.CodeRepoNotFound)
-	check(t, !(d["owner"] != Owner || d["slug"] != SlugPrefix+"nowhere"), "details by name: %v", d)
+	failIf(t, d["owner"] != Owner || d["slug"] != SlugPrefix+"nowhere", "details by name: %v", d)
 }
 
 func case003RepoExists(t *testing.T, s *session) {
 	f := s.fixture
 	d := expectError(t, s.call(t, "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":"other"}`, f.id, Owner)), http.StatusConflict, contract.CodeRepoExists)
-	check(t, !(d["field"] != "id" || d["id"] != f.id), "duplicate id: %v", d)
+	failIf(t, d["field"] != "id" || d["id"] != f.id, "duplicate id: %v", d)
 	id := newID(t)
 	r := s.call(t, "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, Owner, f.slug))
 	d = expectError(t, r, http.StatusConflict, contract.CodeRepoExists)
-	check(t, !(d["field"] != "name" || d["owner"] != Owner || d["slug"] != f.slug), "taken name: %v", d)
+	failIf(t, d["field"] != "name" || d["owner"] != Owner || d["slug"] != f.slug, "taken name: %v", d)
 	// The refused create left nothing behind.
 	expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusNotFound, contract.CodeRepoNotFound)
 }
@@ -180,25 +180,25 @@ func case003SmartHTTP(t *testing.T, s *session) {
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	r := s.call(t, "GET", "/v1/repos/"+id, "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["head"] != c1 || r.json["pushed_at"] == nil || num(r.json["size_bytes"]) <= 0), "after the push: %s", r.body)
+	failIf(t, r.json["head"] != c1 || r.json["pushed_at"] == nil || num(r.json["size_bytes"]) <= 0, "after the push: %s", r.body)
 	// The label form clones the same history, and a fetch through it
 	// sees the next push made through the id form, a push whose body
 	// exceeds git's post buffer and arrives chunked.
 	byName := clone(t, s.nameURL(Owner, slug))
-	check(t, !(revList(t, byName) != revList(t, work)), "%v", "the clone by name differs")
+	failIf(t, revList(t, byName) != revList(t, work), "%v", "the clone by name differs")
 	c2 := commitFile(t, work, "b.txt", gittest.Bytes(256<<10, 3), "second")
 	mustGit(t, work, "-c", "http.postBuffer=65536", "push", "-q", "origin", "HEAD:refs/heads/main")
 	mustGit(t, byName, "fetch", "-q", "origin")
-	check(t, !(mustGit(t, byName, "rev-parse", "origin/main") != c2), "%v", "the fetch by name did not see the push by id")
+	failIf(t, mustGit(t, byName, "rev-parse", "origin/main") != c2, "%v", "the fetch by name did not see the push by id")
 	// Protocol v2 on the same routes.
 	v2 := clone(t, s.repoURL(id), "-c", "protocol.version=2")
-	check(t, !(mustGit(t, v2, "rev-parse", "HEAD") != c2), "%v", "the protocol v2 clone")
+	failIf(t, mustGit(t, v2, "rev-parse", "HEAD") != c2, "%v", "the protocol v2 clone")
 	// A branch deletion is a push without a pack.
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/gone")
 	mustGit(t, work, "push", "-q", "origin", ":refs/heads/gone")
 	r = s.call(t, "GET", "/v1/repos/"+id+"/refs", "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(strings.Contains(string(r.body), "refs/heads/gone")), "the deleted branch is still there: %s", r.body)
+	failIf(t, strings.Contains(string(r.body), "refs/heads/gone"), "the deleted branch is still there: %s", r.body)
 }
 
 // case003FetchByHash fetches a reachable commit by its hash, under
@@ -209,7 +209,7 @@ func case003FetchByHash(t *testing.T, s *session) {
 	f := s.fixture
 	dir := initRepo(t, s.repoURL(f.id))
 	mustGit(t, dir, "-c", "protocol.version=0", "fetch", "-q", "--depth", "1", "origin", f.c1)
-	check(t, !(mustGit(t, dir, "rev-parse", "FETCH_HEAD") != f.c1), "%v", "fetched the wrong commit")
+	failIf(t, mustGit(t, dir, "rev-parse", "FETCH_HEAD") != f.c1, "%v", "fetched the wrong commit")
 }
 
 // case003PartialClone clones with blob:none and proves the clone is
@@ -218,7 +218,7 @@ func case003PartialClone(t *testing.T, s *session) {
 	f := s.fixture
 	dir := clone(t, s.repoURL(f.id), "--filter=blob:none", "--no-checkout")
 	missing := mustGit(t, dir, "rev-list", "--objects", "--all", "--missing=print")
-	check(t, !(!strings.Contains(missing, "?"+f.blobA)), "the clone holds every blob; not partial:\n%s", missing)
+	failIf(t, !strings.Contains(missing, "?"+f.blobA), "the clone holds every blob; not partial:\n%s", missing)
 	// A read fetches the blob from the server.
 	if got := mustGit(t, dir, "cat-file", "-p", f.blobA); got != "one\ntwo" {
 		t.Fatalf("blob through the promisor: %q", got)
@@ -228,15 +228,15 @@ func case003PartialClone(t *testing.T, s *session) {
 func case003Shallow(t *testing.T, s *session) {
 	f := s.fixture
 	dir := clone(t, s.repoURL(f.id), "--depth", "1")
-	check(t, !(mustGit(t, dir, "rev-list", "--count", "HEAD") != "1"), "%v", "depth 1")
+	failIf(t, mustGit(t, dir, "rev-list", "--count", "HEAD") != "1", "%v", "depth 1")
 	mustGit(t, dir, "fetch", "-q", "--deepen", "1", "origin")
-	check(t, !(mustGit(t, dir, "rev-list", "--count", "HEAD") != "2"), "%v", "deepen")
+	failIf(t, mustGit(t, dir, "rev-list", "--count", "HEAD") != "2", "%v", "deepen")
 	mustGit(t, dir, "fetch", "-q", "--unshallow", "origin")
-	check(t, !(mustGit(t, dir, "rev-list", "--count", "HEAD") != "3"), "%v", "unshallow")
+	failIf(t, mustGit(t, dir, "rev-list", "--count", "HEAD") != "3", "%v", "unshallow")
 	since := clone(t, s.repoURL(f.id), "--shallow-since="+f.commitDate)
-	check(t, !(mustGit(t, since, "rev-list", "--count", "HEAD") != "3"), "%v", "deepen-since")
+	failIf(t, mustGit(t, since, "rev-list", "--count", "HEAD") != "3", "%v", "deepen-since")
 	not := clone(t, s.repoURL(f.id), "--shallow-exclude=v1")
-	check(t, !(mustGit(t, not, "rev-list", "--count", "HEAD") != "1"), "%v", "deepen-not")
+	failIf(t, mustGit(t, not, "rev-list", "--count", "HEAD") != "1", "%v", "deepen-not")
 }
 
 func case003AtomicPush(t *testing.T, s *session) {
@@ -248,7 +248,7 @@ func case003AtomicPush(t *testing.T, s *session) {
 	r := s.call(t, "GET", "/v1/repos/"+id+"/refs", "")
 	expectStatus(t, r, http.StatusOK)
 	for _, ref := range []string{"refs/heads/main", "refs/heads/dev", "refs/tags/v1"} {
-		check(t, !(!strings.Contains(string(r.body), `"name":"`+ref+`","sha":"`+c+`"`)), "%s missing after the atomic push: %s", ref, r.body)
+		failIf(t, !strings.Contains(string(r.body), `"name":"`+ref+`","sha":"`+c+`"`), "%s missing after the atomic push: %s", ref, r.body)
 	}
 	// One push, one push event.
 	if d, ok := s.expectEvent(t, id, "push", 1); ok {
@@ -288,7 +288,7 @@ func case003NonFastForward(t *testing.T, s *session) {
 	mustGit(t, b, "config", "core.hooksPath", hooks)
 	commitFile(t, b, "b.txt", []byte("b"), "b")
 	out, err := git(t, b, "push", "origin", "HEAD:refs/heads/main")
-	check(t, !(err == nil), "the stale push landed:\n%s", redact(out))
+	failIf(t, err == nil, "the stale push landed:\n%s", redact(out))
 	if want := "remote: " + contract.Line(contract.CodeNonFastForward); !strings.Contains(out, want) {
 		t.Fatalf("git's output lacks %q:\n%s", want, redact(out))
 	}

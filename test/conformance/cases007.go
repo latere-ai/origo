@@ -41,7 +41,7 @@ func case007Tokens(t *testing.T, s *session) {
 	r := s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":300}`)
 	expectStatus(t, r, http.StatusCreated)
 	read, _ := r.json["token"].(string)
-	check(t, !(read == "" || r.json["expires_at"] == nil), "read token: %s", r.body)
+	failIf(t, read == "" || r.json["expires_at"] == nil, "read token: %s", r.body)
 	// The read token clones and cannot push; a write token pushes.
 	byRead := clone(t, s.repoURLAs(read, id))
 	commitFile(t, byRead, "b.txt", []byte("b"), "second")
@@ -59,9 +59,9 @@ func case007Tokens(t *testing.T, s *session) {
 	expectError(t, s.as(t, write, "GET", "/v1/repos/"+s.fixture.id, ""), http.StatusForbidden, contract.CodeForbidden)
 	expectError(t, s.as(t, write, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`), http.StatusForbidden, contract.CodeForbidden)
 	d := expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"admin","ttl":60}`), http.StatusBadRequest, contract.CodeInvalid)
-	check(t, !(d["field"] != "scope"), "bad scope: %v", d)
+	failIf(t, d["field"] != "scope", "bad scope: %v", d)
 	d = expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":0}`), http.StatusBadRequest, contract.CodeInvalid)
-	check(t, !(d["field"] != "ttl"), "bad ttl: %v", d)
+	failIf(t, d["field"] != "ttl", "bad ttl: %v", d)
 }
 
 // case007Forbidden flips the authorizer to deny: 403 with the reason,
@@ -74,7 +74,7 @@ func case007Forbidden(t *testing.T, s *session) {
 		authorizer.Rule{Repo: unknown, Allow: false, Reason: "not welcome"},
 	)
 	d := expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusForbidden, contract.CodeForbidden)
-	check(t, !(d["reason"] != "not welcome" || d["action"] != "read" || d["subject"] == nil), "deny details: %v", d)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "read" || d["subject"] == nil, "deny details: %v", d)
 	expectError(t, s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-upload-pack", ""), http.StatusForbidden, contract.CodeForbidden)
 	// A deny answers before the repository is looked up.
 	expectError(t, s.call(t, "GET", "/v1/repos/"+unknown, ""), http.StatusForbidden, contract.CodeForbidden)
@@ -86,7 +86,7 @@ func case007AuthorizerUnavailable(t *testing.T, s *session) {
 	s.failAuthorizer(t, http.StatusInternalServerError)
 	id := newID(t)
 	d := expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable)
-	check(t, !(d["url"] == nil || d["status"] != float64(500)), "outage details: %v", d)
+	failIf(t, d["url"] == nil || d["status"] != float64(500), "outage details: %v", d)
 	if out, err := git(t, t.TempDir(), "ls-remote", s.repoURL(id)); err == nil || !strings.Contains(out, "503") {
 		t.Fatalf("git under the outage: %v\n%s", err, redact(out))
 	}
@@ -104,7 +104,7 @@ func case007Delegation(t *testing.T, s *session) {
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	if d, ok := s.expectEvent(t, id, "push", 1); ok {
 		pusher, _ := event(t, d)["pusher"].(map[string]any)
-		check(t, !(pusher["sub"] != "conformance-user" || pusher["actor"] != "conformance-service"), "pusher: %v", pusher)
+		failIf(t, pusher["sub"] != "conformance-user" || pusher["actor"] != "conformance-service", "pusher: %v", pusher)
 	}
 	// A repository-bound token minted by the delegate carries the same
 	// subject and actor.

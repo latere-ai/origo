@@ -45,7 +45,7 @@ func (s *session) lfsCall(t *testing.T, id, route, body string) response {
 // id, and the documentation URL.
 func lfsError(t *testing.T, r response, status int, code string) {
 	t.Helper()
-	check(t, !(r.status != status || r.json["message"] != sentence(t, code) || r.json["request_id"] == "" || r.json["documentation_url"] != lfs.DocumentationURL || r.header.Get("Content-Type") != lfs.MediaType), "want %d %q, got %d %v %s", status, sentence(t, code), r.status, r.header.Get("Content-Type"), r.body)
+	failIf(t, r.status != status || r.json["message"] != sentence(t, code) || r.json["request_id"] == "" || r.json["documentation_url"] != lfs.DocumentationURL || r.header.Get("Content-Type") != lfs.MediaType, "want %d %q, got %d %v %s", status, sentence(t, code), r.status, r.header.Get("Content-Type"), r.body)
 }
 
 // batch decodes a batch response's objects.
@@ -66,7 +66,7 @@ func action(t *testing.T, o map[string]any, name string) (href string, header ma
 	t.Helper()
 	actions, _ := o["actions"].(map[string]any)
 	a, ok := actions[name].(map[string]any)
-	check(t, !(!ok), "no %s action: %v", name, o)
+	failIf(t, !ok, "no %s action: %v", name, o)
 	href, _ = a["href"].(string)
 	header = map[string]string{}
 	if h, _ := a["header"].(map[string]any); h != nil {
@@ -81,12 +81,12 @@ func action(t *testing.T, o map[string]any, name string) (href string, header ma
 func transfer(t *testing.T, method, href string, header map[string]string, body []byte) (int, []byte) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, href, bytes.NewReader(body))
-	check(t, !(err != nil), "%v", err)
+	failIf(t, err != nil, "%v", err)
 	for k, v := range header {
 		req.Header.Set(k, v)
 	}
 	resp, err := bucketClient.Do(req)
-	check(t, !(err != nil), "%s %s: %v", method, href, err)
+	failIf(t, err != nil, "%s %s: %v", method, href, err)
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, raw
@@ -106,7 +106,7 @@ func case010UploadDownload(t *testing.T, s *session) {
 	oid := oidOf(content)
 	up := fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":%d}],"transfers":["basic"]}`, oid, len(content))
 	objects := batch(t, s.lfsCall(t, id, "objects/batch", up))
-	check(t, !(len(objects) != 1 || objects[0]["oid"] != oid), "upload batch: %v", objects)
+	failIf(t, len(objects) != 1 || objects[0]["oid"] != oid, "upload batch: %v", objects)
 	href, header := action(t, objects[0], "upload")
 	if status, body := transfer(t, "PUT", href, header, content); status/100 != 2 {
 		t.Fatalf("presigned PUT: %d %s", status, body)
@@ -127,7 +127,7 @@ func case010UploadDownload(t *testing.T, s *session) {
 	objects = batch(t, s.lfsCall(t, id, "objects/batch", down))
 	href, header = action(t, objects[0], "download")
 	status, got := transfer(t, "GET", href, header, nil)
-	check(t, !(status != http.StatusOK || !bytes.Equal(got, content)), "presigned GET: %d, %d bytes", status, len(got))
+	failIf(t, status != http.StatusOK || !bytes.Equal(got, content), "presigned GET: %d, %d bytes", status, len(got))
 }
 
 func case010Mismatch(t *testing.T, s *session) {
@@ -148,7 +148,7 @@ func case010NotStored(t *testing.T, s *session) {
 	oid := oidOf([]byte("missing"))
 	objects := batch(t, s.lfsCall(t, id, "objects/batch", fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":7}]}`, oid)))
 	e, _ := objects[0]["error"].(map[string]any)
-	check(t, !(e["code"] != float64(http.StatusNotFound) || e["message"] != sentence(t, contract.CodeLFSObjectNotStored)), "per-object error: %v", objects[0])
+	failIf(t, e["code"] != float64(http.StatusNotFound) || e["message"] != sentence(t, contract.CodeLFSObjectNotStored), "per-object error: %v", objects[0])
 	if _, ok := objects[0]["actions"]; ok {
 		t.Fatalf("a missing object was given actions: %v", objects[0])
 	}

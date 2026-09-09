@@ -36,15 +36,15 @@ func case008Push(t *testing.T, s *session) {
 			t.Fatalf("the push event lacks %s: %s", k, d.Body)
 		}
 	}
-	check(t, !(e["id"] != d.ID || e["kind"] != "push" || e["repo"] != id || e["owner"] != Owner || e["seq"] != float64(1)), "push event: %s", d.Body)
+	failIf(t, e["id"] != d.ID || e["kind"] != "push" || e["repo"] != id || e["owner"] != Owner || e["seq"] != float64(1), "push event: %s", d.Body)
 	if _, err := time.Parse(time.RFC3339Nano, str(e["at"])); err != nil {
 		t.Fatalf("at: %v", err)
 	}
 	updates, _ := e["updates"].([]any)
 	u, _ := updates[0].(map[string]any)
-	check(t, !(len(updates) != 1 || u["ref"] != "refs/heads/main" || u["after"] != c1 || u["forced"] != false || len(str(u["before"])) != 40), "updates: %v", updates)
+	failIf(t, len(updates) != 1 || u["ref"] != "refs/heads/main" || u["after"] != c1 || u["forced"] != false || len(str(u["before"])) != 40, "updates: %v", updates)
 	pusher, _ := e["pusher"].(map[string]any)
-	check(t, !(pusher["sub"] == ""), "pusher: %v", pusher)
+	failIf(t, pusher["sub"] == "", "pusher: %v", pusher)
 	// A forced update is flagged.
 	mustGit(t, work, "commit", "-q", "--amend", "-m", "rewritten")
 	mustGit(t, work, "push", "-q", "--force", "origin", "HEAD:refs/heads/main")

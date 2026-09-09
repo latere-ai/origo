@@ -33,13 +33,13 @@ func case012OverQuota(t *testing.T, s *session) {
 	work := clone(t, s.repoURL(id))
 	commitFile(t, work, "a.bin", gittest.Bytes(16<<10, 5), "first")
 	out, err := git(t, work, "push", "origin", "HEAD:refs/heads/main")
-	check(t, !(err == nil), "the push over the quota landed:\n%s", redact(out))
+	failIf(t, err == nil, "the push over the quota landed:\n%s", redact(out))
 	if want := "remote: " + contract.Line(contract.CodeOverQuota); !strings.Contains(out, want) {
 		t.Fatalf("git's output lacks %q:\n%s", want, redact(out))
 	}
 	r := s.call(t, "GET", "/v1/repos/"+id, "")
 	expectStatus(t, r, http.StatusOK)
-	check(t, !(r.json["head"] != "" || r.json["size_bytes"] != float64(0)), "the refused push left something: %s", r.body)
+	failIf(t, r.json["head"] != "" || r.json["size_bytes"] != float64(0), "the refused push left something: %s", r.body)
 	// The LFS batch meets the same figure in the LFS shape.
 	lfsError(t, s.lfsCall(t, id, "objects/batch", `{"operation":"upload","objects":[{"oid":"`+oidOf([]byte("x"))+`","size":4096}]}`), http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
 }
@@ -60,7 +60,7 @@ func case012RateLimited(t *testing.T, s *session) {
 		s.skip(t, "012/rate_limited", "the target sends no "+contract.HeaderRateLimit+", the limit is off")
 	}
 	limit, err := strconv.Atoi(raw)
-	check(t, !(err != nil || limit <= 0), "%s %q", contract.HeaderRateLimit, raw)
+	failIf(t, err != nil || limit <= 0, "%s %q", contract.HeaderRateLimit, raw)
 	token := s.target.Token
 	if s.target.Issuer != "" {
 		token = s.mint(t, "conformance-rate-"+f.id[:8], "")
@@ -90,8 +90,8 @@ func case012RateLimited(t *testing.T, s *session) {
 	if refused.Load() == 0 {
 		send(3 * limit)
 	}
-	check(t, !(refused.Load() == 0), "no 429 after %d requests against a limit of %d", 4*limit+1, limit)
+	failIf(t, refused.Load() == 0, "no 429 after %d requests against a limit of %d", 4*limit+1, limit)
 	d := expectError(t, refusal, http.StatusTooManyRequests, contract.CodeRateLimited)
 	after, err := strconv.Atoi(refusal.header.Get("Retry-After"))
-	check(t, !(err != nil || after < 1 || d["limit"] != "subject" || d["retry_after"] != float64(after)), "Retry-After %q, details %v", refusal.header.Get("Retry-After"), d)
+	failIf(t, err != nil || after < 1 || d["limit"] != "subject" || d["retry_after"] != float64(after), "Retry-After %q, details %v", refusal.header.Get("Retry-After"), d)
 }
