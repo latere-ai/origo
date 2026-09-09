@@ -224,7 +224,7 @@ deck and stated here so a reader sees them without the owning spec.
 |---|---|---|
 | the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces; both Dockerfiles move to it under 017 | 017 | 002, 018, 020 |
 | `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all; 014 built the dispatcher with `serve` and `migrate`, `serve` being where the node's configuration is loaded, and 018 adds `check` | 002 | 014, 018 |
-| `ORIGO_TOKEN_KEY` is required in every mode; `make dev` and the kind overlay generate one at start | 002, 007 | 013, 016, 018 |
+| `ORIGO_TOKEN_KEY` is required in every mode and comes from the Secret `origod-token-key`, never from `origod-auth` or any template: it is generated once by `up.sh` on the test stack, by `make dev` locally, and by step 4 of `docs/install.md` on an installation, and every workload reads it by name | 002, 007, 018 | 013, 016, 018 |
 | `ORIGO_GOSSIP_SECRET` is required only when `ORIGO_GOSSIP_PEERS` is set; a single node runs with neither | 002, 005 | 013, 016, 018 |
 | the index object carries `pushed_at`; the read API and `stats` serve it from there | 004 | 003, 009, 019 |
 | `size_bytes` on the index object is what the log holds: the bytes of the listed packs plus the pack bytes of the entries since the last compaction; a `compact` commit sets it to `Entry.PacksBytes`, a push adds its `pack_bytes`; the quota counts it and `stats` serves it | 004 | 003, 006, 012, 019 |

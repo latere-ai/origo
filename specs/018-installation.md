@@ -279,7 +279,7 @@ published release are listed below with what closes each.
 
 | Criterion | Test | State |
 |---|---|---|
-| the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | in the tree, green on the push that carries this Outcome |
+| the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | in the tree; it runs on every push from this commit, and its first green run is what the criterion closes on |
 | the same from the release artifacts alone on a tag | the `install-release` job of `release.yml` after `publish`, with the published images pulled and loaded and the `kind` overlay of `deploy-<version>.tar.gz` | pending the first tag |
 | `kustomize build` succeeds on `deploy/examples/digitalocean` and `deploy/examples/aws` | the `overlays` job of `verify.yml`, 5 minutes, over all three example overlays | passing |
 | `deploy/base/ingress.yaml` carries no `nginx.ingress.kubernetes.io/` or `cert-manager.io/` annotation and no `ingressClassName`, and the `kind` overlay renders `proxy-body-size: "0"` and `proxy-read-timeout: "600"` | `cmd/origod`, `TestBaseIngressIsControllerNeutral` | passing |
@@ -287,6 +287,7 @@ published release are listed below with what closes each.
 | `origod check` prints a `fail` line naming the requirement for each of the eight failures and exits 1, and seven `ok` lines and 0 when everything is in place | `cmd/origod`, `TestCheckReportsEachRequirement`, with `TestGitVersionParsesTheThreeNumbers` on the version floor and `TestCheckInitContainerSharesTheNodesEnvironment` on the init container that runs it | passing |
 | `make docs` regenerates `docs/configuration.md` and `docs/api.md` byte-identical, and `docs/api.md` carries every endpoint, header, and code the cross-reference lists and no other | `internal/config`, `TestConfigurationDocIsCurrent`, `TestReferenceRowsAreComplete`, `TestDefaultsOnThePageAreTheDefaultsInTheCode`; `tools/apidoc`, `TestAPIDocIsCurrent` and `TestPageStatesTheContractAndNothingElse`; the `specindex` job of `verify.yml` runs `make docs` and `git diff --exit-code docs/` | passing |
 | every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
+| `ORIGO_TOKEN_KEY` comes from the Secret `origod-token-key` and from nowhere else, in every workload that runs `origod` | `cmd/origod`, `TestSigningKeyHasOneSource` | passing |
 | a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | pending the first release |
 
 Coverage of the packages this spec touched: `cmd/origod` 92.6%,
@@ -317,6 +318,20 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
   way; `VERSION` exists so the page names the release once, beside the
   releases page and the deploy archive, rather than printing an image
   tag a reader copies without knowing where its number comes from.
+- `ORIGO_TOKEN_KEY` left `deploy/bootstrap/secrets.example.yaml`. The
+  Manifests section says `origod-auth` carries it and the base reads
+  both bootstrap Secrets through `envFrom`; the paragraph after it says
+  the Secret `origod-token-key` holds the key and the install document
+  generates it, which is what `up.sh` and the `kind` overlay already
+  did. The two cannot both hold on an overlay derived from the base: an
+  operator who filled the template and ran the document's generate step
+  had two keys, one of them `replace-me`, and a node that refuses to
+  start. The base now names `origod-token-key` in an explicit `env`
+  entry in the node and in the check, the template no longer offers a
+  field for the key, and the second paragraph is the one that stands,
+  because it is the one written for this spec. The decisions table row
+  is amended.
+
 - `tools/docs/TestInstallDocumentIsWellFormed` is not in the Acceptance
   criteria. The `install` job is the document's proof and needs a
   cluster; the test is the half that needs none, so a broken block or a
