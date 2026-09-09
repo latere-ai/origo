@@ -40,7 +40,7 @@ is `test/conformance`, the code table with its statuses is
 `internal/contract`, the mutation seam is `ORIGO_TEST_DROP_CAPABILITY`
 through `internal/config` and `internal/repo`, and the stub of spec 013
 serves the whole contract in-process. The spec is at `testing` until
-the live run of a release has run once and spec 020 adds its cases.
+the live run of a release has run once.
 
 ## Design
 
@@ -464,7 +464,9 @@ sideband rule with `TestRejectLinesAreTheTableSentences`;
 `ORIGO_TEST_DROP_CAPABILITY` in `internal/config` and `internal/repo`
 with the node's wiring; the stub's events, limits, compaction, and
 `Fault`; `test/conformance` with its four tests; `TestMutation` with
-the jobs of `verify.yml` and the `live` job of `release.yml`.
+the jobs of `verify.yml` and the `live` job of `release.yml`; and,
+once spec 020 landed beside it, the four cases of its Operations
+table, 64 cases in all.
 
 | Criterion | Test |
 |---|---|
@@ -476,6 +478,7 @@ the jobs of `verify.yml` and the `live` job of `release.yml`.
 | the code table walk and the negative fixture | `internal/contract`, `TestEveryCodeHasOneSentence`, `TestTableWalkFailsOnTheNegativeFixture` (findings at `bad.go.txt:16` and `:17` and no third), `TestTableWalkReportsEveryRule` |
 | `remote: <code>: <sentence>` for `non_fast_forward` and `storage_unavailable`, the reference and hashes on the `info` line | `internal/httpgit`, `TestRejectLinesAreTheTableSentences` |
 | a run leaves no repository behind and touches no other | `test/conformance`, `TestRunCleansUp` |
+| one case per row of spec 020's Operations table (020's criterion, owned here) | `test/conformance`, `TestContract/020/commits`, `/merge`, `/cherry-pick`, `/revert`: each row's success path against a repository the case pushes, with `invalid_change`, `merge_conflict`, and the `non_fast_forward` of a stale `expected_head` |
 
 Divergences and interpretations, each kept, with the reason:
 
@@ -595,9 +598,6 @@ Deferred, each named on its criterion:
 - The live run, which needs a release: the `live` job of `release.yml`
   runs `TestContract` against `ORIGO_LIVE_URL` and asserts the six
   groups; this spec reaches `complete` once one has run green.
-- Spec 020's four cases, which 020 adds with its handlers; its two
-  rows are in the table and exempt from the call-site rule while 020
-  is short of `testing`.
 - Spec 014's `verify` case of the source group, which 014 adds with
   its endpoint.
 
