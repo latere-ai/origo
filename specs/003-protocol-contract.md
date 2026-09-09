@@ -294,6 +294,18 @@ line, never the sideband (`internal/httpgit`,
 (`test/stubs/origo`, `TestStubConforms`) and the stack (`test/conformance`,
 `TestContract`, `TestSameAnswersOnStubAndStack`, in spec 013's `e2e`
 job), and the code table holds every status beside every sentence
-(`internal/contract`, `TestEveryCodeHasOneSentence`); the first three
-criteria close with spec 021's stack proof, and this spec stays at
-`testing` until spec 021's live run has run once.
+(`internal/contract`, `TestEveryCodeHasOneSentence`).
+
+Stack proof for the first three criteria: the `e2e` job of the
+dispatched run 34358421294 of `verify.yml` on main, at commit
+`e9e516e`, ran `TestContract` and `TestSameAnswersOnStubAndStack`
+against the kind stack and passed in 65 s, with every other job of the
+run green. Every row of every table above is answered there, because
+`TestContract` fails on a failed case, on anything skipped while a
+`Fault` is wired, and on a non-empty `Report.Unverified`; the step ran
+without `-v`, so the evidence is the package's `ok` and those
+assertions rather than a named case. Spec 021's Outcome records the
+same run.
+
+This spec stays at `testing` until spec 021's live run has run once,
+which the first release tag produces.
