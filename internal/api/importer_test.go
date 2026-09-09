@@ -72,7 +72,8 @@ func TestExportRoundTrip(t *testing.T) {
 	f := loadFixture(t)
 	stub, egress := importStub(t)
 	s := sink.New(t)
-	h := newHarness(t, egress, withSink(s), withNow(fixedClock()))
+	spy := newSpyGit(t)
+	h := newHarness(t, egress, withSink(s), withGit(spy.bin()), withNow(fixedClock()))
 	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
 	h.seed(f)
 
@@ -94,6 +95,22 @@ func TestExportRoundTrip(t *testing.T) {
 	st := h.waitImport(repoB)
 	if st.State != ImportDone || st.Error != "" || st.Refs == 0 || st.Bytes == 0 || st.FinishedAt == nil {
 		t.Fatalf("import state: %+v", st)
+	}
+	// The clone runs with transfer.fsckObjects on the command line,
+	// where a process listing shows the check is on (spec 016), and the
+	// source URL and the bearer are in neither the arguments nor the
+	// subcommand line.
+	var cloned string
+	for _, call := range spy.calls() {
+		if strings.Contains(call, " clone ") {
+			cloned = call
+		}
+	}
+	if !strings.HasPrefix(cloned, "-c transfer.fsckObjects=true clone --mirror --end-of-options http://") {
+		t.Fatalf("the import's clone was %q", cloned)
+	}
+	if strings.Contains(cloned, stub.Token()) || strings.Contains(cloned, "https://") {
+		t.Fatalf("the clone's arguments carry the source or its bearer: %q", cloned)
 	}
 
 	// One entry, in the shape of a compaction, with the packs.

@@ -137,7 +137,8 @@ func (h *Handler) startImport(w http.ResponseWriter, r *http.Request) {
 		contract.Write(w, http.StatusConflict, contract.CodeRepoNotEmpty, map[string]any{"seq": ix.Seq})
 		return
 	}
-	if h.expireLease(r.Context(), m) && m.ImportingSince != nil {
+	h.expireLease(r.Context(), m)
+	if m.ImportingSince != nil {
 		contract.Write(w, http.StatusConflict, contract.CodeRepoImporting, map[string]any{"started_at": m.ImportingSince})
 		return
 	}
@@ -148,11 +149,14 @@ func (h *Handler) startImport(w http.ResponseWriter, r *http.Request) {
 		h.storageError(w, r, err)
 		return
 	}
-	// The run outlives the request; the caller polls GET .../import.
+	// The run outlives the request, so everything it needs is read off
+	// the request before it returns: net/http reuses the request once
+	// the handler is done.
+	by, base := pusher(r), context.WithoutCancel(r.Context())
 	h.imports.Go(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), h.importTimeout)
+		ctx, cancel := context.WithTimeout(base, h.importTimeout)
 		defer cancel()
-		h.runImport(ctx, m.ID, u, req.Token, ix, quotaOf(decision), pusher(r))
+		h.runImport(ctx, m.ID, u, req.Token, ix, quotaOf(decision), by)
 	})
 	httpjson.Write(w, http.StatusAccepted, ImportState{State: ImportRunning, StartedAt: &at})
 }
@@ -191,17 +195,16 @@ func (h *Handler) importState(w http.ResponseWriter, r *http.Request) {
 // expireLease clears a lease whose node is gone: an importing_since
 // older than ImportLease whose import_node is not in the live set is a
 // node that died mid-import, and the repository accepts a new import
-// once it is cleared. It reports whether the meta it read is current,
-// which is false when the clearing write failed.
-func (h *Handler) expireLease(ctx context.Context, m *wal.Meta) bool {
+// once it is cleared. A clearing write the bucket refuses leaves the
+// lease where it was, so m still reads running.
+func (h *Handler) expireLease(ctx context.Context, m *wal.Meta) {
 	if m.ImportingSince == nil {
-		return true
+		return
 	}
 	if h.now().Sub(*m.ImportingSince) < ImportLease || h.isLive(m.ImportNode) {
-		return true
+		return
 	}
 	h.clearLease(ctx, m, ErrorNodeLost)
-	return true
 }
 
 // isLive reports whether the node is in the live set of spec 005. A
