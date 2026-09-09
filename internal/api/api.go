@@ -61,6 +61,10 @@ type Options struct {
 	// every deployment, set only by a unit test of import or verify that
 	// serves its source in-process.
 	AllowLoopback bool
+	// Now is the clock the administration operations of spec 019 run
+	// on: the freeze stamp, the import lease, and the weekly sweep. The
+	// wall clock by default; a test substitutes it.
+	Now func() time.Time
 }
 
 // Handler serves /v1/repos.
@@ -74,6 +78,7 @@ type Handler struct {
 	placement placement.Placer
 	limits    *limits.Limits
 	egress    *Egress
+	now       func() time.Time
 
 	readTimeout time.Duration
 }
@@ -102,7 +107,14 @@ func New(o Options) *Handler {
 	if o.AllowLoopback {
 		egress = egress.withLoopback()
 	}
-	return &Handler{cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer, placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress}
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Handler{
+		cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer,
+		placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress, now: now,
+	}
 }
 
 // Egress is the dialer the handler fetches sources through, for the
@@ -117,6 +129,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/repos/{id}", h.delete)
 	mux.HandleFunc("POST /v1/repos/{id}/undelete", h.undelete)
 	mux.HandleFunc("POST /v1/repos/{id}/tokens", h.tokens)
+	h.registerAdmin(mux)
 	h.registerRead(mux)
 }
 
@@ -132,6 +145,9 @@ type Repository struct {
 	// PushedAt is the time of the newest push, from the index object
 	// the node holds (spec 009); null for a repository with no push.
 	PushedAt *time.Time `json:"pushed_at"`
+	// FrozenAt is when the repository was frozen (spec 019); null for
+	// one that accepts writes.
+	FrozenAt *time.Time `json:"frozen_at"`
 }
 
 // reservedOwners are path prefixes the public surface uses itself.
@@ -216,6 +232,7 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 	return Repository{
 		ID: m.ID, Owner: m.Owner, Slug: m.Slug, DefaultBranch: branch,
 		SizeBytes: ix.SizeBytes, Head: ix.Refs["refs/heads/"+branch], UpdatedAt: m.UpdatedAt, PushedAt: ix.PushedAt,
+		FrozenAt: m.FrozenAt,
 	}
 }
 
@@ -247,6 +264,13 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request, action auth.Actio
 		} else {
 			h.storageError(w, r, err)
 		}
+		return nil, nil, false
+	}
+	// The purge left this meta as a tombstone (spec 019): every object
+	// under the prefix is gone, so the answer is 410 rather than the
+	// 404 the missing index would otherwise produce.
+	if m.PurgedAt != nil {
+		gone(w, m)
 		return nil, nil, false
 	}
 	ix, _, err := h.log.Newest(r.Context(), id, 0, false)
@@ -297,21 +321,8 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 		if req.Slug != nil {
 			slug = *req.Slug
 		}
-		if !wal.ValidLabel(owner) || reservedOwners[owner] {
-			invalid(w, "owner must be a URL-safe label and not a reserved path segment", "owner")
-			return
-		}
-		if !wal.ValidLabel(slug) {
-			invalid(w, "slug must be a URL-safe label", "slug")
-			return
-		}
-		renamed, err := h.log.Rename(r.Context(), m.ID, owner, slug)
-		if err != nil {
-			if errors.Is(err, wal.ErrNameTaken) {
-				contract.Write(w, http.StatusConflict, contract.CodeRepoExists, map[string]any{"field": "name", "owner": owner, "slug": slug})
-			} else {
-				h.storageError(w, r, err)
-			}
+		renamed, ok := h.rename(w, r, m, owner, slug, KindRenamed)
+		if !ok {
 			return
 		}
 		m = renamed
@@ -357,8 +368,13 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	// Nodes evict the local copy at once and answer 404 from here on.
 	h.cache.Evict(m.ID)
+	purgeAfter := ix.DeletedAt.Add(wal.DeleteHold)
+	// The id of an emit is derived from the repository, the kind, and
+	// at (spec 008), so a repeated DELETE of a deleted repository, whose
+	// deleted_at does not move, is one event.
+	h.emit(r, m.ID, KindDeleted, *ix.DeletedAt, map[string]any{"purge_after": purgeAfter})
 	httpjson.Write(w, http.StatusAccepted, map[string]any{
-		"id": m.ID, "deleted_at": ix.DeletedAt, "purge_after": ix.DeletedAt.Add(wal.DeleteHold),
+		"id": m.ID, "deleted_at": ix.DeletedAt, "purge_after": purgeAfter,
 	})
 }
 
@@ -379,7 +395,7 @@ func (h *Handler) undelete(w http.ResponseWriter, r *http.Request) {
 		// enqueue or from the repair sweep; its one event is spec 019's
 		// undeleted, emitted after the write and before the response.
 		_ = h.events.Enqueue(r.Context(), m.ID, events.Entry{Header: c.Header})
-		_ = h.events.Emit(r.Context(), m.ID, "undeleted", c.Header.At, events.Pusher{Sub: entry.Subject, Actor: entry.Actor}, nil)
+		h.emit(r, m.ID, KindUndeleted, c.Header.At, nil)
 	}
 	httpjson.Write(w, http.StatusOK, represent(m, ix))
 }

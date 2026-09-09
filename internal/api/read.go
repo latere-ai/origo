@@ -175,7 +175,9 @@ func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, valida
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
-			notFound(w, id)
+			// A purged repository answers 410 gone from its tombstone
+			// (spec 019); anything else the log does not hold is 404.
+			h.notFoundOrGone(w, r, id)
 		default:
 			h.storageError(w, r, err)
 		}

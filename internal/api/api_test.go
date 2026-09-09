@@ -35,6 +35,7 @@ import (
 
 const (
 	repoA   = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	repoB   = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
 	unknown = "00000000-0000-4000-8000-000000000000"
 	issuer  = "https://git.example.com"
 )
@@ -69,6 +70,7 @@ type harnessConfig struct {
 	limits      *limits.Options
 	egress      *Egress
 	loopback    bool
+	now         func() time.Time
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -115,6 +117,12 @@ func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
 }
 
+// withNow runs the handler and the log on a clock the test moves, for
+// the freeze stamp, the import lease, and the weekly sweep of spec 019.
+func withNow(now func() time.Time) harnessOption {
+	return func(c *harnessConfig) { c.now = now }
+}
+
 func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 	var cfg harnessConfig
@@ -130,7 +138,10 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	if cfg.wrap != nil {
 		logStore = cfg.wrap(store)
 	}
-	l := wal.New(wal.Options{Store: logStore, Logger: logger})
+	l := wal.New(wal.Options{Store: logStore, Logger: logger, Now: cfg.now})
+	if cfg.now != nil {
+		store.SetClock(cfg.now)
+	}
 	cache, err := repo.New(repo.Options{Dir: filepath.Join(t.TempDir(), "data"), Log: l, Logger: logger, GitBin: cfg.gitBin})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +173,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		h.limits = limits.New(*cfg.limits)
 	}
 	mux := http.NewServeMux()
-	h.handler = New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback})
+	h.handler = New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
