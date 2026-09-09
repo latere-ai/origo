@@ -74,6 +74,13 @@ type Options struct {
 	// the repository quota rule (spec 012); one of its own over the
 	// log, with the spec's defaults, when nil.
 	Limits *limits.Limits
+	// MetaTTL is how long the meta a push read at its advertisement is
+	// reused by the git-receive-pack that follows it (spec 019);
+	// MetaTTL when zero. A test lowers it.
+	MetaTTL time.Duration
+	// Now is the clock the meta cache runs on. The wall clock by
+	// default.
+	Now func() time.Time
 }
 
 // Compactor is spec 006's after-push trigger. It returns before the
@@ -103,6 +110,7 @@ type Handler struct {
 	events   *events.Dispatcher
 	compact  Compactor
 	limits   *limits.Limits
+	meta     *metaCache
 	pushes   *pkgmetrics.Counter
 	rejected *pkgmetrics.Counter
 	fetches  *pkgmetrics.Counter
@@ -152,6 +160,7 @@ func New(o Options) *Handler {
 		h.limits = limits.New(limits.Options{Log: h.log, Metrics: set, Logger: h.logger})
 	}
 	h.pushes, h.rejected, h.fetches, h.phases = set.Pushes, set.PushesRejected, set.Fetches, set.PushDuration
+	h.meta = newMetaCache(h.log, o.MetaTTL, o.Now)
 	return h
 }
 
@@ -335,6 +344,24 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 			h.refuseAdvertisement(w, service, wal.ClassWrite)
 			return
 		}
+		// The repository's own state (spec 019), read once for this
+		// push and the git-receive-pack that follows it: a frozen or
+		// importing repository is refused here, before the client
+		// uploads a pack. A repository the log holds no meta for falls
+		// through to the lease, which answers 404.
+		m, err := h.meta.meta(r.Context(), r, id)
+		switch {
+		case errors.Is(err, wal.ErrNotFound):
+		case err != nil:
+			h.storageError(w, r, err)
+			return
+		default:
+			if code, details := stateRefusal(m); code != "" {
+				h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", code, "subject", auth.Subject(r.Context()))
+				h.refuseState(w, service, code, details)
+				return
+			}
+		}
 	}
 	l, err := h.cache.Lease(r.Context(), id, false)
 	if err != nil {
@@ -491,6 +518,19 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		h.storageError(w, r, err)
 		return
 	}
+	// The repository's own state (spec 019) is the defence for a client
+	// that sends git-receive-pack without asking for the advertisement:
+	// the same refusal travels as the hook's verdict, so the client
+	// reads the code and the sentence in the sideband and no entry is
+	// written. The advertisement of this push filled the cache, so a
+	// normal push pays no second read of meta.
+	stateCode := ""
+	if m, merr := h.meta.meta(r.Context(), r, id); merr == nil {
+		stateCode, _ = stateRefusal(m)
+	} else if !errors.Is(merr, wal.ErrNotFound) {
+		h.storageError(w, r, merr)
+		return
+	}
 	if err := installHook(rp.Dir); err != nil {
 		h.storageError(w, r, err)
 		return
@@ -547,6 +587,10 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case u.err != nil:
 			verdict = "reject origo: " + u.err.Error()
+		case u.ok && stateCode != "":
+			h.rejected.Inc(nil)
+			h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", stateCode, "subject", auth.Subject(r.Context()))
+			verdict = "reject " + stateCode + ": " + contract.Sentence(stateCode)
 		case u.ok && refusal != nil:
 			refusal.log(r.Context(), h.logger, id, auth.Subject(r.Context()))
 			verdict = "reject " + contract.CodeOverQuota + ": " + contract.Sentence(contract.CodeOverQuota)

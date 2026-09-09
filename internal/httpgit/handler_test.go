@@ -77,6 +77,7 @@ func newGuard(t *testing.T, logger *slog.Logger) (*auth.Guard, *authorizer.Serve
 type nodeConfig struct {
 	limits *limits.Options
 	logger *slog.Logger
+	now    func() time.Time
 }
 
 type nodeOption func(*nodeConfig)
@@ -94,6 +95,13 @@ func withLog(records *logRecords) nodeOption {
 	return func(c *nodeConfig) { c.logger = slog.New(records) }
 }
 
+// withNow runs the node's meta cache (spec 019) on a clock the test
+// moves, so a state change is seen at the next advertisement rather
+// than after a minute of wall time.
+func withNow(now func() time.Time) nodeOption {
+	return func(c *nodeConfig) { c.now = now }
+}
+
 func newNode(t *testing.T, store wal.Store, options ...nodeOption) *node {
 	t.Helper()
 	cfg := nodeConfig{logger: slog.New(slog.DiscardHandler)}
@@ -109,7 +117,7 @@ func newNode(t *testing.T, store wal.Store, options ...nodeOption) *node {
 		t.Fatal(err)
 	}
 	guard, authz := newGuard(t, logger)
-	opts := Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard}
+	opts := Options{Cache: cache, Logger: logger, Metrics: set, Timeout: time.Minute, Guard: guard, Now: cfg.now}
 	if cfg.limits != nil {
 		cfg.limits.Metrics, cfg.limits.Logger, cfg.limits.Log = set, logger, l
 		opts.Limits = limits.New(*cfg.limits)
