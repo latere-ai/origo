@@ -317,9 +317,21 @@ on work this spec does not touch: `test/conformance` on spec 021's
 `TestContract/020` and `TestContract/012/rate_limited`, and the cover
 gate on spec 008's `TestEmittedEventsRetryAndRepairLikePushes`, fixed
 on main afterwards. The job's step runs without `-v`, so a test that
-skipped would print the same `ok`; both of these skip only through
-`requireNodes`, the guard every cluster criterion of the deck shares,
-which the same job's other `TestCluster*` tests passing rules out.
+skipped would print the same `ok`. The eighteenth round's second review
+found that `requireNodes`, the guard every cluster criterion of the
+deck shares, was not the only way out of these two: `stubClient` in
+`test/e2e` skipped when `test/e2e/testdata/stub-ca.pem` was missing,
+after `requireNodes` had already found the stack answering. It fails
+now, so `requireNodes` is the one skip, which the same job's other
+`TestCluster*` tests passing rules out.
+
+Items left to another builder, from the same review:
+
+- Spec 021's builder, who owns the workflows: the `e2e` and `e2e-slow`
+  jobs run `go test -v` for the `test/e2e` package, so every
+  `TestCluster*` name is in the log and a stack proof names the test it
+  cites instead of arguing from the package's `ok`. One line each in
+  `.github/workflows/verify.yml`.
 
 ### Divergences
 
