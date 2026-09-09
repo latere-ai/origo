@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -572,3 +572,21 @@ Divergences from the first draft, all kept and now in the Design:
   under the first channel. A node that goes away mid-push now ends its
   hook with `no verdict` instead of leaving it, and `git receive-pack`
   with it, waiting in an open.
+- Two defects in `ValidRefName`, found by spec 016's `FuzzValidRefName`
+  against `git check-ref-format` and fixed at the root on 2026-09-09:
+  a component ending in a dot, `refs/heads/a.`, which git refuses, was
+  accepted; and a name that is not UTF-8, which git accepts and the
+  JSON index object rewrites to U+FFFD, so it could never round-trip
+  through the log, was accepted. Both are refused now, with the seeds
+  `refs/heads/a.`, `refs/heads/a./b`, and `refs/heads/\xee` in
+  `TestValidRefName` and the corpus of `FuzzValidRefName` in
+  `internal/wal`.
+- Two defects in `ValidRefName`, found by spec 016's `FuzzValidRefName`
+  against `git check-ref-format` and fixed at the root on 2026-09-09:
+  a component ending in a dot, `refs/heads/a.`, which git refuses, was
+  accepted; and a name that is not UTF-8, which git accepts and the
+  JSON index object rewrites to U+FFFD, so it could never round-trip
+  through the log, was accepted. Both are refused now, with the seeds
+  `refs/heads/a.`, `refs/heads/a./b`, and `refs/heads/\xee` in
+  `TestValidRefName` and the corpus of `FuzzValidRefName` in
+  `internal/wal`.
