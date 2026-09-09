@@ -401,12 +401,12 @@ func TestImportFailurePaths(t *testing.T) {
 // and the node says so.
 func TestClearLeaseFailureIsLogged(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	now := newTestClock(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC))
 	store := wal.NewMemStore()
-	h := newHarness(t, withStore(store), withNow(func() time.Time { return now }), withNode("origod-1", liveSet{"origod-1"}))
+	h := newHarness(t, withStore(store), withNow(now.Now), withNode("origod-1", liveSet{"origod-1"}))
 	h.create(repoA, "acme", "app")
-	writeLease(t, h, repoA, "origod-9", now)
-	now = now.Add(2 * ImportLease)
+	writeLease(t, h, repoA, "origod-9", now.Now())
+	now.Add(2 * ImportLease)
 	store.SetFault(func(op, key string) error {
 		if op == "Put" && strings.HasSuffix(key, "/meta") {
 			return errors.New("refused")

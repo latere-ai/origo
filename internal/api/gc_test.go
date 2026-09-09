@@ -73,8 +73,8 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 	}
 
 	// The primary runs it and answers the before and after figures.
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	home := newHarness(t, withPlacement(set), withCompaction(primary), withNow(func() time.Time { return now }))
+	now := newTestClock(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC))
+	home := newHarness(t, withPlacement(set), withCompaction(primary), withNow(now.Now))
 	home.seed(f)
 	status, out = home.do("POST", "/v1/repos/"+repoA+"/gc", "")
 	if status != 200 {
@@ -91,13 +91,13 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 
 	// stats reads compacted_at off that entry.
 	status, out = home.do("GET", "/v1/repos/"+repoA+"/stats", "")
-	if status != 200 || out["compacted_at"] != now.Format(time.RFC3339Nano) {
+	if status != 200 || out["compacted_at"] != now.Now().Format(time.RFC3339Nano) {
 		t.Fatalf("stats after the gc: %d %v", status, out)
 	}
 
 	// A second gc within the hour is refused, whatever started the
 	// compaction, with the repository limit and a Retry-After.
-	now = now.Add(30 * time.Minute)
+	now.Add(30 * time.Minute)
 	status, out, header := home.doHeader("POST", "/v1/repos/"+repoA+"/gc", "")
 	if status != 429 || code(out) != contract.CodeRateLimited || details(out)["limit"] != limits.LimitRepository {
 		t.Fatalf("second gc: %d %v", status, out)
@@ -106,7 +106,7 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 		t.Fatalf("retry after %q %v", header.Get("Retry-After"), details(out))
 	}
 	// An hour after the compaction it runs again.
-	now = now.Add(31 * time.Minute)
+	now.Add(31 * time.Minute)
 	if status, out := home.do("POST", "/v1/repos/"+repoA+"/gc", ""); status != 200 {
 		t.Fatalf("gc after the hour: %d %v", status, out)
 	}

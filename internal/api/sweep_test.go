@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -28,8 +27,8 @@ import (
 // counted.
 func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, 9, 6, 3, 0, 0, 0, time.UTC) // a Sunday
-	clock := func() time.Time { return now }
+	now := newTestClock(time.Date(2026, 9, 6, 3, 0, 0, 0, time.UTC)) // a Sunday
+	clock := now.Now
 	store := wal.NewMemStore()
 	store.SetClock(clock)
 	live := &liveNodes{names: []string{"origod-0", "origod-1", "origod-2"}}
@@ -71,7 +70,7 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	// A day on, every object no index, marker, or metadata names is an
 	// orphan, the one outside every prefix the deck defines is reported
 	// by key and counted as unknown, and none is deleted yet.
-	now = now.Add(OrphanAge)
+	now.Add(OrphanAge)
 	rep, err = first.sweeper().Sweep(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +92,7 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	}
 
 	// Past the hold they go.
-	now = now.Add(OrphanHold)
+	now.Add(OrphanHold)
 	rep, err = first.sweeper().Sweep(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -166,8 +165,8 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 // because an outage is not a reason to call them orphans.
 func TestSweepLeavesARepositoryItCannotRead(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, 9, 6, 3, 0, 0, 0, time.UTC)
-	clock := func() time.Time { return now }
+	now := newTestClock(time.Date(2026, 9, 6, 3, 0, 0, 0, time.UTC))
+	clock := now.Now
 	store := wal.NewMemStore()
 	store.SetClock(clock)
 	h := newHarness(t, withStore(store), withNow(clock), withNode("origod-0"))
@@ -176,7 +175,7 @@ func TestSweepLeavesARepositoryItCannotRead(t *testing.T) {
 	if _, err := store.Put(ctx, prefix+wal.EntryKey(9, "deadbeefdeadbeef"), wal.BytesBody([]byte("orphan"))); err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(OrphanAge)
+	now.Add(OrphanAge)
 	store.SetFault(func(op, key string) error {
 		if op == "Get" && strings.Contains(key, "/index/") {
 			return errors.New("index unreadable")
@@ -211,18 +210,8 @@ func (l *liveNodes) remove(name string) {
 func TestSweepLoopRunsInItsHour(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	now := time.Date(2026, 9, 6, 1, 0, 0, 0, time.UTC) // a Sunday, before the hour
-	var mu sync.Mutex
-	clock := func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		return now
-	}
-	advance := func(d time.Duration) {
-		mu.Lock()
-		now = now.Add(d)
-		mu.Unlock()
-	}
+	now := newTestClock(time.Date(2026, 9, 6, 1, 0, 0, 0, time.UTC)) // a Sunday, before the hour
+	clock := now.Now
 	store := wal.NewMemStore()
 	store.SetClock(clock)
 	live := &liveNodes{names: []string{"origod-0", "origod-1"}}
@@ -239,7 +228,7 @@ func TestSweepLoopRunsInItsHour(t *testing.T) {
 	if got := first.sweeper().Report(); got.Node != "" {
 		t.Fatalf("a sweep ran outside its hour: %+v", got)
 	}
-	advance(2 * time.Hour)
+	now.Add(2 * time.Hour)
 	waitFor(t, "the sweep to run and both nodes to report it", func() bool {
 		return first.sweeper().Report().Node == "origod-0" && second.sweeper().Report().Node == "origod-0"
 	})

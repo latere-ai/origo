@@ -128,13 +128,13 @@ func TestAdministrationOperations(t *testing.T) {
 // endpoint of a purged repository answers 410 gone, its id is refused
 // by POST /v1/repos, and its name is free again.
 func TestPurgedRepositoryIsGone(t *testing.T) {
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	h := newHarness(t, withNow(func() time.Time { return now }))
+	now := newTestClock(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC))
+	h := newHarness(t, withNow(now.Now))
 	h.create(repoA, "acme", "app")
 	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
 		t.Fatal("delete")
 	}
-	now = now.Add(wal.DeleteHold)
+	now.Add(wal.DeleteHold)
 	if rep, err := h.log.Sweep(context.Background(), repoA, time.Hour); err != nil || !rep.Purged {
 		t.Fatalf("purge: %+v, %v", rep, err)
 	}
@@ -232,9 +232,9 @@ func waitEvent(t *testing.T, s *sink.Server, repo, kind string) map[string]any {
 // operation delivers one event of its kind with the fields the table
 // lists.
 func TestAdministrationEvents(t *testing.T) {
-	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	now := newTestClock(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC))
 	s := sink.New(t)
-	h := newHarness(t, withSink(s), withNow(func() time.Time { return now }))
+	h := newHarness(t, withSink(s), withNow(now.Now))
 	h.as(auth.Principal{Subject: "alice"})
 	h.create(repoA, "acme", "app")
 
@@ -265,7 +265,7 @@ func TestAdministrationEvents(t *testing.T) {
 	// A repeated DELETE of a deleted repository is one event, because
 	// the id is derived from the repository, the kind, and at, and a
 	// second DELETE does not move deleted_at.
-	now = now.Add(time.Minute)
+	now.Add(time.Minute)
 	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
 		t.Fatal("second delete")
 	}

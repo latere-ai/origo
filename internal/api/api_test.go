@@ -165,6 +165,32 @@ func withNow(now func() time.Time) harnessOption {
 	return func(c *harnessConfig) { c.now = now }
 }
 
+// testClock is a clock a test moves. The handler is not its only
+// reader: the event dispatcher, a compaction, and the sweep loop each
+// read it from a goroutine of their own, so a bare variable the test
+// assigns to is a data race the race detector reports. Every read and
+// every move goes through the mutex.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newTestClock(at time.Time) *testClock { return &testClock{now: at} }
+
+// Now is the value withNow takes.
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+// Add moves the clock forward.
+func (c *testClock) Add(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	t.Helper()
 	var cfg harnessConfig
