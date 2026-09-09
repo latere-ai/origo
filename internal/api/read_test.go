@@ -148,23 +148,28 @@ func fakeGit() int {
 	if fail, err := os.ReadFile(filepath.Join(dir, "fail")); err == nil && slices.Contains(args, strings.TrimSpace(string(fail))) {
 		return 7
 	}
-	// A subprocess that writes half of what it would and then hangs, so
-	// the response headers are already sent when the deadline cuts it
-	// (spec 019's export).
+	// A subprocess that writes the first bytes of a file the test wrote
+	// before the request and then hangs, so the response headers are
+	// already sent when the deadline cuts it (spec 019's export). The
+	// bytes come from that file and never from a git of its own: the
+	// deadline bounds this subprocess, and a nested git making the
+	// whole bundle inside that budget would race it.
 	if cut, err := os.ReadFile(filepath.Join(dir, "truncate")); err == nil && slices.Contains(args, strings.TrimSpace(string(cut))) {
-		real, err := exec.LookPath("git")
+		source, err := os.ReadFile(filepath.Join(dir, "truncate-source"))
 		if err != nil {
 			return 3
 		}
-		out, err := exec.CommandContext(context.Background(), real, args...).Output()
+		out, err := os.ReadFile(strings.TrimSpace(string(source)))
 		if err != nil {
 			return 3
 		}
-		n := len(out) / 2
-		if raw, err := os.ReadFile(filepath.Join(dir, "truncate-bytes")); err == nil {
-			if v, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && v < n {
-				n = v
-			}
+		raw, err := os.ReadFile(filepath.Join(dir, "truncate-bytes"))
+		if err != nil {
+			return 3
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if err != nil || n < 0 || n > len(out) {
+			return 3
 		}
 		_, _ = os.Stdout.Write(out[:n])
 		time.Sleep(time.Hour)
@@ -230,25 +235,27 @@ func (s *spyGit) failOn(subcommand string) {
 	}
 }
 
-// truncateOn makes the next invocation of the subcommand write half of
-// its output and then hang, so the deadline cuts a body already begun.
-func (s *spyGit) truncateOn(subcommand string, bytes int) {
+// truncateOn makes the next invocation of the subcommand write the
+// first n bytes of source and then hang, so the deadline cuts a body
+// already begun. The caller writes source before the request, which
+// keeps the making of those bytes out of the deadline's budget.
+func (s *spyGit) truncateOn(subcommand, source string, n int) {
 	if err := os.WriteFile(filepath.Join(s.dir, "truncate"), []byte(subcommand), 0o644); err != nil {
 		s.t.Fatal(err)
 	}
-	if bytes > 0 {
-		if err := os.WriteFile(filepath.Join(s.dir, "truncate-bytes"), fmt.Appendf(nil, "%d", bytes), 0o644); err != nil {
-			s.t.Fatal(err)
-		}
-		return
+	if err := os.WriteFile(filepath.Join(s.dir, "truncate-source"), []byte(source), 0o644); err != nil {
+		s.t.Fatal(err)
 	}
-	_ = os.Remove(filepath.Join(s.dir, "truncate-bytes"))
+	if err := os.WriteFile(filepath.Join(s.dir, "truncate-bytes"), fmt.Appendf(nil, "%d", n), 0o644); err != nil {
+		s.t.Fatal(err)
+	}
 }
 
 func (s *spyGit) release() {
 	_ = os.Remove(filepath.Join(s.dir, "hold"))
 	_ = os.Remove(filepath.Join(s.dir, "fail"))
 	_ = os.Remove(filepath.Join(s.dir, "truncate"))
+	_ = os.Remove(filepath.Join(s.dir, "truncate-source"))
 	_ = os.Remove(filepath.Join(s.dir, "truncate-bytes"))
 }
 

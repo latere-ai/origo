@@ -75,13 +75,28 @@ func TestExportServesTheWholeRepository(t *testing.T) {
 func TestExportDeadline(t *testing.T) {
 	f := loadFixture(t)
 	spy := newSpyGit(t)
-	h := newHarness(t, withGit(spy.bin()), withExportTimeout(2*time.Second))
+	// The budget bounds the subprocess the export starts, so it covers
+	// that subprocess's own start, which -race on a loaded runner slows
+	// down. The criterion is what a cut body looks like; the figure only
+	// bounds how long this test waits for the cut.
+	h := newHarness(t, withGit(spy.bin()), withExportTimeout(5*time.Second))
 	h.seed(f)
 	defer spy.release()
 
+	// The bundle the cut subprocess writes from is made once, before any
+	// request: making it inside the export's budget would race it.
+	full := filepath.Join(t.TempDir(), "full.bundle")
+	if out, err := gitRun(t, f.Dir, "bundle", "create", full, "--all"); err != nil {
+		t.Fatalf("bundle create: %v\n%s", err, out)
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cut := func(bytes int) string {
 		t.Helper()
-		spy.truncateOn("bundle", bytes)
+		spy.truncateOn("bundle", full, bytes)
 		res := h.get("/v1/repos/" + repoA + "/export.bundle")
 		if res.status != 200 || res.header.Get("Content-Type") != exportContentType {
 			t.Fatalf("cut export: %d %q", res.status, res.header.Get("Content-Type"))
@@ -103,7 +118,7 @@ func TestExportDeadline(t *testing.T) {
 		t.Fatalf("git bundle verify accepted a bundle cut in its header:\n%s", out)
 	}
 	// A cut inside the pack: the clone that reads the pack refuses it.
-	path = cut(0)
+	path = cut(int(info.Size()) / 2)
 	if out, err := gitRun(t, filepath.Dir(path), "clone", "-q", path, filepath.Join(filepath.Dir(path), "clone")); err == nil {
 		t.Fatalf("a clone from a bundle cut in its pack succeeded:\n%s", out)
 	}
