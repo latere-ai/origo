@@ -73,6 +73,70 @@ the pressure. `origo_cache_bytes`, `origo_cache_repos`, and
 same volume is warm, one that moves starts cold and warms as requests
 arrive.
 
+## Administering a repository
+
+Beyond clone, fetch, and push, `/v1/repos/{id}` carries the operations a
+repository needs over years. Each asks your authorizer for `admin`
+unless the list says otherwise, and each sends an event to
+`ORIGO_EVENTS_URL`.
+
+| Operation | What it does |
+|---|---|
+| `PATCH /v1/repos/{id}` | changes the owner or the slug. The clone URL changes at once and the old one answers 404, never a redirect, so a stale URL cannot keep working past a change of owner. The id never changes, so tokens, events, and `/r/<id>.git` clones keep working |
+| `POST /v1/repos/{id}/transfer` | the same move recorded as `transferred`, so a consumer acts on a change of owner without inspecting a rename |
+| `POST /v1/repos/{id}/freeze` | stops the repository accepting pushes. A push is refused at `info/refs`, before the client uploads anything, and git prints `remote error: repo_frozen: ...`; clones and fetches go on. A second freeze is 409 |
+| `POST /v1/repos/{id}/unfreeze` | lets pushes through again. 200 whether or not it was frozen |
+| `POST /v1/repos/{id}/import` | brings an existing repository in from an `https` source with its history. 202 at once; the run has 30 minutes and the repository's quota. Poll `GET /v1/repos/{id}/import` for `running`, `done`, or `failed` |
+| `GET /v1/repos/{id}/export.bundle` | the whole repository as one `git bundle`, action `read`. Verify what you receive with `git bundle verify` and `git clone`: a bundle cut by the 10 minute budget is a truncated file, not an error status |
+| `GET /v1/repos/{id}/stats` | `size_bytes`, `lfs_bytes`, `packs`, `entries_since_compaction`, `refs`, `pushed_at`, `compacted_at`, action `read` |
+| `POST /v1/repos/{id}/gc` | compacts now. On the repository's primary it waits up to 10 seconds and answers the before and after figures, or 202 `running`; on any other node it answers 202 `scheduled` naming the primary, which compacts within ten minutes. A repository compacted within the last hour, by a `gc` or by a threshold, is 429 `rate_limited` with `details.limit: "repository"` |
+
+An import needs the source host on `ORIGO_EGRESS_ALLOW`; a host that is
+not on it is 400 `invalid_request` with `details.reason: "egress"` and
+no connection is opened. The source bearer travels in the request body
+and then in the subprocess environment, so it is in no process listing
+and no log line. A repository that already has history is 409
+`repo_not_empty`: import into an empty repository, or create a new one
+and transfer the name.
+
+A node that dies mid-import leaves the repository importing. Another
+node frees it 45 minutes later with `import_error: "import node lost"`;
+a node that restarts under the same name frees its own at start-up with
+`"import node restarted"`. Either way the repository accepts a new
+import and nothing was committed.
+
+## Deleting and its hold
+
+`DELETE /v1/repos/{id}` answers 202 with `purge_after`, seven days on.
+Inside the hold `POST /v1/repos/{id}/undelete` brings it back whole.
+After it the objects are gone and every endpoint answers 410 `gone`:
+the id stays taken forever, so it can never name another repository,
+while the owner and slug are free to be used again.
+
+## Storage
+
+Storage per repository is bounded by compaction: after any compaction
+the log holds the packs plus at most 64 entries, and unreachable objects
+are dropped by the repack. Deleted repositories go after their hold, and
+an LFS object nobody verified goes 7 days after its upload.
+
+Once a week, on Sunday at 03:00 UTC, one node lists the whole bucket
+prefix and looks for objects nothing names. It is the node whose
+`ORIGO_NODE_NAME` sorts first among the live ones, so an installation of
+any size pays for the listing once a week and a node that leaves hands
+the sweep to the next name with no configuration. It reports:
+
+- `origo_orphan_objects`, objects older than a day that no index,
+  verification marker, or metadata names. A healthy installation reports
+  0. An object stays for seven days before it is deleted, and every one
+  the sweep found is named by its key in the node's `orphan sweep` log
+  line, so you can see what wrote it before it goes.
+- `origo_storage_bytes`, the bytes under the prefix.
+
+Every node reports the same two figures: the sweeping node writes its
+report to `origo/sweep/latest` and the others read it. To bound total
+storage yourself, sum `size_bytes` and `lfs_bytes` over `stats`.
+
 ## Limits
 
 Origo bounds what one client can take from a node. A caller sending
