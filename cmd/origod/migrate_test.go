@@ -21,6 +21,7 @@ import (
 
 	"latere.ai/x/pkg/s3/s3test"
 
+	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/test/stubs/source"
@@ -41,9 +42,7 @@ type migrateStack struct {
 	env    map[string]string
 }
 
-// newMigrateStack starts the node and the source. The loopback seam of
-// spec 016 is set here and nowhere else in the binary: the source
-// serves on 127.0.0.1, which no deployment's dialer admits.
+// newMigrateStack starts the node and the source.
 func newMigrateStack(t *testing.T) *migrateStack {
 	t.Helper()
 	stub := source.New(t, source.WithSANs(sourceHost))
@@ -60,8 +59,15 @@ func newMigrateStack(t *testing.T) *migrateStack {
 	env["ORIGO_EGRESS_ALLOW"] = sourceHost
 	env["ORIGO_EGRESS_CA_BUNDLE"] = ca
 
-	allowLoopbackEgress = true
-	t.Cleanup(func() { allowLoopbackEgress = false })
+	// The loopback seam of spec 016, written in a _test.go file and
+	// nowhere else: the source serves on 127.0.0.1, which no
+	// deployment's dialer admits.
+	previous := newHandler
+	newHandler = func(o api.Options) *api.Handler {
+		o.AllowLoopback = true
+		return api.New(o)
+	}
+	t.Cleanup(func() { newHandler = previous })
 	n, stop := startNode(t, env)
 	t.Cleanup(func() { _ = stop() })
 	public, _, _ := n.addrs()
