@@ -174,9 +174,12 @@ func TestClusterMigrationCatchesALateWrite(t *testing.T) {
 // mirrored.
 func TestClusterMigrationDocCommandsRun(t *testing.T) {
 	requireNodes(t)
+	// The stack answers, so the document is expected to run: a missing
+	// tool is a failure and not a skip, because a skip here would leave
+	// the criterion green and unproven.
 	for _, bin := range []string{"jq", "curl", "uuidgen"} {
 		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s is not on PATH", bin)
+			t.Fatalf("the document needs %s on PATH: %v", bin, err)
 		}
 	}
 	client := stubClient(t)

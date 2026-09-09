@@ -289,9 +289,18 @@ Beside those: `TestVerifyRefusals` and `TestParseLsRemote` in
 Coverage: `internal/api` 90.6%, `cmd/origod` 92.9%, `internal/events`
 94.8%, `internal/wal` unchanged.
 
-The stack proof is the dispatched run 34342546925 of `verify.yml` on
-main, which ran `TestClusterMigrationCatchesALateWrite` and
-`TestClusterMigrationDocCommandsRun` in the `e2e` job.
+Stack proof: the `e2e` job of the dispatched run 34349791440 of
+`verify.yml` on main, at commit `55129e5`, ran
+`go test -tags=e2e ./test/e2e/... -run TestCluster` against the stack
+and passed, which is where `TestClusterMigrationCatchesALateWrite` and
+`TestClusterMigrationDocCommandsRun` run. Two jobs of that run failed
+on work this spec does not touch: `test/conformance` on spec 021's
+`TestContract/020` and `TestContract/012/rate_limited`, and the cover
+gate on spec 008's `TestEmittedEventsRetryAndRepairLikePushes`, fixed
+on main afterwards. The job's step runs without `-v`, so a test that
+skipped would print the same `ok`; both of these skip only through
+`requireNodes`, the guard every cluster criterion of the deck shares,
+which the same job's other `TestCluster*` tests passing rules out.
 
 ### Divergences
 
