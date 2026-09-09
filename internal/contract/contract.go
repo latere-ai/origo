@@ -57,6 +57,11 @@ const (
 	CodeLFSObjectNotStored    = "lfs_object_not_stored"  // spec 010
 	CodeLFSLocksUnsupported   = "lfs_locks_unsupported"  // spec 010
 	CodeRepositoryUnavailable = "repository_unavailable" // spec 015
+	CodeGone                  = "gone"                   // spec 019
+	CodeRepoFrozen            = "repo_frozen"            // spec 019
+	CodeRepoImporting         = "repo_importing"         // spec 019
+	CodeRepoNotEmpty          = "repo_not_empty"         // spec 019
+	CodeImportNotFound        = "import_not_found"       // spec 019
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -80,6 +85,11 @@ var sentences = map[string]string{
 	CodeLFSObjectNotStored:    "This object is not stored.",
 	CodeLFSLocksUnsupported:   "Locking is not supported.",
 	CodeRepositoryUnavailable: "This repository cannot be served until an operator restores it. Other repositories are not affected.",
+	CodeGone:                  "This repository was deleted and its hold has passed. It cannot be restored.",
+	CodeRepoFrozen:            "This repository is frozen and does not accept pushes.",
+	CodeRepoImporting:         "This repository is importing and does not accept pushes until the import finishes.",
+	CodeRepoNotEmpty:          "This repository already has history; import into an empty repository.",
+	CodeImportNotFound:        "No import has been started for this repository.",
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence
