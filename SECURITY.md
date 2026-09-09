@@ -8,9 +8,6 @@ on request.
 Fixes go to the two most recent minor release series. Until the first
 release, `main` is the only supported line.
 
-Fixes go to the two most recent minor release series. Until the first
-release, `main` is the only supported line.
-
 What Origo protects, against whom, and how each threat is answered is
 written down in the
 [threat model](specs/016-security-and-threat-model.md), so a reviewer
