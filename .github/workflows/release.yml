@@ -28,3 +28,25 @@ jobs:
       has_frontend: false
       main_package: ./cmd/origod
     secrets: inherit
+
+  # The live run of spec 021: TestContract against the installation
+  # ORIGO_LIVE_URL names with ORIGO_LIVE_TOKEN, two repository secrets,
+  # and exactly the six groups of its skip list skipped. The test skips
+  # when the URL is unset, so a fork runs no live run. Spec 017 places
+  # it between its deploy and publish steps when it restructures the
+  # pipeline.
+  live:
+    name: conformance against the live installation
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run the conformance suite against ORIGO_LIVE_URL
+        env:
+          ORIGO_LIVE_URL: ${{ secrets.ORIGO_LIVE_URL }}
+          ORIGO_LIVE_TOKEN: ${{ secrets.ORIGO_LIVE_TOKEN }}
+        run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract' -v

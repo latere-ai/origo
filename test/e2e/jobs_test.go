@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/latere-ai/origo/internal/config"
 )
 
 // repoRoot is the checkout, resolved from this file with runtime.Caller
@@ -81,25 +84,35 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 			t.Errorf("job %s: budget is not %s minutes", name, minutes)
 		}
 	}
-	// Each test job's go test line carries its prefix and nothing else.
-	selections := map[string]string{
-		"integration": "make test-tiers",
-		"e2e":         "-run 'TestCluster' -skip 'TestClusterUpScript'",
-		"e2e-slow":    "-run 'TestSlow'",
-		"up-script":   "-run 'TestClusterUpScript'",
-		"mutation":    "-run 'TestMutation'",
+	// Each test job's go test lines carry its selections and nothing
+	// else: one prefix per job, and for the e2e job the conformance
+	// suite of spec 021 beside its prefix, in a line of its own that
+	// selects the package's two stack tests by name.
+	selections := map[string][]string{
+		"integration": {"make test-tiers"},
+		"e2e":         {"-run 'TestCluster' -skip 'TestClusterUpScript'", "./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack'"},
+		"e2e-slow":    {"-run 'TestSlow'"},
+		"up-script":   {"-run 'TestClusterUpScript'"},
+		"mutation":    {"-run 'TestMutation'"},
 	}
 	goTest := regexp.MustCompile(`go test [^\n]*-tags=e2e[^\n]*`)
-	for name, want := range selections {
+	for name, wants := range selections {
 		j := all[name]
-		if !strings.Contains(j.text, want) {
-			t.Errorf("job %s does not run %q", name, want)
+		for _, want := range wants {
+			if !strings.Contains(j.text, want) {
+				t.Errorf("job %s does not run %q", name, want)
+			}
 		}
 		for _, line := range goTest.FindAllString(j.text, -1) {
-			if !strings.Contains(line, want) {
+			if !slices.ContainsFunc(wants, func(want string) bool { return strings.Contains(line, want) }) {
 				t.Errorf("job %s runs the e2e tier without its selection: %s", name, line)
 			}
 		}
+	}
+	// The mutation job runs once per capability of the set, and the
+	// set is the node's.
+	if !strings.Contains(all["mutation"].text, `MUTATION_CAPABILITIES: "`+strings.Join(config.DropCapabilities, " ")+`"`) {
+		t.Errorf("mutation does not loop over %v", config.DropCapabilities)
 	}
 	// The e2e tier is run by those five jobs, the Makefile's tier target
 	// included, and no other.
