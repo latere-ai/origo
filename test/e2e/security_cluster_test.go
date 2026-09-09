@@ -96,7 +96,11 @@ func TestClusterPodSecurityContext(t *testing.T) {
 	if !slices.Equal(writable, []string{"/tmp", "/var/lib/origo"}) {
 		t.Fatalf("writable mounts %v", writable)
 	}
-	if c.Resources.Requests["memory"] != "256Mi" || c.Resources.Limits["memory"] != "2Gi" || c.Resources.Requests["cpu"] == "" {
+	// The CPU request is the overlay's 50m on the kind stack and the
+	// base's 250m on a stack the overlay does not patch; no other
+	// figure is one spec 016 states.
+	if c.Resources.Requests["memory"] != "256Mi" || c.Resources.Limits["memory"] != "2Gi" ||
+		!slices.Contains([]string{"50m", "250m"}, c.Resources.Requests["cpu"]) {
 		t.Fatalf("resources %+v", c.Resources)
 	}
 
