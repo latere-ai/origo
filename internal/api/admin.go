@@ -39,6 +39,8 @@ func (h *Handler) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/repos/{id}/stats", h.stats)
 	mux.HandleFunc("POST /v1/repos/{id}/gc", h.gc)
 	mux.HandleFunc("GET /v1/repos/{id}/export.bundle", h.export)
+	mux.HandleFunc("POST /v1/repos/{id}/import", h.startImport)
+	mux.HandleFunc("GET /v1/repos/{id}/import", h.importState)
 }
 
 // pusher is the identity of the caller, the field every event kind

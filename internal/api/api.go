@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"latere.ai/x/pkg/httpjson"
@@ -61,6 +62,15 @@ type Options struct {
 	// every deployment, set only by a unit test of import or verify that
 	// serves its source in-process.
 	AllowLoopback bool
+	// Node is ORIGO_NODE_NAME: the name an import lease carries (spec
+	// 019).
+	Node string
+	// Members is the live set of spec 005 the import lease and the
+	// weekly sweep read; nil is this node alone.
+	Members Members
+	// ImportTimeout bounds one whole import (spec 019);
+	// DefaultImportTimeout when zero.
+	ImportTimeout time.Duration
 	// ExportTimeout bounds the git bundle subprocess of an export (spec
 	// 019); DefaultExportTimeout when zero. A test lowers it.
 	ExportTimeout time.Duration
@@ -87,8 +97,14 @@ type Handler struct {
 	now       func() time.Time
 
 	compaction Compactor
+	node       string
+	members    Members
 
 	exportTimeout time.Duration
+	importTimeout time.Duration
+	// imports holds the runs started by this node, so a shutdown waits
+	// for them and a test does not race a background write of meta.
+	imports sync.WaitGroup
 
 	readTimeout time.Duration
 }
@@ -125,12 +141,21 @@ func New(o Options) *Handler {
 	if exportTimeout == 0 {
 		exportTimeout = DefaultExportTimeout
 	}
+	importTimeout := o.ImportTimeout
+	if importTimeout == 0 {
+		importTimeout = DefaultImportTimeout
+	}
 	return &Handler{
 		cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer,
 		placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress, now: now,
-		compaction: o.Compaction, exportTimeout: exportTimeout,
+		compaction: o.Compaction, node: o.Node, members: o.Members,
+		exportTimeout: exportTimeout, importTimeout: importTimeout,
 	}
 }
+
+// Wait blocks until every import this node started has finished. The
+// node calls it on shutdown and a test after a 202.
+func (h *Handler) Wait() { h.imports.Wait() }
 
 // Egress is the dialer the handler fetches sources through, for the
 // operations of specs 019 and 014 and their tests.
@@ -255,22 +280,31 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 // 005) on the response whatever the status: the id is the path's, so
 // the header is set before the guard with k = 1 and again with the
 // allow's replicas.
-func (h *Handler) admit(w http.ResponseWriter, r *http.Request, id string, action auth.Action) bool {
+func (h *Handler) admit(w http.ResponseWriter, r *http.Request, id string, action auth.Action) (auth.Decision, bool) {
 	placement.SetHeader(w.Header(), h.placement, id, auth.DefaultReplicas)
 	d, ok := h.guard.Admit(w, r, auth.RepoRef{ID: id}, action)
 	if ok {
 		placement.SetHeader(w.Header(), h.placement, id, d.Replicas)
 	}
-	return ok
+	return d, ok
 }
 
 // load authorizes the action on the id the path names and only then
 // reads the metadata and the newest index of the repository (spec 007,
 // authorization before lookup).
 func (h *Handler) load(w http.ResponseWriter, r *http.Request, action auth.Action, allowDeleted bool) (*wal.Meta, *wal.Index, bool) {
+	m, ix, _, ok := h.loadDecision(w, r, action, allowDeleted)
+	return m, ix, ok
+}
+
+// loadDecision is load with the authorizer's decision behind the allow,
+// for a handler that reads a field of it: the import reads quota_bytes
+// (spec 012).
+func (h *Handler) loadDecision(w http.ResponseWriter, r *http.Request, action auth.Action, allowDeleted bool) (*wal.Meta, *wal.Index, auth.Decision, bool) {
 	id := r.PathValue("id")
-	if !h.admit(w, r, id, action) {
-		return nil, nil, false
+	d, ok := h.admit(w, r, id, action)
+	if !ok {
+		return nil, nil, auth.Decision{}, false
 	}
 	m, err := h.log.ReadMeta(r.Context(), id)
 	if err != nil {
@@ -279,14 +313,14 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request, action auth.Actio
 		} else {
 			h.storageError(w, r, err)
 		}
-		return nil, nil, false
+		return nil, nil, auth.Decision{}, false
 	}
 	// The purge left this meta as a tombstone (spec 019): every object
 	// under the prefix is gone, so the answer is 410 rather than the
 	// 404 the missing index would otherwise produce.
 	if m.PurgedAt != nil {
 		gone(w, m)
-		return nil, nil, false
+		return nil, nil, auth.Decision{}, false
 	}
 	ix, _, err := h.log.Newest(r.Context(), id, 0, false)
 	if err != nil {
@@ -295,13 +329,13 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request, action auth.Actio
 		} else {
 			h.storageError(w, r, err)
 		}
-		return nil, nil, false
+		return nil, nil, auth.Decision{}, false
 	}
 	if ix.DeletedAt != nil && !allowDeleted {
 		notFound(w, id)
-		return nil, nil, false
+		return nil, nil, auth.Decision{}, false
 	}
-	return m, ix, true
+	return m, ix, d, true
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {

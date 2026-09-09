@@ -75,6 +75,8 @@ type harnessConfig struct {
 	compactor     Compactor
 	compactNode   string
 	exportTimeout time.Duration
+	node          string
+	members       Members
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -119,6 +121,17 @@ func withLimits(o limits.Options) harnessOption {
 
 func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
+}
+
+// withNode names the node the import lease and the weekly sweep run as,
+// with the live set it reads.
+func withNode(node string, members ...Members) harnessOption {
+	return func(c *harnessConfig) {
+		c.node = node
+		if len(members) > 0 {
+			c.members = members[0]
+		}
+	}
 }
 
 // withExportTimeout lowers the budget of one export, so a held git
@@ -208,7 +221,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		compactor = m
 	}
 	mux := http.NewServeMux()
-	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
+	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Node: cfg.node, Members: cfg.members, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the

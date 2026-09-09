@@ -164,7 +164,7 @@ func pathValue(r *http.Request) (string, error) {
 // that had already begun.
 func (h *Handler) open(w http.ResponseWriter, r *http.Request, op string, validate func() error) (*readRequest, func(), bool) {
 	id := r.PathValue("id")
-	if !h.admit(w, r, id, auth.ActionRead) {
+	if _, ok := h.admit(w, r, id, auth.ActionRead); !ok {
 		return nil, nil, false
 	}
 	if err := validate(); err != nil {
