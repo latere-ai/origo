@@ -107,6 +107,7 @@ type node struct {
 	// specs 019 and 014 fetch through, built from the three egress
 	// variables and never with the loopback seam.
 	egress *api.Egress
+	api    *api.Handler
 
 	public     http.Handler
 	checks     []readyCheck
@@ -254,7 +255,17 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	app := http.NewServeMux()
 	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact, Limits: n.limits}).Register(app)
 	n.egress = api.NewEgress(api.EgressOptions{Allow: cfg.EgressAllow, Pinned: cfg.EgressPinned, ClusterCIDRs: cfg.ClusterCIDRs, Roots: cfg.EgressCA})
-	api.New(api.Options{Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events, Placement: n.set, Limits: n.limits, Egress: n.egress}).Register(app)
+	// The administration operations of spec 019 need the node's own
+	// name for an import lease, the live set the lease and the weekly
+	// sweep read, and the compaction manager the gc endpoint drives.
+	n.api = api.New(api.Options{
+		Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events,
+		Placement: n.set, Limits: n.limits, Egress: n.egress,
+		Compaction: n.compact, Node: cfg.NodeName, Members: n.set,
+	})
+	n.api.Register(app)
+	n.api.BindSweepGauges(n.metrics)
+	n.background = append(n.background, n.api.RunSweep, n.clearImportLeases)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through
 	// the node.
@@ -313,6 +324,22 @@ func (n *node) failpoint(name string) error {
 		return fmt.Errorf("failpoint %s", name)
 	}
 	return nil
+}
+
+// clearImportLeases frees the repositories this node was importing when
+// it stopped (spec 019), so a restart under the same name does not hold
+// them for the whole lease. It runs once at start and then waits, which
+// is what makes it a background loop rather than a step of New: an
+// unreachable bucket at start-up must not keep the node from serving.
+func (n *node) clearImportLeases(ctx context.Context) error {
+	if err := n.api.ClearImportLeases(ctx); err != nil && ctx.Err() == nil {
+		n.logger.WarnContext(ctx, "import leases not cleared", "error", err)
+	}
+	<-ctx.Done()
+	// Every import this node started is finished before it stops, so a
+	// lease it holds is either done or cleared at the next start.
+	n.api.Wait()
+	return ctx.Err()
 }
 
 // sweep runs the sweeper on every repository at the configured interval
