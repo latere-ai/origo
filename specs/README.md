@@ -71,7 +71,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | validated |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete |
-| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | complete |
+| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | validated |
@@ -200,7 +200,7 @@ flowchart LR
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
-| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 complete: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008 |
+| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 019 and 014 assert that `import` and `verify` run through the dialer and 017 attaches the bill of materials |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | |
@@ -277,6 +277,12 @@ deck and stated here so a reader sees them without the owning spec.
 | `quota_bytes` for a repository-bound token is `auth.DefaultQuotaBytes` until 012 asks the authorizer for the minter's figure; 007's claim set carries no quota | 010, 012 | 007 |
 | truncation removes folded entries and superseded packs and never an index object, so `HEAD index/<n+1>` stays the currency check and its 404 stays proof of currency: a warm node holding index n below a truncation point would read the 404 left by a deleted `index/<n+1>` as current. One small object per push is the cheaper side of the trade; 006 removes the index rule `internal/wal/sweep.go` carries today | 006 | 004, 005, 015, 019 |
 | a thin pack whose base object is in no entry the log holds is served `storage_unavailable`, not `repository_unavailable`: a missing base is a storage-side inconsistency, not a state of the repository; `TestThinPackWithoutBaseIsStorageUnavailable` in `internal/repo` holds it | 015 | 003, 005, 021 |
+| the route sweep `TestEveryRouteRequiresAToken` in `cmd/origod` is a maintained list of the public listener's routes, not a walk of the mux, because `http.ServeMux` exposes no patterns; every route a later spec adds needs a line in the list | 016 | 007, 010, 014, 019, 020 |
+| the proxy URL git is given is `http://<credential>:egress@127.0.0.1:<port>`, the password fixed because git prompts for one when the URL carries a user alone; `Proxy.GitConfig` with an empty token sets `GIT_CONFIG_COUNT=1` and the proxy key alone, never an empty bearer; a hop the proxy refuses is 403 to git and `Proxy.Refusal` to the operation, which answers the 400 | 016 | 014, 019 |
+| `ORIGO_EGRESS_ALLOW` entries pass `hostmatch.ValidPattern`, an FQDN, an IP literal, or a `*.` wildcard, so a single-label name such as `localhost` cannot be listed; a test names its source under `.localhost` (RFC 6761) | 016 | 002, 013, 014, 019 |
+| the pinned dialer resolves inside `DialContext`, once per connection, dials the first admitted address by IP, and skips a refused address among admitted ones | 016 | 014, 019 |
+| a label `a..b` is admitted: spec 003's grammar admits it and a label is never a path component a subprocess sees; `.` and `..` whole are refused, and `FuzzValidLabel` holds `ValidLabel` to git's path rules under `core.protectNTFS` and `core.protectHFS` | 003, 016 | 004, 019 |
+| `TestClusterPodSecurityContext` asserts the CPU request at the base's 250m or the kind overlay's 50m, the memory request and limit at the base's figures | 016 | 005, 013 |
 | `internal/tracing` is the one package that imports `go.opentelemetry.io/otel` and `otel/trace`; every other package takes its span helpers from there and `cmd/origod` reaches the SDK through `latere.ai/x/pkg/otel`. The SDK is the one direct dependency beside the standard library and `latere.ai/x/pkg`, which amends spec 001's seventh invariant, and `depcheck` holds the node's whole build list | 011 | 001, 002 |
 
 ## Applied fix lists
@@ -446,6 +452,26 @@ authorizer response gains the optional `requests_per_minute` and 020
 the builder item that reads it. 021's Current state no longer says
 `over_quota` and `rate_limited` have no call site. One decision row is
 new.
+
+The seventeenth round, on 016 at `testing`: 016's Design states as
+the rule what its Outcome recorded as a divergence, so a reader finds
+one answer: the route sweep is a maintained list and every new route
+needs a line, `ORIGO_EGRESS_ALLOW` entries pass `hostmatch.ValidPattern`
+and the tests name a source under `.localhost`, the dialer resolves
+inside `DialContext` and dials the first admitted address, a refused
+hop is 403 to git and the operation's 400, the CPU request is 250m in
+the base and 50m in the overlay, and an owner or slug is refused when
+it is `.` or `..` whole while `a..b` stays a label. Its stack proof
+cites the dispatched run 34296753008, the SSRF row names 016 beside
+019 and 014, and the Disclosure section and `SECURITY.md` state which
+releases receive a fix, the rule 017 fills. 004's Outcome records the
+two `ValidRefName` defects 016's fuzz found with their seeds. 016 goes
+back from `complete` to `testing` by the lifecycle rule above: the bill
+of materials is 017's criterion and the dialer under `import` and
+`verify` is 019's and 014's, the way 003 and 004 wait. One fix is left
+to 019's builder, who owns `test/e2e` this round:
+`TestClusterPodSecurityContext` asserts only that a CPU request is
+set, where the criterion reads 250m or 50m. Six decision rows are new.
 
 ## Later
 
