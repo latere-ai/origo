@@ -90,6 +90,14 @@ func WithGit(bin string) Option {
 	return func(s *Server) { s.git = bin }
 }
 
+// WithSANs adds names to the serving certificate beside SANs. Spec
+// 014's batch test reaches the stub under a name of the .localhost
+// domain, which is what ORIGO_EGRESS_ALLOW admits for a loopback source
+// (spec 016 refuses a single-label name such as localhost).
+func WithSANs(names ...string) Option {
+	return func(s *Server) { s.sans = append(s.sans, names...) }
+}
+
 // Server is one stub source.
 type Server struct {
 	mu       sync.Mutex
@@ -98,6 +106,7 @@ type Server struct {
 	git      string
 	caPEM    []byte
 	caKeyPEM []byte
+	sans     []string
 	tlsCfg   *tls.Config
 	requests []Request
 	late     int
@@ -125,7 +134,7 @@ func New(t testing.TB, opts ...Option) *Server {
 // root, for a binary that serves Handler under TLSConfig itself. The
 // fixture is unpacked into root at once, under ctx.
 func NewHandler(ctx context.Context, root string, opts ...Option) (*Server, error) {
-	s := &Server{root: root, token: DefaultToken, git: "git", mux: http.NewServeMux()}
+	s := &Server{root: root, token: DefaultToken, git: "git", sans: slices.Clone(SANs), mux: http.NewServeMux()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -417,7 +426,7 @@ func (s *Server) setupTLS() error {
 			SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "origo-stubs CA"},
 			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(10 * 365 * 24 * time.Hour),
 			IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
-			DNSNames: SANs,
+			DNSNames: s.sans,
 		}
 		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 		if err != nil {
@@ -441,10 +450,10 @@ func (s *Server) setupTLS() error {
 		return err
 	}
 	leaf := &x509.Certificate{
-		SerialNumber: serial, Subject: pkix.Name{CommonName: SANs[0]},
+		SerialNumber: serial, Subject: pkix.Name{CommonName: s.sans[0]},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames: SANs, IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		DNSNames: s.sans, IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, leaf, caCert, &leafKey.PublicKey, caKey)
 	if err != nil {

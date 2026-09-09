@@ -105,7 +105,7 @@ type node struct {
 	events   *events.Dispatcher
 	// egress is the pinned dialer of spec 016 the import and verify of
 	// specs 019 and 014 fetch through, built from the three egress
-	// variables and never with the loopback seam.
+	// variables and never with the loopback seam in a deployment.
 	egress *api.Egress
 	api    *api.Handler
 
@@ -143,6 +143,13 @@ type node struct {
 
 // newNode assembles the node from the configuration. Every dependency the
 // listeners serve is built here, so the start-up order reads in one place.
+// allowLoopbackEgress is spec 016's AllowLoopback seam as this binary
+// holds it: no configuration variable, no exported setter, and false in
+// every deployment. The in-process test of the migrate subcommand of
+// spec 014 assigns it, because that test serves its source on the
+// loopback interface, and nothing else in the tree writes it.
+var allowLoopbackEgress bool
+
 func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	n := &node{
 		cfg:        cfg,
@@ -260,7 +267,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// sweep read, and the compaction manager the gc endpoint drives.
 	n.api = api.New(api.Options{
 		Cache: n.cache, Logger: logger, Guard: guard, Signer: n.signer, Events: n.events,
-		Placement: n.set, Limits: n.limits, Egress: n.egress,
+		Placement: n.set, Limits: n.limits, Egress: n.egress, AllowLoopback: allowLoopbackEgress,
 		Compaction: n.compact, Node: cfg.NodeName, Members: n.set,
 	})
 	n.api.Register(app)
