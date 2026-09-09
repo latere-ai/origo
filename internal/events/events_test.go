@@ -84,6 +84,11 @@ func newHarness(t *testing.T, node string, opts ...func(*Options)) *harness {
 
 func newHarnessOn(t *testing.T, store *wal.MemStore, s *sink.Server, c *clock, node string, opts ...func(*Options)) *harness {
 	t.Helper()
+	// The store stamps LastModified on the same clock the dispatcher
+	// reads, so a sweep that ages an object by its LastModified sees the
+	// fake time and not the wall clock: with the wall clock the sweep's
+	// verdict depends on the day the test runs.
+	store.SetClock(c.Now)
 	logger := slog.New(slog.DiscardHandler)
 	l := wal.New(wal.Options{Store: store, Now: c.Now, Logger: logger})
 	reg := pkgmetrics.NewRegistry()

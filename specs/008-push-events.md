@@ -440,3 +440,14 @@ and the test takes it before it reads the histogram, once per push:
 the request it times is the one that observed `receive`, because git
 posts an empty probe to the same route first and that request ends
 before the hook runs.
+
+Defect found on 2026-09-09 by spec 021's gate run and fixed at the
+root: the test harness of `internal/events` gave the in-memory store
+the fake clock only late in one test, so `LastModified` of the objects
+was wall time while the sweep's `now` was the fake clock, whose base
+of 2026-09-08 12:00 UTC plus the 24-hour advance of
+`TestEmittedEventsRetryAndRepairLikePushes` landed on the day the
+suite ran; the sweep's lag check then read the objects as younger
+than a minute and delivered nothing. `newHarnessOn` stamps the store
+with the fake clock from the start, so the verdict no longer depends
+on the day.
