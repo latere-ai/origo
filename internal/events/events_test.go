@@ -1026,3 +1026,57 @@ func TestRunDeliversFlushesAndSweeps(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 }
+
+// TestVerifiedEventPayload is spec 014's event criterion: a verified
+// event carries the shared fields of every kind around the verify
+// response's own, equal, refs, objects, and checked_at, with refs and
+// objects the nested documents the response holds and not the report's
+// two counts.
+func TestVerifiedEventPayload(t *testing.T) {
+	h := newHarness(t, "n1")
+	h.create(repoA, "acme", "app")
+	ctx := context.Background()
+	at := h.clock.Now()
+	pusher := Pusher{Sub: "alice", Actor: "svc"}
+	extra := map[string]any{
+		"equal": false,
+		"refs": map[string]any{"source": 42, "origo": 41, "differing": []any{
+			map[string]any{"name": "refs/heads/main", "source": "aaa", "origo": ""},
+		}},
+		"objects":    map[string]any{"origo": 18211},
+		"checked_at": at,
+	}
+	if err := h.d.Emit(ctx, repoA, "verified", at, pusher, extra); err != nil {
+		t.Fatal(err)
+	}
+	h.d.deliverDue(ctx)
+	got := h.sink.Deliveries(repoA, "verified")
+	if len(got) != 1 || !got[0].Verified || got[0].Headers.Get(HeaderEvent) != "verified" {
+		t.Fatalf("deliveries %+v", got)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(got[0].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["kind"] != "verified" || body["repo"] != repoA || body["owner"] != "acme" || body["slug"] != "app" ||
+		body["id"] != EmitID(repoA, "verified", at) || body["at"] != at.Format(time.RFC3339) {
+		t.Fatalf("shared fields %v", body)
+	}
+	if body["equal"] != false || body["checked_at"] != at.Format(time.RFC3339) {
+		t.Fatalf("verified fields %v", body)
+	}
+	refs, _ := body["refs"].(map[string]any)
+	if refs == nil || refs["source"] != float64(42) || refs["origo"] != float64(41) {
+		t.Fatalf("refs %v", body["refs"])
+	}
+	differing, _ := refs["differing"].([]any)
+	if len(differing) != 1 {
+		t.Fatalf("differing %v", refs["differing"])
+	}
+	if d, _ := differing[0].(map[string]any); d == nil || d["name"] != "refs/heads/main" || d["source"] != "aaa" || d["origo"] != "" {
+		t.Fatalf("differing %v", differing[0])
+	}
+	if objects, _ := body["objects"].(map[string]any); objects == nil || objects["origo"] != float64(18211) {
+		t.Fatalf("objects %v", body["objects"])
+	}
+}
