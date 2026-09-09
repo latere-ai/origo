@@ -268,6 +268,32 @@ committed: the commit log already holds that.
   is 413. A single push is at most 2 GiB and its body is no longer
   spooled past that. A repository-bound token's push is now held to the
   quota of the subject that minted it rather than to the default.
+- Release and versioning (spec 017). A `v*` tag now builds every release
+  artifact in this repository instead of calling the shared pipeline:
+  `origod` for `linux` and `darwin` on `amd64` and `arm64` with
+  `checksums.txt`, `ghcr.io/latere-ai/origod` and
+  `ghcr.io/latere-ai/origo-stubs` as multi-architecture images, a
+  `deploy-<version>.tar.gz` of `deploy/base` and `deploy/examples` with
+  both images pinned, and a `fixture-<version>.tar.gz` the next release
+  reads back to prove it serves what this one wrote. The images and the
+  checksums are signed with the release workflow's own identity and no
+  key held by Latere, and each image carries an SPDX bill of materials
+  and build provenance; the pipeline verifies all of it from a clean
+  runner before the run ends. The conformance suite runs against the
+  published image in a kind stack between the build and the deploy, and
+  against the live installation after it. `docs/upgrades/` states what a
+  version number promises, how to upgrade and roll back, and how to
+  verify a release.
+- The runtime image is `debian:trixie-slim` pinned by digest, whose git
+  is 2.47, in place of bookworm-slim and its 2.39.
+- A node that meets a log object written by a newer release refuses that
+  one repository with 503 `repository_unavailable` naming the object and
+  a log line that names the upgrade document, instead of a parse error;
+  every other repository goes on serving.
+- `GET /version` has one source: the pipeline and `make build` both set
+  `internal/version`, and `main.version` is gone.
+- The release smoke no longer fails on every run: after `GET /readyz`
+  answered 200 it grepped standard input, which is closed in a pipeline.
 - `TestPushPhasesAreObserved` (spec 008) takes the push's request
   duration on a channel the server sends on after the handler returns,
   the edge it had none of: git exits on the report status the handler
