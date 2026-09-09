@@ -244,7 +244,8 @@ deck and stated here so a reader sees them without the owning spec.
 | `/readyz` stays ready while a storage breaker is open, once the bucket has answered that replica at least once since it started: the node serves warm repositories stale and refuses writes with a code, and a not-ready node would leave the Service's rotation and lose those reads. A replica the bucket never answered stays unready. 002 owns `/readyz` and its probe row names 015 as the reason | 015 | 002, 005, 018 |
 | `Retry-After` is on every refusal that names a wait, in whole seconds and at least 1: a 429 `rate_limited` from 012's limits and a 503 `storage_unavailable` a storage breaker refused, on the git routes and the JSON API alike, valued at the refusing breaker's remaining open interval; 003's header table defines it | 003 | 012, 015, 019, 020 |
 | the egress proxy of 016 is the one place that dials an `import` or `verify` source: it terminates the source's TLS, trusting the system roots plus `ORIGO_EGRESS_CA_BUNDLE`, unset in production and set by the kind overlay to the source stub's CA, while git talks plain HTTP to the proxy; `transfer.fsckObjects` is a `-c` argument, not a `GIT_CONFIG_*` key | 016 | 002, 013, 014, 019 |
-| the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify`; a host named in `ORIGO_EGRESS_ALLOW` as `host=address` may resolve to exactly that address inside `ORIGO_CLUSTER_CIDRS` and to no other, which is how the stack's nodes reach the in-cluster source stub at its fixed `clusterIP` | 016 | 013, 014, 019 |
+| the egress dialer's `AllowLoopback` is a constructor option with no variable, false in every deployment and set only by the in-process tests of `import` and `verify` | 016 | 013, 014, 019 |
+| a `host=address` entry of `ORIGO_EGRESS_ALLOW` fixes the address the dialer uses for that host: the host is admitted at that address and at no other, inside `ORIGO_CLUSTER_CIDRS` or outside it, which is how the stack's nodes reach the in-cluster source stub at its fixed `clusterIP`; a pin no listed range contains is a valid entry and no start-up refusal, while loopback, link-local, and unspecified stay refused ahead of it | 016 | 002, 013, 014, 019 |
 | the three LFS sentences are the codes `lfs_object_mismatch`, `lfs_object_not_stored`, and `lfs_locks_unsupported`, rendered through `contract.Sentence` in the LFS body shape; 021's code table holds them | 010 | 003, 021 |
 | the tag-time install run is the `install-release` job of `release.yml` after `publish`, with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`; the push-time `install` job of `verify.yml` uses the candidate build | 018 | 002, 017 |
 | an undelete emits `undeleted` and nothing else; the `push` entry it commits produces no `push` event | 019 | 004, 008 |
@@ -485,6 +486,19 @@ cluster range is the error set aside because the ranges are what a
 fetch must never reach and the pin is the exception to them. The
 paragraph `SECURITY.md` and 004's Outcome carried twice is carried
 once.
+
+The eighteenth round, on 019 at `testing`: the three items the
+seventeenth round left to 019's builder are done.
+`TestClusterPodSecurityContext` reads the CPU request at the base's
+250m or the overlay's 50m, `TestValidLabel` admits `a..b`, and the
+pinned-address question is decided the third way, neither candidate:
+a `host=address` entry fixes the address the dialer uses for that
+host, inside `ORIGO_CLUSTER_CIDRS` or outside it, and no pin is a
+start-up refusal, because the pin says where the host is rather than
+opening a hole in a range. The dialer applied a pin only inside the
+cluster ranges; `TestEgressPinAppliesOutsideClusterRanges` holds the
+rule, 016's Design and 002's variable row state it, and the decision
+row above is new.
 
 ## Later
 
