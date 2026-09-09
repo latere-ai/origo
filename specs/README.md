@@ -472,6 +472,19 @@ of materials is 017's criterion and the dialer under `import` and
 to 019's builder, who owns `test/e2e` this round:
 `TestClusterPodSecurityContext` asserts only that a CPU request is
 set, where the criterion reads 250m or 50m. Six decision rows are new.
+The round's second pass: the objects and injection rows of 016's
+threats table name 016 beside 004, 009, and 003, because 016's Outcome
+holds `TestBareRepositoryConfiguration`, `TestValidRefName`,
+`TestValidLabel`, and the two fuzz tests; 016's Current state names
+017's `release-verify` job as what holds the bill of materials and
+019 and 014 as the dialer's callers; 016's Outcome carries the
+coverage of its seven packages and a second item for 019's builder,
+`a..b` in `TestValidLabel`'s accepted list; and the pinned-address
+question stands as two candidate rules, the rule that a pin inside a
+cluster range is the error set aside because the ranges are what a
+fetch must never reach and the pin is the exception to them. The
+paragraph `SECURITY.md` and 004's Outcome carried twice is carried
+once.
 
 ## Later
 
