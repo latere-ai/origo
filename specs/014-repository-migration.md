@@ -152,17 +152,17 @@ The manifest is JSON lines, one object per repository:
 | `slug` | yes | the slug label |
 | `source` | yes | the https URL the import and the verification fetch |
 | `token_env` | yes | the environment variable holding the bearer for that source |
-| `default_branch` | no | the repository's default branch at registration; absent means the source's `HEAD` target at import, which the import's `HEAD` transaction writes |
+| `default_branch` | no | the repository's default branch at registration; absent means the source's `HEAD` target at import, which the import's `HEAD` transaction writes. Not yet accepted: the shape check refuses a field it does not know, so the builder item below is what admits it |
 
 The whole manifest is read and held to that shape before any call: a
 line whose `id` is not a UUID, whose owner or slug is not a label, whose
 `source` is not an https URL, whose `default_branch` is not a reference
 name, or whose `token_env` names an empty variable is a usage error,
 exit 2, with the line number on standard error and no request to Origo
-and no report file written. `id` is the
-repository's id on Origo and must be a UUID (spec 003). A
-prior host whose own ids are not UUIDs mints one per repository when
-it writes the manifest, records it on its own record, and may carry
+and no report file written. `id` is the repository's id on Origo and
+must be a UUID (spec 003). A prior host whose own ids are not UUIDs
+mints one per repository when it writes the manifest, records it on
+its own record, and may carry
 the old id in `prior_id`, which Origo never reads and the report
 copies back; the mapping between the two lives in the prior host and
 in the manifest, nowhere in Origo. Tokens come from the environment
@@ -175,10 +175,11 @@ report is JSON lines, one object per repository in finishing order:
 
 `state` is `mirrored`, `skipped`, or `failed`, `seconds` is the whole
 drive of one repository rounded to the millisecond, and `error`
-carries the failing step and Origo's error code for `failed`. The command resumes
-from Origo's state and nothing else: `GET /v1/repos/{id}` answering
-404 means `registered` is needed, `GET /v1/repos/{id}/import` says
-whether the import ran, and `verified_at` with `verified_equal: true`
+carries the failing step and Origo's error code for `failed`. The
+command resumes from Origo's state and nothing else:
+`GET /v1/repos/{id}` answering 404 means `registered` is needed,
+`GET /v1/repos/{id}/import` says whether the import ran, and
+`verified_at` with `verified_equal: true`
 means `mirrored`, which is reported as `skipped` on a second run.
 
 | Variable | Required | Default | Purpose |
