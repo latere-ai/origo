@@ -24,14 +24,7 @@ import (
 	versionpkg "github.com/latere-ai/origo/internal/version"
 )
 
-// version is set by the release pipeline with -X main.version=<tag>. It
-// wins over the development marker so the served /version is the tag.
-var version string
-
 func main() {
-	if version != "" {
-		versionpkg.Version = version
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	os.Exit(run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
