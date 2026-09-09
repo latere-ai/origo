@@ -152,8 +152,10 @@ and is capped at 600; `replicas` (spec 005) defaults to 1; `quota_bytes`
 optional and names the rate this subject alone is bucketed at on the
 node; absent, the subject is bucketed at the value of
 `ORIGO_REQUESTS_PER_MINUTE`. It is for a subject that drives many
-repositories, which spec 020 names as its case; the node does not read
-it yet, and spec 020's builder adds it under that spec's item.
+repositories, which spec 020 names as its case; spec 020's builder
+built it on 2026-09-09, and every handler that reads an allow hands the
+figure to the bucket table, so a subject is bucketed at its own rate
+from the request after its first.
 
 An allow is cached per `(subject, actor, repo id, action)` for `ttl`; a
 deny for 5 seconds; an answer for an unresolved name (empty id) is not

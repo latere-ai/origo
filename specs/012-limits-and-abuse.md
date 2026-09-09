@@ -285,6 +285,12 @@ the gate, the integration tier, the mutation job, the `e2e` and
 `e2e-slow` cluster tiers, and the up-script check, with the overlay at
 6000 and each scenario on a subject of its own.
 
+Items another spec closed for this one:
+
+- Spec 020's builder built the per-subject rate from the authorizer,
+  the item this spec left it; the settled item above records what was
+  built.
+
 Items this spec closes for another:
 
 - Spec 010's builder item is done: `quota_bytes` for a
@@ -309,7 +315,20 @@ Design's rules above:
   operator running a fleet of tooling under one token raises
   `ORIGO_REQUESTS_PER_MINUTE`. A subject that drives many repositories
   wants a figure of its own: spec 007's response gains an optional
-  `requests_per_minute` and spec 020 carries the builder item.
+  `requests_per_minute`, and spec 020's builder closed that item on
+  2026-09-09. `auth.Decision.RequestsPerMinute` carries the figure with
+  no default, so absent stays the variable's value;
+  `Buckets.SetRate(subject, perMinute)` makes that subject's bucket
+  fill at it and to it, raising the depth at once so a tool the
+  authorizer has just granted a higher rate is not held to the one its
+  bucket was created with; and `Limits.SetSubjectRate` is called
+  wherever an allow arrives, in `api.admit`, `httpgit.decide`, and the
+  LFS decision, so no wiring reaches `cmd/origod`. The subject is
+  bucketed at its own figure from the request after the first, because
+  the bucket runs in front of the authorizer.
+  `TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt` in
+  `internal/limits` and `TestAuthorizerRateBucketsTheSubject` in
+  `internal/api` hold it.
 - A bound token's write during an authorizer outage fails closed with
   `authorizer_unavailable`, matching spec 007's rule that an outage
   denies. The first build let `Guard.quota` in `internal/auth` fall

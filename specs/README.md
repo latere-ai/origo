@@ -75,7 +75,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | validated |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing |
-| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | validated |
+| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | validated |
 
 ## Dependency graph
@@ -203,7 +203,7 @@ flowchart LR
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's `TestContract` covers the conformance cases of its first criterion and 014's `TestSourceTokenIsNeverLogged` asserts that the source bearer appears in no process argument and no log line |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
-| 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | |
+| 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; at testing until 021's suite runs the four `TestContract/020` cases it defers |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
 replaces the phase 1 bearer, and the overlay and the CI jobs are what
@@ -268,6 +268,7 @@ deck and stated here so a reader sees them without the owning spec.
 | the stub authorizer's outage is set over HTTP as well as by flag: `PUT /fail {"status"}` (0 clears), `POST /hang`, `POST /resume`, added by 013 to the package 007 built, so 021's stack run produces `authorizer_unavailable` through the host port; no Secret lives in `deploy/base`, the templates `origod-s3` and `origod-auth` stay in `deploy/bootstrap` | 013, 018 | 007, 021 |
 | 012 depends on 006, which builds `internal/compact` where `TestCompactionSkipsWhenNoSlot` lives; the build order is unchanged, 006 is in phase 3 and 012 in phase 4 | 012 | 006 |
 | a code-table row holds every status its spec's Code table lists (`repo_frozen`: 403 on a write, 409 on a second freeze); `contract.Status(code)` answers the first, and the call-site check accepts any status of the row | 021 | 003, 019, 020 |
+| a server-side operation's entry carries the objects the log does not already hold: `pack-objects --revs` over the new tip with a `^` per commit the operation started from (`expected_head` or `from`, and the source as well for a merge commit), and a fast-forward merge commits the transaction with no pack, because the source is already in the log | 020 | 004, 006 |
 | the per-subject request rate is `ORIGO_REQUESTS_PER_MINUTE`, 600 by default, and every response of the surface carries it as `RateLimit-Limit` (the IETF draft field); the `kind` overlay runs at 6000 and each cluster scenario mints a subject of its own, because the scenarios drive one node far harder than any caller of a live installation, and 021's `rate_limited` case reads the header rather than assuming the default | 012 | 002, 013, 003, 021 |
 | the 600 a minute default stays: it bounds one subject to 300 back-to-back pushes a minute, an operator raises `ORIGO_REQUESTS_PER_MINUTE` for a fleet of tooling under one token, and a subject that drives many repositories takes a figure of its own from the authorizer's optional `requests_per_minute`, absent meaning the variable's value | 007 | 012, 020 |
 | the call-site rule of `TestEveryCodeHasOneSentence` is keyed on the spec that produces a code: `producers map[string]string` in the test, `over_quota` and `rate_limited` to 012, `ref_not_found` to 009, every other code to its owner; the test reads `status:` from `specs/<nnn>-*.md` or `specs/.archive/`; 021 depends on 012 | 021 | 003, 009, 012 |
@@ -618,7 +619,7 @@ name, or when a spec names something no spec defines.
 | error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 019, 020, 021 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021 |
-| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 021 |
+| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 020, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021 |

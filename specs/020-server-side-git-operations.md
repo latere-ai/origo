@@ -1,6 +1,6 @@
 ---
 title: "Server-side git operations: commits, merges, cherry-picks, and reverts without a clone"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -9,10 +9,10 @@ depends_on:
   - specs/009-read-api-and-archive.md
   - specs/012-limits-and-abuse.md
   - specs/019-repository-administration.md
-affects: [internal/api/, internal/repo/, internal/httpgit/, internal/contract/, test/conformance/]
+affects: [internal/api/, internal/repo/, internal/httpgit/, internal/contract/, internal/limits/, internal/auth/, cmd/origod/, test/conformance/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -234,3 +234,137 @@ consumer's.
   fixture the suite pushes (proposed: `test/conformance`,
   `TestContract/020/commits`, `TestContract/020/merge`,
   `TestContract/020/cherry-pick`, `TestContract/020/revert`).
+
+## Outcome
+
+Built on 2026-09-09 as `internal/api/operations.go` (the routes, the
+request shapes, and every check a request is held to before a
+subprocess starts) and `internal/api/operations_git.go` (the plumbing,
+the pack, and the commit), with the two codes in `internal/contract`
+and the per-subject rate in `internal/limits` and `internal/auth`.
+
+| Criterion | Test |
+|---|---|
+| `commits` with three changes produces one commit whose tree equals a client-side commit, the committer `Origo <origo@<host>>`, one entry carrying `origo.operation=commits`, one `push` event with `operation`; a stale `expected_head` is 409, a request without `author` is 400 | `internal/api`, `TestCommitsWritesOneEntryAndRefusesStaleHead` |
+| `create_branch` with `from`, 409 on an existing branch, 400 without `from`, and a dry run that answers `committed: false` and leaves `objects/` and `spool/` untouched | `internal/api`, `TestCreateBranchFromAndDryRunWritesNothing` |
+| `merge` fast-forwards when it can, writes a two-parent commit when it cannot, and a conflict is 409 `merge_conflict` naming the paths with the branch unchanged | `internal/api`, `TestMergeStrategiesAndConflict` |
+| Cherry-picking three commits of which the second conflicts commits nothing and names the second | `internal/api`, `TestCherryPickIsAtomic` |
+| `over_quota` on a pack past `quota_bytes`, `too_many` at 1 001 changes, `too_large` at 11 MiB, the body limit at six 10 MiB files, and 429 `details.limit: "repository"` on the 61st operation | `internal/api`, `TestServerSideOperationsHonourLimits` |
+| A path the read rules refuse and an empty one are 400 `invalid_change` with `index` and `reason: "path"`, and no subprocess starts | `internal/api`, `TestChangePathsUseTheReadRules` |
+| Twenty concurrent requests with one `expected_head` make one commit and nineteen `non_fast_forward` answers | `internal/api`, `TestConcurrentCommitsSerializeOnExpectedHead` |
+| No request body panics a handler | `internal/api`, `FuzzOperationBody` |
+| The conformance suite gains one case per row of the Operations table | deferred, below |
+
+Four more tests carry what the criteria do not name:
+`TestOperationRefusalsAndBudget` (every `invalid_request` and
+`invalid_change` shape, `ref_not_found` on an unknown branch, source,
+or picked commit, and `repo_frozen` on a frozen repository),
+`TestOperationBudgetIsAnswered` (504 `operation_timeout` with
+`details.budget_seconds`), `TestOperationsSurviveGitFailures` (a failed
+step before the commit writes nothing; a branch the copy could not move
+after the entry landed still answers 201 and the next currency check
+reconciles the reference), and `TestRevertOfAMergeTakesTheMainline`.
+`internal/api` is at 90.9% and `internal/limits` at 98.1%.
+
+Spec 012's builder item is closed: `auth.Decision.RequestsPerMinute`
+carries spec 007's optional figure with no default,
+`Buckets.SetRate(subject, perMinute)` sets that subject's rate and
+burst, and `Limits.SetSubjectRate` is called wherever an allow arrives,
+in `api.admit`, `httpgit.decide`, and the LFS decision. Spec 012's
+Outcome records it.
+
+### Divergences
+
+- **The pack excludes what the log already holds, not only
+  `expected_head`.** The Mechanics say `git pack-objects --revs` over
+  `<expected_head>..<new>`. That is the minimal pack for `commits`, a
+  cherry-pick, and a revert, whose new commits all have
+  `expected_head` as their parent, but a merge commit's second parent
+  is the source, so the range would pack the source's whole history a
+  second time although the log already holds it. The rule built is the
+  same range with one `^` per pre-existing commit the operation started
+  from: `expected_head` (or `from`), and the source as well for a merge
+  commit. It is identical to the spec's range for the other three
+  operations and is what a push of the same change would send, which
+  is what the Overview asks for.
+- **A fast-forward merge commits an entry with no pack at all.** The
+  source is already in the log, so there is nothing new to write; the
+  entry carries the one-update transaction alone, the shape the
+  `default_branch` patch of spec 003 already uses.
+- **`git update-ref` runs before `Cache.Advance`, not after.** The
+  Mechanics name the other order. Advancing first would leave the copy
+  claiming a sequence whose reference it does not hold, and no currency
+  check would repair it; moving the reference first means a failure
+  leaves the copy behind the log and the next check reconciles it from
+  the index. The response is 201 either way: the entry is committed and
+  the log is the source of truth.
+- **`--end-of-options` is not passed to `git index-pack` or `git
+  pack-objects`.** The Mechanics name it on `pack-objects`;
+  `index-pack` refuses the option outright and neither command is
+  handed a value that came from the request, the pack's path being the
+  node's own. Every argument a request supplies still follows
+  `--end-of-options`, and a value starting with `-` is refused before
+  any subprocess starts.
+- **`git update-index` is given the operation's own empty directory as
+  `GIT_WORK_TREE`.** The command insists on a work tree whatever it is
+  asked to do and the warm copy is bare. Nothing is read from the
+  directory, the index is the only thing the call changes, and the
+  directory is removed with the rest of the workspace.
+
+### Deferred
+
+The conformance criterion, one case per row of the Operations table
+under `test/conformance`, waits on spec 021: the suite's harness,
+`Target`, and skip groups are that spec's and had not landed when this
+one was built. Spec 021 owns the four cases
+(`TestContract/020/commits`, `/merge`, `/cherry-pick`, `/revert`) and
+this spec stays at `testing` until they run, the way specs 003 and 004
+wait on the suite. Spec 021's code table gains the rows for
+`merge_conflict` and `invalid_change`, whose call sites are now in the
+tree.
+
+### Open
+
+The spec leaves these unsaid and the build chose the smallest answer
+that keeps its own rules; each is a candidate for a later round.
+
+- `message` on a cherry-pick or a revert. The common shape makes it the
+  commit message; a pick writes one commit per input. Built: when the
+  request names one it is the message of every commit the operation
+  writes, and when it does not, a cherry-pick keeps the picked commit's
+  message and a revert takes git's own `Revert "<subject>"` with the
+  reverted id.
+- `strategy: "fast_forward_only"` over a diverged branch. No code is
+  named for it. Built: 409 `non_fast_forward` with `details.ref` the
+  branch, `details.expected` the source, and `details.actual` the
+  branch's head, which is what git calls the same refusal on a push.
+- A `content_ref` naming a blob the repository does not hold, and a
+  change `git update-index` refuses at its path. Built: 400
+  `invalid_change` with the change's `index` and the reasons `content`
+  and `path`, so the closed set of five reasons stays closed.
+- An empty `changes` or `commits` list, and `from: null` on a
+  repository that has history. Built: 400 `invalid_request` naming the
+  field, because the Limits table's `too_many` is the answer to a list
+  that is too long and not to one that is empty.
+- `Origo-Actor:` is written only when the request carries an actor, so
+  a commit made without delegation has one trailer rather than an
+  empty one.
+- One subprocess slot (spec 012) covers a whole operation, the way one
+  covers a whole read. The Mechanics do not mention the semaphore.
+- An operation does not call the compaction trigger a push calls
+  (`compact.Manager.After`); the primary's sweep picks the repository
+  up on its next round. The Mechanics do not name the trigger and the
+  handler's `Compactor` interface does not carry it.
+- An operation on a repository an import holds is refused by
+  `Log.Commit`'s transaction check rather than by a state code: the
+  import requires an empty repository and commits its own entry, so
+  whichever writer lands first refuses the other. The Errors section
+  names `repo_frozen` and not `repo_importing`, and the build added no
+  code.
+
+### Spec defects
+
+- The frontmatter's `affects` named neither `internal/limits/` nor
+  `internal/auth/`, which the builder item from spec 012 changes, nor
+  `cmd/origod/`, which the route sweep of spec 016 obliges every new
+  route to add a line to. All three are in the list now.
