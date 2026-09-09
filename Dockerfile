@@ -52,7 +52,10 @@ RUN BUILD_DATE=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ) && \
 
 FROM ${RUNTIME_BASE} AS runtime
 
-COPY --from=build --chown=65532:65532 /out/origod /app
+# The binary sits on PATH under its own name, so `origod check` inside a
+# pod is the command the install document tells an operator to run and
+# the init container's `args: [check]` reads the same way.
+COPY --from=build --chown=65532:65532 /out/origod /usr/local/bin/origod
 
 # >>> shared runtime stage <<<
 # git is the one binary origod needs beside itself. ca-certificates lets the
@@ -70,5 +73,5 @@ USER 65532:65532
 WORKDIR /
 VOLUME ["/var/lib/origo"]
 EXPOSE 8080 8081 7946/udp
-ENTRYPOINT ["/app"]
+ENTRYPOINT ["/usr/local/bin/origod"]
 # >>> end shared runtime stage <<<

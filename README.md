@@ -20,8 +20,9 @@ durable before it is acknowledged, verified on MinIO and on DigitalOcean
 Spaces. The spec deck under [`specs/`](specs/README.md) describes the
 whole system and is the build plan; its index says what is built, what
 is next, and what has to be true before the repository goes public.
-Operators start at [`docs/operations.md`](docs/operations.md) today and at
-`docs/install.md` once spec 018 lands.
+Operators start at [`docs/install.md`](docs/install.md), which takes a
+cluster and a bucket to a first push, and then
+[`docs/operations.md`](docs/operations.md).
 
 ## What it does
 
@@ -53,7 +54,8 @@ Operators start at [`docs/operations.md`](docs/operations.md) today and at
 | `specs/` | Design specs and the build plan. Read [`specs/README.md`](specs/README.md) first. |
 | `cmd/origod` | The server binary: configuration, listeners, run group |
 | `internal/` | The packages behind it, one per spec |
-| `deploy/` | Kubernetes manifests: `base/`, the `prod/` overlay, and `bootstrap/` |
+| `deploy/` | Kubernetes manifests: `base/`, the `prod/` overlay, `bootstrap/`, and `examples/` to copy |
+| `docs/` | For whoever runs or uses an installation. Start at [`docs/install.md`](docs/install.md). |
 | `test/e2e/` | End-to-end suite: origod as a process, MinIO, the real git (`make test-integration`) |
 | `CONTRIBUTING.md` | The bar, the spec workflow, when a package belongs in `latere.ai/x/pkg`, and the writing registers |
 

@@ -22,7 +22,7 @@ FROM ${RUNTIME_BASE} AS runtime
 
 ARG TARGETOS
 ARG TARGETARCH
-COPY --chown=65532:65532 out/release/bin/${TARGETOS}_${TARGETARCH}/origod /app
+COPY --chown=65532:65532 out/release/bin/${TARGETOS}_${TARGETARCH}/origod /usr/local/bin/origod
 
 # >>> shared runtime stage <<<
 # git is the one binary origod needs beside itself. ca-certificates lets the
@@ -40,5 +40,5 @@ USER 65532:65532
 WORKDIR /
 VOLUME ["/var/lib/origo"]
 EXPOSE 8080 8081 7946/udp
-ENTRYPOINT ["/app"]
+ENTRYPOINT ["/usr/local/bin/origod"]
 # >>> end shared runtime stage <<<
