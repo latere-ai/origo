@@ -331,7 +331,13 @@ Items left to another builder, from the same review:
   jobs run `go test -v` for the `test/e2e` package, so every
   `TestCluster*` name is in the log and a stack proof names the test it
   cites instead of arguing from the package's `ok`. One line each in
-  `.github/workflows/verify.yml`.
+  `.github/workflows/verify.yml`. Closed on 2026-09-09 by spec 017's
+  builder in `1f4bbb9`, which put `-v` on both lines and on the
+  conformance line beside them. The citation above is not refreshed:
+  the run it names is the evidence on that commit, and a later run
+  proves a later tree. The next dispatched or tag run is the first
+  whose log names `TestClusterMigrationCatchesALateWrite` and
+  `TestClusterMigrationDocCommandsRun` outright.
 
 ### Divergences
 
