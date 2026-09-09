@@ -27,10 +27,25 @@ type Buckets struct {
 	swept   time.Time
 }
 
-// bucket is one subject's tokens and when it was last touched.
+// bucket is one subject's tokens and when it was last touched. rate is
+// the figure the authorizer named for this subject alone (spec 007's
+// requests_per_minute, read under spec 020); zero is the table's own
+// rate, the value of ORIGO_REQUESTS_PER_MINUTE.
 type bucket struct {
 	tokens  float64
 	updated time.Time
+	rate    int
+}
+
+// rateOf is the figure a bucket fills at, and the depth it fills to:
+// the subject's own when the authorizer named one, the table's
+// otherwise. The rate is the burst, the way the table's two figures are
+// one figure.
+func (b *Buckets) rateOf(e *bucket) (perMinute int, burst float64) {
+	if e.rate > 0 {
+		return e.rate, float64(e.rate)
+	}
+	return b.perMinute, b.burst
 }
 
 // NewBuckets builds the table. A rate of zero or less lets everything
@@ -59,16 +74,62 @@ func (b *Buckets) Allow(subject string) (bool, time.Duration) {
 	if !ok {
 		e = &bucket{tokens: b.burst, updated: now}
 		b.buckets[subject] = e
-	} else {
-		e.tokens = min(b.burst, e.tokens+now.Sub(e.updated).Minutes()*float64(b.perMinute))
+	}
+	perMinute, burst := b.rateOf(e)
+	if ok {
+		e.tokens = min(burst, e.tokens+now.Sub(e.updated).Minutes()*float64(perMinute))
 		e.updated = now
 	}
 	if e.tokens < 1 {
 		// The wait until one whole token has accrued.
-		return false, time.Duration((1 - e.tokens) / float64(b.perMinute) * float64(time.Minute))
+		return false, time.Duration((1 - e.tokens) / float64(perMinute) * float64(time.Minute))
 	}
 	e.tokens--
 	return true, 0
+}
+
+// SetRate records the rate the authorizer named for one subject (spec
+// 007's optional requests_per_minute), which is the rate and the burst
+// of that subject's bucket from here on; a figure of zero or less
+// leaves the subject on the table's own rate. Raising the figure fills
+// the bucket to the new depth at once, so a tool the authorizer just
+// granted a higher rate is not held to the depth it was created with.
+func (b *Buckets) SetRate(subject string, perMinute int) {
+	if b == nil || perMinute <= 0 {
+		return
+	}
+	now := b.now()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	e, ok := b.buckets[subject]
+	if !ok {
+		e = &bucket{tokens: float64(perMinute), updated: now}
+		b.buckets[subject] = e
+	}
+	if e.rate == perMinute {
+		return
+	}
+	if perMinute > e.rate {
+		e.tokens = max(e.tokens, float64(perMinute))
+	} else {
+		e.tokens = min(e.tokens, float64(perMinute))
+	}
+	e.rate = perMinute
+}
+
+// Rate is the figure a subject's bucket fills at: the one the
+// authorizer named for it, or the table's own. A subject with no bucket
+// reads the table's.
+func (b *Buckets) Rate(subject string) int {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if e, ok := b.buckets[subject]; ok && e.rate > 0 {
+		return e.rate
+	}
+	return b.perMinute
 }
 
 // sweep drops the buckets untouched for Idle. It runs at most once per
@@ -124,6 +185,26 @@ func (l *Limits) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// SetSubjectRate records the rate the authorizer named for a subject
+// (spec 007's requests_per_minute), so the next request of that subject
+// is bucketed at its own figure rather than the node's. Every handler
+// that reads an allow calls it, which is where the figure arrives.
+func (l *Limits) SetSubjectRate(subject string, perMinute int) {
+	if l == nil {
+		return
+	}
+	l.buckets.SetRate(subject, perMinute)
+}
+
+// SubjectRate is the rate one subject is bucketed at, for a test and
+// for an operator reading why a subject is refused.
+func (l *Limits) SubjectRate(subject string) int {
+	if l == nil {
+		return 0
+	}
+	return l.buckets.Rate(subject)
 }
 
 // Subjects is the number of subjects the bucket table holds, for a

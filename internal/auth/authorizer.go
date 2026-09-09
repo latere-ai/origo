@@ -55,6 +55,11 @@ type Decision struct {
 	TTL        time.Duration
 	Replicas   int
 	QuotaBytes int64
+	// RequestsPerMinute is the rate this subject alone is bucketed at
+	// (spec 012's limit, read by spec 020's operations). It carries no
+	// default: absent from the answer means the node's own
+	// ORIGO_REQUESTS_PER_MINUTE, so zero here is that and not a figure.
+	RequestsPerMinute int
 }
 
 // Authorizer decides one request. A deny is a Decision, not an error;
@@ -233,11 +238,12 @@ func (c *Client) once(ctx context.Context, body []byte) (Decision, error) {
 		return Decision{}, &Unavailable{URL: c.url, Status: resp.StatusCode}
 	}
 	var answer struct {
-		Allow      *bool  `json:"allow"`
-		Reason     string `json:"reason"`
-		TTL        *int   `json:"ttl"`
-		Replicas   *int   `json:"replicas"`
-		QuotaBytes *int64 `json:"quota_bytes"`
+		Allow             *bool  `json:"allow"`
+		Reason            string `json:"reason"`
+		TTL               *int   `json:"ttl"`
+		Replicas          *int   `json:"replicas"`
+		QuotaBytes        *int64 `json:"quota_bytes"`
+		RequestsPerMinute *int   `json:"requests_per_minute"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionBytes))
 	if err != nil {
@@ -258,6 +264,9 @@ func (c *Client) once(ctx context.Context, body []byte) (Decision, error) {
 	}
 	if answer.QuotaBytes != nil && *answer.QuotaBytes > 0 {
 		d.QuotaBytes = *answer.QuotaBytes
+	}
+	if answer.RequestsPerMinute != nil && *answer.RequestsPerMinute > 0 {
+		d.RequestsPerMinute = *answer.RequestsPerMinute
 	}
 	return d, nil
 }

@@ -508,3 +508,80 @@ func TestTheRateCanBeTurnedOff(t *testing.T) {
 		t.Errorf("the default rate is %d a minute with a burst of %v", on.buckets.perMinute, on.buckets.burst)
 	}
 }
+
+// TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt is spec 012's
+// item, built under spec 020: the authorizer's optional
+// requests_per_minute is the rate and the burst of that subject's
+// bucket, and every other subject stays on the node's own figure.
+func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
+	now := time.Now()
+	clock := func() time.Time { return now }
+	l := New(Options{PerMinute: 2, Burst: 2, Now: clock, Logger: slog.New(slog.DiscardHandler)})
+
+	// Without a figure the subject is bucketed at the node's rate.
+	if l.SubjectRate("bot") != 2 {
+		t.Fatalf("the default rate is %d", l.SubjectRate("bot"))
+	}
+	// The figure raises the rate and fills the bucket to the new depth,
+	// so a tool that was granted a higher rate is not held to the one
+	// its bucket was created with.
+	if ok, _ := l.buckets.Allow("bot"); !ok {
+		t.Fatal("the first request was refused")
+	}
+	l.SetSubjectRate("bot", 10)
+	if l.SubjectRate("bot") != 10 {
+		t.Fatalf("the named rate is %d", l.SubjectRate("bot"))
+	}
+	for i := range 10 {
+		if ok, _ := l.buckets.Allow("bot"); !ok {
+			t.Fatalf("request %d of a subject bucketed at 10 was refused", i)
+		}
+	}
+	if ok, retry := l.buckets.Allow("bot"); ok || retry <= 0 {
+		t.Errorf("the eleventh request: %v %s", ok, retry)
+	}
+	// The refill is the subject's own rate: six seconds buys one token
+	// at 10 a minute.
+	now = now.Add(6 * time.Second)
+	if ok, _ := l.buckets.Allow("bot"); !ok {
+		t.Error("the bucket did not refill at the named rate")
+	}
+	// Another subject keeps the node's figure.
+	if l.SubjectRate("alice") != 2 {
+		t.Fatalf("another subject is at %d", l.SubjectRate("alice"))
+	}
+	for range 2 {
+		if ok, _ := l.buckets.Allow("alice"); !ok {
+			t.Fatal("a request inside the node's rate was refused")
+		}
+	}
+	if ok, _ := l.buckets.Allow("alice"); ok {
+		t.Error("a request past the node's rate was admitted")
+	}
+	// A lowered figure holds the subject to it at once, and a figure of
+	// zero or less leaves the subject where it is.
+	l.SetSubjectRate("bot", 1)
+	if l.SubjectRate("bot") != 1 {
+		t.Fatalf("the lowered rate is %d", l.SubjectRate("bot"))
+	}
+	l.SetSubjectRate("bot", 0)
+	if l.SubjectRate("bot") != 1 {
+		t.Fatalf("a figure of zero changed the rate to %d", l.SubjectRate("bot"))
+	}
+	// A subject the authorizer names a figure for before its first
+	// request is bucketed at it from that request on.
+	l.SetSubjectRate("fresh", 5)
+	if l.SubjectRate("fresh") != 5 {
+		t.Fatalf("a fresh subject is at %d", l.SubjectRate("fresh"))
+	}
+	var nilLimits *Limits
+	nilLimits.SetSubjectRate("bot", 5)
+	if nilLimits.SubjectRate("bot") != 0 {
+		t.Error("a nil Limits carries a rate")
+	}
+	var nilBuckets *Buckets
+	nilBuckets.SetRate("bot", 5)
+	if nilBuckets.Rate("bot") != 0 {
+		t.Error("a nil table carries a rate")
+	}
+}

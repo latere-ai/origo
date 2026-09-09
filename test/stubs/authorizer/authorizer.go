@@ -47,8 +47,9 @@ type Request struct {
 
 // Rule is one row of the table. Subject, Actor, Repo, and Action are `*`
 // or a value; Repo is an id or `owner/slug`. An empty field matches
-// everything, the same as `*`. TTL, Replicas, and QuotaBytes are sent
-// only when set, so the node applies its defaults otherwise.
+// everything, the same as `*`. TTL, Replicas, QuotaBytes, and
+// RequestsPerMinute are sent only when set, so the node applies its
+// defaults otherwise.
 type Rule struct {
 	Subject    string `json:"subject"`
 	Actor      string `json:"actor"`
@@ -59,6 +60,9 @@ type Rule struct {
 	TTL        int    `json:"ttl,omitempty"`
 	Replicas   int    `json:"replicas,omitempty"`
 	QuotaBytes int64  `json:"quota_bytes,omitempty"`
+	// RequestsPerMinute is spec 007's optional figure: the rate this
+	// subject alone is bucketed at (spec 012, read by spec 020).
+	RequestsPerMinute int `json:"requests_per_minute,omitempty"`
 }
 
 func (r Rule) matches(req Request) bool {
@@ -277,6 +281,9 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	if rule.QuotaBytes != 0 {
 		out["quota_bytes"] = rule.QuotaBytes
+	}
+	if rule.RequestsPerMinute != 0 {
+		out["requests_per_minute"] = rule.RequestsPerMinute
 	}
 	writeJSON(w, out)
 }
