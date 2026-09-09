@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -694,17 +695,21 @@ func TestGossipWiresTwoNodes(t *testing.T) {
 	envA["ORIGO_S3_PATH_STYLE"] = "1"
 	envA["ORIGO_NODE_NAME"] = "origod-0"
 	envA["ORIGO_GOSSIP_SECRET"] = strings.Repeat("s", 32)
-	// B's socket is bound first so A's peer list can name it.
+	// B's port is reserved first so A's peer list can name it, and the
+	// reservation is held until A has bound its own socket: released
+	// earlier, the kernel could hand the same port to A, whose peer
+	// list would then name itself and whose own heartbeat would count
+	// as a packet received from B.
 	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	addrB := udp.LocalAddr().String()
-	_ = udp.Close()
 	envA["ORIGO_GOSSIP_PEERS"] = addrB
 	a, stopA := startNode(t, envA)
 	defer func() { _ = stopA() }()
 	publicA, internalA, gossipA := a.addrs()
+	_ = udp.Close()
 
 	envB, _ := newEnv(t)
 	envB["ORIGO_S3_ENDPOINT"] = envA["ORIGO_S3_ENDPOINT"]
@@ -720,20 +725,22 @@ func TestGossipWiresTwoNodes(t *testing.T) {
 	defer func() { _ = stopB() }()
 	_, internalB, _ := b.addrs()
 
-	// B's heartbeat at start reaches A; A heard B and B sent.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		_, metricsA := probe(t, "http://"+internalA+"/metrics")
-		if strings.Contains(metricsA, `origo_gossip_packets_total{direction="received"} 1`) {
-			break
+	// B's heartbeat at start reaches A; A heard B and B sent. Each
+	// counter is waited for, because the send is counted after the
+	// datagram left and a slow runner reads B between the two.
+	for _, node := range []struct{ name, internal, direction string }{{"A", internalA, "received"}, {"B", internalB, "sent"}} {
+		counted := regexp.MustCompile(`origo_gossip_packets_total\{direction="` + node.direction + `"\} [1-9]`)
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			_, metrics := probe(t, "http://"+node.internal+"/metrics")
+			if counted.MatchString(metrics) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s %s nothing:\n%s", node.name, node.direction, metrics)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("A received nothing:\n%s", metricsA)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if _, metricsB := probe(t, "http://"+internalB+"/metrics"); !strings.Contains(metricsB, `origo_gossip_packets_total{direction="sent"} 1`) {
-		t.Fatalf("B sent nothing:\n%s", metricsB)
 	}
 	if live := a.set.Live(); strings.Join(live, ",") != "origod-0,origod-1" {
 		t.Fatalf("A's live set %v", live)

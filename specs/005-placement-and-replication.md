@@ -529,3 +529,12 @@ started before the clock advanced, so its first heartbeat could reach
 node 1 at the old time and `LastHeard` stayed there. The clock now
 moves before the third starts, so every heartbeat of that round is
 heard at the new time.
+
+A second race, in `cmd/origod`'s `TestGossipWiresTwoNodes`, seen on
+the test gate of a push run and fixed the same day: the test reserved
+node B's port by binding and closing a socket before node A started,
+so the kernel could hand the same port to A's own gossip socket, whose
+peer list then named itself and whose own heartbeat counted as a
+packet received from B while B had sent nothing. The reservation is
+held until A has bound, and both counters are waited for, because the
+send is counted after the datagram left.
