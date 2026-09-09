@@ -5,6 +5,7 @@ package wal
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -95,6 +96,36 @@ func TestParseHeader(t *testing.T) {
 	// A delete entry carries no pack and needs no digest.
 	if _, err := ParseHeader([]byte(`{"v":1,"kind":"delete","seq":1,"at":"2026-09-06T10:00:00Z"}`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestNewerFormatIsNamed is spec 017's rule for a v above Version: a
+// header or an index object a newer release wrote is a
+// NewerFormatError carrying the documented line, and a v below it is
+// a plain parse error, because no release ever wrote one.
+func TestNewerFormatIsNamed(t *testing.T) {
+	line := []byte(`{"v":2,"kind":"push","seq":1,"at":"2026-09-06T10:00:00Z"}`)
+	_, err := ParseHeader(line)
+	nf, ok := errors.AsType[*NewerFormatError](err)
+	if !ok || nf.V != 2 {
+		t.Fatalf("header v2: %v", err)
+	}
+	want := "log format v2 is newer than this release reads; see docs/upgrades/2.md"
+	if err.Error() != want || IntegrityMessage(err) != want {
+		t.Fatalf("line %q, message %q", err, IntegrityMessage(err))
+	}
+	data, _ := EncodeIndex(&Index{V: 3, Refs: map[string]string{"HEAD": "ref: refs/heads/main"}})
+	_, err = ParseIndex(data)
+	if nf, ok := errors.AsType[*NewerFormatError](err); !ok || nf.V != 3 || !strings.Contains(err.Error(), "log format v3 is newer") {
+		t.Fatalf("index v3: %v", err)
+	}
+	zero, _ := EncodeIndex(&Index{V: 0, Refs: map[string]string{"HEAD": "ref: refs/heads/main"}})
+	_, err = ParseIndex(zero)
+	if _, ok := errors.AsType[*NewerFormatError](err); err == nil || ok {
+		t.Fatalf("index v0: %v", err)
+	}
+	if IntegrityMessage(errors.New("gone")) != "log integrity error" {
+		t.Fatal("the plain message changed")
 	}
 }
 

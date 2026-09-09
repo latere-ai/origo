@@ -640,7 +640,7 @@ func (c *Cache) recordIntegrity(ctx context.Context, r *Repo, err error) error {
 		return err
 	}
 	c.integrity.Inc(nil)
-	c.logger.ErrorContext(ctx, "log integrity error", "repo", r.ID, "key", ie.Key, "error", ie.Err)
+	c.logger.ErrorContext(ctx, wal.IntegrityMessage(ie.Err), "repo", r.ID, "key", ie.Key, "error", ie.Err)
 	return err
 }
 

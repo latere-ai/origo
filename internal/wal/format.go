@@ -19,7 +19,35 @@ import (
 )
 
 // Version is the format version every header and index object carries.
+// A node reads every version it has ever written and writes this one
+// (spec 017); an object above it was written by a newer release.
 const Version = 1
+
+// NewerFormatError is a header or an index object whose v is above
+// Version: a newer release wrote it, and this one cannot read it. The
+// repository is refused as an integrity error of the log (spec 015)
+// with this text as the log line, which names the upgrade document of
+// the major that introduced the format (spec 017).
+type NewerFormatError struct {
+	V int
+}
+
+func (e *NewerFormatError) Error() string {
+	return fmt.Sprintf("log format v%d is newer than this release reads; see docs/upgrades/%d.md", e.V, e.V)
+}
+
+// checkVersion is the one rule for a v field: above Version is a
+// NewerFormatError, anything else but Version is a parse error.
+func checkVersion(what string, v int) error {
+	switch {
+	case v == Version:
+		return nil
+	case v > Version:
+		return &NewerFormatError{V: v}
+	default:
+		return fmt.Errorf("wal: %s version %d, want %d", what, v, Version)
+	}
+}
 
 // Kind is what an entry records.
 type Kind string
@@ -245,8 +273,8 @@ func ParseHeader(line []byte) (Header, error) {
 	if err := dec.Decode(&h); err != nil {
 		return h, fmt.Errorf("wal: header: %w", err)
 	}
-	if h.V != Version {
-		return h, fmt.Errorf("wal: header version %d, want %d", h.V, Version)
+	if err := checkVersion("header", h.V); err != nil {
+		return h, err
 	}
 	switch h.Kind {
 	case KindPush, KindCompact, KindDelete:
@@ -317,8 +345,8 @@ func ParseIndex(data []byte) (*Index, error) {
 	if err := dec.Decode(&ix); err != nil {
 		return nil, fmt.Errorf("wal: index: %w", err)
 	}
-	if ix.V != Version {
-		return nil, fmt.Errorf("wal: index version %d, want %d", ix.V, Version)
+	if err := checkVersion("index", ix.V); err != nil {
+		return nil, err
 	}
 	if ix.Seq > maxSeq {
 		return nil, fmt.Errorf("wal: index seq %d out of range", ix.Seq)

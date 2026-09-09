@@ -147,8 +147,18 @@ func (l *Log) Breakers() *BreakerStore {
 // IntegrityError, so a caller records and wraps in one call.
 func (l *Log) Integrity(ctx context.Context, key string, err error) error {
 	l.integrity.Inc(nil)
-	l.logger.ErrorContext(ctx, "log integrity error", "key", key, "error", err)
+	l.logger.ErrorContext(ctx, IntegrityMessage(err), "key", key, "error", err)
 	return &IntegrityError{Key: key, Err: err}
+}
+
+// IntegrityMessage is the log line of an integrity error: the
+// documented sentence of spec 017 for an object a newer release wrote,
+// "log integrity error" for every other.
+func IntegrityMessage(err error) string {
+	if nf, ok := errors.AsType[*NewerFormatError](err); ok {
+		return nf.Error()
+	}
+	return "log integrity error"
 }
 
 // Prefix is the key prefix of everything the log writes, which spec
