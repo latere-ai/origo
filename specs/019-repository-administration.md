@@ -496,8 +496,11 @@ no case is named in the log; what makes the `ok` a statement about
 every case is `TestContract` itself, which fails on any failed case, on
 anything skipped while a `Fault` is wired, and on a non-empty
 `Report.Unverified`. The earlier dispatched run 34353736553 failed on
-`019/gc`, which `e2c62d9`'s one id on both targets fixed before this
-run.
+`019/gc`. No case of `test/conformance/cases019.go` changed between the
+two commits; the one change to the stack run in between is `e2c62d9`,
+which points the `e2e` job's conformance step at node 1 of spec 013's
+ports table, where a bucket is per node, which is what the case's 429
+on a second `gc` reads.
 
 What is left of the criterion is therefore the run of the same cases
 against the installation `ORIGO_LIVE_URL` names, which spec 021 owns
