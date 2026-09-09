@@ -25,7 +25,7 @@ the manifests fails the build rather than your installation.
 | An OIDC issuer | discovery and a key set over HTTPS | it mints the tokens people and services present. Register one client for people and one for each service that acts on their behalf. |
 | An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. |
 | Disk | a default storage class, or nodes with local disk | the cache. Sized for the repositories in active use, not for all of them. |
-| On your machine | `kubectl`, `openssl`, `curl`, `git` | nothing is installed in the cluster beyond the manifests. |
+| On your machine | `kubectl`, `openssl`, `curl`, `uuidgen`, `git` | nothing is installed in the cluster beyond the manifests. |
 
 Two of these are yours to write and have no default: the issuer and the
 authorization endpoint. Origo authenticates every request and authorizes
@@ -57,11 +57,18 @@ The rest of the page reads these. Set them for your installation; the
 defaults install the example overlay on a throwaway cluster.
 
 ```sh
-IMAGE="${ORIGO_INSTALL_IMAGE:-ghcr.io/latere-ai/origod:v0.1.0}"
+VERSION="${ORIGO_VERSION:-v0.1.0}"
+IMAGE="${ORIGO_INSTALL_IMAGE:-ghcr.io/latere-ai/origod:$VERSION}"
 MANIFESTS="${ORIGO_INSTALL_MANIFESTS:-deploy/examples/kind}"
 NAMESPACE="${ORIGO_NAMESPACE:-origo}"
 echo "installing $IMAGE from $MANIFESTS into $NAMESPACE"
 ```
+
+`VERSION` is the release you are installing. The releases page lists
+them, and each release carries `deploy-<version>.tar.gz`, the manifests
+of that exact release with both images pinned; unpack it and point
+`MANIFESTS` at the overlay inside. What a version number promises and
+how to move between two of them is in [`upgrades/`](upgrades/README.md).
 
 ## 1. The bucket
 
