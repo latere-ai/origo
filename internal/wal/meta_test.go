@@ -6,8 +6,10 @@ package wal
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 const repoB = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
@@ -158,5 +160,43 @@ func TestRepositoryMetadataAndNames(t *testing.T) {
 	}
 	if _, err := l.Resolve(ctx, "a", "e"); err == nil || !strings.Contains(err.Error(), "get failed") {
 		t.Fatalf("resolve get: %v", err)
+	}
+}
+
+// TestWriteMetaRewritesTheObject is spec 019's unconditional rewrite:
+// the administration fields round-trip, UpdatedAt is stamped, and an
+// invalid id is refused before any object is written.
+func TestWriteMetaRewritesTheObject(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	now := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
+	l := New(Options{Store: store, Now: func() time.Time { return now }, Logger: slog.New(slog.DiscardHandler)})
+	if _, err := l.CreateRepo(ctx, Meta{ID: repoA, Owner: "acme", Slug: "app"}, "main"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := l.ReadMeta(ctx, repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen := now.Add(time.Minute)
+	m.FrozenAt = &frozen
+	m.ImportingSince = &frozen
+	m.ImportNode, m.ImportError, m.ImportRefs, m.ImportBytes = "node-1", "", 7, 4096
+	now = now.Add(time.Hour)
+	if err := l.WriteMeta(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	back, err := l.ReadMeta(ctx, repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.FrozenAt == nil || !back.FrozenAt.Equal(frozen) || back.ImportNode != "node-1" || back.ImportRefs != 7 || back.ImportBytes != 4096 {
+		t.Fatalf("round trip: %+v", back)
+	}
+	if !back.UpdatedAt.Equal(now.UTC()) {
+		t.Fatalf("updated_at %v, want %v", back.UpdatedAt, now.UTC())
+	}
+	if err := l.WriteMeta(ctx, &Meta{ID: "nope"}); err == nil {
+		t.Fatal("an invalid id was written")
 	}
 }

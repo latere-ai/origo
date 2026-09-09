@@ -108,9 +108,14 @@ func (l *Log) Sweep(ctx context.Context, repo string, minAge time.Duration) (Swe
 	return rep, nil
 }
 
-// purge removes every object of a repository and its name.
+// purge removes every object of a repository except meta, and its name.
+// meta stays as the tombstone of spec 019, rewritten with purged_at: it
+// is what lets every endpoint answer 410 gone rather than 404, what
+// keeps the id unique forever, and what a create of the same id is
+// refused by, while the name is deleted so a consumer can reuse it.
 func (l *Log) purge(ctx context.Context, repo string, rep SweepReport) (SweepReport, error) {
-	if m, err := l.ReadMeta(ctx, repo); err == nil {
+	m, merr := l.ReadMeta(ctx, repo)
+	if merr == nil {
 		if id, err := l.Resolve(ctx, m.Owner, m.Slug); err == nil && id == repo {
 			if err := l.store.Delete(ctx, l.nameKey(m.Owner, m.Slug)); err != nil {
 				return rep, err
@@ -121,11 +126,22 @@ func (l *Log) purge(ctx context.Context, repo string, rep SweepReport) (SweepRep
 	if err != nil {
 		return rep, err
 	}
+	meta := l.metaKey(repo)
 	for _, o := range objects {
+		if o.Key == meta {
+			continue
+		}
 		if err := l.store.Delete(ctx, o.Key); err != nil {
 			return rep, err
 		}
 		rep.Deleted = append(rep.Deleted, o.Key)
+	}
+	if merr == nil {
+		at := l.now().UTC()
+		m.PurgedAt = &at
+		if err := l.WriteMeta(ctx, m); err != nil {
+			return rep, err
+		}
 	}
 	rep.Purged = true
 	return rep, nil

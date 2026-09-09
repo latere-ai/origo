@@ -124,8 +124,9 @@ func TestSweepRemovesOrphansAndKeepsWhatAnIndexNames(t *testing.T) {
 			t.Fatalf("%s survived the purge", k)
 		}
 	}
-	if n := len(store.Keys()); n != 0 {
-		t.Fatalf("%d keys survived the purge: %v", n, store.Keys())
+	// meta is the tombstone of spec 019 and is the one key left.
+	if keys := store.Keys(); len(keys) != 1 || keys[0] != l.metaKey(repoA) {
+		t.Fatalf("%d keys survived the purge: %v", len(keys), keys)
 	}
 	if _, err := l.Resolve(ctx, "acme", "app-"+repoA[:4]); !errors.Is(err, ErrNotFound) {
 		t.Fatal("name survived the purge")
@@ -307,4 +308,65 @@ func mustNewest(t *testing.T, l *Log, repo string) *Index {
 		t.Fatal(err)
 	}
 	return ix
+}
+
+// TestPurgeLeavesATombstone is spec 019's rule for the purge: every
+// object of the repository goes except meta, which is rewritten with
+// purged_at and keeps the id taken forever, while the name is deleted
+// so a consumer reuses it.
+func TestPurgeLeavesATombstone(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	store.SetClock(clock)
+	l := New(Options{Store: store, Now: clock, Logger: slog.New(slog.DiscardHandler)})
+	base := createRepo(t, l, repoA)
+	m, err := l.ReadMeta(ctx, repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, slug := m.Owner, m.Slug
+	if _, err := l.Commit(ctx, repoA, base, Entry{Kind: KindDelete, Deleted: true}, noCatchUp); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(DeleteHold)
+	purgedAt := now
+	rep, err := l.Sweep(ctx, repoA, time.Hour)
+	if err != nil || !rep.Purged {
+		t.Fatalf("purge: %+v, %v", rep, err)
+	}
+	// Exactly meta is left, and it carries purged_at.
+	keys := store.Keys()
+	if len(keys) != 1 || keys[0] != l.metaKey(repoA) {
+		t.Fatalf("keys after the purge: %v", keys)
+	}
+	tomb, err := l.ReadMeta(ctx, repoA)
+	if err != nil {
+		t.Fatalf("the tombstone is unreadable: %v", err)
+	}
+	if tomb.PurgedAt == nil || !tomb.PurgedAt.Equal(purgedAt.UTC()) {
+		t.Fatalf("purged_at %v, want %v", tomb.PurgedAt, purgedAt.UTC())
+	}
+	if tomb.Owner != owner || tomb.Slug != slug {
+		t.Fatalf("the tombstone lost its labels: %+v", tomb)
+	}
+	// The index is gone, so the repository has no state to serve.
+	if _, _, err := l.Newest(ctx, repoA, 0, false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("newest after the purge: %v", err)
+	}
+	// The id stays taken and the name is free.
+	if _, err := l.CreateRepo(ctx, Meta{ID: repoA, Owner: owner, Slug: slug}, "main"); !errors.Is(err, ErrExists) {
+		t.Fatalf("create of a purged id: %v", err)
+	}
+	if _, err := l.Resolve(ctx, owner, slug); !errors.Is(err, ErrNotFound) {
+		t.Fatal("the name survived the purge")
+	}
+	if _, err := l.CreateRepo(ctx, Meta{ID: repoB, Owner: owner, Slug: slug}, "main"); err != nil {
+		t.Fatalf("the name is not reusable: %v", err)
+	}
+	// A second sweep of a purged repository does nothing.
+	if rep, err := l.Sweep(ctx, repoA, time.Hour); err != nil || rep.Purged || len(rep.Deleted) != 0 {
+		t.Fatalf("second sweep: %+v, %v", rep, err)
+	}
 }

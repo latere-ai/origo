@@ -22,6 +22,24 @@ type Meta struct {
 	Slug      string    `json:"slug"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// The administration state of spec 019. FrozenAt is set while the
+	// repository refuses writes; PurgedAt is the tombstone the sweeper
+	// leaves when the hold passed, which is what makes gone possible
+	// and keeps the id unique forever.
+	FrozenAt *time.Time `json:"frozen_at,omitempty"`
+	PurgedAt *time.Time `json:"purged_at,omitempty"`
+
+	// The import lease and its outcome (spec 019). ImportingSince and
+	// ImportNode are the lease one node holds while it imports;
+	// ImportedAt, ImportRefs, and ImportBytes are what a finished
+	// import wrote, and ImportError what a failed one did.
+	ImportingSince *time.Time `json:"importing_since,omitempty"`
+	ImportNode     string     `json:"import_node,omitempty"`
+	ImportError    string     `json:"import_error,omitempty"`
+	ImportedAt     *time.Time `json:"imported_at,omitempty"`
+	ImportRefs     int        `json:"import_refs,omitempty"`
+	ImportBytes    int64      `json:"import_bytes,omitempty"`
 }
 
 // ErrNameTaken reports an owner/slug pair another repository holds.
@@ -93,6 +111,24 @@ func (l *Log) ReadMeta(ctx context.Context, id string) (*Meta, error) {
 		return nil, fmt.Errorf("wal: meta: %w", err)
 	}
 	return &m, nil
+}
+
+// WriteMeta rewrites a repository's metadata, unconditionally: the
+// object is the one place the administration state of spec 019 lives,
+// and two writers that overlap both land, which is what makes an import
+// lease decided by the log's own commit rather than by this write.
+// UpdatedAt is stamped here.
+func (l *Log) WriteMeta(ctx context.Context, m *Meta) error {
+	if !ValidID(m.ID) {
+		return errors.New("wal: invalid repository id")
+	}
+	m.UpdatedAt = l.now().UTC()
+	data, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = l.store.Put(ctx, l.metaKey(m.ID), BytesBody(data))
+	return err
 }
 
 // Rename moves a repository to a new owner/slug. The new name is claimed
