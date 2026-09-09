@@ -346,6 +346,10 @@ committed: the commit log already holds that.
   cache directory against `ORIGO_CACHE_BYTES`, and git against the 2.40
   floor. It runs as an init container, so a misconfigured pod never
   reports ready.
+- `ORIGO_TOKEN_KEY` has one home: the Secret `origod-token-key`, which
+  the install document generates and every workload reads by name.
+  `deploy/bootstrap/secrets.example.yaml` no longer offers a field for
+  it, because a key pasted into a template is not the operator's own.
 - `deploy/base` is provider-neutral: no ingress class, no
   certificate-manager annotation, no hostname, and no controller's own
   settings, each of which an overlay supplies. `deploy/examples`
