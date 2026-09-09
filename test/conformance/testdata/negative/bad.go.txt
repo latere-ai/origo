@@ -1,0 +1,18 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
+// Package negative is the fixture TestEveryCodeHasOneSentence must fail on.
+package negative
+
+import (
+	"net/http"
+
+	"latere.ai/x/pkg/httpjson"
+
+	"github.com/latere-ai/origo/internal/contract"
+)
+
+func bad(w http.ResponseWriter) {
+	_ = httpjson.Error{Code: "not_found", Message: "Not found."}
+	contract.Write(w, http.StatusNotFound, "not_found", nil)
+}

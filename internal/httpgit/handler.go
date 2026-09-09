@@ -373,9 +373,9 @@ func (h *Handler) infoRefs(w http.ResponseWriter, r *http.Request) {
 			h.advertisementError(w, r, service, err)
 			return
 		default:
-			if code, details := stateRefusal(m); code != "" {
-				h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", code, "subject", auth.Subject(r.Context()))
-				h.refuseState(w, service, code, details)
+			if refusal, refused := stateRefusal(m); refused {
+				h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", refusal.Code, "subject", auth.Subject(r.Context()))
+				h.refuseState(w, service, refusal)
 				return
 			}
 		}
@@ -541,9 +541,10 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 	// reads the code and the sentence in the sideband and no entry is
 	// written. The advertisement of this push filled the cache, so a
 	// normal push pays no second read of meta.
-	stateCode := ""
+	var state contract.Refusal
+	stateRefused := false
 	if m, merr := h.meta.meta(r.Context(), r, id); merr == nil {
-		stateCode, _ = stateRefusal(m)
+		state, stateRefused = stateRefusal(m)
 	} else if !errors.Is(merr, wal.ErrNotFound) {
 		h.storageError(w, r, merr)
 		return
@@ -604,13 +605,13 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case u.err != nil:
 			verdict = "reject origo: " + u.err.Error()
-		case u.ok && stateCode != "":
+		case u.ok && stateRefused:
 			h.rejected.Inc(nil)
-			h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", stateCode, "subject", auth.Subject(r.Context()))
-			verdict = "reject " + stateCode + ": " + contract.Sentence(stateCode)
+			h.logger.InfoContext(r.Context(), "push refused", "repo", id, "code", state.Code, "subject", auth.Subject(r.Context()))
+			verdict = "reject " + state.Line()
 		case u.ok && refusal != nil:
 			refusal.log(r.Context(), h.logger, id, auth.Subject(r.Context()))
-			verdict = "reject " + contract.CodeOverQuota + ": " + contract.Sentence(contract.CodeOverQuota)
+			verdict = "reject " + contract.Line(contract.CodeOverQuota)
 		case u.ok:
 			committed, verdict = h.commit(r.Context(), id, rp, u.refs, req, spool.Name())
 		}
@@ -705,8 +706,11 @@ func (h *Handler) forcedUpdates(ctx context.Context, rp *repo.Repo, refs []wal.R
 }
 
 // commit writes the entry and creates the index object. It returns the
-// verdict for the hook: "ok", or "reject <code>: <message>", which git
-// relays to the client as the hook's stderr.
+// verdict for the hook: "ok", or "reject <code>: <sentence>", which git
+// relays to the client as the hook's stderr. A line that carries a code
+// is the code and the table's sentence and nothing else (spec 021):
+// the reference and the hashes of a refused push go to the info log
+// line, the storage error to the error line.
 func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []wal.RefUpdate, req *receiveRequest, spoolPath string) (*wal.Committed, string) {
 	// The pack's digests name the entry and travel in its header, so
 	// computing them is part of writing the entry: the time counts
@@ -715,7 +719,9 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 	hashing := time.Now()
 	pack, err := packBody(spoolPath, req.PackOffset, req.PackSize)
 	if err != nil {
-		return nil, "reject " + contract.CodeStorageUnavailable + ": " + err.Error()
+		h.rejected.Inc(nil)
+		h.logger.ErrorContext(ctx, "commit failed", "repo", id, "error", err)
+		return nil, "reject " + contract.Line(contract.CodeStorageUnavailable)
 	}
 	hashed := time.Since(hashing)
 	if h.beforeCommit != nil {
@@ -726,12 +732,11 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 	// probe the first time it is admitted; when the wait passes with no
 	// admission, or the probe fails below, the push is refused in the
 	// sideband with the table's sentence.
-	bs := h.log.Breakers()
-	if bs != nil {
+	if bs := h.log.Breakers(); bs != nil {
 		if err := bs.Wait(ctx, wal.ClassWrite, h.breakerPoll, BreakerWait); err != nil {
 			h.rejected.Inc(nil)
 			h.logger.ErrorContext(ctx, "commit refused, the write breaker stayed open", "repo", id, "error", err)
-			return nil, "reject " + contract.CodeStorageUnavailable + ": " + contract.Sentence(contract.CodeStorageUnavailable)
+			return nil, "reject " + contract.Line(contract.CodeStorageUnavailable)
 		}
 	}
 	entry := wal.Entry{
@@ -744,25 +749,14 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 	if err != nil {
 		h.rejected.Inc(nil)
 		if conflict, ok := errors.AsType[*wal.ConflictError](err); ok {
-			return nil, fmt.Sprintf("reject %s: %s moved to %s since you fetched; fetch first", contract.CodeNonFastForward, conflict.Ref, short(conflict.Actual))
+			h.logger.InfoContext(ctx, "push refused", "repo", id, "code", contract.CodeNonFastForward, "ref", conflict.Ref, "expected", conflict.Expected, "actual", conflict.Actual, "subject", auth.Subject(ctx))
+			return nil, "reject " + contract.Line(contract.CodeNonFastForward)
 		}
 		h.logger.ErrorContext(ctx, "commit failed", "repo", id, "error", err)
-		if errors.Is(err, wal.ErrStorageOpen) || (bs != nil && !bs.Admits(wal.ClassWrite)) {
-			// Refused by the breaker, or the probe that failed and
-			// reopened it: the sentence, as at the advertisement.
-			return nil, "reject " + contract.CodeStorageUnavailable + ": " + contract.Sentence(contract.CodeStorageUnavailable)
-		}
-		return nil, "reject " + contract.CodeStorageUnavailable + ": the push was not recorded, retry"
+		return nil, "reject " + contract.Line(contract.CodeStorageUnavailable)
 	}
 	committed.EntryDuration += hashed
 	return committed, "ok"
-}
-
-func short(s string) string {
-	if len(s) > 12 {
-		return s[:12]
-	}
-	return s
 }
 
 // packBody is the pack section of the spooled body as a re-readable

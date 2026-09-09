@@ -172,10 +172,12 @@ type errorBody struct {
 	DocumentationURL string `json:"documentation_url"`
 }
 
-// fail answers a top-level failure in the LFS shape.
-func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, code string) {
-	write(w, status, errorBody{
-		Message:          contract.Sentence(code),
+// fail answers a top-level failure in the LFS shape: the refusal's
+// status and its sentence, prepared at the call site with a code of
+// the table.
+func (h *Handler) fail(w http.ResponseWriter, r *http.Request, refusal contract.Refusal) {
+	write(w, refusal.Status, errorBody{
+		Message:          refusal.Sentence(),
 		RequestID:        requestID(r),
 		DocumentationURL: DocumentationURL,
 	})
@@ -209,7 +211,7 @@ func write(w http.ResponseWriter, status int, body any) {
 // locks answers every path under locks, whatever the method: 501 with
 // the LFS body. A client that reads it turns locking off and goes on.
 func (h *Handler) locks(w http.ResponseWriter, r *http.Request) {
-	h.fail(w, r, http.StatusNotImplemented, contract.CodeLFSLocksUnsupported)
+	h.fail(w, r, contract.Refuse(http.StatusNotImplemented, contract.CodeLFSLocksUnsupported, nil))
 }
 
 // resolve maps the request path to a repository and asks the guard for
@@ -237,7 +239,7 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, act auth.Actio
 		return "", auth.Decision{}, false
 	}
 	if ref.ID == "" {
-		h.fail(w, r, http.StatusNotFound, contract.CodeRepoNotFound)
+		h.fail(w, r, contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 		return "", auth.Decision{}, false
 	}
 	// An allow that names a requests_per_minute (spec 007) buckets that
@@ -251,16 +253,16 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, act auth.Actio
 func (h *Handler) refuse(w http.ResponseWriter, r *http.Request, err error) {
 	if denied, ok := errors.AsType[*auth.Denied](err); ok {
 		h.logger.InfoContext(r.Context(), "lfs denied", "path", r.URL.Path, "action", string(denied.Action), "subject", denied.Subject, "reason", denied.Reason)
-		h.fail(w, r, http.StatusForbidden, contract.CodeForbidden)
+		h.fail(w, r, contract.Refuse(http.StatusForbidden, contract.CodeForbidden, nil))
 		return
 	}
 	h.logger.ErrorContext(r.Context(), "authorizer unavailable", "path", r.URL.Path, "error", err)
-	h.fail(w, r, http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable)
+	h.fail(w, r, contract.Refuse(http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable, nil))
 }
 
 func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	h.logger.ErrorContext(r.Context(), "lfs storage operation failed", "path", r.URL.Path, "op", op, "error", err)
-	h.fail(w, r, http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	h.fail(w, r, contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 }
 
 // exists reports whether the repository is present and not deleted, and
@@ -269,14 +271,14 @@ func (h *Handler) exists(w http.ResponseWriter, r *http.Request, id string) (int
 	ix, _, err := h.log.Newest(r.Context(), id, 0, false)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
-			h.fail(w, r, http.StatusNotFound, contract.CodeRepoNotFound)
+			h.fail(w, r, contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 		} else {
 			h.storageError(w, r, "newest", err)
 		}
 		return 0, false
 	}
 	if ix.DeletedAt != nil {
-		h.fail(w, r, http.StatusNotFound, contract.CodeRepoNotFound)
+		h.fail(w, r, contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 		return 0, false
 	}
 	return ix.SizeBytes, true
@@ -334,7 +336,7 @@ func (h *Handler) batch(w http.ResponseWriter, r *http.Request) {
 	var req batchRequest
 	if err := decode(r, &req); err != nil {
 		h.logger.InfoContext(r.Context(), "lfs batch refused", "path", r.URL.Path, "reason", err.Error())
-		h.fail(w, r, http.StatusBadRequest, contract.CodeInvalid)
+		h.fail(w, r, contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 		return
 	}
 	act := auth.ActionRead
@@ -344,14 +346,14 @@ func (h *Handler) batch(w http.ResponseWriter, r *http.Request) {
 		act = auth.ActionWrite
 	default:
 		h.logger.InfoContext(r.Context(), "lfs batch refused", "path", r.URL.Path, "reason", "operation must be download or upload", "operation", req.Operation)
-		h.fail(w, r, http.StatusBadRequest, contract.CodeInvalid)
+		h.fail(w, r, contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 		return
 	}
 	// An empty transfers list means basic; any list must name it,
 	// because it is the one adapter this spec serves.
 	if len(req.Transfers) > 0 && !containsBasic(req.Transfers) {
 		h.logger.InfoContext(r.Context(), "lfs batch refused", "path", r.URL.Path, "reason", "no transfer adapter in common", "transfers", strings.Join(req.Transfers, ","))
-		h.fail(w, r, http.StatusBadRequest, contract.CodeInvalid)
+		h.fail(w, r, contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 		return
 	}
 	id, decision, ok := h.resolve(w, r, act)
@@ -522,7 +524,7 @@ func (h *Handler) withinQuota(w http.ResponseWriter, r *http.Request, id string,
 		return true
 	}
 	h.logger.InfoContext(r.Context(), "lfs batch over quota", "repo", id, "limit", limits.LimitRepository, "bytes", q.Bytes, "max", q.Max)
-	h.fail(w, r, http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
+	h.fail(w, r, contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeOverQuota, nil))
 	return false
 }
 
@@ -545,7 +547,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 			reason = err.Error()
 		}
 		h.logger.InfoContext(r.Context(), "lfs verify refused", "path", r.URL.Path, "reason", reason)
-		h.fail(w, r, http.StatusBadRequest, contract.CodeInvalid)
+		h.fail(w, r, contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 		return
 	}
 	// verify completes an upload, so it is a write.
@@ -560,7 +562,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, wal.ErrNotFound):
 		h.logger.InfoContext(r.Context(), "lfs verify: object not stored", "repo", id, "oid", req.OID)
-		h.fail(w, r, http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch)
+		h.fail(w, r, contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 		return
 	case err != nil:
 		h.storageError(w, r, "head", err)
@@ -570,7 +572,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 		if err := h.store.Delete(r.Context(), h.objectKey(id, req.OID)); err != nil {
 			h.logger.ErrorContext(r.Context(), "lfs mismatched object not deleted", "repo", id, "oid", req.OID, "error", err)
 		}
-		h.fail(w, r, http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch)
+		h.fail(w, r, contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 		return
 	}
 	body, err := json.Marshal(marker{Size: o.Size, At: h.now().UTC(), Subject: auth.Subject(r.Context())})

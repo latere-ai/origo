@@ -194,10 +194,10 @@ func decodeBatch(t *testing.T, rec *httptest.ResponseRecorder) batchResponse {
 
 // decodeError reads the LFS error body: the sentence of the code, a
 // request id, this spec's URL, and no details object.
-func decodeError(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
+func decodeError(t *testing.T, rec *httptest.ResponseRecorder, want contract.Refusal) {
 	t.Helper()
-	if rec.Code != status {
-		t.Fatalf("status %d, want %d: %s", rec.Code, status, rec.Body.String())
+	if rec.Code != want.Status {
+		t.Fatalf("status %d, want %d: %s", rec.Code, want.Status, rec.Body.String())
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != MediaType {
 		t.Errorf("Content-Type %q, want %q", ct, MediaType)
@@ -206,8 +206,8 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder, status int, code 
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("error body: %v: %s", err, rec.Body.String())
 	}
-	if got := body["message"]; got != contract.Sentence(code) {
-		t.Errorf("message %q, want %q", got, contract.Sentence(code))
+	if got := body["message"]; got != want.Sentence() {
+		t.Errorf("message %q, want %q", got, want.Sentence())
 	}
 	if id, _ := body["request_id"].(string); id == "" {
 		t.Error("no request_id")
@@ -308,13 +308,13 @@ func TestVerifyRefusesASizeMismatch(t *testing.T) {
 	e.seed(oid, len(data))
 
 	rec := e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":%d}`, oid, len(data)+1))
-	decodeError(t, rec, http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch)
+	decodeError(t, rec, contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 	if _, ok := e.bucket.Get(e.key("lfs/" + oid)); ok {
 		t.Error("the mismatched object was not deleted")
 	}
 
 	// An object that was never uploaded is the same refusal.
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":9}`, oid)), http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch)
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":9}`, oid)), contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 
 	// The matching size writes the marker, and a repeat is a success.
 	e.seed(oid, len(data))
@@ -363,7 +363,7 @@ func TestVerifyIsAWrite(t *testing.T) {
 	// A read-scoped repository-bound token is refused on verify.
 	rec := e.as(auth.Principal{Subject: "build", Bound: &auth.Bound{Repo: testRepo, Scope: auth.ScopeRead}},
 		"POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid))
-	decodeError(t, rec, http.StatusForbidden, contract.CodeForbidden)
+	decodeError(t, rec, contract.Refuse(http.StatusForbidden, contract.CodeForbidden, nil))
 }
 
 // TestBatchBodyLimit is spec 012's LFS body bound, enforced here: a
@@ -381,7 +381,7 @@ func TestBatchBodyLimit(t *testing.T) {
 	if b.Len() <= MaxBatchBytes {
 		t.Fatalf("the body is %d bytes", b.Len())
 	}
-	decodeError(t, e.do("POST", batchPath, b.String()), http.StatusBadRequest, contract.CodeInvalid)
+	decodeError(t, e.do("POST", batchPath, b.String()), contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 	if n := len(e.authz.seen()); n != 0 {
 		t.Errorf("%d authorizer calls on an oversized body", n)
 	}
@@ -398,7 +398,7 @@ func TestLocksAre501(t *testing.T) {
 		for _, suffix := range []string{"", "/verify", "/42/unlock", "/a/b/c"} {
 			for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete} {
 				rec := e.as(auth.Principal{Subject: "dev"}, method, prefix+suffix, "{}")
-				decodeError(t, rec, http.StatusNotImplemented, contract.CodeLFSLocksUnsupported)
+				decodeError(t, rec, contract.Refuse(http.StatusNotImplemented, contract.CodeLFSLocksUnsupported, nil))
 			}
 		}
 	}
@@ -421,7 +421,7 @@ func TestUploadOverQuota(t *testing.T) {
 	wanted := oidOf([]byte("wanted"))
 
 	over := fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":401}]}`, wanted)
-	decodeError(t, e.do("POST", batchPath, over), http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
+	decodeError(t, e.do("POST", batchPath, over), contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeOverQuota, nil))
 
 	// Exactly at the limit is allowed and answers the upload action.
 	at := fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":400}]}`, wanted)
@@ -474,8 +474,7 @@ func TestUploadSkipsAnObjectTheStoreHolds(t *testing.T) {
 	// A marker naming another size is not the object: an upload action,
 	// and its size counts beside the stored bytes it would replace.
 	e.mark(held, 601)
-	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600}]}`, held)),
-		http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
+	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600}]}`, held)), contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeOverQuota, nil))
 	e.authz.decision = auth.Decision{Allow: true, QuotaBytes: 2000}
 	res = decodeBatch(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":600}]}`, held)))
 	if _, ok := res.Objects[0].Actions["upload"]; !ok {
@@ -508,8 +507,7 @@ func TestQuotaCountsEveryPageOfTheListing(t *testing.T) {
 		t.Fatalf("the listing summed %d bytes, want 1200", stored)
 	}
 	wanted := oidOf([]byte("wanted"))
-	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":801}]}`, wanted)),
-		http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
+	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"upload","objects":[{"oid":%q,"size":801}]}`, wanted)), contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeOverQuota, nil))
 }
 
 // handlerBytes sums lfs/ the way the quota rule does.
@@ -631,7 +629,7 @@ func TestBatchRefusesAMalformedRequest(t *testing.T) {
 		{"no adapter in common", `{"operation":"download","transfers":["tus"],"objects":[]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			decodeError(t, e.do("POST", batchPath, tc.body), http.StatusBadRequest, contract.CodeInvalid)
+			decodeError(t, e.do("POST", batchPath, tc.body), contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 		})
 	}
 	if n := len(e.authz.seen()); n != 0 {
@@ -654,7 +652,7 @@ func TestBatchRefusesAMalformedRequest(t *testing.T) {
 	}
 	// A malformed verify body is the same refusal.
 	for _, body := range []string{"{", `{"oid":"nope","size":1}`, `{"oid":"` + good + `","size":-1}`} {
-		decodeError(t, e.do("POST", verifyPath, body), http.StatusBadRequest, contract.CodeInvalid)
+		decodeError(t, e.do("POST", verifyPath, body), contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil))
 	}
 }
 
@@ -676,7 +674,7 @@ func TestLabelFormAndUnknownRepository(t *testing.T) {
 
 	// An unresolved name reaches the authorizer with the owner and slug
 	// and answers 404 once it allowed.
-	decodeError(t, e.do("POST", "/dev/nothing.git/info/lfs/objects/batch", body), http.StatusNotFound, contract.CodeRepoNotFound)
+	decodeError(t, e.do("POST", "/dev/nothing.git/info/lfs/objects/batch", body), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 	last := e.authz.seen()
 	req := last[len(last)-1]
 	if req.Repo.ID != "" || req.Repo.Owner != "dev" || req.Repo.Slug != "nothing" {
@@ -684,17 +682,17 @@ func TestLabelFormAndUnknownRepository(t *testing.T) {
 	}
 	// An unknown id answers 404 too, after the allow.
 	unknown := "00000000-0000-4000-8000-000000000000"
-	decodeError(t, e.do("POST", "/r/"+unknown+".git/info/lfs/objects/batch", body), http.StatusNotFound, contract.CodeRepoNotFound)
-	decodeError(t, e.do("POST", "/r/"+unknown+".git/info/lfs/verify", fmt.Sprintf(`{"oid":%q,"size":4}`, good)), http.StatusNotFound, contract.CodeRepoNotFound)
+	decodeError(t, e.do("POST", "/r/"+unknown+".git/info/lfs/objects/batch", body), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
+	decodeError(t, e.do("POST", "/r/"+unknown+".git/info/lfs/verify", fmt.Sprintf(`{"oid":%q,"size":4}`, good)), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 
 	// A deny is 403 in the LFS shape.
 	e.authz.decision = auth.Decision{Allow: false, Reason: "no"}
-	decodeError(t, e.do("POST", batchPath, body), http.StatusForbidden, contract.CodeForbidden)
+	decodeError(t, e.do("POST", batchPath, body), contract.Refuse(http.StatusForbidden, contract.CodeForbidden, nil))
 
 	// No decision is 503 with the sentence of authorizer_unavailable.
 	e.authz.err = &auth.Unavailable{URL: "http://authorizer.invalid", Status: 500}
-	decodeError(t, e.do("POST", batchPath, body), http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable)
-	decodeError(t, e.do("POST", "/dev/hello.git/info/lfs/verify", fmt.Sprintf(`{"oid":%q,"size":4}`, good)), http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable)
+	decodeError(t, e.do("POST", batchPath, body), contract.Refuse(http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable, nil))
+	decodeError(t, e.do("POST", "/dev/hello.git/info/lfs/verify", fmt.Sprintf(`{"oid":%q,"size":4}`, good)), contract.Refuse(http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable, nil))
 }
 
 // TestDeletedRepositoryIsNotFound: a deleted repository answers 404 on
@@ -710,9 +708,8 @@ func TestDeletedRepositoryIsNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	oid := oidOf([]byte("x"))
-	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":1}]}`, oid)),
-		http.StatusNotFound, contract.CodeRepoNotFound)
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), http.StatusNotFound, contract.CodeRepoNotFound)
+	decodeError(t, e.do("POST", batchPath, fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":1}]}`, oid)), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 }
 
 // TestStorageFailuresAreServiceUnavailable: a store that fails is 503
@@ -769,21 +766,21 @@ func TestStorageFailuresAreServiceUnavailable(t *testing.T) {
 
 	// The newest index cannot be read: a top-level 503 on both routes.
 	failKey("index/")
-	decodeError(t, e.do("POST", batchPath, down), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", batchPath, down), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 	failKey("index/")
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 
 	// The name lookup fails before the guard is asked.
 	failKey("names/")
 	before := len(e.authz.seen())
-	decodeError(t, e.do("POST", "/dev/hello.git/info/lfs/objects/batch", down), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", "/dev/hello.git/info/lfs/objects/batch", down), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 	if len(e.authz.seen()) != before {
 		t.Error("the guard was asked after the name lookup failed")
 	}
 
 	// The lfs/ listing of the quota rule fails.
 	fail("List", "lfs/")
-	decodeError(t, e.do("POST", batchPath, up), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", batchPath, up), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 
 	// The marker read of an upload batch fails: a per-object 503, and a
 	// marker that does not parse is the same answer.
@@ -807,18 +804,18 @@ func TestStorageFailuresAreServiceUnavailable(t *testing.T) {
 	// The HEAD of the object on verify fails, and so does the marker
 	// write after a matching size.
 	fail("Head", "lfs/")
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 	store.SetFault(nil)
 	if _, err := store.Put(t.Context(), log.RepoPrefix(testRepo)+"lfs/"+oid, wal.BytesBody([]byte("x"))); err != nil {
 		t.Fatal(err)
 	}
 	fail("Create", "lfs/verified/")
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), http.StatusServiceUnavailable, contract.CodeStorageUnavailable)
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":1}`, oid)), contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil))
 
 	// A mismatched size whose delete fails is still 422: the object is
 	// left for spec 019's sweep and the failure goes to the log.
 	fail("Delete", "lfs/")
-	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":2}`, oid)), http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch)
+	decodeError(t, e.do("POST", verifyPath, fmt.Sprintf(`{"oid":%q,"size":2}`, oid)), contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 	store.SetFault(nil)
 }
 

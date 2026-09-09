@@ -72,22 +72,21 @@ func (h *Handler) registerRead(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/repos/{id}/archive/{file}", h.archive)
 }
 
-// readError is a refusal decided before or during a read: the status,
-// the code, and the details of the envelope.
+// readError is a refusal decided before or during a read: the envelope
+// prepared where the code is chosen, rendered where the response is
+// written.
 type readError struct {
-	status  int
-	code    string
-	details map[string]any
+	contract.Refusal
 }
 
-func (e *readError) Error() string { return fmt.Sprintf("%d %s %v", e.status, e.code, e.details) }
+func (e *readError) Error() string { return fmt.Sprintf("%d %s %v", e.Status, e.Code, e.Details) }
 
 func invalidRead(reason string) *readError {
-	return &readError{status: http.StatusBadRequest, code: contract.CodeInvalid, details: map[string]any{"reason": reason}}
+	return &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": reason})}
 }
 
 func refNotFound(ref string) *readError {
-	return &readError{status: http.StatusNotFound, code: contract.CodeRefNotFound, details: map[string]any{"ref": ref}}
+	return &readError{contract.Refuse(http.StatusNotFound, contract.CodeRefNotFound, map[string]any{"ref": ref})}
 }
 
 // readRequest is one read request after the prologue: the repository
@@ -219,7 +218,7 @@ func etagMatches(header, etag string) bool {
 // writeReadError renders a refusal, or a *readError's envelope.
 func writeReadError(w http.ResponseWriter, err error) {
 	if re, ok := errors.AsType[*readError](err); ok {
-		contract.Write(w, re.status, re.code, re.details)
+		re.Write(w)
 		return
 	}
 	contract.Write(w, http.StatusInternalServerError, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
@@ -234,7 +233,7 @@ func (rr *readRequest) fail(ctx context.Context, err error) {
 		return
 	}
 	if re, ok := errors.AsType[*readError](err); ok {
-		contract.Write(rr.w, re.status, re.code, re.details)
+		re.Write(rr.w)
 		return
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -566,7 +565,7 @@ func (h *Handler) commits(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	oid, err := rr.resolve(ctx, q.ref, "^{commit}")
 	if err != nil {
-		if re, ok := errors.AsType[*readError](err); ok && re.code == contract.CodeRefNotFound && !hasHistory(rr.repo) {
+		if re, ok := errors.AsType[*readError](err); ok && re.Code == contract.CodeRefNotFound && !hasHistory(rr.repo) {
 			// No commit yet: the reference cannot exist, and the log
 			// is empty rather than missing.
 			httpjson.Write(w, http.StatusOK, map[string]any{"commits": []commitJSON{}, "next_cursor": nil})
@@ -936,7 +935,7 @@ func (h *Handler) blob(w http.ResponseWriter, r *http.Request) {
 	start, end, status, err := blobRange(r.Header.Get("Range"), size)
 	if err != nil {
 		_ = s.finish(true)
-		if re, ok := errors.AsType[*readError](err); ok && re.status == http.StatusRequestedRangeNotSatisfiable {
+		if re, ok := errors.AsType[*readError](err); ok && re.Status == http.StatusRequestedRangeNotSatisfiable {
 			w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
 		}
 		rr.fail(ctx, err)
@@ -944,7 +943,7 @@ func (h *Handler) blob(w http.ResponseWriter, r *http.Request) {
 	}
 	if end-start+1 > MaxBlobBytes {
 		_ = s.finish(true)
-		rr.fail(ctx, &readError{status: http.StatusRequestEntityTooLarge, code: contract.CodeBlobTooLarge, details: map[string]any{"size": size, "max": MaxBlobBytes}})
+		rr.fail(ctx, &readError{contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeBlobTooLarge, map[string]any{"size": size, "max": MaxBlobBytes})})
 		return
 	}
 	// The content type is sniffed over the first 512 bytes of the blob
@@ -1012,7 +1011,7 @@ func blobRange(header string, size int64) (start, end int64, status int, err err
 		return 0, 0, 0, invalidRead("range: one bytes=<first>-<last> range")
 	}
 	if start >= size {
-		return 0, 0, 0, &readError{status: http.StatusRequestedRangeNotSatisfiable, code: contract.CodeInvalid, details: map[string]any{"reason": "range: past the end of the blob", "size": size}}
+		return 0, 0, 0, &readError{contract.Refuse(http.StatusRequestedRangeNotSatisfiable, contract.CodeInvalid, map[string]any{"reason": "range: past the end of the blob", "size": size})}
 	}
 	return start, end, http.StatusPartialContent, nil
 }

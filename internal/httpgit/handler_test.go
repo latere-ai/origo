@@ -478,9 +478,6 @@ func TestPushWhenTheLogRefusesTheCommit(t *testing.T) {
 	if got, _ := b.ReadAll(); string(got) != "bc" {
 		t.Fatalf("section read = %q", got)
 	}
-	if short("abc") != "abc" || short(strings.Repeat("x", 20)) != strings.Repeat("x", 12) {
-		t.Fatal("short")
-	}
 }
 
 // TestReferenceMovedBetweenAdvertisementAndPush drives the two ways a

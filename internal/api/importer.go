@@ -95,19 +95,19 @@ func (h *Handler) importDir(id string) string { return filepath.Join(h.importRoo
 func (h *Handler) source(ctx context.Context, raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return nil, &readError{status: http.StatusBadRequest, code: contract.CodeInvalid,
-			details: map[string]any{"reason": "source must be an absolute https URL", "field": "source"}}
+		return nil, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid,
+			map[string]any{"reason": "source must be an absolute https URL", "field": "source"})}
 	}
 	if u.Scheme != "https" {
-		return nil, &readError{status: http.StatusBadRequest, code: contract.CodeInvalid,
-			details: map[string]any{"reason": "source must be an https URL", "field": "source"}}
+		return nil, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid,
+			map[string]any{"reason": "source must be an https URL", "field": "source"})}
 	}
 	if _, err := h.egress.Resolve(ctx, u.Hostname()); err != nil {
 		ee, ok := errors.AsType[*EgressError](err)
 		if !ok {
 			return nil, err
 		}
-		return nil, &readError{status: http.StatusBadRequest, code: contract.CodeInvalid, details: ee.Details()}
+		return nil, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, ee.Details())}
 	}
 	return u, nil
 }

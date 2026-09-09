@@ -70,18 +70,19 @@ func (c *metaCache) meta(ctx context.Context, r *http.Request, id string) (*wal.
 	return m, nil
 }
 
-// stateRefusal is the code a repository's own state refuses a push
-// with, or "" when it accepts one. A freeze is the consumer's own
-// switch; an import holds the repository until it finishes, because a
-// push during one would be folded away by the import's entry.
-func stateRefusal(m *wal.Meta) (code string, details map[string]any) {
+// stateRefusal is the refusal a repository's own state answers a push
+// with, and false when it accepts one. A freeze is the consumer's own
+// switch, refused under the 403 its row gives a write; an import holds
+// the repository until it finishes, because a push during one would be
+// folded away by the import's entry, under its 409.
+func stateRefusal(m *wal.Meta) (contract.Refusal, bool) {
 	switch {
 	case m.FrozenAt != nil:
-		return contract.CodeRepoFrozen, map[string]any{"frozen_at": m.FrozenAt}
+		return contract.Refuse(http.StatusForbidden, contract.CodeRepoFrozen, map[string]any{"frozen_at": m.FrozenAt}), true
 	case m.ImportingSince != nil:
-		return contract.CodeRepoImporting, map[string]any{"started_at": m.ImportingSince}
+		return contract.Refuse(http.StatusConflict, contract.CodeRepoImporting, map[string]any{"started_at": m.ImportingSince}), true
 	}
-	return "", nil
+	return contract.Refusal{}, false
 }
 
 // refuseState refuses a push at info/refs before the client uploads a
@@ -89,14 +90,14 @@ func stateRefusal(m *wal.Meta) (code string, details map[string]any) {
 // git prints "remote error: repo_frozen: <sentence>"; an import travels
 // as the 409 its row states, which is what a consumer driving a
 // migration reads.
-func (h *Handler) refuseState(w http.ResponseWriter, service, code string, details map[string]any) {
-	if code == contract.CodeRepoImporting {
-		contract.Write(w, http.StatusConflict, code, details)
+func (h *Handler) refuseState(w http.ResponseWriter, service string, refusal contract.Refusal) {
+	if refusal.Code == contract.CodeRepoImporting {
+		refusal.Write(w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-"+service+"-advertisement")
 	w.Header().Set("Cache-Control", "no-cache")
 	_ = writePkt(w, "# service="+service+"\n")
 	_ = flushPkt(w)
-	_ = writePkt(w, "ERR "+code+": "+contract.Sentence(code)+"\n")
+	_ = writePkt(w, "ERR "+refusal.Line()+"\n")
 }

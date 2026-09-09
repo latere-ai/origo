@@ -972,7 +972,7 @@ func TestCommitScannerAndTreeParsing(t *testing.T) {
 	if !etagMatches(`"1"`, `"1"`) || etagMatches("", `"1"`) || etagMatches(`"2"`, `"1"`) {
 		t.Fatal("etagMatches")
 	}
-	rec := &readError{status: 400, code: contract.CodeInvalid, details: map[string]any{"reason": "x"}}
+	rec := &readError{contract.Refuse(400, contract.CodeInvalid, map[string]any{"reason": "x"})}
 	if rec.Error() == "" {
 		t.Fatal("Error")
 	}

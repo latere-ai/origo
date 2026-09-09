@@ -11,6 +11,8 @@ package contract
 
 import (
 	"net/http"
+	"slices"
+	"sort"
 
 	"latere.ai/x/pkg/httpjson"
 )
@@ -96,6 +98,42 @@ var sentences = map[string]string{
 	CodeInvalidChange:         "A change in the request is not valid.",
 }
 
+// statuses is the other half of the code table: every HTTP status the
+// Status column of the owning spec's Code table lists for the code, in
+// the column's order. Most codes have one; repo_frozen has two (403 on
+// a write, 409 on a second freeze, spec 019); non_fast_forward, whose
+// column names the sideband and one JSON status, holds the JSON status;
+// invalid_request carries 416 beside 400 for the one refusal spec 009's
+// blob endpoint answers with Content-Range, a Range past the end of the
+// blob. A call site sends a code under one of its statuses and nothing
+// else, which TestEveryCodeHasOneSentence holds.
+var statuses = map[string][]int{
+	CodeInvalid:               {http.StatusBadRequest, http.StatusRequestedRangeNotSatisfiable},
+	CodeUnauthenticated:       {http.StatusUnauthorized},
+	CodeForbidden:             {http.StatusForbidden},
+	CodeRepoNotFound:          {http.StatusNotFound},
+	CodeRefNotFound:           {http.StatusNotFound},
+	CodeRepoExists:            {http.StatusConflict},
+	CodeNonFastForward:        {http.StatusConflict},
+	CodeOverQuota:             {http.StatusRequestEntityTooLarge},
+	CodeRateLimited:           {http.StatusTooManyRequests},
+	CodeStorageUnavailable:    {http.StatusServiceUnavailable},
+	CodeAuthorizerUnavailable: {http.StatusServiceUnavailable},
+	CodeBlobTooLarge:          {http.StatusRequestEntityTooLarge},
+	CodeOperationTimeout:      {http.StatusGatewayTimeout},
+	CodeLFSObjectMismatch:     {http.StatusUnprocessableEntity},
+	CodeLFSObjectNotStored:    {http.StatusNotFound},
+	CodeLFSLocksUnsupported:   {http.StatusNotImplemented},
+	CodeRepositoryUnavailable: {http.StatusServiceUnavailable},
+	CodeGone:                  {http.StatusGone},
+	CodeRepoFrozen:            {http.StatusForbidden, http.StatusConflict},
+	CodeRepoImporting:         {http.StatusConflict},
+	CodeRepoNotEmpty:          {http.StatusConflict},
+	CodeImportNotFound:        {http.StatusNotFound},
+	CodeMergeConflict:         {http.StatusConflict},
+	CodeInvalidChange:         {http.StatusBadRequest},
+}
+
 // Sentence is the one user sentence of a code. A code without a sentence
 // is a programming error: the table is the contract, so it panics rather
 // than inventing text.
@@ -107,15 +145,64 @@ func Sentence(code string) string {
 	return s
 }
 
-// Codes lists every code of the table, for a test that checks the table
-// against the specs.
+// Status is the first HTTP status of a code's row. Like Sentence it
+// panics on a code the table lacks.
+func Status(code string) int {
+	s, ok := statuses[code]
+	if !ok || len(s) == 0 {
+		panic("contract: no status for code " + code)
+	}
+	return s[0]
+}
+
+// Statuses is every status of a code's row, in the order the owning
+// spec lists them, for the test that holds every call site to the row.
+func Statuses(code string) []int {
+	return slices.Clone(statuses[code])
+}
+
+// Codes lists every code of the table, sorted, for a test that checks
+// the table against the specs.
 func Codes() []string {
 	out := make([]string, 0, len(sentences))
 	for c := range sentences {
 		out = append(out, c)
 	}
+	sort.Strings(out)
 	return out
 }
+
+// Line is the form of a code on git's sideband, in an ERR pkt-line, and
+// in a hook verdict (spec 021): the code, a colon, a space, and the
+// sentence, with nothing appended or substituted.
+func Line(code string) string {
+	return code + ": " + Sentence(code)
+}
+
+// Refusal is one row's answer prepared away from the response writer:
+// the status, the code, and the developer details, for a handler that
+// decides a refusal in one place and renders it in another. Refuse
+// builds one from a Code constant and a status of its row, so the call
+// site the table test reads is where the code is chosen.
+type Refusal struct {
+	Status  int
+	Code    string
+	Details map[string]any
+}
+
+// Refuse prepares the envelope of a code under a status of its row.
+func Refuse(status int, code string, details map[string]any) Refusal {
+	return Refusal{Status: status, Code: code, Details: details}
+}
+
+// Sentence is the user sentence of the refusal's code.
+func (r Refusal) Sentence() string { return Sentence(r.Code) }
+
+// Line is the refusal's sideband form, Line of its code.
+func (r Refusal) Line() string { return Line(r.Code) }
+
+// Write sends the refusal's envelope.
+func (r Refusal) Write(w http.ResponseWriter) { Write(w, r.Status, r.Code, r.Details) }
 
 // Error builds the envelope body of a code: its sentence and the
 // developer details, which are omitted when empty.
