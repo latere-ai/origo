@@ -745,7 +745,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
-| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 018, 020, 021 |
+| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 018, 019, 020, 021 |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
