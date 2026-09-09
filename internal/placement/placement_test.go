@@ -221,7 +221,8 @@ func (n *packetNet) listen(port int) *packetConn {
 	return c
 }
 
-type datagram struct {
+// packet is one datagram in flight, with the address it came from.
+type packet struct {
 	from net.Addr
 	body []byte
 }
@@ -230,7 +231,7 @@ type datagram struct {
 type packetConn struct {
 	net    *packetNet
 	addr   *net.UDPAddr
-	queue  []datagram
+	queue  []packet
 	closed bool
 }
 
@@ -244,7 +245,7 @@ func (c *packetConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if !ok {
 		return len(p), nil
 	}
-	peer.queue = append(peer.queue, datagram{from: c.addr, body: bytes.Clone(p)})
+	peer.queue = append(peer.queue, packet{from: c.addr, body: bytes.Clone(p)})
 	return len(p), nil
 }
 
