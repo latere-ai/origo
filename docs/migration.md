@@ -194,6 +194,13 @@ is the prior host's step, in this order:
    client that carries no Origo credential of its own would be asked
    for one. Minting that token is the prior host's step, as minting
    the import bearer was.
+
+   A token in a URL is read by anything that records the URL: the
+   prior host's own access log, any proxy between it and the client,
+   and the client's history. Mint a short-lived token bound to the one
+   repository being cut over, give it only the scopes that repository
+   needs, and stop minting it when you take the redirect down. Do not
+   put a token that reaches more than one repository in a redirect.
 4. Leave the redirect up for at least 30 days, then remove it.
 5. Point anything that mounts or clones the repository at Origo.
 

@@ -78,7 +78,7 @@ stateDiagram-v2
 | importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: one entry, 30 minute budget, `transfer.fsckObjects`, the source host in `ORIGO_EGRESS_ALLOW`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
 | verifying | `verify` (below) compares the two sides and records the result in `meta` | none |
 | mirrored | serves reads; writes are allowed but the prior host has not yet sent any; Origo's copy is never frozen by this protocol | keeps serving both |
-| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; the 308 target carries a token the prior host mints as the URL's user info, `https://x:<token>@<origo>/r/<id>.git/…`, because git's HTTP client drops an `Authorization` header on a redirect that changes the host and every route of Origo is authenticated; its mounts clone from Origo |
+| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; the 308 target carries a token the prior host mints as the URL's user info, `https://x:<token>@<origo>/r/<id>.git/…`, because git's HTTP client drops an `Authorization` header on a redirect that changes the host and every route of Origo is authenticated. The consequence is that the token is in the redirect URL and in anything that logs one, the prior host's own access log included, so the token is a short-lived repository-bound token (spec 007) for the repository being cut over and nothing wider, and the prior host stops minting it when the redirect comes down; spec 016's threats table carries the row. Its mounts clone from Origo |
 
 A repository whose verification finds a difference is imported again
 after the operator fixes the cause. The import refuses a non-empty
@@ -141,14 +141,25 @@ client of Origo's API, not a node.
 The manifest is JSON lines, one object per repository:
 
 ```json
-{"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME"}
+{"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "source": "https://old.example.com/acme/api.git", "token_env": "MIGRATE_TOKEN_ACME", "default_branch": "trunk"}
 ```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `id` | yes | the repository's id on Origo, a UUID (spec 003) |
+| `prior_id` | no | the prior host's own id, which Origo never reads and the report copies back |
+| `owner` | yes | the owner label the repository is registered under (spec 003) |
+| `slug` | yes | the slug label |
+| `source` | yes | the https URL the import and the verification fetch |
+| `token_env` | yes | the environment variable holding the bearer for that source |
+| `default_branch` | no | the repository's default branch at registration; absent means the source's `HEAD` target at import, which the import's `HEAD` transaction writes |
 
 The whole manifest is read and held to that shape before any call: a
 line whose `id` is not a UUID, whose owner or slug is not a label, whose
-`source` is not an https URL, or whose `token_env` names an empty
-variable is a usage error, exit 2, with the line number on standard
-error and no request to Origo and no report file written. `id` is the
+`source` is not an https URL, whose `default_branch` is not a reference
+name, or whose `token_env` names an empty variable is a usage error,
+exit 2, with the line number on standard error and no request to Origo
+and no report file written. `id` is the
 repository's id on Origo and must be a UUID (spec 003). A
 prior host whose own ids are not UUIDs mints one per repository when
 it writes the manifest, records it on its own record, and may carry
@@ -162,8 +173,9 @@ report is JSON lines, one object per repository in finishing order:
 {"id": "<uuid>", "prior_id": "ws_8f3a", "owner": "acme", "slug": "api", "state": "mirrored", "refs": 42, "objects": 18211, "seconds": 31.4, "error": ""}
 ```
 
-`state` is `mirrored`, `skipped`, or `failed`, and `error` carries the
-failing step and Origo's error code for `failed`. The command resumes
+`state` is `mirrored`, `skipped`, or `failed`, `seconds` is the whole
+drive of one repository rounded to the millisecond, and `error`
+carries the failing step and Origo's error code for `failed`. The command resumes
 from Origo's state and nothing else: `GET /v1/repos/{id}` answering
 404 means `registered` is needed, `GET /v1/repos/{id}/import` says
 whether the import ran, and `verified_at` with `verified_equal: true`
@@ -226,7 +238,13 @@ host's data model.
 - `origod migrate` over a manifest of 20 fixture repositories served by
   the stub source of spec 013 (`test/stubs/source`, in-process, the
   handler constructed with `AllowLoopback` of spec 016 so the source's
-  loopback address is admitted) with parallelism 4 reaches `mirrored` for
+  loopback address is admitted, which the test reaches through
+  `newHandler`, the package variable in `cmd/origod` holding `api.New`
+  that the test replaces with a wrapper setting the field, so no
+  file outside a `_test.go` writes it; the stub is named under
+  `origo-source.localhost` and serves a certificate for it through the
+  stub's `WithSANs`, because a single-label name is not a valid
+  `ORIGO_EGRESS_ALLOW` entry) with parallelism 4 reaches `mirrored` for
   all 20, writes one report line each in the documented shape with
   `prior_id` copied through, reports all 20 as `skipped` on a second
   run without importing again, exits 1 when one source is
@@ -343,10 +361,13 @@ which the same job's other `TestCluster*` tests passing rules out.
 - The report's `seconds` is the whole drive of one repository, rounded
   to the millisecond.
 
-### Open
+### Builder items
 
-- The manifest carries no per-repository `default_branch`; a registered
-  repository takes `main` and the import's `HEAD` transaction moves it
-  to the source's own symbolic target, so the field would change
-  nothing. A prior host whose repositories are not created by this
-  command sets it through `PATCH /v1/repos/{id}` itself.
+- The manifest's optional `default_branch` column, in the field table
+  above, is not built: `origod migrate` registers every repository with
+  the default of `POST /v1/repos` and the import's `HEAD` transaction
+  then moves it to the source's own symbolic target, which is what the
+  absent column means. The column is for a prior host whose default
+  branch is not the source's `HEAD` at import, and it is one field on
+  the manifest struct, one refusal in the shape check, and one field on
+  the create call. Small, and it moves no status.
