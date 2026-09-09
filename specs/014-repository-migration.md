@@ -286,8 +286,8 @@ Beside those: `TestVerifyRefusals` and `TestParseLsRemote` in
 `cmd/origod`, and the `POST /v1/repos/{id}/verify` line in
 `TestEveryRouteRequiresAToken` of spec 016's route sweep.
 
-Coverage: `internal/api` 91.1%, `cmd/origod` 92.9%, `internal/events`
-and `internal/wal` unchanged.
+Coverage: `internal/api` 90.6%, `cmd/origod` 92.9%, `internal/events`
+94.8%, `internal/wal` unchanged.
 
 The stack proof is the dispatched run 34342546925 of `verify.yml` on
 main, which ran `TestClusterMigrationCatchesALateWrite` and
