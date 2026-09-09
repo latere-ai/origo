@@ -514,6 +514,42 @@ spec 015's criterion reads the `ERR` pkt-line, which
 every read of that path. 019's Outcome records all of them and cites
 the dispatched run 34335095125 as its stack proof.
 
+The eighteenth round's second list, on 019 and 014 at `testing`: each
+spec's Design states as the rule what its Outcome recorded as a
+divergence. 019 carries the `meta` cache the hook's verdict reads with
+`MetaTTL` as its window in place of a second read under the write
+lock, `stats.refs` counting `HEAD` and `compacted_at` read from the
+newest `compact` entry's head, the export's empty-repository 404
+`ref_not_found` and which of `git bundle verify` and a clone refuses
+which cut, the null `started_at` and `finished_at` the import endpoint
+serves, the import entry's empty subject, `api.Sweeper` over a
+`*wal.Log`, and the two event criteria naming `internal/api`, where the
+handlers are. 014 carries the manifest as a field table, `seconds`
+rounded to the millisecond, the `newHandler` seam and the stub's
+`WithSANs` on the batch criterion, and the security consequence of the
+cut-over 308: the Origo token is in the redirect URL and in every log
+of one, so it is a short-lived repository-bound token for the one
+repository being cut over, which 016's threats table now carries as a
+row of its own and `docs/migration.md` states beside the redirect.
+014's open item is decided: the manifest gains an optional
+`default_branch` column, absent meaning the source's `HEAD` target at
+import, stated in the field table and left as a small builder item.
+The round's defects: `stubClient` in `test/e2e` skipped when
+`stub-ca.pem` was missing, after `requireNodes` had found the stack
+answering, so two cluster criteria could pass unproven in a job that
+runs without `-v`, and it now fails; and the batch test's second run
+counted no report lines, so a run that wrote none would have passed as
+twenty skips. `TestMembershipByHeartbeat` failed the race gate a third
+time, at the wait and not at an assertion, because its convergence
+budget was `HeartbeatEvery` itself; it now delivers its heartbeats
+through a synchronous in-memory `net.PacketConn` and passes no real
+time, which 005's Outcome records. Left to their owners: 021's builder
+runs `go test -v` for `test/e2e` in the `e2e` and `e2e-slow` jobs so
+every `TestCluster*` name is in the log, and carries 019's 403 cases
+and its unconditional `repo_importing` push in `test/conformance`;
+020's builder, who owns `internal/api`, asserts the `compacted` event
+and `pusher` on every kind in `TestAdministrationEvents`.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -751,7 +787,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
-| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 014, 019 |
+| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 019 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | - |
