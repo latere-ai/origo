@@ -17,9 +17,11 @@ import (
 // TestValidLabel: an owner or slug is the grammar of spec 003, and a
 // label carrying a shell metacharacter, a control character, or a path
 // component git refuses is refused before any subprocess sees it (spec
-// 016).
+// 016). a..b is admitted, the two dots inside a longer label: spec
+// 003's grammar admits it and a label is never a path component a
+// subprocess sees, while . and .. whole are what git refuses.
 func TestValidLabel(t *testing.T) {
-	for _, ok := range []string{"a", "acme", "Acme-1", "a.b_c", "0", strings.Repeat("x", 128)} {
+	for _, ok := range []string{"a", "acme", "Acme-1", "a.b_c", "a..b", "0", strings.Repeat("x", 128)} {
 		if !ValidLabel(ok) {
 			t.Errorf("%q refused", ok)
 		}
