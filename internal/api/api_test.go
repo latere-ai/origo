@@ -62,18 +62,19 @@ type harness struct {
 type harnessOption func(*harnessConfig)
 
 type harnessConfig struct {
-	store       *wal.MemStore
-	wrap        func(wal.Store) wal.Store
-	gitBin      string
-	readTimeout time.Duration
-	sink        *sink.Server
-	placement   placement.Placer
-	limits      *limits.Options
-	egress      *Egress
-	loopback    bool
-	now         func() time.Time
-	compactor   Compactor
-	compactNode string
+	store         *wal.MemStore
+	wrap          func(wal.Store) wal.Store
+	gitBin        string
+	readTimeout   time.Duration
+	sink          *sink.Server
+	placement     placement.Placer
+	limits        *limits.Options
+	egress        *Egress
+	loopback      bool
+	now           func() time.Time
+	compactor     Compactor
+	compactNode   string
+	exportTimeout time.Duration
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -118,6 +119,12 @@ func withLimits(o limits.Options) harnessOption {
 
 func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
+}
+
+// withExportTimeout lowers the budget of one export, so a held git
+// bundle is cut inside a test's patience.
+func withExportTimeout(d time.Duration) harnessOption {
+	return func(c *harnessConfig) { c.exportTimeout = d }
 }
 
 // withCompaction gives the handler a real compaction manager of spec
@@ -201,7 +208,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		compactor = m
 	}
 	mux := http.NewServeMux()
-	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
+	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the

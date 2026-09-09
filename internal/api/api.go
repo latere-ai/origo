@@ -61,6 +61,9 @@ type Options struct {
 	// every deployment, set only by a unit test of import or verify that
 	// serves its source in-process.
 	AllowLoopback bool
+	// ExportTimeout bounds the git bundle subprocess of an export (spec
+	// 019); DefaultExportTimeout when zero. A test lowers it.
+	ExportTimeout time.Duration
 	// Compaction is the manager of spec 006 the gc endpoint drives
 	// (spec 019); a node without one answers 503.
 	Compaction Compactor
@@ -84,6 +87,8 @@ type Handler struct {
 	now       func() time.Time
 
 	compaction Compactor
+
+	exportTimeout time.Duration
 
 	readTimeout time.Duration
 }
@@ -116,10 +121,14 @@ func New(o Options) *Handler {
 	if now == nil {
 		now = time.Now
 	}
+	exportTimeout := o.ExportTimeout
+	if exportTimeout == 0 {
+		exportTimeout = DefaultExportTimeout
+	}
 	return &Handler{
 		cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer,
 		placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress, now: now,
-		compaction: o.Compaction,
+		compaction: o.Compaction, exportTimeout: exportTimeout,
 	}
 }
 
