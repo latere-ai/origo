@@ -73,7 +73,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing |
-| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | validated |
+| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | testing |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing |
@@ -201,7 +201,7 @@ flowchart LR
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's `TestContract` covers the conformance cases of its first criterion and 014's `TestSourceTokenIsNeverLogged` asserts that the source bearer appears in no process argument and no log line |
-| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | 021 built and at testing: `test/conformance` with 60 cases green against the stub (`TestStubConforms`, `TestRunCleansUp`), the code table with every status and the `go/ast` walk, the sideband rule, the mutation seam and `TestMutation` green for all five capabilities against MinIO, the `e2e` job running `TestContract` and `TestSameAnswersOnStubAndStack`, the `live` job in `release.yml`; at testing until a release's live run and 020's cases. 017 built and at testing: `release.yml` builds, signs, attests, conforms against the published image, deploys, publishes, and verifies its own release, with the four binary archives, the two multi-architecture images, the deploy archive of `tools/release/deploy-archive.sh`, the release fixture, the trixie-slim base in all three Dockerfiles, `internal/version` as the one version source, the newer-format refusal, the smoke fix, and `docs/upgrades/` in the tree; no tag is cut yet, and the first one is what proves the signed artifacts, the bill of materials of a published image, and the `live` job. 018 waits on it for `install-release` |
+| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | 021 built and at testing: `test/conformance` with 60 cases green against the stub (`TestStubConforms`, `TestRunCleansUp`), the code table with every status and the `go/ast` walk, the sideband rule, the mutation seam and `TestMutation` green for all five capabilities against MinIO, the `e2e` job running `TestContract` and `TestSameAnswersOnStubAndStack`, the `live` job in `release.yml`; at testing until a release's live run and 020's cases. 017 built and at testing: `release.yml` builds, signs, attests, conforms against the published image, deploys, publishes, and verifies its own release, with the four binary archives, the two multi-architecture images, the deploy archive of `tools/release/deploy-archive.sh`, the release fixture, the trixie-slim base in all three Dockerfiles, `internal/version` as the one version source, the newer-format refusal, the smoke fix, and `docs/upgrades/` in the tree; no tag is cut yet, and the first one is what proves the signed artifacts, the bill of materials of a published image, and the `live` job. 018 built and at testing: `deploy/base` provider-neutral with the check as an init container, `deploy/examples/digitalocean` and `deploy/examples/aws` beside the `kind` overlay, `origod check` on the subcommand table with its seven lines, `docs/install.md` from a cluster and a bucket to a first push with its blocks run by `tools/docs/run-blocks.sh`, and `docs/configuration.md` and `docs/api.md` generated by `make docs`; the `install` and `overlays` jobs run on every push and `install-release` waits for the first tag, as does the maintainer's walk of the prose |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | built and at testing: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; `TestClusterMigrationCatchesALateWrite` and `TestClusterMigrationDocCommandsRun` ran in the `e2e` job of the dispatched run 34349791440, whose `test/e2e` package passed |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases |
 
@@ -259,6 +259,8 @@ deck and stated here so a reader sees them without the owning spec.
 | the gossip NetworkPolicy `origod-gossip` in `deploy/base` is 016's: one ingress rule admitting UDP 7946 from the `origod` pods only, asserted by `TestClusterPodSecurityContext` through `cluster.Get`; `origod-http` in the same file admits TCP 8080 and 8081 from every peer, because a policy closes every ingress it does not admit for the pods it selects | 016 | 005, 013, 018 |
 | `TestPreviousReleaseFixture` carries the `e2e` tag, reads the fixture path from `ORIGO_PREVIOUS_RELEASE_FIXTURE`, which the `e2e` job and the release pipeline set from `gh release download`, skips when it is unset, and uploads the fixture under a fresh prefix through the S3 client before it starts | 017 | 002, 013, 021 |
 | the Namespace stays in `deploy/bootstrap`, never in `deploy/base`, because the rollout identity creates no namespace | 018 | 002, 017 |
+| `deploy/base/prometheusrule.yaml` is in the directory and is not a resource of `deploy/base/kustomization.yaml`: a `PrometheusRule` needs the Prometheus operator's CustomResourceDefinition, which Origo does not require, so an installation that runs the operator applies it beside the base | 011, 018 | 005, 013 |
+| the `build` job of `verify.yml` runs on every event but the weekly schedule, because 018's `install` job runs on every push and downloads `candidate-images` rather than building; the cluster tiers, the up-script check, and the mutation job stay on a tag | 018 | 013, 021 |
 | `gone` and `operation_timeout` are proved by the code table alone; `over_quota` needs `Authorizer` to lower `quota_bytes`; `import`, `verify`, `repo_importing`, `repo_not_empty`, and `imported` need `Source` and `SourceToken` on `Target`; the live skip list has six entries; the source group is skipped on the stub run because `AllowLoopback` is a `_test.go` seam | 021 | 009, 014, 016, 017, 019 |
 | 020 adds its two codes to the code table and their call sites when it lands; a row no call site sends fails only for the codes of a spec at `testing` or later | 021 | 020 |
 | the LFS round trip is measured through a counting reverse proxy in front of `ORIGO_TEST_URL`; no forward proxy | 010 | 013 |
@@ -602,6 +604,30 @@ named on the criterion it owns, so the two specs close with phase 6
 and the dispatch gate above is what lets every phase between build on
 them.
 
+What holds now that 018 is built: every spec through 021 is built and
+its criteria have passing tests but for the ones a published release
+proves. The documentation an outside operator needs is in the tree and
+is tested rather than asserted: `docs/install.md` takes a cluster and a
+bucket to a first clone and push and its commands are run against a
+bare cluster on every push, `docs/configuration.md` and `docs/api.md`
+are generated from the code and the specs and a drift in either fails
+the same push, `docs/operations.md`, `docs/migration.md`, and
+`docs/upgrades/` cover the rest of a running installation, and
+`deploy/base` is provider-neutral with an example overlay for a
+throwaway cluster and two for a cloud. `SECURITY.md` is in place.
+
+What the first release closes: the four artifact criteria of 017 that
+need published bytes (the signatures, the checksums, the bill of
+materials of a published image, and the release body against the
+changelog section), 021's `live` job against `ORIGO_LIVE_URL`, 018's
+`install-release` job walking the install document against the
+published images and the published deploy archive, and the three
+by-hand checklist items (the fork tag, the object-store probe, and a
+maintainer walking the install prose on a fresh cluster). Those, and
+the criteria of 003, 004, 012, 014, 016, 019, and 020 that wait on
+them, are the whole of what stands between the tree as it is and
+`complete` on phase 6.
+
 ## Conventions
 
 - Every spec has the frontmatter fields `title`, `status`, `track`,
@@ -687,7 +713,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
-| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 020, 021 |
+| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 018, 020, 021 |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |

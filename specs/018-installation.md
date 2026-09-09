@@ -1,6 +1,6 @@
 ---
 title: "Installation: running Origo on any Kubernetes with any S3 compatible bucket"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -10,10 +10,10 @@ depends_on:
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/017-release-and-versioning.md
   - specs/021-conformance-suite.md
-affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, Makefile, .github/workflows/]
+affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -268,3 +268,64 @@ binary artifact of spec 017.
   release checklist item of spec 017, done once per release by hand and
   recorded in the release notes, not a CI test, because the `install`
   job proves the commands and only a person proves the prose.
+
+## Outcome
+
+Built on 2026-09-09. Status `testing`: every criterion a checkout or a
+push can prove has a passing test in the tree, and the two that need a
+published release are listed below with what closes each.
+
+### Criterion to test
+
+| Criterion | Test | State |
+|---|---|---|
+| the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | in the tree, green on the push that carries this Outcome |
+| the same from the release artifacts alone on a tag | the `install-release` job of `release.yml` after `publish`, with the published images pulled and loaded and the `kind` overlay of `deploy-<version>.tar.gz` | pending the first tag |
+| `kustomize build` succeeds on `deploy/examples/digitalocean` and `deploy/examples/aws` | the `overlays` job of `verify.yml`, 5 minutes, over all three example overlays | passing |
+| `deploy/base/ingress.yaml` carries no `nginx.ingress.kubernetes.io/` or `cert-manager.io/` annotation and no `ingressClassName`, and the `kind` overlay renders `proxy-body-size: "0"` and `proxy-read-timeout: "600"` | `cmd/origod`, `TestBaseIngressIsControllerNeutral` | passing |
+| `origod check` runs the check, `origod` and `origod serve` serve, `origod -version` prints the identity, and `origod nosuch` exits 2 with a usage line | `cmd/origod`, `TestSubcommandDispatch` | passing |
+| `origod check` prints a `fail` line naming the requirement for each of the eight failures and exits 1, and seven `ok` lines and 0 when everything is in place | `cmd/origod`, `TestCheckReportsEachRequirement`, with `TestGitVersionParsesTheThreeNumbers` on the version floor and `TestCheckInitContainerSharesTheNodesEnvironment` on the init container that runs it | passing |
+| `make docs` regenerates `docs/configuration.md` and `docs/api.md` byte-identical, and `docs/api.md` carries every endpoint, header, and code the cross-reference lists and no other | `internal/config`, `TestConfigurationDocIsCurrent`, `TestReferenceRowsAreComplete`, `TestDefaultsOnThePageAreTheDefaultsInTheCode`; `tools/apidoc`, `TestAPIDocIsCurrent` and `TestPageStatesTheContractAndNothingElse`; the `specindex` job of `verify.yml` runs `make docs` and `git diff --exit-code docs/` | passing |
+| every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
+| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | pending the first release |
+
+Coverage of the packages this spec touched: `cmd/origod` 92.6%,
+`internal/config` 98.9%, `tools/configdoc` 93.8%, `tools/apidoc` 94.6%,
+`tools/specindex` 95.7%, `tools/specindex/specs` 95.2%.
+
+### Divergences
+
+- `deploy/base/prometheusrule.yaml` is in the directory but is not a
+  resource of `deploy/base/kustomization.yaml`. The Design lists it
+  among what the base holds; a `PrometheusRule` needs the Prometheus
+  operator's CustomResourceDefinition, which Origo does not require and
+  the `kind` stack does not install, so a base that applied it would
+  fail `kubectl apply -k` on every cluster without that operator. The
+  file stays for an installation that runs the operator to apply beside
+  the base, and the install document says where it is and why it is not
+  applied. The decisions table carries the row.
+- The `build` job of `verify.yml` now runs on every event but the weekly
+  schedule, where it ran on a tag and a dispatch. The Design puts the
+  `install` job on every push and the job downloads `candidate-images`
+  and builds nothing, so the build had to move with it. The cluster
+  tiers, the up-script check, and the mutation job keep the tag-only
+  rule spec 013 set for the minutes they cost; one image build and one
+  20 minute install job are what a push now carries that it did not.
+- `docs/install.md` reads a `VERSION` variable that `ORIGO_INSTALL_IMAGE`
+  defaults from, which the Design's variable table does not name. The
+  table's two variables are unchanged and the jobs set them the same
+  way; `VERSION` exists so the page names the release once, beside the
+  releases page and the deploy archive, rather than printing an image
+  tag a reader copies without knowing where its number comes from.
+- `tools/docs/TestInstallDocumentIsWellFormed` is not in the Acceptance
+  criteria. The `install` job is the document's proof and needs a
+  cluster; the test is the half that needs none, so a broken block or a
+  dead link fails in the `test` gate in a second rather than 20 minutes
+  later, and it runs on a machine with no container engine.
+
+### What only a real release proves
+
+| Pending | Closed by |
+|---|---|
+| `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag |
+| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes |
