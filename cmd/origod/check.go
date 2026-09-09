@@ -125,7 +125,7 @@ func requirements(ctx context.Context, cfg *config.Config, getenv config.Getenv)
 		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle, Client: client,
 	})
-	bucket, conditional := ok("bucket"), ok("conditional-create")
+	var bucket, conditional requirement
 	if storeErr != nil {
 		bucket, conditional = fail("bucket", storeErr), fail("conditional-create", storeErr)
 	} else {
@@ -169,7 +169,7 @@ func checkConditionalCreate(ctx context.Context, store wal.Store, cfg *config.Co
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	if getenv("ORIGO_CHECK_SELFTEST") == "1" {
-		selftest, stop, err := permissiveStore(cfg, client)
+		selftest, stop, err := permissiveStore(ctx, cfg, client)
 		if err != nil {
 			return fail("conditional-create", err)
 		}
@@ -196,8 +196,9 @@ func checkConditionalCreate(ctx context.Context, store wal.Store, cfg *config.Co
 // accepts every PUT and ignores If-None-Match, the way a store that
 // cannot linearize writers behaves. It answers on the loopback interface
 // and stops with the requirement.
-func permissiveStore(cfg *config.Config, client *http.Client) (wal.Store, func(), error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func permissiveStore(ctx context.Context, cfg *config.Config, client *http.Client) (wal.Store, func(), error) {
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, nil, err
 	}

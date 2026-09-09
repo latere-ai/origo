@@ -31,13 +31,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	page := config.Document()
 	if !*write {
-		fmt.Fprint(stdout, page)
+		_, _ = fmt.Fprint(stdout, page)
 		return 0
 	}
 	if err := os.WriteFile(*out, []byte(page), 0o644); err != nil {
-		fmt.Fprintln(stderr, "configdoc:", err)
+		_, _ = fmt.Fprintln(stderr, "configdoc:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "configdoc: wrote %s\n", *out)
+	_, _ = fmt.Fprintf(stdout, "configdoc: wrote %s\n", *out)
 	return 0
 }
