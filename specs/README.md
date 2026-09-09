@@ -481,9 +481,10 @@ holds `TestBareRepositoryConfiguration`, `TestValidRefName`,
 019 and 014 as the dialer's callers; 016's Outcome carries the
 coverage of its seven packages and a second item for 019's builder,
 `a..b` in `TestValidLabel`'s accepted list; and the pinned-address
-question stands as two candidate rules, the rule that a pin inside a
-cluster range is the error set aside because the ranges are what a
-fetch must never reach and the pin is the exception to them. The
+question was left standing as two candidate rules, the rule that a pin
+inside a cluster range is the error set aside because the ranges are
+what a fetch must never reach and the pin is the exception to them;
+the eighteenth round below decides it. The
 paragraph `SECURITY.md` and 004's Outcome carried twice is carried
 once.
 
