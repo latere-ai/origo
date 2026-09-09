@@ -76,7 +76,7 @@ jobs:
       - name: Build the release archives
         env:
           TAG: ${{ github.ref_name }}
-        run: make release VERSION="$TAG" COMMIT="$(git rev-parse --short HEAD)"
+        run: make release-archives VERSION="$TAG" COMMIT="$(git rev-parse --short HEAD)"
 
       - name: Pack the deploy archive
         env:

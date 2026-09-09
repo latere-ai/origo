@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Release image. It packages the binary `make release` already compiled
+# Release image. It packages the binary `make release-archives` already compiled
 # for the target platform at out/release/bin/<os>_<arch>/origod, the same
 # bytes the release archives carry, so the image and the archive of one
 # release hold one binary. Nothing is compiled here; a buildx run for

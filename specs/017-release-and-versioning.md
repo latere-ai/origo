@@ -325,12 +325,20 @@ runs, so its status is not a claim about artifacts that do not exist.
   body's prefix rather than the whole of it. A body that were only the
   section would carry no evidence, which the artifact table requires.
 - `Dockerfile.ci` copies `out/release/bin/<os>_<arch>/origod`, the
-  binary `make release` cross-compiled, in place of `out/origod`. The
-  image and the archives of one release then hold one binary, and the
-  two-architecture row is reachable without compiling inside the image.
-  Nothing on a push builds `Dockerfile.ci`: the `build` job of
-  `verify.yml` builds `Dockerfile` and `Dockerfile.stubs`, both of which
+  binary `make release-archives` cross-compiled, in place of
+  `out/origod`. The image and the archives of one release then hold one
+  binary, and the two-architecture row is reachable without compiling
+  inside the image. Nothing on a push builds `Dockerfile.ci`: the
+  `build` job of `verify.yml` builds `Dockerfile` and `Dockerfile.stubs`, both of which
   compile the binary themselves.
+- The target that cross-compiles the archives is `make
+  release-archives`, not `make release`. The shared gate reserves the
+  target name `release` for `go tool lateregate release`, the command
+  that cuts a tag, and fails any target of that name that does
+  something else; the first form of this spec used the reserved name
+  and turned the wiring check red on `748e19c`. Only the name changed:
+  the recipe, `out/release/`, and the four archives are as the Design
+  states.
 - The `e2e` and `e2e-slow` jobs of `verify.yml` now run `go test -v`.
   They named no test in their logs, so a spec's stack proof had to be
   argued from the package's wall-clock time; a stack proof is now read

@@ -3,7 +3,7 @@
 
 GO ?= go
 
-.PHONY: build build-stubs check clean dev dev-up dev-down docs fmt fuzz hooks release test-integration test-tiers
+.PHONY: build build-stubs check clean dev dev-up dev-down docs fmt fuzz hooks release-archives test-integration test-tiers
 
 # The whole bar. Every gate lives in latere.ai/x/ci-gate, pinned as a tool
 # in go.mod and configured in .lateregate.yaml, so this target is a name for
@@ -42,11 +42,14 @@ build:
 # out/release/bin/<os>_<arch>/, where Dockerfile.ci copies the one of
 # its target platform from. release.yml runs this with VERSION set to
 # the tag, so a binary from the pipeline and one from make build carry
-# their identity the same way (internal/version).
+# their identity the same way (internal/version). The target is not
+# called `release`: the shared gate reserves that name for the command
+# that cuts a tag, and a target of a gate's name that does something
+# else fails `lateregate contract`.
 RELEASE_DIR := $(OUT_DIR)/release
 RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
-release:
+release-archives:
 	@rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR)
 	@set -e; for p in $(RELEASE_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; dir=$(RELEASE_DIR)/bin/$${os}_$${arch}; mkdir -p $$dir; \
