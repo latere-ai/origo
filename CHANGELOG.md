@@ -205,9 +205,10 @@ committed: the commit log already holds that.
   on a loopback port that git is pointed at, which terminates the
   source's TLS against the system roots plus `ORIGO_EGRESS_CA_BUNDLE`,
   follows redirects itself so every hop is checked, and refuses
-  `CONNECT`. An operator names a source inside the cluster as
-  `host=address`, the one address it may resolve to. Every repository
-  now runs with `transfer.fsckObjects` and `core.protectHFS` beside
+  `CONNECT`. An operator pins a source to one address as
+  `host=address`: the host is reached at that address and at no other,
+  inside the cluster ranges or outside them, which is how a source that
+  runs inside the cluster is named. Every repository now runs with `transfer.fsckObjects` and `core.protectHFS` beside
   `receive.fsckObjects` and `core.protectNTFS`, so a pack carrying a
   broken object or a tree entry that names the git directory is refused
   on every transfer. A reference name that is not UTF-8, or whose
