@@ -45,7 +45,7 @@ check_status() {
 }
 
 check_status "GET /readyz" "/readyz" "200" "$tmp/readyz"
-grep -qx "ok"
+grep -qx ok "$tmp/readyz"
 
 check_status "GET /version" "/version" "200" "$tmp/version"
 served=$(grep -o '"version":"[^"]*"' "$tmp/version" | head -1 | cut -d'"' -f4)
