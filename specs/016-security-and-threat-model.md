@@ -1,6 +1,6 @@
 ---
 title: "Security and threat model: what Origo protects, against whom, and how"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/001-architecture.md
@@ -350,7 +350,9 @@ Deferred: that `import` and `verify` run through the dialer with
 `-c transfer.fsckObjects=true` is asserted by specs 019 and 014 in
 their own criteria; the bill of materials and provenance by spec 017.
 
-Stack proof: pending the dispatched run of `verify.yml` on main.
+Stack proof: `TestClusterPodSecurityContext` passed in the `e2e` job
+of the dispatched run 34296753008 of `verify.yml` on main, at commit
+`54a4b34`, with every other job of the run green.
 
 Open: whether a pinned address outside every range of
 `ORIGO_CLUSTER_CIDRS`, which the dialer then judges by the well-known
