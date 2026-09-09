@@ -11,10 +11,11 @@
 
 # >>> shared runtime base <<<
 # origod runs git as a subprocess, so the runtime is a minimal Debian with
-# git rather than the static distroless base the Latere template uses. The
-# base is pinned by digest: a tag can be moved by its owner, which turns the
-# base into a mutable input.
-ARG RUNTIME_BASE=docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+# git rather than the static distroless base the Latere template uses.
+# trixie ships git 2.47, above the 2.40 floor origod check enforces (spec
+# 018, spec 017). The base is pinned by digest: a tag can be moved by its
+# owner, which turns the base into a mutable input.
+ARG RUNTIME_BASE=docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 # >>> end shared runtime base <<<
 
 ARG BUILDER_BASE=docker.io/library/golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b

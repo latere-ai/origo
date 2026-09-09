@@ -118,6 +118,15 @@ jobs:
           mkdir -p out/images
           docker save -o out/images/origod.tar ghcr.io/latere-ai/origod:candidate
           docker save -o out/images/origo-stubs.tar ghcr.io/latere-ai/origo-stubs:candidate
+      # Spec 017's image criterion: the git inside the candidate image is
+      # at or above the 2.40 floor origod check enforces (spec 018). This
+      # is the one job with a docker build step, so the check lives here.
+      - name: Check git inside the candidate image
+        run: |
+          set -euo pipefail
+          got=$(docker run --rm --entrypoint git ghcr.io/latere-ai/origod:candidate --version | awk '{print $3}')
+          echo "git $got"
+          [ "$(printf '%s\n2.40\n' "$got" | sort -V | head -1)" = "2.40" ] || { echo "::error::git $got is below 2.40"; exit 1; }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: candidate-images
