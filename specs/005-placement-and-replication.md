@@ -522,3 +522,10 @@ of the 10 MiB repository at 2 replicas and 4.6 to 10.2 at 4, with
 the push every second beside it, and 8 replicas scheduled once the
 request was lowered; the figures vary with the runner and nothing
 about them is asserted, as the criterion says.
+
+A race in `TestMembershipByHeartbeat`, seen on the race gate of a
+push run and fixed by spec 016's build on 2026-09-09: the third node
+started before the clock advanced, so its first heartbeat could reach
+node 1 at the old time and `LastHeard` stayed there. The clock now
+moves before the third starts, so every heartbeat of that round is
+heard at the new time.

@@ -254,9 +254,13 @@ func TestMembershipByHeartbeat(t *testing.T) {
 		t.Fatalf("peers %v", gossips[0].Peers())
 	}
 	// The third joins: its first heartbeat reaches both, and its own
-	// set fills from their next heartbeats, inside one window.
-	start(2)
+	// set fills from their next heartbeats, inside one window. The clock
+	// moves before the third starts, so every heartbeat of this round,
+	// the third's first one included, is heard at the new time; started
+	// first, its heartbeat could land before the advance and leave
+	// LastHeard at the old one.
 	clk.Advance(HeartbeatEvery)
+	start(2)
 	gossips[0].Heartbeat()
 	gossips[1].Heartbeat()
 	waitFor(t, "three nodes agreeing", func() bool {
