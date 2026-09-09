@@ -395,4 +395,58 @@ Items for `latere.ai/x/pkg`: none. `pkg/cache` is the push path's
 `meta` cache, `pkg/wait` the sweep's ticker, and `pkg/hostmatch` the
 egress list through spec 016's dialer.
 
-Stack proof: pending the dispatched run of `verify.yml` on main.
+Fixed after the first push, in the packages this spec owns. Three of
+019's tests failed the `race` gate of the push run 34300095179 on
+timing rather than on an assertion, and the detector found a fourth
+defect beside them. `TestExportDeadline` spent its 2 second export
+budget on a fake git that made the whole bundle before its first
+write, so the deadline raced the making of the bundle instead of
+cutting a body already begun; the bundle is made before the request
+now and the budget is 5 seconds, which bounds the test's wait alone.
+`TestGcRoutesToThePrimary` and `TestStatsFailures` asserted a finished
+compaction inside `compact.GCWait`, the 10 seconds that bound a
+response an ingress would cut and not the run, against a repack
+costing 1.4 seconds under `-race` on an idle machine in a package the
+runner ran 3.4 times slower; the harness waits a minute, so the
+assertion depends on the run and not on the runner. The detector then
+reported `TestAdministrationEvents` assigning to the clock the event
+dispatcher's goroutine reads through the store, which five other tests
+did the same way; `testClock` in the harness is the one clock a test
+moves, under a mutex.
+
+One defect the dispatched run 34331528967 found, in
+`internal/httpgit`: with the read breaker open,
+`TestClusterDegradedStorage/unreachable` (spec 015's criterion) read
+the JSON envelope where the criterion reads the `ERR` pkt-line. The
+`meta` read this spec put between the write breaker's check and the
+lease answered a storage failure through `storageError` while the
+lease's own refusal went to `refuseAdvertisement`, so a push whose
+`meta` was not in the 60 second cache saw a shape git shows no user.
+`Handler.advertisementError` is the one answer for a storage failure
+before the pack now, an open breaker the pkt-line and anything else
+the envelope, and both reads go through it;
+`TestPushAdvertisementRefusesWithoutACachedMeta` drives the cache miss
+and fails on the old path.
+
+Closed for spec 016, whose seventeenth round left them to this
+spec's builder: `TestClusterPodSecurityContext` reads the CPU request
+at the base's 250m or the overlay's 50m in place of "a request is
+set"; `TestValidLabel` admits `a..b`; and the dialer applies a
+`host=address` pin wherever its address is, which decides 016's open
+pinned-address question with a third rule and
+`TestEgressPinAppliesOutsideClusterRanges`. Spec 016's Design and
+Outcome, spec 002's variable row, and the README's decision row carry
+the rule.
+
+Stack proof: `TestClusterImportFixture` and `TestClusterGcBoundsStorage`
+passed in the `e2e` job of the dispatched run 34335095125 of
+`verify.yml` on main, at commit `8007a06`, with every other job of the
+run green.
+
+The spec stays at `testing` by the lifecycle rule of
+`specs/README.md`: what remains is a criterion another spec owns the
+test for. The import criterion's second half, that the source bearer
+appears in no process argument and no log line, is spec 014's
+`TestSourceTokenIsNeverLogged`, and the first criterion's conformance
+cases are spec 021's `TestContract`, the way specs 003, 004, and 016
+wait.

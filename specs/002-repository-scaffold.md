@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 

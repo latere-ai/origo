@@ -200,7 +200,7 @@ flowchart LR
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 built and at testing, its one remaining criterion, the frozen repository, owned by 021's `TestContract`; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
-| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` waiting on a dispatched `e2e` run |
+| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's `TestContract` covers the conformance cases of its first criterion and 014's `TestSourceTokenIsNeverLogged` asserts that the source bearer appears in no process argument and no log line |
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | |
@@ -498,7 +498,15 @@ start-up refusal, because the pin says where the host is rather than
 opening a hole in a range. The dialer applied a pin only inside the
 cluster ranges; `TestEgressPinAppliesOutsideClusterRanges` holds the
 rule, 016's Design and 002's variable row state it, and the decision
-row above is new.
+row above is new. The round's own defects: three of 019's tests failed
+the `race` gate on timing rather than on an assertion and one moved a
+clock a goroutine reads, each fixed at its root in `internal/api`; and
+the dispatched run found that the `meta` read 019 put in the push
+advertisement answered a storage failure with the JSON envelope where
+spec 015's criterion reads the `ERR` pkt-line, which
+`Handler.advertisementError` in `internal/httpgit` now answers for
+every read of that path. 019's Outcome records all of them and cites
+the dispatched run 34335095125 as its stack proof.
 
 ## Later
 
