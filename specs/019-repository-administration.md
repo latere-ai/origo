@@ -485,3 +485,20 @@ import and a verify against the stub source and asserts the bearer is
 in no line the node wrote, no git argument, no event, and no request
 the stub recorded. The first criterion's conformance cases are spec
 021's `TestContract`, the way specs 003, 004, and 016 wait.
+
+Those cases are now written and green against the stack. The `e2e` job
+of the dispatched run 34358421294 of `verify.yml` on main, at commit
+`e9e516e`, ran spec 021's suite against the kind stack and passed, and
+`test/conformance/cases019.go` holds one case per row of this spec's
+operations, transfer, freeze and unfreeze, `stats`, `gc`, the purge
+tombstone and the 410 `gone` among them. The step ran without `-v`, so
+no case is named in the log; what makes the `ok` a statement about
+every case is `TestContract` itself, which fails on any failed case, on
+anything skipped while a `Fault` is wired, and on a non-empty
+`Report.Unverified`. The earlier dispatched run 34353736553 failed on
+`019/gc`, which `e2c62d9`'s one id on both targets fixed before this
+run.
+
+What is left of the criterion is therefore the run of the same cases
+against the installation `ORIGO_LIVE_URL` names, which spec 021 owns
+and the first tag produces.
