@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/compact"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
@@ -71,6 +72,8 @@ type harnessConfig struct {
 	egress      *Egress
 	loopback    bool
 	now         func() time.Time
+	compactor   Compactor
+	compactNode string
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -115,6 +118,18 @@ func withLimits(o limits.Options) harnessOption {
 
 func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
+}
+
+// withCompaction gives the handler a real compaction manager of spec
+// 006 over the harness's own cache, running as the named node.
+func withCompaction(node string) harnessOption {
+	return func(c *harnessConfig) { c.compactNode = node }
+}
+
+// withCompactor gives the handler a stand-in for the manager, for the
+// answers a test cannot hold a real run open for.
+func withCompactor(c Compactor) harnessOption {
+	return func(cfg *harnessConfig) { cfg.compactor = c }
 }
 
 // withNow runs the handler and the log on a clock the test moves, for
@@ -172,8 +187,21 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		cfg.limits.Log, cfg.limits.Logger = l, logger
 		h.limits = limits.New(*cfg.limits)
 	}
+	compactor := cfg.compactor
+	if cfg.compactNode != "" {
+		p := cfg.placement
+		if p == nil {
+			p = placement.NewSet(cfg.compactNode, nil)
+		}
+		m, err := compact.New(compact.Options{Cache: cache, Placement: p, Node: cfg.compactNode, Logger: logger, Now: cfg.now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(m.Wait)
+		compactor = m
+	}
 	mux := http.NewServeMux()
-	h.handler = New(Options{Cache: cache, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
+	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the

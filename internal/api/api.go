@@ -61,6 +61,9 @@ type Options struct {
 	// every deployment, set only by a unit test of import or verify that
 	// serves its source in-process.
 	AllowLoopback bool
+	// Compaction is the manager of spec 006 the gc endpoint drives
+	// (spec 019); a node without one answers 503.
+	Compaction Compactor
 	// Now is the clock the administration operations of spec 019 run
 	// on: the freeze stamp, the import lease, and the weekly sweep. The
 	// wall clock by default; a test substitutes it.
@@ -79,6 +82,8 @@ type Handler struct {
 	limits    *limits.Limits
 	egress    *Egress
 	now       func() time.Time
+
+	compaction Compactor
 
 	readTimeout time.Duration
 }
@@ -114,6 +119,7 @@ func New(o Options) *Handler {
 	return &Handler{
 		cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer,
 		placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress, now: now,
+		compaction: o.Compaction,
 	}
 }
 

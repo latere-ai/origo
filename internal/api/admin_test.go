@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/compact"
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/wal"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
@@ -30,8 +31,22 @@ func (h *harness) create(id, owner, slug string) {
 // the authorizer does not give admin, and the state conflict of each.
 func TestAdministrationOperations(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	h := newHarness(t, withNow(func() time.Time { return now }))
+	h := newHarness(t, withNow(func() time.Time { return now }),
+		withCompactor(stubCompactor{res: compact.Result{Primary: "origod-1"}}))
 	h.create(repoA, "acme", "app")
+
+	// stats reports what the log holds for a repository with no push.
+	status, out := h.do("GET", "/v1/repos/"+repoA+"/stats", "")
+	if status != 200 || out["size_bytes"] != float64(0) || out["lfs_bytes"] != float64(0) ||
+		out["packs"] != float64(0) || out["entries_since_compaction"] != float64(0) ||
+		out["refs"] != float64(1) || out["pushed_at"] != nil || out["compacted_at"] != nil {
+		t.Fatalf("stats: %d %v", status, out)
+	}
+
+	// gc on a node that is not the primary schedules and says so.
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/gc", ""); status != 202 || out["status"] != "scheduled" {
+		t.Fatalf("gc: %d %v", status, out)
+	}
 
 	// transfer moves the owner and leaves the id and the slug.
 	if status, out := h.do("POST", "/v1/repos/"+repoA+"/transfer", `{"owner":"beta"}`); status != 200 || out["owner"] != "beta" || out["slug"] != "app" || out["id"] != repoA {
@@ -59,7 +74,7 @@ func TestAdministrationOperations(t *testing.T) {
 	}
 
 	// freeze sets frozen_at, GET reports it, and a second freeze is 409.
-	status, out := h.do("POST", "/v1/repos/"+repoA+"/freeze", "")
+	status, out = h.do("POST", "/v1/repos/"+repoA+"/freeze", "")
 	if status != 200 || out["frozen_at"] != now.Format(time.RFC3339Nano) {
 		t.Fatalf("freeze: %d %v", status, out)
 	}
@@ -87,18 +102,25 @@ func TestAdministrationOperations(t *testing.T) {
 		authorizer.Rule{Subject: "eve", Action: "read", Allow: true},
 	)
 	h.as(auth.Principal{Subject: "eve"})
-	for _, path := range []string{"/transfer", "/freeze", "/unfreeze"} {
+	for _, path := range []string{"/transfer", "/freeze", "/unfreeze", "/gc"} {
 		if status, out := h.do("POST", "/v1/repos/"+repoA+path, `{"owner":"beta"}`); status != 403 || code(out) != contract.CodeForbidden {
 			t.Errorf("%s without admin: %d %v", path, status, out)
 		}
 	}
+	// stats asks for read, which this caller has.
+	if status, _ := h.do("GET", "/v1/repos/"+repoA+"/stats", ""); status != 200 {
+		t.Errorf("stats with read: %d", status)
+	}
 	h.as(auth.Principal{Subject: "alice"})
 
 	// An operation on a repository that does not exist is 404.
-	for _, path := range []string{"/transfer", "/freeze", "/unfreeze"} {
+	for _, path := range []string{"/transfer", "/freeze", "/unfreeze", "/gc"} {
 		if status, out := h.do("POST", "/v1/repos/"+unknown+path, `{"owner":"beta"}`); status != 404 || code(out) != contract.CodeRepoNotFound {
 			t.Errorf("%s of an unknown repository: %d %v", path, status, out)
 		}
+	}
+	if status, out := h.do("GET", "/v1/repos/"+unknown+"/stats", ""); status != 404 || code(out) != contract.CodeRepoNotFound {
+		t.Errorf("stats of an unknown repository: %d %v", status, out)
 	}
 }
 
@@ -125,6 +147,8 @@ func TestPurgedRepositoryIsGone(t *testing.T) {
 		{"POST", "/v1/repos/" + repoA + "/transfer", `{"owner":"beta"}`},
 		{"POST", "/v1/repos/" + repoA + "/freeze", ""},
 		{"POST", "/v1/repos/" + repoA + "/unfreeze", ""},
+		{"POST", "/v1/repos/" + repoA + "/gc", ""},
+		{"GET", "/v1/repos/" + repoA + "/stats", ""},
 		{"GET", "/v1/repos/" + repoA + "/refs", ""},
 		{"GET", "/v1/repos/" + repoA + "/commits", ""},
 		{"GET", "/v1/repos/" + repoA + "/archive/main.tar.gz", ""},

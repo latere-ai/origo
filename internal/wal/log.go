@@ -210,6 +210,24 @@ func (l *Log) HasIndex(ctx context.Context, repo string, seq uint64) (bool, erro
 	return err == nil, err
 }
 
+// EntryHead reads the header and the reference transaction of one
+// entry, key relative to the repository prefix, without its pack. The
+// stats of spec 019 read the at of a compact entry through it, which
+// the index row does not carry.
+func (l *Log) EntryHead(ctx context.Context, repo, key string) (Header, []RefUpdate, error) {
+	full := l.key(repo, key)
+	rc, _, err := l.store.Get(ctx, full, "")
+	if err != nil {
+		return Header{}, nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	hdr, refs, _, err := ReadEntryHead(rc)
+	if err != nil {
+		return Header{}, nil, l.Integrity(ctx, full, err)
+	}
+	return hdr, refs, nil
+}
+
 // Hint reads index/latest. It may lag and never leads correctness.
 func (l *Log) Hint(ctx context.Context, repo string) (uint64, error) {
 	rc, _, err := l.store.Get(ctx, l.key(repo, LatestKey), "")
