@@ -59,12 +59,15 @@ func jobs(t *testing.T, workflow string) map[string]job {
 }
 
 // TestE2EJobsSelectByPrefix is spec 013's criterion for the CI jobs: the
-// six jobs exist with the budgets of the table, each test job selects
-// its prefix and nothing else, the two cluster jobs export the bucket
-// values of the overlay table, e2e-slow installs git-lfs, build is the
-// only job with a docker build step and uploads candidate-images, which
-// the three cluster jobs need and download, and no other job runs the
-// e2e tier.
+// jobs of the table exist with its budgets, each job that runs the e2e
+// tier selects its own tests and nothing else, the two cluster jobs
+// export the bucket values of the overlay table, e2e-slow installs
+// git-lfs, build is the only job with a docker build step and uploads
+// candidate-images, which every job that runs against a cluster needs
+// and downloads, and no job outside the table runs the e2e tier. The
+// install job of spec 018 is in the table: it runs no e2e package, only
+// the conformance contract against the installation the document
+// builds, and it is the second reader of the candidate images.
 func TestE2EJobsSelectByPrefix(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "verify.yml"))
 	if err != nil {
@@ -73,7 +76,7 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	workflow := string(raw)
 	all := jobs(t, workflow)
 
-	budgets := map[string]string{"integration": "25", "build": "15", "e2e": "30", "e2e-slow": "30", "up-script": "15", "mutation": "20", "fuzz": "60"}
+	budgets := map[string]string{"integration": "25", "build": "15", "e2e": "30", "e2e-slow": "30", "up-script": "15", "install": "20", "mutation": "20", "fuzz": "60"}
 	for name, minutes := range budgets {
 		j, ok := all[name]
 		if !ok {
@@ -88,12 +91,15 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	// else: one prefix per job, and for the e2e job the conformance
 	// suite of spec 021 beside its prefix, in a line of its own that
 	// selects the package's two stack tests and spec 017's previous
-	// release fixture test by name.
+	// release fixture test by name. The install job runs no e2e package
+	// at all: its one e2e-tagged line is the contract suite against the
+	// installation docs/install.md just built.
 	selections := map[string][]string{
 		"integration": {"make test-tiers"},
 		"e2e":         {"-run 'TestCluster' -skip 'TestClusterUpScript'", "./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture'"},
 		"e2e-slow":    {"-run 'TestSlow'"},
 		"up-script":   {"-run 'TestClusterUpScript'"},
+		"install":     {"./test/conformance/... -run 'TestContract'"},
 		"mutation":    {"-run 'TestMutation'"},
 	}
 	goTest := regexp.MustCompile(`go test [^\n]*-tags=e2e[^\n]*`)
@@ -156,7 +162,7 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	if b := all["build"].text; !strings.Contains(b, "docker build") || !strings.Contains(b, "upload-artifact") || !strings.Contains(b, "name: candidate-images") {
 		t.Error("build does not build the images and upload candidate-images")
 	}
-	for _, name := range []string{"e2e", "e2e-slow", "up-script"} {
+	for _, name := range []string{"e2e", "e2e-slow", "up-script", "install"} {
 		j := all[name].text
 		if !strings.Contains(j, "needs: build") || !strings.Contains(j, "download-artifact") || !strings.Contains(j, "name: candidate-images") {
 			t.Errorf("job %s does not need build and download candidate-images", name)

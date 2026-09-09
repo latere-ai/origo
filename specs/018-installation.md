@@ -338,6 +338,15 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
   dead link fails in the `test` gate in a second rather than 20 minutes
   later, and it runs on a machine with no container engine.
 
+- Spec 013's `TestE2EJobsSelectByPrefix` grew a row. Its last rule is
+  that no job outside its table runs the `e2e` tier, and the `install`
+  job ends in `TestContract` against the installation, an `e2e`-tagged
+  line. The job is in the table now, with its 20 minute budget, its
+  `needs: build` and `candidate-images` download, and the one selection
+  `./test/conformance/... -run 'TestContract'`; it runs no `e2e`
+  package, so the rule that each job selects its own tests and nothing
+  else is unweakened and the `install` job is held to it too.
+
 ### What only a real release proves
 
 | Pending | Closed by |
