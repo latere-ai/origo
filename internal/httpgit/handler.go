@@ -236,6 +236,10 @@ func (h *Handler) decide(w http.ResponseWriter, r *http.Request, action auth.Act
 		return "", auth.Decision{}, false
 	}
 	placement.SetHeader(w.Header(), h.placement, ref.ID, d.Replicas)
+	// An allow that names a requests_per_minute (spec 007) buckets that
+	// subject at its own figure from the next request on (spec 012's
+	// item, built under spec 020).
+	h.limits.SetSubjectRate(auth.Subject(r.Context()), d.RequestsPerMinute)
 	return ref.ID, d, true
 }
 

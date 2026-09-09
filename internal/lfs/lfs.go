@@ -240,6 +240,10 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, act auth.Actio
 		h.fail(w, r, http.StatusNotFound, contract.CodeRepoNotFound)
 		return "", auth.Decision{}, false
 	}
+	// An allow that names a requests_per_minute (spec 007) buckets that
+	// subject at its own figure from the next request on (spec 012's
+	// item, built under spec 020).
+	h.limits.SetSubjectRate(auth.Subject(r.Context()), d.RequestsPerMinute)
 	return ref.ID, d, true
 }
 

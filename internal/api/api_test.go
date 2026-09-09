@@ -262,7 +262,9 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	mux := http.NewServeMux()
 	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Node: cfg.node, Members: cfg.members, SweepTick: cfg.sweepTick, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
-	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
+	// The git surface shares the node's limits, so a decision it reads
+	// reaches the same bucket table the API's does (spec 012).
+	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard, Limits: h.limits}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

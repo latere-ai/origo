@@ -296,12 +296,16 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 // admit is the guard on the id the path names, with Origo-Prefer (spec
 // 005) on the response whatever the status: the id is the path's, so
 // the header is set before the guard with k = 1 and again with the
-// allow's replicas.
+// allow's replicas. An allow that names a requests_per_minute (spec
+// 007) buckets that subject at its own figure from the next request on
+// (spec 012's item, built under spec 020): the rate travels on the
+// decision, and this is where the decision arrives.
 func (h *Handler) admit(w http.ResponseWriter, r *http.Request, id string, action auth.Action) (auth.Decision, bool) {
 	placement.SetHeader(w.Header(), h.placement, id, auth.DefaultReplicas)
 	d, ok := h.guard.Admit(w, r, auth.RepoRef{ID: id}, action)
 	if ok {
 		placement.SetHeader(w.Header(), h.placement, id, d.Replicas)
+		h.limits.SetSubjectRate(auth.Subject(r.Context()), d.RequestsPerMinute)
 	}
 	return d, ok
 }
