@@ -42,11 +42,11 @@ type EgressOptions struct {
 	// Allow is ORIGO_EGRESS_ALLOW, normalized: exact hosts and *.
 	// wildcards; empty refuses every host.
 	Allow []string
-	// Pinned maps an exact host of Allow to the one address inside
-	// ClusterCIDRs it may resolve to.
+	// Pinned maps an exact host of Allow to the one address it may
+	// resolve to, inside ClusterCIDRs or outside them.
 	Pinned map[string]netip.Addr
 	// ClusterCIDRs is ORIGO_CLUSTER_CIDRS, refused beside the well-known
-	// ranges except for a host's pinned address.
+	// ranges for every host with no pin.
 	ClusterCIDRs []netip.Prefix
 	// Roots is what the proxy verifies a source's certificate against;
 	// nil is the system roots.
@@ -160,10 +160,17 @@ func (e *Egress) Resolve(ctx context.Context, host string) ([]netip.Addr, error)
 
 // refuses names the reason an address is refused, or "" when the rules
 // admit it. Loopback, link-local, and unspecified addresses are refused
-// whatever the pin, loopback excepted under allowLoopback; a cluster
-// address is admitted only when it is the host's pinned address; the
-// private ranges of RFC 1918 and RFC 4193 are refused unless the
-// address is the host's pinned cluster address.
+// whatever the pin, loopback excepted under allowLoopback, so no pin
+// opens the node's own listeners to a source.
+//
+// Past those, a host=address entry fixes the address the dialer uses
+// for that host: the host is admitted at its pinned address and at no
+// other, inside ORIGO_CLUSTER_CIDRS or outside it. The pin is the
+// operator's statement of where the host is, so it is the one exception
+// to the cluster ranges and to the private ranges alike, and a name
+// that answers with another address is refused however public that
+// address is. A host with no pin is refused inside the cluster ranges
+// and in the private ranges of RFC 1918 and RFC 4193.
 func (e *Egress) refuses(a, pinned netip.Addr, hasPin bool) string {
 	switch {
 	case a.IsLoopback():
@@ -176,18 +183,16 @@ func (e *Egress) refuses(a, pinned netip.Addr, hasPin bool) string {
 	case a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast():
 		return "link-local address"
 	}
-	inCluster := false
-	for _, p := range e.cluster {
-		if p.Contains(a) {
-			inCluster = true
-			break
-		}
-	}
-	if inCluster {
-		if hasPin && a == pinned {
+	if hasPin {
+		if a == pinned {
 			return ""
 		}
-		return "address is in ORIGO_CLUSTER_CIDRS and is not the host's pinned address"
+		return "address is not the host's pinned address"
+	}
+	for _, p := range e.cluster {
+		if p.Contains(a) {
+			return "address is in ORIGO_CLUSTER_CIDRS and is not the host's pinned address"
+		}
 	}
 	if a.IsPrivate() {
 		return "private address"

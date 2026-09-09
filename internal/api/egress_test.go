@@ -233,6 +233,61 @@ func TestEgressDialerAdmitsOnlyThePinnedClusterAddress(t *testing.T) {
 	}
 }
 
+// TestEgressPinAppliesOutsideClusterRanges: a host=address entry fixes
+// the address the dialer uses for that host wherever that address is.
+// A pinned host whose name answers with its pinned address outside
+// every range of ORIGO_CLUSTER_CIDRS is dialed there, private range or
+// not, and the same host answering with any other address is refused
+// however public that address is. With the ranges unset the pin still
+// decides, because the pin is the operator's statement of where the
+// host is and not a hole in a range.
+func TestEgressPinAppliesOutsideClusterRanges(t *testing.T) {
+	res := &fakeResolver{answers: map[string][]string{
+		"pinned.example.com":  {"10.10.0.5", "93.184.216.34", "10.10.0.6"},
+		"outside.example.com": {"203.0.113.7"},
+	}}
+	dial := &recordingDial{}
+	e := NewEgress(EgressOptions{
+		Allow:  []string{"pinned.example.com", "outside.example.com"},
+		Pinned: map[string]netip.Addr{"pinned.example.com": netip.MustParseAddr("10.10.0.5"), "outside.example.com": netip.MustParseAddr("198.51.100.9")},
+		// The pinned addresses are in none of these ranges.
+		ClusterCIDRs: []netip.Prefix{netip.MustParsePrefix("10.96.0.0/16")},
+	})
+	e.resolve, e.dial = res.lookup, dial.dial
+	ctx := context.Background()
+
+	// The pinned address outside every cluster range is dialed, though
+	// it is private.
+	if _, err := e.DialContext(ctx, "tcp", "pinned.example.com:443"); err == nil || !slices.Equal(dial.addrs, []string{"10.10.0.5:443"}) {
+		t.Fatalf("pinned address outside the ranges: %v, dialed %v", err, dial.addrs)
+	}
+	// A public address that is not the pin is refused, and so is a
+	// second private one.
+	dial.addrs = nil
+	for _, want := range []string{"93.184.216.34", "10.10.0.6"} {
+		_, err := e.DialContext(ctx, "tcp", "pinned.example.com:443")
+		if ee := egressError(t, err); ee.Address != want || !strings.Contains(ee.Cause, "not the host's pinned address") {
+			t.Errorf("refused %q %q, want %s", ee.Address, ee.Cause, want)
+		}
+	}
+	// A pinned host that answers with a public address the pin does not
+	// name is refused too, with the ranges no part of the judgement.
+	_, err := e.DialContext(ctx, "tcp", "outside.example.com:443")
+	if ee := egressError(t, err); ee.Address != "203.0.113.7" {
+		t.Errorf("outside: %q", ee.Address)
+	}
+	if len(dial.addrs) != 0 {
+		t.Fatalf("a refusal dialed %v", dial.addrs)
+	}
+	// With ORIGO_CLUSTER_CIDRS unset the pin still decides.
+	res.calls = nil
+	none := NewEgress(EgressOptions{Allow: []string{"pinned.example.com"}, Pinned: map[string]netip.Addr{"pinned.example.com": netip.MustParseAddr("10.10.0.5")}})
+	none.resolve, none.dial = res.lookup, dial.dial
+	if _, err := none.DialContext(ctx, "tcp", "pinned.example.com:443"); err == nil || !slices.Equal(dial.addrs, []string{"10.10.0.5:443"}) {
+		t.Fatalf("no cluster ranges: %v, dialed %v", err, dial.addrs)
+	}
+}
+
 // TestEgressDialerAllowLoopbackIsATestSeam: with AllowLoopback set
 // through the handler's constructor a listed host on 127.0.0.1 is
 // dialed and an unlisted one is still refused; without it the same host
