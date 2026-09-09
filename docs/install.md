@@ -167,6 +167,9 @@ ORIGO_AUTHORIZER_TOKEN: …
 ORIGO_GOSSIP_SECRET: …    # openssl rand -hex 32, the same on every node
 ```
 
+There is a third Secret, `origod-token-key`, and it is not in the
+template because its value has to be generated. The next step is that.
+
 Every variable, its default, and what it does is in
 [`configuration.md`](configuration.md).
 
@@ -207,6 +210,9 @@ rm -f "$KEY"
 Keep a copy somewhere you keep secrets. Replacing this key invalidates
 every token Origo has minted; losing it costs you nothing else, because
 no repository data is encrypted with it.
+
+Do this before the next step. Every pod reads `origod-token-key` by
+name, so a rollout that starts without it waits instead of serving.
 
 ## 5. Apply
 
@@ -339,6 +345,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | What you see | What it means | What to do |
 |---|---|---|
 | the pod stays in `Init:0/1` | `origod check` is failing | `kubectl logs <pod> -c check`; the failing line names the requirement |
+| the pod stays in `ContainerCreating` or `CreateContainerConfigError` | a Secret the pod reads is missing | `kubectl describe pod <pod>` names it: `origod-s3` and `origod-auth` come from step 3, `origod-token-key` from step 4 |
 | `configuration: missing …` in the log | a variable is unset or malformed | the message names every problem at once; fix them all and roll again |
 | `fail bucket` | the endpoint, region, credentials, or bucket name is wrong, or the network refuses the connection | check the four values in the `origod-s3` Secret, then reach the endpoint from a pod in the namespace |
 | `fail conditional-create` | the store accepted a second create of a key that exists | this store cannot host Origo safely. Ask your provider about `If-None-Match: *` on `PUT`, or move the bucket |

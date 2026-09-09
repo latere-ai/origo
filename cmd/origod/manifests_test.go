@@ -123,3 +123,42 @@ func TestCheckInitContainerSharesTheNodesEnvironment(t *testing.T) {
 		t.Errorf("the init container runs %v and the node %v", got, want)
 	}
 }
+
+// TestSigningKeyHasOneSource: ORIGO_TOKEN_KEY comes from the Secret
+// origod-token-key and from nowhere else. It is the one value no
+// template can carry, because it has to be the operator's own, so the
+// bootstrap template must not offer a placeholder for it: an operator
+// who filled the template and also ran the install document's generate
+// step would have two keys, one of them the string `replace-me`, and
+// which one the node read would depend on the manifest. Every workload
+// that runs origod reads the same Secret by name.
+func TestSigningKeyHasOneSource(t *testing.T) {
+	const (
+		template = "deploy/bootstrap/secrets.example.yaml"
+		document = "docs/install.md"
+		kindNode = "deploy/examples/kind/origod.yaml"
+	)
+	from := regexp.MustCompile(`(?s)- name: ORIGO_TOKEN_KEY\s+valueFrom:\s+secretKeyRef:\s+name: (\S+)\s+key: ORIGO_TOKEN_KEY`)
+	for _, workload := range []string{baseDeploy, kindNode} {
+		got := from.FindAllStringSubmatch(manifest(t, workload), -1)
+		if len(got) == 0 {
+			t.Errorf("%s does not read ORIGO_TOKEN_KEY from a Secret by name", workload)
+		}
+		for _, m := range got {
+			if m[1] != "origod-token-key" {
+				t.Errorf("%s reads ORIGO_TOKEN_KEY from %q, not origod-token-key", workload, m[1])
+			}
+		}
+	}
+	if n := len(from.FindAllString(manifest(t, baseDeploy), -1)); n != 2 {
+		t.Errorf("%s reads ORIGO_TOKEN_KEY in %d containers; the node and the check are two", baseDeploy, n)
+	}
+	// A YAML key, not the comment that says the value is generated
+	// elsewhere: the comment is what sends a reader to the document.
+	if key := regexp.MustCompile(`(?m)^[^#\n]*\sORIGO_TOKEN_KEY:`); key.MatchString(manifest(t, template)) {
+		t.Errorf("%s carries an ORIGO_TOKEN_KEY entry; the key is generated, not filled in", template)
+	}
+	if !strings.Contains(manifest(t, document), "create secret generic origod-token-key") {
+		t.Errorf("%s does not generate the Secret origod-token-key", document)
+	}
+}
