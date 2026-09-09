@@ -162,7 +162,7 @@ type answer struct {
 // a repository, read it, push, list its references, read the commit,
 // delete it, and read it again, recording every answer without the
 // values that differ by run.
-func consumerFlow(t *testing.T, base, token string) []answer {
+func consumerFlow(t *testing.T, base, token, id string) []answer {
 	t.Helper()
 	call := func(step, method, path, body string) answer {
 		t.Helper()
@@ -200,7 +200,6 @@ func consumerFlow(t *testing.T, base, token string) []answer {
 		return a
 	}
 	var out []answer
-	id := newID(t)
 	slug := conformance.SlugPrefix + "same-" + id[:8]
 	out = append(out, call("create", "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, conformance.Owner, slug)))
 	out = append(out, call("duplicate", "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, conformance.Owner, slug)))
@@ -251,13 +250,16 @@ func TestSameAnswersOnStubAndStack(t *testing.T) {
 	if !answers(url) {
 		t.Skipf("nothing answers at ORIGO_TEST_URL (%s)", url)
 	}
+	// One id on both targets, so the slug and every value derived from
+	// it compare equal.
+	id := newID(t)
 	stub := origo.New(t)
-	fromStub := consumerFlow(t, stub.URL(), stub.Token("dev", ""))
+	fromStub := consumerFlow(t, stub.URL(), stub.Token("dev", ""), id)
 	token := os.Getenv("ORIGO_TEST_ADMIN_TOKEN")
 	if token == "" {
 		token = mintAt(t, fmt.Sprintf("http://localhost:%d", portIssuer), "conformance-same-answers")
 	}
-	fromStack := consumerFlow(t, url, token)
+	fromStack := consumerFlow(t, url, token, id)
 	if len(fromStub) != len(fromStack) {
 		t.Fatalf("%d answers from the stub, %d from the stack", len(fromStub), len(fromStack))
 	}

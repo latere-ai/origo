@@ -158,9 +158,16 @@ jobs:
       # The conformance suite of spec 021 against the same stack, with
       # the stubs and the Fault wired and nothing skipped, and the
       # stub-against-stack comparison that needs the stack as its second
+      # target. The run drives node 1 of spec 013's ports table rather
+      # than the balanced port: the rate limit is a bucket per node, and
+      # at the overlay's 6000 a minute the three buckets behind the
+      # balanced port refill faster than a runner sends, so the
+      # rate_limited row is reachable on one node alone; a live
+      # installation runs at 600, where the balanced ingress is the
       # target.
       - name: Run the conformance suite against the stack
         env:
+          ORIGO_TEST_URL: http://localhost:30180
           ORIGO_TEST_S3_ENDPOINT: http://localhost:30900
           ORIGO_TEST_S3_REGION: us-east-1
           ORIGO_TEST_S3_BUCKET: origo-test
