@@ -99,6 +99,11 @@ type Handler struct {
 	egress    *Egress
 	now       func() time.Time
 
+	// operations is the token bucket per repository of spec 020, 60
+	// server-side operations a minute per repository per node, beside
+	// spec 012's bucket per subject.
+	operations *limits.Buckets
+
 	compaction Compactor
 	node       string
 	members    Members
@@ -162,6 +167,7 @@ func New(o Options) *Handler {
 		compaction: o.Compaction, node: o.Node, members: o.Members,
 		exportTimeout: exportTimeout, importTimeout: importTimeout,
 	}
+	h.operations = limits.NewBuckets(OperationsPerMinute, OperationsPerMinute, limits.IdleBucket, now)
 	h.sweeper = NewSweeper(SweeperOptions{Log: h.log, Node: o.Node, Members: o.Members, Now: now, Tick: tick, Logger: logger})
 	return h
 }
@@ -188,6 +194,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/repos/{id}/tokens", h.tokens)
 	h.registerAdmin(mux)
 	h.registerRead(mux)
+	h.registerOperations(mux)
 }
 
 // Repository is the representation spec 003 fixes.

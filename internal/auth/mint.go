@@ -86,6 +86,11 @@ type Signer struct {
 	jwks   []byte
 }
 
+// Issuer is the value the signer's tokens carry as iss, which is
+// ORIGO_PUBLIC_URL: the host of it names the committer of a
+// server-side operation (spec 020).
+func (s *Signer) Issuer() string { return s.issuer }
+
 // NewSigner builds a signer whose tokens carry issuer as iss.
 func NewSigner(key *ecdsa.PrivateKey, issuer string, now func() time.Time) *Signer {
 	if now == nil {
