@@ -296,8 +296,8 @@ func (o *operation) commits(req *commitsRequest, from string, decoded [][]byte) 
 	case req.CreateBranch:
 		// from: null, the first commit of a repository with no history.
 		if len(o.namedRefs()) > 0 {
-			return "", &readError{status: http.StatusBadRequest, code: contract.CodeInvalid,
-				details: map[string]any{"reason": "from is null only for a repository with no commit", "field": "from"}}
+			return "", &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid,
+				map[string]any{"reason": "from is null only for a repository with no commit", "field": "from"})}
 		}
 	default:
 		parent = *req.ExpectedHead
@@ -398,8 +398,8 @@ func (o *operation) merge(req *mergeRequest) (string, error) {
 		// pack: the branch moves and nothing new is written.
 		return source, nil
 	case !forward && req.Strategy == StrategyFastForwardOnly:
-		return "", &readError{status: http.StatusConflict, code: contract.CodeNonFastForward,
-			details: map[string]any{"ref": o.branch, "expected": source, "actual": head}}
+		return "", &readError{contract.Refuse(http.StatusConflict, contract.CodeNonFastForward,
+			map[string]any{"ref": o.branch, "expected": source, "actual": head})}
 	}
 	tree, err := o.mergeTree(source, "", head, source)
 	if err != nil {
@@ -532,7 +532,7 @@ func (o *operation) parent(commit string, mainline int) (string, error) {
 		}
 		return parents[0], nil
 	}
-	return "", &readError{status: http.StatusBadRequest, code: contract.CodeInvalid, details: field}
+	return "", &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, field)}
 }
 
 // pickMessage is the message of a commit a pick writes when the request
@@ -695,7 +695,7 @@ func (o *operation) fail(err error) {
 		return
 	}
 	if re, ok := errors.AsType[*readError](err); ok {
-		contract.Write(o.w, re.status, re.code, re.details)
+		re.Write(o.w)
 		return
 	}
 	if conflict, ok := errors.AsType[*wal.ConflictError](err); ok {
