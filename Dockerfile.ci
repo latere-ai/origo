@@ -1,8 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# Release image. It packages the binary the verify run already compiled and
-# tested at out/origod, so the bytes that passed the gate are the bytes that
-# ship. Nothing is compiled here.
+# Release image. It packages the binary `make release` already compiled
+# for the target platform at out/release/bin/<os>_<arch>/origod, the same
+# bytes the release archives carry, so the image and the archive of one
+# release hold one binary. Nothing is compiled here; a buildx run for
+# linux/amd64 and linux/arm64 picks each platform's binary through the
+# platform arguments.
 #
 # The runtime stage is the same text Dockerfile carries between the markers.
 
@@ -17,7 +20,9 @@ ARG RUNTIME_BASE=docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b930
 
 FROM ${RUNTIME_BASE} AS runtime
 
-COPY --chown=65532:65532 out/origod /app
+ARG TARGETOS
+ARG TARGETARCH
+COPY --chown=65532:65532 out/release/bin/${TARGETOS}_${TARGETARCH}/origod /app
 
 # >>> shared runtime stage <<<
 # git is the one binary origod needs beside itself. ca-certificates lets the

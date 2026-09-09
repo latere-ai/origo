@@ -3,7 +3,7 @@
 
 GO ?= go
 
-.PHONY: build build-stubs check clean dev dev-up dev-down fmt fuzz hooks test-integration test-tiers
+.PHONY: build build-stubs check clean dev dev-up dev-down fmt fuzz hooks release test-integration test-tiers
 
 # The whole bar. Every gate lives in latere.ai/x/ci-gate, pinned as a tool
 # in go.mod and configured in .lateregate.yaml, so this target is a name for
@@ -35,6 +35,26 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' \
 		-o $(OUT_DIR)/$(SERVICE) ./cmd/$(SERVICE)
 	@echo "built $(OUT_DIR)/$(SERVICE)"
+
+# The release archives of spec 017: origod for the four os/arch pairs
+# with the same LDFLAGS as build, one tar.gz each, and checksums.txt
+# with their SHA-256 sums, under out/release/. The binaries stay under
+# out/release/bin/<os>_<arch>/, where Dockerfile.ci copies the one of
+# its target platform from. release.yml runs this with VERSION set to
+# the tag, so a binary from the pipeline and one from make build carry
+# their identity the same way (internal/version).
+RELEASE_DIR := $(OUT_DIR)/release
+RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
+release:
+	@rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR)
+	@set -e; for p in $(RELEASE_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; dir=$(RELEASE_DIR)/bin/$${os}_$${arch}; mkdir -p $$dir; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $$dir/$(SERVICE) ./cmd/$(SERVICE); \
+		tar -czf $(RELEASE_DIR)/$(SERVICE)_$(VERSION)_$${os}_$${arch}.tar.gz -C $$dir $(SERVICE); \
+		echo "built $(RELEASE_DIR)/$(SERVICE)_$(VERSION)_$${os}_$${arch}.tar.gz"; \
+	done
+	@cd $(RELEASE_DIR) && $(SHA256) *.tar.gz > checksums.txt && cat checksums.txt
 
 # The stub binary of spec 013: the issuer, authorizer, sink, and source
 # `make dev` runs beside MinIO and the kind overlay runs as a pod.
