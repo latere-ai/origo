@@ -62,6 +62,8 @@ const (
 	CodeRepoImporting         = "repo_importing"         // spec 019
 	CodeRepoNotEmpty          = "repo_not_empty"         // spec 019
 	CodeImportNotFound        = "import_not_found"       // spec 019
+	CodeMergeConflict         = "merge_conflict"         // spec 020
+	CodeInvalidChange         = "invalid_change"         // spec 020
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -90,6 +92,8 @@ var sentences = map[string]string{
 	CodeRepoImporting:         "This repository is importing and does not accept pushes until the import finishes.",
 	CodeRepoNotEmpty:          "This repository already has history; import into an empty repository.",
 	CodeImportNotFound:        "No import has been started for this repository.",
+	CodeMergeConflict:         "The change conflicts with the branch. Resolve it in a clone and push.",
+	CodeInvalidChange:         "A change in the request is not valid.",
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence
