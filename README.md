@@ -14,14 +14,16 @@ name; the hostname is the operator's.
 
 ## Status
 
-Phase 1 runs: one node serves `git clone`, `fetch`, and `push` over smart
-HTTP against a repository that lives only in the bucket, with every push
-durable before it is acknowledged, verified on MinIO and on DigitalOcean
-Spaces. The spec deck under [`specs/`](specs/README.md) describes the
-whole system and is the build plan; its index says what is built, what
-is next, and what has to be true before the repository goes public.
-Operators start at [`docs/install.md`](docs/install.md), which takes a
-cluster and a bucket to a first push, and then
+Everything below is built and under test, on a three-node cluster
+against MinIO and on DigitalOcean Spaces: clone, fetch, and push with
+every push durable before it is acknowledged, LFS, push events, the read
+and administration APIs, server-side commits and merges, the conformance
+suite, and the release pipeline. No version is tagged yet, so the
+artifacts a release publishes are the one thing not yet proved. The spec
+deck under [`specs/`](specs/README.md) describes the whole system and is
+the build plan; its index says what is built and what the first release
+closes. Operators start at [`docs/install.md`](docs/install.md), which
+takes a cluster and a bucket to a first push, and then
 [`docs/operations.md`](docs/operations.md).
 
 ## What it does
