@@ -538,3 +538,25 @@ peer list then named itself and whose own heartbeat counted as a
 packet received from B while B had sent nothing. The reservation is
 held until A has bound, and both counters are waited for, because the
 send is counted after the datagram left.
+
+`TestMembershipByHeartbeat` failed a third time, on the race gate of
+the push run 34343994354, at its first assertion and not on a clock:
+the two nodes had ten seconds to agree, which is `HeartbeatEvery`
+itself, so one datagram the loopback socket lost put the next
+heartbeat exactly on the deadline. A membership test that waits on
+delivery has that coin flip in it whatever the wait. The test now
+runs the three nodes over a synchronous in-memory `net.PacketConn`
+written in the test file: `WriteTo` puts the datagram on the
+addressed socket's queue before it returns, the test drains every
+queue into `Gossip.Handle` after each round of heartbeats, and every
+assertion reads the set with no wall clock between the send and the
+read. It asserts what it asserted before, the live set of two nodes
+and then three, `LastHeard` for a peer and for the node itself, the
+drop at 60 seconds and not at 59, the own name of a node with no
+peers, and the refusal of a datagram to a node with no secret, and it
+runs 20 times under `-race` in under a second. The loopback socket
+and the read loop of `Run` stay covered by
+`TestGossipResolvesTheDNSForm` and `TestAnnounceReachesEveryPeer`,
+which bind real sockets, and by
+`TestGossipWiresTwoNodes` in `cmd/origod`, which runs two nodes over
+loopback; the package's coverage is unchanged at 92.6%.
