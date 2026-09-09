@@ -228,3 +228,7 @@ committed: the commit log already holds that.
   is 413. A single push is at most 2 GiB and its body is no longer
   spooled past that. A repository-bound token's push is now held to the
   quota of the subject that minted it rather than to the default.
+- `TestPushPhasesAreObserved` (spec 008) takes the push's request
+  duration on a channel the server sends on after the handler returns,
+  the edge it had none of: git exits on the report status the handler
+  writes before its last phase is observed.

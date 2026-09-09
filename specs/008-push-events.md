@@ -430,4 +430,13 @@ counts toward `entry` now, which the Design states. And
 short enough under the race detector on a loaded runner for the fixed
 cost outside the phases, the enqueue and the hook channel, to be a
 fifth of the request; it pushes a 4 MiB pack now and logs the ratio,
-98% and above on the runner and locally.
+98% and above on the runner and locally. A third, in the same test: it
+read the request's duration and the histogram with no edge to the
+handler, which git leaves running when it exits on the report status
+the handler writes from inside `cmd.Wait`, so the duration was a race
+and `apply` could be counted before it was observed. The duration
+travels on a channel the wrapper sends on after the handler returns,
+and the test takes it before it reads the histogram, once per push:
+the request it times is the one that observed `receive`, because git
+posts an empty probe to the same route first and that request ends
+before the hook runs.

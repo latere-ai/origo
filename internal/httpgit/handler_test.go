@@ -819,14 +819,24 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	n := newNode(t, wal.NewMemStore())
 	n.create(repoA, "acme", "app")
 	// A server that times the receive-pack request around the handler.
-	var requestTime time.Duration
+	// The duration travels on a channel, which is also the test's edge
+	// to the handler: git writes its report status from inside the
+	// handler and exits on it, so a push command returns while the
+	// handler is still observing its last phase, and the histogram is
+	// read only after the request whose duration arrived has returned.
+	// git posts an empty probe to the same route before the push, which
+	// ends before the hook runs and observes no phase; the request the
+	// test times is the one that observed receive.
+	requests := make(chan time.Duration, 2)
 	mux := http.NewServeMux()
 	n.h.Register(mux)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		before, _ := pushHistogram(n.reg)
 		started := time.Now()
 		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "alice"})))
-		if strings.HasSuffix(r.URL.Path, "/git-receive-pack") {
-			requestTime = time.Since(started)
+		took := time.Since(started)
+		if after, _ := pushHistogram(n.reg); strings.HasSuffix(r.URL.Path, "/git-receive-pack") && after[phaseReceive] > before[phaseReceive] {
+			requests <- took
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -846,6 +856,7 @@ func TestPushPhasesAreObserved(t *testing.T) {
 		t.Fatalf("observations before a push: %v", count)
 	}
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
+	requestTime := <-requests
 	count, sum := pushHistogram(n.reg)
 	var total float64
 	for _, phase := range []string{phaseReceive, phaseEntry, phaseIndex, phaseApply} {
@@ -873,6 +884,7 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	if _, err := git(t, work, "push", "-q", "origin", "HEAD:refs/heads/main"); err == nil {
 		t.Fatal("push landed with the bucket down")
 	}
+	<-requests
 	if count, _ = pushHistogram(n.reg); count[phaseReceive] != 2 || count[phaseEntry] != 1 || count[phaseApply] != 1 {
 		t.Fatalf("after a refused push: %v", count)
 	}
