@@ -8,7 +8,10 @@
 # anything, so a tag runs them and a push does not; workflow_dispatch runs
 # them from main on demand. The fuzz job runs on the weekly schedule and
 # nowhere else. Each job selects its tests by name prefix and nothing
-# else, and no job but build has a docker build step.
+# else, and no job but build has a docker build step. Every run on the
+# stack passes -v, so the log names the tests that ran and a spec's
+# stack proof is read from the run rather than argued from the
+# package's wall-clock time (spec 017).
 name: verify
 on:
   push:
@@ -163,7 +166,7 @@ jobs:
           ORIGO_TEST_S3_KEY: minioadmin
           ORIGO_TEST_S3_SECRET: minioadmin
           ORIGO_TEST_S3_PATH_STYLE: "1"
-        run: go test -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestCluster' -skip 'TestClusterUpScript'
+        run: go test -v -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestCluster' -skip 'TestClusterUpScript'
       # The conformance suite of spec 021 against the same stack, with
       # the stubs and the Fault wired and nothing skipped, and the
       # stub-against-stack comparison that needs the stack as its second
@@ -232,7 +235,7 @@ jobs:
           ORIGO_TEST_S3_KEY: minioadmin
           ORIGO_TEST_S3_SECRET: minioadmin
           ORIGO_TEST_S3_PATH_STYLE: "1"
-        run: go test -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestSlow'
+        run: go test -v -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestSlow'
 
   # up.sh on a cluster of its own, with the ports offset by 1000.
   up-script:
