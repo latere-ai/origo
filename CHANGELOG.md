@@ -258,3 +258,22 @@ committed: the commit log already holds that.
   duration on a channel the server sends on after the handler returns,
   the edge it had none of: git exits on the report status the handler
   writes before its last phase is observed.
+- Server-side git operations (spec 020), for tooling that changes many
+  repositories without cloning any of them. Four `POST` routes under
+  `/v1/repos/{id}`, each authorized as a `write`, take the branch and
+  the commit the caller expects to find there and answer the commit
+  they made: `commits` writes and deletes files, creating the branch
+  from another when asked; `merge` fast-forwards or writes a
+  two-parent commit; `cherry-pick` and `revert` apply up to 100
+  commits, all in one entry so a partial application never lands. Each
+  is one entry, one commit, and one `push` event carrying
+  `operation`. A stale `expected_head` is 409 `non_fast_forward`, a
+  merge git cannot make is 409 `merge_conflict` with the paths, and a
+  change the request got wrong is 400 `invalid_change` with its index
+  and reason. `dry_run` computes the result and writes nothing at all.
+  A repository accepts 60 operations a minute; past that it is 429
+  `rate_limited` with `Retry-After`.
+- The authorizer's answer may now carry `requests_per_minute` (spec
+  007), the rate that subject alone is bucketed at on the node: a tool
+  that drives a fleet of repositories takes a figure of its own without
+  raising `ORIGO_REQUESTS_PER_MINUTE` for every caller.
