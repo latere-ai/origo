@@ -1,6 +1,6 @@
 ---
 title: "Limits and abuse controls"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/lfs/, internal/auth/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -173,9 +173,21 @@ per smart HTTP subprocess), `internal/api` (a slot per read request),
 `cmd/origod` (the bucket table behind the verifier, the semaphore
 handed to compaction). `ORIGO_MAX_GIT_PROCS` is read by
 `internal/config`. Every criterion has a passing test in the tree, the
-frozen-repository one through spec 021's suite since 2026-09-09; the
-spec stays at `testing` until that suite's stack run is cited as green
-by spec 021.
+frozen-repository one through spec 021's suite since 2026-09-09.
+
+Stack proof: the `e2e` job of the dispatched run 34358421294 of
+`verify.yml` on main, at commit `e9e516e`, ran spec 021's suite against
+the kind stack and passed in 65 s, with every other job of the run
+green. That run is what the last criterion waited for. `TestContract`
+fails on any failed case, on anything skipped while a `Fault` is wired,
+and on a non-empty `Report.Unverified`, so the `ok` covers
+`TestContract/019/freeze` even though the step ran without `-v` and
+names no case; spec 021's Outcome records the same run and the same
+reading. The `rate_limited` row of this spec's third criterion also
+runs there, against node 1 of spec 013's ports table, because a bucket
+is per node and the balanced port refills faster than a runner sends.
+
+With that, every criterion is closed and the spec is `complete`.
 
 | Criterion | Test |
 |---|---|
