@@ -220,7 +220,13 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		if p == nil {
 			p = placement.NewSet(cfg.compactNode, nil)
 		}
-		m, err := compact.New(compact.Options{Cache: cache, Placement: p, Node: cfg.compactNode, Logger: logger, Now: cfg.now})
+		// GCWait bounds the endpoint's wait so an ingress does not cut
+		// the response; it is not what makes a run correct. A test that
+		// asserts a finished run's figures waits for the run itself, so
+		// the harness raises the wait far above the repack's cost rather
+		// than racing the 10 seconds of production against a runner
+		// under -race. The 202 running answer has a compactor of its own.
+		m, err := compact.New(compact.Options{Cache: cache, Placement: p, Node: cfg.compactNode, Logger: logger, Now: cfg.now, GCWait: time.Minute})
 		if err != nil {
 			t.Fatal(err)
 		}
