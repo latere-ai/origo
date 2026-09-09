@@ -178,7 +178,7 @@ func (i *keySet) stale(now time.Time) bool {
 // fetch runs discovery and the JWKS fetch, each under its own timeout,
 // and stores the keys. The caller has claimed the attempt through due.
 func (i *keySet) fetch(ctx context.Context, client *http.Client, timeout time.Duration, now time.Time) error {
-	keys, err := fetchKeys(ctx, client, i.url, timeout)
+	keys, err := FetchKeys(ctx, client, i.url, timeout)
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	close(i.inflight)
@@ -191,9 +191,11 @@ func (i *keySet) fetch(ctx context.Context, client *http.Client, timeout time.Du
 	return nil
 }
 
-// fetchKeys reads <iss>/.well-known/openid-configuration for jwks_uri and
-// then the key set.
-func fetchKeys(ctx context.Context, client *http.Client, iss string, timeout time.Duration) (map[string]crypto.PublicKey, error) {
+// FetchKeys reads <iss>/.well-known/openid-configuration for jwks_uri and
+// then the key set. It is exported so `origod check` proves an issuer
+// through the same two requests the node makes rather than through a
+// second reading of the same documents.
+func FetchKeys(ctx context.Context, client *http.Client, iss string, timeout time.Duration) (map[string]crypto.PublicKey, error) {
 	doc, err := getDocument(ctx, client, iss+"/.well-known/openid-configuration", timeout)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: %w", err)

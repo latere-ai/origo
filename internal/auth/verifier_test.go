@@ -281,11 +281,11 @@ func TestIssuerUnavailableIsRetried(t *testing.T) {
 	} {
 		srv := httptest.NewServer(handler)
 		t.Cleanup(srv.Close)
-		if _, err := fetchKeys(ctx, testClient(), srv.URL, time.Second); err == nil {
+		if _, err := FetchKeys(ctx, testClient(), srv.URL, time.Second); err == nil {
 			t.Errorf("%s: fetched", name)
 		}
 	}
-	if _, err := fetchKeys(ctx, testClient(), "http://[::1]:namedport", time.Second); err == nil {
+	if _, err := FetchKeys(ctx, testClient(), "http://[::1]:namedport", time.Second); err == nil {
 		t.Error("a bad URL fetched")
 	}
 	// Run fetches at start and stops with the context.

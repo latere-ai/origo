@@ -14,3 +14,7 @@ var diskSize = func(path string) (int64, error) {
 	}
 	return int64(st.Blocks) * int64(st.Bsize), nil //nolint:unconvert // Bsize is int64 on darwin and int64/uint32 elsewhere
 }
+
+// DiskSize reports the size in bytes of the file system holding path.
+// `origod check` reads it to say whether the cache ceiling fits.
+func DiskSize(path string) (int64, error) { return diskSize(path) }

@@ -35,20 +35,23 @@ func main() {
 // start-up or runtime failure, 2 on a usage error.
 //
 // The subcommand table is spec 002's. serve is the default and reads
-// the node's whole configuration; migrate is spec 014's batch client
-// and reads three variables and none of the node's, so the load of the
-// node's table happens inside serve and an operator running migrate
-// from a laptop is not asked for a bucket. check is spec 018's and is
-// not built, so it is an unknown subcommand like any other.
+// the node's whole configuration; check reads the same table and reaches
+// everything in it, so it runs wherever the node runs and nowhere else;
+// migrate is spec 014's batch client and reads three variables and none
+// of the node's, so the load of the node's table happens inside each
+// subcommand and an operator running migrate from a laptop is not asked
+// for a bucket.
 func run(ctx context.Context, args []string, getenv config.Getenv, stdout, stderr io.Writer) int {
 	name, rest := subcommand(args)
 	switch name {
 	case "", "serve":
 		return serve(ctx, rest, getenv, stdout, stderr)
+	case "check":
+		return check(ctx, rest, getenv, stdout, stderr)
 	case "migrate":
 		return migrate(ctx, rest, getenv, stdout, stderr)
 	default:
-		_, _ = fmt.Fprintf(stderr, "origod: unknown subcommand %q; serve (the default) and migrate\n", name)
+		_, _ = fmt.Fprintf(stderr, "origod: unknown subcommand %q; serve (the default), check, and migrate\n", name)
 		return 2
 	}
 }

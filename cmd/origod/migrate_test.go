@@ -301,12 +301,6 @@ func TestMigrateUsageAndConfiguration(t *testing.T) {
 		!strings.Contains(errOut.String(), `unknown subcommand "sideways"`) {
 		t.Fatalf("unknown subcommand: %d %q", code, errOut.String())
 	}
-	// check is spec 018's and is not built, so it is unknown like any
-	// other word.
-	errOut.Reset()
-	if code := run(context.Background(), []string{"check"}, getenv(nil), &out, &errOut); code != 2 {
-		t.Fatalf("check: %d %q", code, errOut.String())
-	}
 	out.Reset()
 	if code := run(context.Background(), []string{"migrate", "-version"}, getenv(nil), &out, &errOut); code != 0 ||
 		!strings.HasPrefix(out.String(), "origod ") {
