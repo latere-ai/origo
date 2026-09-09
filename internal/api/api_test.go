@@ -77,6 +77,7 @@ type harnessConfig struct {
 	exportTimeout time.Duration
 	node          string
 	members       Members
+	sweepTick     time.Duration
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -121,6 +122,12 @@ func withLimits(o limits.Options) harnessOption {
 
 func withReadTimeout(d time.Duration) harnessOption {
 	return func(c *harnessConfig) { c.readTimeout = d }
+}
+
+// withSweepTick lowers how often the node asks whether the weekly
+// sweep's hour has come, so the loop runs inside a test.
+func withSweepTick(d time.Duration) harnessOption {
+	return func(c *harnessConfig) { c.sweepTick = d }
 }
 
 // withNode names the node the import lease and the weekly sweep run as,
@@ -221,7 +228,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 		compactor = m
 	}
 	mux := http.NewServeMux()
-	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Node: cfg.node, Members: cfg.members, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
+	h.handler = New(Options{Cache: cache, Compaction: compactor, Logger: logger, Guard: h.guard, Signer: h.signer, ReadTimeout: cfg.readTimeout, ExportTimeout: cfg.exportTimeout, Node: cfg.node, Members: cfg.members, SweepTick: cfg.sweepTick, Events: dispatcher, Placement: cfg.placement, Limits: h.limits, Egress: cfg.egress, AllowLoopback: cfg.loopback, Now: cfg.now})
 	h.handler.Register(mux)
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,4 +144,49 @@ func mustIndex(t *testing.T, l *wal.Log, id string) *wal.Index {
 		t.Fatal(err)
 	}
 	return ix
+}
+
+// TestStatsFailures covers the two reads stats depends on: the lfs/
+// sum and the compact entry's header, each answered 503 when the
+// bucket refuses it.
+func TestStatsFailures(t *testing.T) {
+	f := loadFixture(t)
+	set, primary, _ := threeNodes(t)
+	store := wal.NewMemStore()
+	h := newHarness(t, withStore(store), withPlacement(set), withCompaction(primary))
+	h.seed(f)
+	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/gc", ""); status != 200 {
+		t.Fatal("gc")
+	}
+	// The compact entry's header is what compacted_at reads.
+	store.SetFault(func(op, key string) error {
+		if op == "Get" && strings.Contains(key, "/wal/") {
+			return errors.New("refused")
+		}
+		return nil
+	})
+	status, out := h.do("GET", "/v1/repos/"+repoA+"/stats", "")
+	if status != 503 || code(out) != contract.CodeStorageUnavailable {
+		t.Fatalf("stats with an unreadable entry: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/gc", ""); status != 503 {
+		t.Fatalf("gc with an unreadable entry: %d %v", status, out)
+	}
+	store.SetFault(nil)
+
+	// The lfs/ listing is the other half of the figure, on a node that
+	// has not measured it yet: the sum is reused for a minute once it
+	// has (spec 012).
+	other := newHarness(t, withStore(store))
+	store.SetFault(func(op, key string) error {
+		if op == "List" && strings.Contains(key, "/lfs/") {
+			return errors.New("refused")
+		}
+		return nil
+	})
+	status, out = other.do("GET", "/v1/repos/"+repoA+"/stats", "")
+	store.SetFault(nil)
+	if status != 503 || code(out) != contract.CodeStorageUnavailable {
+		t.Fatalf("stats with an unreadable lfs listing: %d %v", status, out)
+	}
 }

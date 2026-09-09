@@ -220,10 +220,16 @@ func (h *Handler) isLive(node string) bool {
 // clearLease drops the lease and records why, so the repository reports
 // failed and accepts a new import.
 func (h *Handler) clearLease(ctx context.Context, m *wal.Meta, reason string) {
-	m.ImportingSince, m.ImportNode, m.ImportError = nil, "", reason
-	if err := h.log.WriteMeta(ctx, m); err != nil {
+	next := *m
+	next.ImportingSince, next.ImportNode, next.ImportError = nil, "", reason
+	// The write is the record: a bucket that refuses it leaves the
+	// lease where it was, and the caller sees running until the next
+	// read clears it.
+	if err := h.log.WriteMeta(ctx, &next); err != nil {
 		h.logger.WarnContext(ctx, "import lease not cleared", "repo", m.ID, "reason", reason, "error", err)
+		return
 	}
+	*m = next
 }
 
 // ClearImportLeases is the start-up sweep of spec 019: a node that

@@ -7,9 +7,11 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,5 +325,84 @@ func writeLease(t *testing.T, h *harness, id, node string, at time.Time) {
 	m.ImportingSince, m.ImportNode, m.ImportError, m.ImportedAt = &at, node, "", nil
 	if err := h.log.WriteMeta(ctx, m); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestImportFailurePaths covers what an import does when the storage,
+// the quota, or the log refuses it: nothing is committed, the scratch
+// directory goes, and import_error says which.
+func TestImportFailurePaths(t *testing.T) {
+	stub, egress := importStub(t)
+	f := loadFixture(t)
+	store := wal.NewMemStore()
+	h := newHarness(t, egress, withStore(store), withNow(fixedClock()))
+	h.seed(f)
+	res := h.get("/v1/repos/" + repoA + "/export.bundle")
+	if res.status != 200 {
+		t.Fatalf("export: %d", res.status)
+	}
+	if err := stub.AddRepo("failures", res.body); err != nil {
+		t.Fatal(err)
+	}
+	src := sourceURL(t, stub, "failures")
+
+	// A pack upload the bucket refuses leaves the repository failed.
+	h.create(repoB, "acme", "refused")
+	store.SetFault(func(op, key string) error {
+		if op == "Put" && strings.Contains(key, "/packs/") {
+			return errors.New("refused")
+		}
+		return nil
+	})
+	if status, _ := h.do("POST", "/v1/repos/"+repoB+"/import", `{"source":"`+src+`","token":"`+stub.Token()+`"}`); status != 202 {
+		t.Fatal("import")
+	}
+	st := h.waitImport(repoB)
+	store.SetFault(nil)
+	if st.State != ImportFailed || !strings.Contains(st.Error, "upload") {
+		t.Fatalf("import with a refused upload: %+v", st)
+	}
+	if ix := mustIndex(t, h.log, repoB); len(ix.Entries) != 0 {
+		t.Fatalf("the failed import committed: %+v", ix)
+	}
+
+	// A quota below the packs refuses the import before it commits. The
+	// rule goes on a node of its own, because an allow is cached for
+	// its ttl (spec 007) and this one must be the first answer.
+	tight := newHarness(t, egress, withStore(store), withNow(fixedClock()))
+	tight.authz.SetRules(authorizer.Rule{Allow: true, QuotaBytes: 1})
+	if status, _ := tight.do("POST", "/v1/repos/"+repoB+"/import", `{"source":"`+src+`","token":"`+stub.Token()+`"}`); status != 202 {
+		t.Fatal("import over quota")
+	}
+	if st := tight.waitImport(repoB); st.State != ImportFailed || !strings.Contains(st.Error, "over quota") {
+		t.Fatalf("import over quota: %+v", st)
+	}
+}
+
+// TestClearLeaseFailureIsLogged covers the write the lease clearing
+// depends on: a bucket that refuses it leaves the lease where it was
+// and the node says so.
+func TestClearLeaseFailureIsLogged(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	store := wal.NewMemStore()
+	h := newHarness(t, withStore(store), withNow(func() time.Time { return now }), withNode("origod-1", liveSet{"origod-1"}))
+	h.create(repoA, "acme", "app")
+	writeLease(t, h, repoA, "origod-9", now)
+	now = now.Add(2 * ImportLease)
+	store.SetFault(func(op, key string) error {
+		if op == "Put" && strings.HasSuffix(key, "/meta") {
+			return errors.New("refused")
+		}
+		return nil
+	})
+	st := h.state(repoA)
+	store.SetFault(nil)
+	if st.State != ImportRunning {
+		t.Fatalf("state under a lease that could not be cleared: %+v", st)
+	}
+	m, err := h.log.ReadMeta(ctx, repoA)
+	if err != nil || m.ImportingSince == nil {
+		t.Fatalf("the lease was cleared despite the refusal: %+v, %v", m, err)
 	}
 }
