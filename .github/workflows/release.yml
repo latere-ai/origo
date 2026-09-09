@@ -1,43 +1,406 @@
-# A vX.Y.Z tag builds the binary, packages it with Dockerfile.ci, pushes
-# ghcr.io/latere-ai/origod, applies deploy/prod, waits for the rollout,
-# smokes the live service, and publishes the GitHub release with the
-# evidence. The pipeline lives in latere-ai/ci; this file names the inputs.
+# A vX.Y.Z tag is a release. This workflow produces every artifact spec
+# 017's table names and calls no shared workflow: `service-release.yml`
+# of `latere-ai/ci` runs its deploy and its smoke as one job it does not
+# expose as a separate callable step, and Origo needs the conformance
+# suite between the build and the deploy, so the two steps are written
+# inline here with the same kubectl and tools/smoke/release.sh
+# invocations the shared workflow makes.
+#
+#   build           the four binary archives, checksums.txt, the two
+#                   multi-arch images, the signatures, the bills of
+#                   materials, the provenance, and the deploy archive
+#   conformance     the kind stack of spec 013 from the published images:
+#                   the release fixture, spec 021's TestContract, and the
+#                   fixture the previous release attached
+#   deploy          only with the repository variable ORIGO_RELEASE_DEPLOY:
+#                   deploy/prod applied, the rollout waited for, the smoke
+#   live            spec 021's run against ORIGO_LIVE_URL
+#   publish         the GitHub release with every artifact and the evidence
+#   release-verify  a clean runner verifying what was published
+#
+# Spec 018 adds `install-release` after `publish`.
 name: Release
 
 on:
   push:
     tags: ['v*']
 
-# The pipeline pushes the image and creates the release. A reusable workflow
-# cannot exceed the caller's token permissions, and the org defaults to
-# read-only, so the calling job grants write here.
+# Read by default; each job that writes says so. Keyless signing needs
+# id-token: write, and the attestations need attestations: write.
 permissions:
-  contents: write
-  packages: write
-  actions: read
+  contents: read
+
+env:
+  ORIGOD_IMAGE: ghcr.io/latere-ai/origod
+  STUBS_IMAGE: ghcr.io/latere-ai/origo-stubs
 
 jobs:
-  release:
-    uses: latere-ai/ci/.github/workflows/service-release.yml@v1
-    with:
-      service: origod
-      image: ghcr.io/latere-ai/origod
-      namespace: origo
-      url: https://git.latere.ai
-      title: Origo
-      has_frontend: false
-      main_package: ./cmd/origod
-    secrets: inherit
+  # Step 1. Everything that is built from the tag's tree, signed, and
+  # attested. Nothing here reaches a cluster.
+  build:
+    name: artifacts, images, signatures, attestations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      origod_digest: ${{ steps.origod.outputs.digest }}
+      stubs_digest: ${{ steps.stubs.outputs.digest }}
+    steps:
+      # docker/metadata-action sanitizes an image tag to [a-zA-Z0-9._-],
+      # so a SemVer build-metadata tag would push as v1.0.0-exp-sha.5114f85
+      # while `kubectl set image` below still names the raw ref with its
+      # '+'. The deploy needs image tag == git tag, so the tag is refused
+      # here, before anything is pushed.
+      - name: Reject build-metadata tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in
+            *+*) echo "::error::${TAG} carries SemVer build metadata; an image tag cannot contain '+'. Cut a tag without it."; exit 1 ;;
+          esac
 
-  # The live run of spec 021: TestContract against the installation
-  # ORIGO_LIVE_URL names with ORIGO_LIVE_TOKEN, two repository secrets,
-  # and exactly the six groups of its skip list skipped. The test skips
-  # when the URL is unset, so a fork runs no live run. Spec 017 places
-  # it between its deploy and publish steps when it restructures the
-  # pipeline.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # The four archives and checksums.txt, with the -ldflags of spec
+      # 002 setting internal/version, so a binary from the pipeline and
+      # one from `make build` carry their identity the same way. The
+      # binaries stay under out/release/bin/<os>_<arch>/, which
+      # Dockerfile.ci copies its platform's from.
+      - name: Build the release archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: make release VERSION="$TAG" COMMIT="$(git rev-parse --short HEAD)"
+
+      - name: Pack the deploy archive
+        env:
+          TAG: ${{ github.ref_name }}
+        run: tools/release/deploy-archive.sh "$TAG" "out/release/deploy-${TAG}.tar.gz"
+
+      # The runtime stage installs its packages for the target platform,
+      # so linux/arm64 needs the emulator; the binary it copies is
+      # cross-compiled already.
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Inline attestations carry the build time, so two builds of one
+      # commit differ; they are attached below as referrers instead.
+      - name: Build and push origod
+        id: origod
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          docker buildx build --push --provenance=false --sbom=false \
+            --platform linux/amd64,linux/arm64 \
+            -f Dockerfile.ci \
+            -t "${ORIGOD_IMAGE}:${TAG}" \
+            --metadata-file origod.json .
+          digest=$(jq -r '."containerimage.digest"' origod.json)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push origo-stubs
+        id: stubs
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          docker buildx build --push --provenance=false --sbom=false \
+            --platform linux/amd64,linux/arm64 \
+            -f Dockerfile.stubs \
+            -t "${STUBS_IMAGE}:${TAG}" \
+            --metadata-file stubs.json .
+          digest=$(jq -r '."containerimage.digest"' stubs.json)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Assert both architectures are published
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for image in "${ORIGOD_IMAGE}:${TAG}" "${STUBS_IMAGE}:${TAG}"; do
+            docker buildx imagetools inspect "$image" --raw > manifest.json
+            for arch in amd64 arm64; do
+              grep -q "\"architecture\": *\"$arch\"" manifest.json \
+                || { echo "::error::$image has no linux/$arch entry"; exit 1; }
+            done
+            echo "$image carries linux/amd64 and linux/arm64"
+          done
+
+      # Three SPDX documents: the module graph from the tree, and the
+      # contents of each image, which carry the Debian packages beside
+      # the binary's own modules.
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: out/release/sbom-source.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.ORIGOD_IMAGE }}@${{ steps.origod.outputs.digest }}
+          format: spdx-json
+          output-file: out/release/sbom-origod.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.STUBS_IMAGE }}@${{ steps.stubs.outputs.digest }}
+          format: spdx-json
+          output-file: out/release/sbom-origo-stubs.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4.1.0
+        with:
+          subject-name: ${{ env.ORIGOD_IMAGE }}
+          subject-digest: ${{ steps.origod.outputs.digest }}
+          sbom-path: out/release/sbom-origod.spdx.json
+          push-to-registry: true
+      - uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4.1.0
+        with:
+          subject-name: ${{ env.STUBS_IMAGE }}
+          subject-digest: ${{ steps.stubs.outputs.digest }}
+          sbom-path: out/release/sbom-origo-stubs.spdx.json
+          push-to-registry: true
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.ORIGOD_IMAGE }}
+          subject-digest: ${{ steps.origod.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.STUBS_IMAGE }}
+          subject-digest: ${{ steps.stubs.outputs.digest }}
+          push-to-registry: true
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # Keyless: the workflow's OIDC identity is the signer, which is
+      # what an operator outside Latere can check without holding a key.
+      # A sigstore bundle carries the signature, the certificate, and
+      # the transparency-log proof in one file, so checksums.txt is
+      # verified from the release assets alone.
+      - name: Sign the images and checksums.txt
+        env:
+          COSIGN_YES: 'true'
+        run: |
+          set -euo pipefail
+          cosign sign "${ORIGOD_IMAGE}@${{ steps.origod.outputs.digest }}"
+          cosign sign "${STUBS_IMAGE}@${{ steps.stubs.outputs.digest }}"
+          cd out/release && cosign sign-blob --bundle checksums.txt.cosign.bundle checksums.txt
+
+      # The candidate-images artifact of spec 013, in the shape the
+      # `build` job of verify.yml uploads, so step 2 hands it to up.sh
+      # the way the e2e job does. The bytes are pulled back from the
+      # registry, so the stack runs the published image and not a second
+      # build of it.
+      - name: Save the published linux/amd64 images for the stack
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p out/images
+          docker pull "${ORIGOD_IMAGE}@${{ steps.origod.outputs.digest }}"
+          docker pull "${STUBS_IMAGE}@${{ steps.stubs.outputs.digest }}"
+          docker tag "${ORIGOD_IMAGE}@${{ steps.origod.outputs.digest }}" "${ORIGOD_IMAGE}:candidate"
+          docker tag "${STUBS_IMAGE}@${{ steps.stubs.outputs.digest }}" "${STUBS_IMAGE}:candidate"
+          docker save -o out/images/origod.tar "${ORIGOD_IMAGE}:candidate"
+          docker save -o out/images/origo-stubs.tar "${STUBS_IMAGE}:candidate"
+
+      # Spec 017's image criterion, on the published bytes rather than a
+      # local build: git inside the image is at or above the 2.40 floor
+      # `origod check` enforces (spec 018).
+      - name: Check git inside the published image
+        run: |
+          set -euo pipefail
+          got=$(docker run --rm --entrypoint git "${ORIGOD_IMAGE}:candidate" --version | awk '{print $3}')
+          echo "git $got"
+          [ "$(printf '%s\n2.40\n' "$got" | sort -V | head -1)" = "2.40" ] || { echo "::error::git $got is below 2.40"; exit 1; }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-images
+          path: out/images/*.tar
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts
+          path: |
+            out/release/*.tar.gz
+            out/release/checksums.txt
+            out/release/checksums.txt.cosign.bundle
+            out/release/*.spdx.json
+          if-no-files-found: error
+
+  # Step 2. The kind stack of spec 013 from the published images. The
+  # fixture repository is pushed first, under a slug outside the
+  # conformance- prefix so TestContract's cleanup never meets it; then
+  # the suite and the previous release's fixture; then the fixture's
+  # objects are read from the stack's MinIO and packed. A failure here
+  # stops the release.
+  conformance:
+    name: conformance against the published image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ORIGO_TEST_URL: http://localhost:30180
+      ORIGO_TEST_S3_ENDPOINT: http://localhost:30900
+      ORIGO_TEST_S3_REGION: us-east-1
+      ORIGO_TEST_S3_BUCKET: origo-test
+      ORIGO_TEST_S3_KEY: minioadmin
+      ORIGO_TEST_S3_SECRET: minioadmin
+      ORIGO_TEST_S3_PATH_STYLE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: candidate-images
+          path: out/images
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          install_only: true
+      - name: Bring the stack up
+        run: deploy/examples/kind/up.sh out/images/origod.tar out/images/origo-stubs.tar
+
+      - name: Push the release fixture
+        run: go test -v -count=1 -timeout 10m -tags=e2e ./test/conformance/... -run 'TestReleaseFixturePush' -fixture "$RUNNER_TEMP/fixture"
+
+      # The fixture the latest release attached, when there is one. The
+      # tag being released has no release yet, so this finds the previous
+      # one; a fork with no release and a first tag find nothing and
+      # TestPreviousReleaseFixture skips.
+      - name: Download the previous release's fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous"
+          if gh release download --repo "$GITHUB_REPOSITORY" --pattern 'fixture-*.tar.gz' --dir "$RUNNER_TEMP/previous"; then
+            fixture=$(ls "$RUNNER_TEMP/previous"/fixture-*.tar.gz | head -1)
+            echo "ORIGO_PREVIOUS_RELEASE_FIXTURE=$fixture" >> "$GITHUB_ENV"
+            echo "previous release fixture: $fixture"
+          else
+            echo "no release carries a fixture; TestPreviousReleaseFixture skips"
+          fi
+
+      - name: Run the conformance suite and the compatibility test
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          go test -v -count=1 -timeout 30m -tags=e2e ./test/conformance/... \
+            -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture' 2>&1 | tee conformance.log
+          {
+            echo "## Conformance"
+            echo
+            echo '```'
+            grep -E '^(=== RUN|--- (PASS|FAIL|SKIP)|ok|FAIL)' conformance.log | tail -60
+            echo '```'
+          } > release-evidence/conformance.md
+
+      - name: Pack the fixture for the next release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          go test -v -count=1 -timeout 10m -tags=e2e ./test/conformance/... -run 'TestReleaseFixturePack' -fixture "$RUNNER_TEMP/fixture"
+          mkdir -p out/fixture
+          cp "$RUNNER_TEMP/fixture/fixture.tar.gz" "out/fixture/fixture-${TAG}.tar.gz"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-fixture
+          path: out/fixture/*.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: conformance-evidence
+          path: release-evidence/conformance.md
+          if-no-files-found: error
+
+  # Step 3. Latere's own installation. The repository variable and the
+  # kubeconfig secret are set on this repository and on no fork, so a
+  # tag on a fork publishes every artifact and skips this step.
+  deploy:
+    name: deploy and smoke
+    needs: conformance
+    if: ${{ vars.ORIGO_RELEASE_DEPLOY != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://git.latere.ai
+    outputs:
+      evidence: ${{ steps.smoke.outputs.evidence }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Write the kubeconfig
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.ORIGO_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_CONTENT" > "$RUNNER_TEMP/kube/config"
+          chmod 600 "$RUNNER_TEMP/kube/config"
+          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+      # deploy/prod holds only re-appliable manifests; deploy/bootstrap
+      # is never read here.
+      - name: Apply deploy/prod and roll the new image
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/prod/
+          kubectl -n origo set image deployment/origod "origod=${ORIGOD_IMAGE}:${TAG}"
+          kubectl -n origo rollout status deployment/origod --timeout=600s
+      - name: Smoke the live service
+        id: smoke
+        env:
+          BASE_URL: https://git.latere.ai
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          DEPLOY_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          OUTPUT_MD=release-evidence/smoke.md tools/smoke/release.sh
+          cat release-evidence/smoke.md >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo 'evidence<<CI_EOF'
+            cat release-evidence/smoke.md
+            echo CI_EOF
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-evidence
+          path: release-evidence/smoke.md
+          if-no-files-found: error
+
+  # Step 4. The live run of spec 021: TestContract against the
+  # installation ORIGO_LIVE_URL names, with that spec's six-entry skip
+  # list. The test skips when the URL is unset, so a fork runs no live
+  # run and a repository that deploys nothing reaches this job with
+  # deploy skipped.
   live:
     name: conformance against the live installation
-    needs: release
+    needs: [conformance, deploy]
+    if: ${{ always() && needs.conformance.result == 'success' && needs.deploy.result != 'failure' && needs.deploy.result != 'cancelled' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -49,4 +412,152 @@ jobs:
         env:
           ORIGO_LIVE_URL: ${{ secrets.ORIGO_LIVE_URL }}
           ORIGO_LIVE_TOKEN: ${{ secrets.ORIGO_LIVE_TOKEN }}
-        run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract' -v
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence
+          go test -v -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract' 2>&1 | tee live.log
+          {
+            echo "## Live conformance"
+            echo
+            echo '```'
+            grep -E '^(--- (PASS|FAIL|SKIP)|ok|FAIL)' live.log | tail -40
+            echo '```'
+          } > release-evidence/live.md
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-evidence
+          path: release-evidence/live.md
+          if-no-files-found: error
+
+  # Step 5. The GitHub release: every artifact, the CHANGELOG.md section
+  # as the body, then the evidence of the steps that ran.
+  publish:
+    name: publish the release
+    needs: [build, conformance, deploy, live]
+    if: ${{ always() && needs.build.result == 'success' && needs.conformance.result == 'success' && needs.deploy.result != 'failure' && needs.live.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: assets
+          pattern: 'release-*'
+          merge-multiple: true
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: evidence
+          pattern: '*-evidence'
+          merge-multiple: true
+      # A tag is a release, and a release has notes. The section for the
+      # tag in CHANGELOG.md is the body; no section fails here, before
+      # anything is created. The pre-push hook refuses the tag with the
+      # same reader, so this branch is rarely taken.
+      - name: Read the release note for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: go tool lateregate release-notes "$TAG" > notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cp notes.md body.md
+          for part in evidence/smoke.md evidence/conformance.md evidence/live.md; do
+            if [ -f "$part" ]; then printf '\n' >> body.md; cat "$part" >> body.md; fi
+          done
+          prerelease=""
+          case "${TAG%%+*}" in *-*) prerelease="--prerelease" ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file body.md
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" $prerelease \
+              --title "Origo $TAG" --notes-file body.md assets/*
+          fi
+
+  # Step 6 is spec 018's install-release job, which runs here once 018
+  # lands.
+  #
+  # Step 7. What was published, checked from a clean runner with no
+  # artifact of the build: the signatures against the workflow identity,
+  # the attestations, the checksums over the downloaded archives, and
+  # the release body against the changelog section. A verification that
+  # cannot fail proves nothing, so the failure path runs too.
+  release-verify:
+    name: verify the published release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Verify the signatures and the attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          identity="^https://github.com/${GITHUB_REPOSITORY}/\.github/workflows/release\.yml@refs/tags/"
+          issuer=https://token.actions.githubusercontent.com
+          for image in "${ORIGOD_IMAGE}:${TAG}" "${STUBS_IMAGE}:${TAG}"; do
+            cosign verify --certificate-identity-regexp "$identity" \
+              --certificate-oidc-issuer "$issuer" "$image" > /dev/null
+            gh attestation verify "oci://$image" --repo "$GITHUB_REPOSITORY"
+            echo "$image: signature and attestations verified"
+          done
+      - name: Prove verification rejects a foreign identity
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if cosign verify --certificate-identity-regexp '^https://github.com/nobody/nothing/' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${ORIGOD_IMAGE}:${TAG}" >/dev/null 2>&1; then
+            echo "::error::verification accepted a signature from an identity this pipeline never holds"
+            exit 1
+          fi
+          echo "verification rejects a foreign signing identity"
+      - name: Verify the archives and the deploy archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p verify && cd verify
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'origod_*.tar.gz' --pattern 'checksums.txt*' \
+            --pattern 'deploy-*.tar.gz' --pattern 'fixture-*.tar.gz'
+          sha256sum -c checksums.txt
+          identity="^https://github.com/${GITHUB_REPOSITORY}/\.github/workflows/release\.yml@refs/tags/"
+          cosign verify-blob --bundle checksums.txt.cosign.bundle \
+            --certificate-identity-regexp "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            checksums.txt
+          tar -tzf "deploy-${TAG}.tar.gz" | grep -q '^deploy/base/deployment.yaml$'
+          tar -xzOf "deploy-${TAG}.tar.gz" deploy/base/deployment.yaml | grep -q "image: ghcr.io/latere-ai/origod:${TAG}"
+          test -s "fixture-${TAG}.tar.gz"
+      - name: Compare the release body with the changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          go tool lateregate release-notes "$TAG" > notes.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > body.md
+          # The body is the changelog section followed by the evidence of
+          # the steps that ran, so the section is its prefix.
+          head -c "$(wc -c < notes.md)" body.md > prefix.md
+          diff -u notes.md prefix.md
+          echo "the release body opens with the changelog section for $TAG"
