@@ -32,12 +32,15 @@ import (
 const clusterSourceURL = "https://origo-stubs.origo.svc:8443/fixture.git"
 
 // stubClient is an HTTP client that trusts the source stub's CA through
-// the file up.sh wrote for the runner.
+// the file up.sh wrote for the runner, the way a node trusts it through
+// ORIGO_EGRESS_CA_BUNDLE. Every caller has passed requireNodes, so the
+// stack answers and up.sh has run: a missing file is a failure and not
+// a skip, which would leave a criterion green and unproven.
 func stubClient(t *testing.T) *http.Client {
 	t.Helper()
 	caPEM, err := os.ReadFile(filepath.Join(repoRoot(t), "test", "e2e", "testdata", "stub-ca.pem"))
 	if err != nil {
-		t.Skipf("no stub-ca.pem for this cluster: %v", err)
+		t.Fatalf("no stub-ca.pem for this cluster, which up.sh writes: %v", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {

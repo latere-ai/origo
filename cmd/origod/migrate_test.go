@@ -225,6 +225,9 @@ func TestMigrateBatchIsResumableAndReportsFailures(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("second run: exit %d, stderr %q", code, stderr)
 	}
+	if len(report) != repos {
+		t.Fatalf("second run: %d report lines, want %d", len(report), repos)
+	}
 	for _, l := range report {
 		if l.State != stateSkipped {
 			t.Fatalf("second run: %+v", l)
