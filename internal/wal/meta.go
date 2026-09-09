@@ -40,6 +40,13 @@ type Meta struct {
 	ImportedAt     *time.Time `json:"imported_at,omitempty"`
 	ImportRefs     int        `json:"import_refs,omitempty"`
 	ImportBytes    int64      `json:"import_bytes,omitempty"`
+
+	// The verification of spec 014: when verify last compared this
+	// repository with a source, and whether the two sides were
+	// identical. Both are absent until one ran, which is the state
+	// origod migrate resumes from.
+	VerifiedAt    *time.Time `json:"verified_at,omitempty"`
+	VerifiedEqual *bool      `json:"verified_equal,omitempty"`
 }
 
 // ErrNameTaken reports an owner/slug pair another repository holds.
