@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -196,28 +197,107 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// packetNet is a synchronous in-memory network. WriteTo puts the
+// datagram on the addressed socket's queue before it returns, so a
+// round of heartbeats is delivered by the time the last Heartbeat
+// returns and a test reads the live set without waiting on the wall
+// clock. A datagram to an address no socket holds is lost, as UDP
+// loses it. The loopback socket and the read loop of Run are covered
+// by the tests below and by TestGossipWiresTwoNodes in cmd/origod.
+type packetNet struct {
+	mu    sync.Mutex
+	socks map[string]*packetConn
+}
+
+func newPacketNet() *packetNet { return &packetNet{socks: map[string]*packetConn{}} }
+
+// listen opens one socket on 127.0.0.1 at the port. Nothing is bound
+// on the host, so the port is only a name.
+func (n *packetNet) listen(port int) *packetConn {
+	c := &packetConn{net: n, addr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port}}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.socks[c.addr.String()] = c
+	return c
+}
+
+type datagram struct {
+	from net.Addr
+	body []byte
+}
+
+// packetConn is one socket of a packetNet and a net.PacketConn.
+type packetConn struct {
+	net    *packetNet
+	addr   *net.UDPAddr
+	queue  []datagram
+	closed bool
+}
+
+func (c *packetConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	c.net.mu.Lock()
+	defer c.net.mu.Unlock()
+	if c.closed {
+		return 0, net.ErrClosed
+	}
+	peer, ok := c.net.socks[addr.String()]
+	if !ok {
+		return len(p), nil
+	}
+	peer.queue = append(peer.queue, datagram{from: c.addr, body: bytes.Clone(p)})
+	return len(p), nil
+}
+
+// ReadFrom pops the oldest queued datagram. An empty queue reports a
+// deadline rather than blocking, so a drain ends on it.
+func (c *packetConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	c.net.mu.Lock()
+	defer c.net.mu.Unlock()
+	if c.closed {
+		return 0, nil, net.ErrClosed
+	}
+	if len(c.queue) == 0 {
+		return 0, nil, os.ErrDeadlineExceeded
+	}
+	d := c.queue[0]
+	c.queue = c.queue[1:]
+	return copy(p, d.body), d.from, nil
+}
+
+func (c *packetConn) Close() error {
+	c.net.mu.Lock()
+	defer c.net.mu.Unlock()
+	c.closed = true
+	return nil
+}
+
+func (c *packetConn) LocalAddr() net.Addr              { return c.addr }
+func (c *packetConn) SetDeadline(time.Time) error      { return nil }
+func (c *packetConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *packetConn) SetWriteDeadline(time.Time) error { return nil }
+
 // TestMembershipByHeartbeat is spec 005's live set: three nodes
-// exchanging heartbeats over loopback agree on the set within the
-// window of a node joining, a node is dropped 60 seconds after its last
-// datagram with a fake clock, and a node's own name is in its set with
-// no peers.
+// exchanging heartbeats agree on the set within the window of a node
+// joining, a node is dropped 60 seconds after its last datagram, and a
+// node's own name is in its set with no peers. Both clocks the test
+// drives are fakes: the set's and the gossip's is clk, and delivery is
+// the synchronous packetNet above, so the test passes no real time and
+// no assertion waits on one.
 func TestMembershipByHeartbeat(t *testing.T) {
 	clk := newClock()
 	holder := &fakeHolder{held: map[string]uint64{}}
-	// Ports are chosen first so each node lists the other two.
-	conns := make([]net.PacketConn, 3)
+	// Sockets are opened first so each node lists the other two.
+	network := newPacketNet()
+	conns := make([]*packetConn, 3)
 	addrs := make([]string, 3)
 	for i := range conns {
-		c, err := net.ListenPacket("udp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		conns[i], addrs[i] = c, c.LocalAddr().String()
+		conns[i] = network.listen(7946 + i)
+		addrs[i] = conns[i].LocalAddr().String()
 	}
 	names := []string{"origod-0", "origod-1", "origod-2"}
 	gossips := make([]*Gossip, 3)
 	ctx, cancel := context.WithCancel(context.Background())
-	var runs sync.WaitGroup
+	t.Cleanup(cancel)
 	for i := range names {
 		peers := slices.Concat(addrs[:i], addrs[i+1:])
 		g, err := NewGossip(GossipOptions{
@@ -229,48 +309,66 @@ func TestMembershipByHeartbeat(t *testing.T) {
 		}
 		gossips[i] = g
 	}
-	start := func(i int) {
-		gossips[i].Bind(ctx, conns[i])
-		runs.Go(func() { _ = gossips[i].Run(ctx) })
-	}
 	if err := gossips[0].Run(ctx); err == nil {
 		t.Fatal("Run before Bind")
 	}
-	t.Cleanup(func() {
-		cancel()
-		for _, c := range conns {
-			_ = c.Close()
+	joined := make([]bool, 3)
+	join := func(i int) {
+		gossips[i].Bind(ctx, conns[i])
+		joined[i] = true
+	}
+	// deliver hands every queued datagram to the node it was addressed
+	// to, in the order it arrived, which is what the read loop of Run
+	// does with the socket. A node that has not joined leaves its
+	// datagrams queued, the way the kernel holds them for a socket
+	// nothing reads yet.
+	deliver := func() {
+		t.Helper()
+		buf := make([]byte, maxDatagram)
+		for i := range gossips {
+			if !joined[i] {
+				continue
+			}
+			for {
+				n, _, err := conns[i].ReadFrom(buf)
+				if err != nil {
+					break
+				}
+				if err := gossips[i].Handle(ctx, buf[:n]); err != nil {
+					t.Fatalf("node %d dropped a datagram: %v", i, err)
+				}
+			}
 		}
-		runs.Wait()
-	})
-	// Two nodes up: each hears the other from the heartbeat Run sends
-	// at start; the third is not in either set.
-	start(0)
-	start(1)
-	waitFor(t, "two nodes agreeing", func() bool {
-		return slices.Equal(gossips[0].set.Live(), []string{"origod-0", "origod-1"}) && slices.Equal(gossips[1].set.Live(), []string{"origod-0", "origod-1"})
-	})
+	}
+	// Two nodes up: each hears the other's heartbeat; the third has
+	// sent nothing and is in neither set.
+	join(0)
+	join(1)
+	gossips[0].Heartbeat()
+	gossips[1].Heartbeat()
+	deliver()
+	for _, i := range []int{0, 1} {
+		if got := gossips[i].set.Live(); !slices.Equal(got, []string{"origod-0", "origod-1"}) {
+			t.Fatalf("two nodes: node %d has %v", i, got)
+		}
+	}
 	if len(gossips[0].Peers()) != 2 {
 		t.Fatalf("peers %v", gossips[0].Peers())
 	}
-	// The third joins: its first heartbeat reaches both, and its own
-	// set fills from their next heartbeats, inside one window. The clock
-	// moves before the third starts, so every heartbeat of this round,
-	// the third's first one included, is heard at the new time; started
-	// first, its heartbeat could land before the advance and leave
-	// LastHeard at the old one.
+	// The third joins one heartbeat interval later: its heartbeat
+	// reaches both and theirs reach it, so all three agree inside one
+	// window, and every node of this round is heard at the new time.
 	clk.Advance(HeartbeatEvery)
-	start(2)
-	gossips[0].Heartbeat()
-	gossips[1].Heartbeat()
-	waitFor(t, "three nodes agreeing", func() bool {
-		for _, g := range gossips {
-			if !slices.Equal(g.set.Live(), names) {
-				return false
-			}
+	join(2)
+	for _, g := range gossips {
+		g.Heartbeat()
+	}
+	deliver()
+	for i, g := range gossips {
+		if got := g.set.Live(); !slices.Equal(got, names) {
+			t.Fatalf("three nodes: node %d has %v", i, got)
 		}
-		return true
-	})
+	}
 	if at, ok := gossips[0].set.LastHeard("origod-2"); !ok || !at.Equal(clk.Now()) {
 		t.Fatalf("LastHeard(origod-2) = %v %v", at, ok)
 	}
@@ -281,10 +379,10 @@ func TestMembershipByHeartbeat(t *testing.T) {
 	clk.Advance(Window - time.Second)
 	gossips[0].Heartbeat()
 	gossips[1].Heartbeat()
-	waitFor(t, "nodes 1 and 2 refreshed", func() bool {
-		at, _ := gossips[0].set.LastHeard("origod-1")
-		return at.Equal(clk.Now())
-	})
+	deliver()
+	if at, ok := gossips[0].set.LastHeard("origod-1"); !ok || !at.Equal(clk.Now()) {
+		t.Fatalf("LastHeard(origod-1) = %v %v", at, ok)
+	}
 	if !slices.Equal(gossips[0].set.Live(), names) {
 		t.Fatalf("59 seconds quiet: %v", gossips[0].set.Live())
 	}
@@ -306,8 +404,8 @@ func TestMembershipByHeartbeat(t *testing.T) {
 	if got := alone.set.Live(); !slices.Equal(got, []string{"solo"}) {
 		t.Fatalf("alone: %v", got)
 	}
-	datagram, _ := Seal(nil, payload{V: version, Node: "x", At: clk.Now()})
-	if err := alone.Handle(ctx, datagram); !errors.Is(err, ErrDropped) {
+	sealed, _ := Seal(nil, payload{V: version, Node: "x", At: clk.Now()})
+	if err := alone.Handle(ctx, sealed); !errors.Is(err, ErrDropped) {
 		t.Fatalf("a node without a secret accepted a datagram: %v", err)
 	}
 	// The options are checked.
