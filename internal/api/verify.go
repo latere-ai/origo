@@ -150,12 +150,12 @@ func (h *Handler) sourceRefs(ctx context.Context, source *url.URL, token string)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee := proxy.Refusal(); ee != nil {
-			return nil, &readError{status: http.StatusBadRequest, code: contract.CodeInvalid, details: ee.Details()}
+			return nil, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, ee.Details())}
 		}
 		h.logger.WarnContext(ctx, "the source did not answer ls-remote", "source", redact(source), "error", err)
-		return nil, &readError{status: http.StatusBadRequest, code: contract.CodeInvalid, details: map[string]any{
+		return nil, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, map[string]any{
 			"reason": "the source did not answer ls-remote", "field": "source", "host": source.Hostname(),
-		}}
+		})}
 	}
 	return parseLsRemote(string(out)), nil
 }
