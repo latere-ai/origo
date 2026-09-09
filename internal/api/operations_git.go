@@ -430,11 +430,25 @@ func (o *operation) ancestor(old, next string) (bool, error) {
 // worktree and reports conflicts as data. The conflicted paths are the
 // records of the first section of the -z output, which ends at the
 // empty record before the informational messages.
+//
+// A pick names the base the three-way merge is measured from, which is
+// not the merge base of the two sides. It is expressed by the sides
+// rather than by an option: each side is re-parented onto the base as
+// a commit of its own, so the merge base of the pair is the base
+// itself. The unreachable pair costs two objects and asks nothing of
+// git beyond what the merge does, where --merge-base would put the
+// floor above the runtime image's git.
 func (o *operation) mergeTree(commit, base, ours, theirs string) (string, error) {
-	args := []string{"merge-tree", "--write-tree", "-z", "--name-only"}
 	if base != "" {
-		args = append(args, "--merge-base="+base)
+		var err error
+		if ours, err = o.reparent(ours, base); err != nil {
+			return "", err
+		}
+		if theirs, err = o.reparent(theirs, base); err != nil {
+			return "", err
+		}
 	}
+	args := []string{"merge-tree", "--write-tree", "-z", "--name-only"}
 	args = append(args, "--end-of-options", ours, theirs)
 	out, err := o.git(nil, args...)
 	if err == nil {
@@ -456,6 +470,17 @@ func (o *operation) mergeTree(commit, base, ours, theirs string) (string, error)
 		}
 	}
 	return "", &mergeConflict{commit: commit, paths: paths}
+}
+
+// reparent is a commit carrying rev's tree with base as its one
+// parent. It is never referenced and never packed: the entry's pack is
+// what the new tip reaches and no side of a merge is on that path.
+func (o *operation) reparent(rev, base string) (string, error) {
+	tree, err := o.out(nil, "rev-parse", "--verify", "-q", "--end-of-options", rev+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	return o.commitTree(tree, "merge side of "+rev, base)
 }
 
 func contains(list []string, v string) bool {

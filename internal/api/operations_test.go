@@ -936,3 +936,43 @@ func TestOperationErrorsCarryTheirText(t *testing.T) {
 		t.Errorf("mergeConflict: %q", got)
 	}
 }
+
+// TestPicksNameNoMergeBaseOption holds the fix for the defect the stack
+// found: git merge-tree learned --merge-base after the runtime image's
+// git, so a cherry-pick and a revert express the base by re-parenting
+// each side onto it and pass no such option. The sweep reads every
+// invocation the operation made.
+func TestPicksNameNoMergeBaseOption(t *testing.T) {
+	spy := newSpyGit(t)
+	h := newHarness(t, withGit(spy.bin()))
+	o := seedOps(t, h, repoA)
+	o.src.Checkout("feature")
+	picked := o.src.Commit("src/p.txt", "picked\n", "Pick me")
+	if err := pushRef(h, o, "refs/heads/feature", o.feature, picked); err != nil {
+		t.Fatal(err)
+	}
+	o.src.Checkout("main")
+	// The copy is materialized first, so the sweep sees the
+	// operation's own subprocesses alone.
+	if status, out := h.do("GET", "/v1/repos/"+o.id+"/refs", ""); status != 200 {
+		t.Fatalf("warm: %d %v", status, out)
+	}
+	spy.reset()
+	status, out := o.post("cherry-pick", `{"branch":"main","expected_head":"`+o.main+`","commits":["`+picked+`"],`+author+`}`)
+	if status != 201 {
+		t.Fatalf("cherry-pick: %d %v", status, out)
+	}
+	merges := 0
+	for _, call := range spy.calls() {
+		if !strings.Contains(call, "merge-tree") {
+			continue
+		}
+		merges++
+		if strings.Contains(call, "--merge-base") {
+			t.Fatalf("the pick asked git for an option its runtime may not have: %s", call)
+		}
+	}
+	if merges == 0 {
+		t.Fatal("the pick ran no merge-tree")
+	}
+}
