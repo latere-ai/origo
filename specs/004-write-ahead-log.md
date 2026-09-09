@@ -477,7 +477,9 @@ belongs in `test/e2e` under the `TestE2E` prefix the `integration` job
 selects through `make test-tiers`, and writing it is this spec's own
 remaining item. `TestSlowMaterializeTenThousandEntries` (the ninth)
 needs the packs of spec 006 and runs in the `e2e-slow` job. The tenth
-is spec 017's release checklist recording the Spaces probe.
+is spec 017's release checklist recording the Spaces probe, which spec
+017 wrote on 2026-09-09 and which stays open: it is a maintainer's
+run of `tools/spike/condwrite` before a tag, not a job.
 
 One change spec 019 made to this spec's Design on 2026-09-09, recorded
 in its Outcome: the purge no longer removes `meta`. It deletes every

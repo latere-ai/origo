@@ -394,7 +394,12 @@ divergence above as its rule, the two validator defects are recorded
 in spec 004's Outcome, and `SECURITY.md` states the supported releases.
 The spec stays at `testing` by the lifecycle rule of `specs/README.md`:
 what remains is a criterion another spec owns the test for, the bill
-of materials (spec 017), the way specs 003 and 004 wait. The dialer's
+of materials (spec 017), the way specs 003 and 004 wait. Spec 017
+built the pipeline on 2026-09-09: the `build` job of `release.yml`
+attaches an SPDX bill of materials and build provenance to each
+published image and the `release-verify` job checks both from a
+clean runner, so what is left of this row is the first tag, which
+is the artifact those jobs act on. The dialer's
 half is done: spec 019 asserted `import` and spec 014 asserted `verify`
 on 2026-09-09, `TestSourceTokenIsNeverLogged` in `internal/api` holding
 the bearer of both, and `cmd/origod` reaches `AllowLoopback` only

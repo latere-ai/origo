@@ -1,16 +1,16 @@
 ---
 title: "Release and versioning: images, binaries, compatibility, and what a version promises"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
   - specs/003-protocol-contract.md
   - specs/013-test-stubs-and-kind-overlay.md
   - specs/021-conformance-suite.md
-affects: [.github/workflows/, Dockerfile, Dockerfile.ci, CHANGELOG.md, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
+affects: [.github/workflows/, Dockerfile, Dockerfile.ci, Dockerfile.stubs, Makefile, CHANGELOG.md, tools/release/, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-09
 author: changkun
 ---
 
@@ -266,3 +266,105 @@ workflow identity, which is what an outside operator can verify.
   serves `v1.2.3` on `GET /version` and prints it for `-version`, and
   `grep -r 'main.version' cmd/` finds nothing (proposed: `cmd/origod`,
   `TestVersionHasOneSource`).
+
+## Outcome
+
+Built on 2026-09-09. Every criterion a checkout can prove has a passing
+test in the tree; the rest need a real tag and are listed below with
+what closes each. The spec stays at `testing` until the first release
+runs, so its status is not a claim about artifacts that do not exist.
+
+### Criterion to test
+
+| Criterion | Test | State |
+|---|---|---|
+| the fixture of release N-1 materializes and serves on release N with identical `rev-list --all`, uploaded under a fresh prefix through the S3 client, skipped when the variable is unset | `test/conformance`, `TestPreviousReleaseFixture` (`e2e`), with `TestReleaseFixtureRoundTrip` and `TestReleaseFixtureRefusesABadArchive` on the harness itself and `TestReleaseFixturePush`/`TestReleaseFixturePack` as the pipeline's two halves | in the tree; the assertion against a real previous fixture waits for the second release |
+| a node reading an index object with `v: 2` answers 503 `repository_unavailable` with `details.key`, logs the documented line, serves another repository, and stays ready | `internal/repo`, `TestNewerLogFormatIsRefused`; `internal/wal`, `TestNewerFormatIsNamed` | passing |
+| both Dockerfiles name `debian:trixie-slim` by one digest and the built image answers `git --version` with 2.47 or newer | `cmd/origod`, `TestDockerfilesShareOneRuntimeStage`; the `build` job of `verify.yml` and the `build` job of `release.yml`, each running `git --version` in the image it built | passing in the tree; the image check runs on a tag or a dispatch |
+| `tools/smoke/release.sh` passes against a stub whose `/readyz` answers `ok` and `/version` serves `TAG`, with standard input closed, and fails naming the mismatch | `tools/smoke/release_test.sh`, run by the `test` gate through `TestReleaseSmoke` | passing |
+| `main.version` no longer exists and a binary linked with `internal/version.Version` serves and prints it | `cmd/origod`, `TestVersionHasOneSource` | passing |
+| the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
+| a tag produces every artifact for both architectures, `cosign verify` and `gh attestation verify` accept the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | pending the first tag |
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | pending the first tag |
+
+### What only a real release proves
+
+| Pending | Closed by |
+|---|---|
+| every artifact of the table for `linux/amd64` and `linux/arm64`, the signatures, the checksums, and the body against the changelog | the `release-verify` job of the first tag |
+| the bill of materials and the provenance of a published image, spec 016's supply-chain row | the `build` job of the first tag, verified by `release-verify` in the same run |
+| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set |
+| the fork tag with `ORIGO_RELEASE_DEPLOY` unset | a maintainer, recorded in the release notes |
+| `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag |
+| `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline |
+
+### Divergences
+
+- Step 6 of the pipeline, `install-release`, is not in `release.yml`.
+  The Design says spec 018 owns it, 018 is `validated` and unbuilt, and
+  a job that applies a document that does not exist would fail every
+  tag. `release.yml` names the gap in the comment where the job goes.
+- The images the `conformance` job runs are pulled back from the
+  registry rather than built a second time, so the stack tests the
+  published bytes. The spec's step 1 says the `build` job uploads the
+  two `linux/amd64` images as `docker save` tarballs in
+  `candidate-images`; it does, from the pushed manifest.
+- The bill of materials is three SPDX documents, not one: the module
+  graph from the tree, and the contents of each image, which carry the
+  Debian packages beside the binary's own modules. Each image's own
+  document is what `attest-sbom` attaches to it; all three are release
+  assets. The spec asks for "the module graph and each image", which one
+  document cannot be.
+- `--provenance=false --sbom=false` on both `buildx` runs, with the
+  attestations attached afterwards by `attest-sbom` and
+  `attest-build-provenance`. An inline attestation carries the build
+  time, so two builds of one commit produce different manifests; the
+  fleet's `attest` job attaches them as referrers for the same reason.
+- The release body is the changelog section followed by the evidence of
+  the steps that ran, so `release-verify` checks the section is the
+  body's prefix rather than the whole of it. A body that were only the
+  section would carry no evidence, which the artifact table requires.
+- `Dockerfile.ci` copies `out/release/bin/<os>_<arch>/origod`, the
+  binary `make release` cross-compiled, in place of `out/origod`. The
+  image and the archives of one release then hold one binary, and the
+  two-architecture row is reachable without compiling inside the image.
+  Nothing on a push builds `Dockerfile.ci`: the `build` job of
+  `verify.yml` builds `Dockerfile` and `Dockerfile.stubs`, both of which
+  compile the binary themselves.
+- The `e2e` and `e2e-slow` jobs of `verify.yml` now run `go test -v`.
+  They named no test in their logs, so a spec's stack proof had to be
+  argued from the package's wall-clock time; a stack proof is now read
+  from the run. This belongs here because 017 is what makes a release
+  verifiable.
+
+### Open
+
+- `checksums.txt` covers the four binary archives alone, as the artifact
+  table's row says. Whether `deploy-<version>.tar.gz` and
+  `fixture-<version>.tar.gz` join it is not settled: the fixture is
+  produced in a later job than the checksums, so covering it needs the
+  signing moved after `conformance`.
+- The `deploy` job takes its kubeconfig from `ORIGO_KUBECONFIG`, where
+  the shared pipeline mints a short-lived one from a provider token. A
+  long-lived kubeconfig in a repository secret is what spec 002's table
+  fixes; whether the release should mint instead is for a later round.
+
+### Coverage
+
+`cmd/origod` 93.2%, `internal/repo` 94.4%, `internal/wal` 98.0%,
+`internal/version` 100.0%, `test/conformance` 92.7%. `tools/release`
+and `tools/smoke` hold a doc comment and a test that runs a shell
+script, so they carry no statements and the gate does not measure them.
+
+### What this closes elsewhere
+
+- Spec 002's Images section and the decision row on the runtime base:
+  both Dockerfiles and `Dockerfile.stubs` are on `debian:trixie-slim`
+  pinned by one digest, git 2.47.
+- Spec 016 stays at `testing`. Its supply-chain row reads "the release
+  carries a bill of materials and provenance", and the pipeline that
+  produces them exists while no release does; the first tag closes it.
+- Specs 003 and 004 stay at `testing`. Nothing here touches their
+  remaining criteria: the conformance suite and the code table (021),
+  the cluster-job tests and the packs (013, 006), and the Spaces probe
+  of the release checklist, which is a maintainer's step.
