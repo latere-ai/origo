@@ -518,6 +518,8 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 		{"GET", "/v1/repos/" + repoA + "/export.bundle"},
 		{"POST", "/v1/repos/" + repoA + "/import"},
 		{"GET", "/v1/repos/" + repoA + "/import"},
+		// Migration (spec 014).
+		{"POST", "/v1/repos/" + repoA + "/verify"},
 		{"GET", "/v1/repos/" + repoA + "/refs"},
 		{"GET", "/v1/repos/" + repoA + "/commits"},
 		{"GET", "/v1/repos/" + repoA + "/commits/main"},

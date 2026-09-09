@@ -78,6 +78,13 @@ type harnessConfig struct {
 	node          string
 	members       Members
 	sweepTick     time.Duration
+	logger        *slog.Logger
+}
+
+// withLogger sends the handler's lines to a logger of the test's own,
+// so a test reads what the node wrote (spec 014's token rule).
+func withLogger(l *slog.Logger) harnessOption {
+	return func(c *harnessConfig) { c.logger = l }
 }
 
 // withEgress gives the handler the egress rules of spec 016 and, when
@@ -201,7 +208,10 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	if store == nil {
 		store = wal.NewMemStore()
 	}
-	logger := slog.New(slog.DiscardHandler)
+	logger := cfg.logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	var logStore wal.Store = store
 	if cfg.wrap != nil {
 		logStore = cfg.wrap(store)

@@ -212,6 +212,11 @@ type Repository struct {
 	// FrozenAt is when the repository was frozen (spec 019); null for
 	// one that accepts writes.
 	FrozenAt *time.Time `json:"frozen_at"`
+	// VerifiedAt and VerifiedEqual are the last verification against a
+	// source (spec 014); both null until one ran. They are what
+	// origod migrate resumes a batch from.
+	VerifiedAt    *time.Time `json:"verified_at"`
+	VerifiedEqual *bool      `json:"verified_equal"`
 }
 
 // reservedOwners are path prefixes the public surface uses itself.
@@ -296,7 +301,7 @@ func represent(m *wal.Meta, ix *wal.Index) Repository {
 	return Repository{
 		ID: m.ID, Owner: m.Owner, Slug: m.Slug, DefaultBranch: branch,
 		SizeBytes: ix.SizeBytes, Head: ix.Refs["refs/heads/"+branch], UpdatedAt: m.UpdatedAt, PushedAt: ix.PushedAt,
-		FrozenAt: m.FrozenAt,
+		FrozenAt: m.FrozenAt, VerifiedAt: m.VerifiedAt, VerifiedEqual: m.VerifiedEqual,
 	}
 }
 
