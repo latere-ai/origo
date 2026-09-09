@@ -620,4 +620,29 @@ Open, for the deck:
 
 Items for `latere.ai/x/pkg`: none.
 
-Stack proof: pending the dispatched run of `verify.yml` on `main`.
+Stack proof: the `e2e` job of the dispatched run 34358421294 of
+`verify.yml` on main, at commit `e9e516e`, ran
+`go test -tags=e2e ./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack'`
+against the kind stack, with `ORIGO_TEST_URL` on node 1 of spec 013's
+ports table, and passed in 65 s; every other job of the run was green,
+and the `mutation` job passed `TestMutation` for all five capabilities.
+The `fuzz` job is on the weekly schedule and did not run.
+
+What that `ok` covers is the whole suite, not a subset. `TestContract`
+builds the stack target with the three stub endpoints and the `Fault`,
+fails on any failed case, fails when a `Fault` is wired and anything is
+skipped, and fails on a non-empty `Report.Unverified`, so a green stack
+run is every case of the deck answered, spec 020's four rows and spec
+019's included. The step ran without `-v` — that flag landed later, in
+spec 017's `1f4bbb9` — so no case is named in the log and the evidence
+is the package's `ok` plus those three assertions inside the test. The
+one way out that leaves no trace is `stackTarget`'s skip when nothing
+answers at `ORIGO_TEST_URL`, which the job's passing `Bring the stack
+up` step and the step's 65 s of wall clock rule out: a skipped test
+returns at once.
+
+The spec stays at `testing`. The two deferred items above are what
+remains, and neither is a stack run: the live run of `TestContract`
+against `ORIGO_LIVE_URL`, which needs a release and so closes at the
+first tag, and spec 014's `verify` case of the source group, which is
+not in `test/conformance` yet.
