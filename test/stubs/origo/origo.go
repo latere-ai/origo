@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"latere.ai/x/pkg/health"
@@ -28,11 +29,15 @@ import (
 
 	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/auth"
+	"github.com/latere-ai/origo/internal/compact"
 	"github.com/latere-ai/origo/internal/config"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/events"
 	"github.com/latere-ai/origo/internal/httpgit"
 	"github.com/latere-ai/origo/internal/lfs"
+	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/metrics"
+	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
 	"github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -43,6 +48,10 @@ import (
 
 // Bucket is the name of the in-process bucket.
 const Bucket = "origo-test"
+
+// Node is the stub's node name, the primary of every repository it
+// serves and the owner of its event journal.
+const Node = "stub"
 
 // Server is one in-process Origo with its stubs.
 type Server struct {
@@ -104,19 +113,43 @@ func New(t testing.TB) *Server {
 	guard := auth.NewGuard(authzClient, logger)
 	signer := auth.NewSigner(key, url, nil)
 
+	// The rest of what cmd/origod wires, so the stub serves the whole
+	// contract: the limits of spec 012 with the spec's defaults, the
+	// live set of one node and the compaction manager of spec 006 that
+	// the gc endpoint of spec 019 drives, and the push events of spec
+	// 008 delivered to the stub sink.
+	bounds := limits.New(limits.Options{Log: s.log, Metrics: set, Logger: logger})
+	set5 := placement.NewSet(Node, nil)
+	compactor, err := compact.New(compact.Options{Cache: cache, Placement: set5, Node: Node, Slots: bounds.Slots(), Logger: logger, Metrics: set})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := events.New(events.Options{
+		Log: s.log, Node: Node, URL: s.sink.URL(), Secret: s.sink.Secret(),
+		Client:  &http.Client{Transport: &http.Transport{}, Timeout: events.DeliveryTimeout},
+		Metrics: set, Logger: logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// The application surface as cmd/origod wires it: smart HTTP and the
-	// repository API behind the verifier, the three unauthenticated
-	// paths in front, and the contract version on every response.
+	// repository API behind the verifier and the rate limit, the three
+	// unauthenticated paths in front, and the contract version on every
+	// response.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Metrics: set, Guard: guard}).Register(app)
-	api.New(api.Options{Cache: cache, Logger: logger, Guard: guard, Signer: signer}).Register(app)
+	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Metrics: set, Guard: guard, Events: dispatcher, Placement: set5, Compaction: compactor, Limits: bounds}).Register(app)
+	api.New(api.Options{
+		Cache: cache, Logger: logger, Guard: guard, Signer: signer, Events: dispatcher,
+		Placement: set5, Limits: bounds, Compaction: compactor, Node: Node, Members: set5,
+	}).Register(app)
 	presigner, err := lfs.NewPresigner(lfs.PresignerOptions{
 		Endpoint: s.bucket.URL(), Region: s3test.Region, Bucket: Bucket, Key: s3test.Key, Secret: s3test.Secret, PathStyle: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	lfs.New(lfs.Options{Log: s.log, Guard: guard, Presigner: presigner, Logger: logger}).Register(app)
+	lfs.New(lfs.Options{Log: s.log, Guard: guard, Presigner: presigner, Logger: logger, Limits: bounds}).Register(app)
 	app.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})
 	})
@@ -128,18 +161,20 @@ func New(t testing.TB) *Server {
 	mux.Handle("GET /readyz", probes)
 	mux.Handle("GET /version", probes)
 	mux.Handle("GET /.well-known/jwks.json", signer.JWKS())
-	mux.Handle("/", verifier.Middleware(app))
+	mux.Handle("/", verifier.Middleware(bounds.Middleware(app)))
 	s.srv.Config.Handler = contract.Middleware(mux)
 	s.srv.Start()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
-	done := make(chan struct{})
-	go func() { defer close(done); _ = verifier.Run(ctx) }()
+	var loops sync.WaitGroup
+	for _, loop := range []func(context.Context) error{verifier.Run, dispatcher.Run, compactor.Run} {
+		loops.Go(func() { _ = loop(ctx) })
+	}
 	t.Cleanup(func() {
 		s.srv.Close()
 		cancel()
-		<-done
+		loops.Wait()
 	})
 	return s
 }
