@@ -221,7 +221,7 @@ func writeReadError(w http.ResponseWriter, err error) {
 		re.Write(w)
 		return
 	}
-	contract.Write(w, http.StatusInternalServerError, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
+	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, map[string]any{"error": err.Error()})
 }
 
 // fail answers a failed subprocess: 504 operation_timeout when the
