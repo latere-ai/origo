@@ -264,8 +264,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		Compaction: n.compact, Node: cfg.NodeName, Members: n.set,
 	})
 	n.api.Register(app)
-	n.api.BindSweepGauges(n.metrics)
-	n.background = append(n.background, n.api.RunSweep, n.clearImportLeases)
+	n.api.Sweeper().Bind(n.metrics)
+	n.background = append(n.background, n.api.Sweeper().Run, n.clearImportLeases)
 	// LFS (spec 010): the batch answers presigned URLs signed against
 	// the endpoint LFS clients reach, so object bytes never pass through
 	// the node.

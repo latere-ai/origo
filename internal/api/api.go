@@ -105,15 +105,13 @@ type Handler struct {
 
 	exportTimeout time.Duration
 	importTimeout time.Duration
-	sweepTick     time.Duration
 	// imports holds the runs started by this node, so a shutdown waits
 	// for them and a test does not race a background write of meta.
 	imports sync.WaitGroup
 
-	// sweep is the last orphan sweep this node ran or read, the source
-	// of the two gauges of spec 011.
-	sweepMu sync.Mutex
-	sweep   SweepReport
+	// sweeper is the weekly orphan sweep of spec 019, which the node
+	// runs as a background loop and reads its two gauges from.
+	sweeper *Sweeper
 
 	readTimeout time.Duration
 }
@@ -158,13 +156,19 @@ func New(o Options) *Handler {
 	if tick <= 0 {
 		tick = SweepTick
 	}
-	return &Handler{
+	h := &Handler{
 		cache: o.Cache, log: o.Cache.Log(), logger: logger, guard: o.Guard, signer: o.Signer,
 		placement: o.Placement, readTimeout: timeout, events: o.Events, limits: bounds, egress: egress, now: now,
 		compaction: o.Compaction, node: o.Node, members: o.Members,
-		exportTimeout: exportTimeout, importTimeout: importTimeout, sweepTick: tick,
+		exportTimeout: exportTimeout, importTimeout: importTimeout,
 	}
+	h.sweeper = NewSweeper(SweeperOptions{Log: h.log, Node: o.Node, Members: o.Members, Now: now, Tick: tick, Logger: logger})
+	return h
 }
+
+// Sweeper is the weekly orphan sweep this node holds (spec 019): the
+// node runs it as a background loop and binds its gauges.
+func (h *Handler) Sweeper() *Sweeper { return h.sweeper }
 
 // Wait blocks until every import this node started has finished. The
 // node calls it on shutdown and a test after a 202.

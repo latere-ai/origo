@@ -60,7 +60,7 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	put(unknown, "written by something else")
 
 	// Nothing is an orphan until it is a day old.
-	rep, err := first.handler.Sweep(ctx)
+	rep, err := first.sweeper().Sweep(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	// orphan, the one outside every prefix the deck defines is reported
 	// by key and counted as unknown, and none is deleted yet.
 	now = now.Add(OrphanAge)
-	rep, err = first.handler.Sweep(ctx)
+	rep, err = first.sweeper().Sweep(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 
 	// Past the hold they go.
 	now = now.Add(OrphanHold)
-	rep, err = first.handler.Sweep(ctx)
+	rep, err = first.sweeper().Sweep(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,19 +108,19 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 	}
 
 	// The first name sweeps; the others report the run they read.
-	if first.handler.sweepNode() != "origod-0" || second.handler.sweepNode() != "origod-0" {
-		t.Fatalf("sweep node %q %q", first.handler.sweepNode(), second.handler.sweepNode())
+	if first.sweeper().sweepNode() != "origod-0" || second.sweeper().sweepNode() != "origod-0" {
+		t.Fatalf("sweep node %q %q", first.sweeper().sweepNode(), second.sweeper().sweepNode())
 	}
-	second.handler.readSweepReport(ctx)
-	third.handler.readSweepReport(ctx)
+	second.sweeper().readReport(ctx)
+	third.sweeper().readReport(ctx)
 	for _, h := range []*harness{second, third} {
-		if got := h.handler.sweepReport(); got.Node != "origod-0" || got.Orphans != rep.Orphans || got.StorageBytes != rep.StorageBytes {
+		if got := h.sweeper().Report(); got.Node != "origod-0" || got.Orphans != rep.Orphans || got.StorageBytes != rep.StorageBytes {
 			t.Fatalf("%s reports %+v", h.handler.node, got)
 		}
 	}
 	// The gauges of spec 011 come off that report on every node.
 	reg := pkgmetrics.NewRegistry()
-	third.handler.BindSweepGauges(metrics.Register(reg))
+	third.sweeper().Bind(metrics.Register(reg))
 	var text bytes.Buffer
 	reg.WritePrometheus(&text)
 	for _, want := range []string{
@@ -134,10 +134,10 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 
 	// Once the first name leaves the live set the next name sweeps.
 	live.remove("origod-0")
-	if second.handler.sweepNode() != "origod-1" || third.handler.sweepNode() != "origod-1" {
-		t.Fatalf("after origod-0 left: %q %q", second.handler.sweepNode(), third.handler.sweepNode())
+	if second.sweeper().sweepNode() != "origod-1" || third.sweeper().sweepNode() != "origod-1" {
+		t.Fatalf("after origod-0 left: %q %q", second.sweeper().sweepNode(), third.sweeper().sweepNode())
 	}
-	rep, err = second.handler.Sweep(ctx)
+	rep, err = second.sweeper().Sweep(ctx)
 	if err != nil || rep.Node != "origod-1" {
 		t.Fatalf("sweep on the next name: %+v, %v", rep, err)
 	}
@@ -156,8 +156,8 @@ func TestOrphanSweepRunsOnOneNode(t *testing.T) {
 
 	// A node with no live set at all sweeps for itself.
 	alone := newHarness(t, withStore(store), withNow(clock), withNode("origod-9"))
-	if alone.handler.sweepNode() != "origod-9" {
-		t.Fatalf("a single node's sweep node is %q", alone.handler.sweepNode())
+	if alone.sweeper().sweepNode() != "origod-9" {
+		t.Fatalf("a single node's sweep node is %q", alone.sweeper().sweepNode())
 	}
 }
 
@@ -183,7 +183,7 @@ func TestSweepLeavesARepositoryItCannotRead(t *testing.T) {
 		}
 		return nil
 	})
-	rep, err := h.handler.Sweep(ctx)
+	rep, err := h.sweeper().Sweep(ctx)
 	store.SetFault(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +192,9 @@ func TestSweepLeavesARepositoryItCannotRead(t *testing.T) {
 		t.Fatalf("a repository whose index failed produced %d orphans: %v", rep.Orphans, rep.Keys)
 	}
 }
+
+// sweeper is the handler's weekly orphan sweep.
+func (h *harness) sweeper() *Sweeper { return h.handler.Sweeper() }
 
 // liveNodes is a live set a test changes.
 type liveNodes struct{ names []string }
@@ -228,17 +231,17 @@ func TestSweepLoopRunsInItsHour(t *testing.T) {
 	first.create(repoA, "acme", "app")
 
 	done := make(chan struct{}, 2)
-	go func() { _ = first.handler.RunSweep(ctx); done <- struct{}{} }()
-	go func() { _ = second.handler.RunSweep(ctx); done <- struct{}{} }()
+	go func() { _ = first.sweeper().Run(ctx); done <- struct{}{} }()
+	go func() { _ = second.sweeper().Run(ctx); done <- struct{}{} }()
 
 	// Outside the hour neither runs and neither has a report.
 	time.Sleep(50 * time.Millisecond)
-	if got := first.handler.sweepReport(); got.Node != "" {
+	if got := first.sweeper().Report(); got.Node != "" {
 		t.Fatalf("a sweep ran outside its hour: %+v", got)
 	}
 	advance(2 * time.Hour)
 	waitFor(t, "the sweep to run and both nodes to report it", func() bool {
-		return first.handler.sweepReport().Node == "origod-0" && second.handler.sweepReport().Node == "origod-0"
+		return first.sweeper().Report().Node == "origod-0" && second.sweeper().Report().Node == "origod-0"
 	})
 	cancel()
 	<-done
@@ -253,15 +256,15 @@ func TestSweepReportFailuresAreLogged(t *testing.T) {
 	store := wal.NewMemStore()
 	h := newHarness(t, withStore(store), withNode("origod-0"))
 	// Nothing written yet: the read is a no-op.
-	h.handler.readSweepReport(ctx)
-	if got := h.handler.sweepReport(); got.Node != "" {
+	h.sweeper().readReport(ctx)
+	if got := h.sweeper().Report(); got.Node != "" {
 		t.Fatalf("a report out of nowhere: %+v", got)
 	}
 	if _, err := store.Put(ctx, h.log.Prefix()+SweepKey, wal.BytesBody([]byte("{"))); err != nil {
 		t.Fatal(err)
 	}
-	h.handler.readSweepReport(ctx)
-	if got := h.handler.sweepReport(); got.Node != "" {
+	h.sweeper().readReport(ctx)
+	if got := h.sweeper().Report(); got.Node != "" {
 		t.Fatalf("a malformed report was read: %+v", got)
 	}
 	store.SetFault(func(op, key string) error {
@@ -270,9 +273,9 @@ func TestSweepReportFailuresAreLogged(t *testing.T) {
 		}
 		return nil
 	})
-	h.handler.readSweepReport(ctx)
+	h.sweeper().readReport(ctx)
 	// A run that cannot write its report still answers what it found.
-	rep, err := h.handler.Sweep(ctx)
+	rep, err := h.sweeper().Sweep(ctx)
 	store.SetFault(nil)
 	if err == nil {
 		t.Fatal("the report write failure was hidden")
@@ -287,7 +290,7 @@ func TestSweepReportFailuresAreLogged(t *testing.T) {
 		}
 		return nil
 	})
-	_, err = h.handler.Sweep(ctx)
+	_, err = h.sweeper().Sweep(ctx)
 	store.SetFault(nil)
 	if err == nil {
 		t.Fatal("the listing failure was hidden")
