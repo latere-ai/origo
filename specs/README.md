@@ -12,7 +12,7 @@ its owner, and it owns the binary's subcommand table (`serve`, `check`,
 `migrate`). Spec 011 owns every metric of the node; spec 024 owns the
 three its SSH listener records, in a table of its own, the way spec 004
 owns `ORIGO_HOOK_DIR` inside spec 002's reference. Spec 025 owns the
-four variables of the `origo-mcp` binary in a table of its own, because
+four variables of the `origo` binary in a table of its own, because
 `origod` reads none of them and `tools/configdoc` cannot generate a row
 for a variable no node configuration holds.
 
@@ -84,7 +84,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
-| [025](025-mcp-server.md) | MCP server: Origo as tools an agent can drive | large | validated | 003, 007, 009, 012, 020 |
+| [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | drafted | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
 
 ## Dependency graph
@@ -175,7 +175,7 @@ flowchart BT
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
 | 10 | 024 | `git clone git@git.example.com:owner/slug.git` works beside the HTTPS form, on the same write path, with the keys held by the operator | 024 complete: `internal/sshd` as a third listener of the node with the key resolver, the host key set and its two OpenSSH extensions, the maintained command surface, the path parser and its fuzz, `internal/httpgit`'s two stream entry points in front of the same spool, hook, and commit, the four variables of spec 002's reference, the `origod-ssh` Service and its NetworkPolicy row, the kind overlay's host keys and four new host ports, the stub of spec 013's table, and the install document's SSH step and clone. The three cluster criteria and the install document's SSH step are proved by the dispatched `verify` run 34526886417 at commit `3f5bea6`, every job green, so 024 is `complete` |
-| 12 | 025 | An agent reads a file, searches history, opens a change, and pushes a commit through eleven tools instead of a clone or a hand-written HTTP call | drafted; every dependency is at `testing` or later and nothing in Origo changes for it. `cmd/origo-mcp` is a second binary of this repository, run over the protocol's stdio transport beside the agent; what it needs outside its own directory is a `release-archives` loop for a second binary (017) and a `depcheck` row (002) |
+| 12 | 025 | An agent reads a file, finds one by name, opens a change, and pushes a commit through a command it pipes into a shell instead of a clone or a hand-written HTTP call | drafted; every dependency is at `testing` or later and nothing in Origo changes for it. `cmd/origo` is a second binary of this repository on `internal/origoclient`, with `skills/origo/SKILL.md` beside it; what it needs outside its own directory is a `release-archives` loop for a second binary and a second `release-verify` pattern (017), and a `depcheck` row (002) |
 | 13 | 026 | A browsing interface can ask which repositories a person may see, and address one by `<owner>/<slug>` instead of by identifier | drafted; the two additions spec 023 of `latere-ai/origo-web` states the shape of: a fourth action on the authorizer contract with an answer that says the authorizer has no directory, and `GET /v1/repos` in a directory mode and a name mode. Every dependency is at `testing` or later |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
@@ -283,12 +283,13 @@ deck and stated here so a reader sees them without the owning spec.
 | the web interface is a separate service in its own repository, not a directory of this one and not part of `origod`: Origo stays stateless with no session, no cookie, and no template, the interface is optional for a self-hoster, and it is a pure client of spec 009 through `docs/api.md` rather than of any internal package. Spec 023 is written in this deck because that repository does not exist yet and moves out on its first commit; it defines no name this deck owns, so its removal breaks no cross-reference | 023 | 009, 022 |
 | the set of repositories a subject may see is an authorization fact, not a git fact: Origo's name index knows what exists and the authorizer knows what a subject may see, and the list is the intersection. Origo has no collection route and the authorizer contract has no enumerate verb, so a listing needs both a directory question on the contract of spec 007, answered 200 like every other answer so an authorizer that has not been taught it is not read as unavailable, and a collection route on Origo. Neither is specced or built, and deriving the list from a token's organisation claims instead is refused: it is a second access-control model that diverges silently from the authorizer | 023 | 003, 007 |
 | a browsing interface addresses a repository by `<owner>/<slug>`, which the JSON surface cannot resolve: the name index `origo/names/<owner>/<slug>` is read for every git request in the label form and by nothing under `/v1/`. Until Origo resolves a name there, an interface addresses repositories by id | 003, 023 | 007, 009 |
-| the MCP server is a second binary of this repository, `cmd/origo-mcp`, run over the protocol's stdio transport on the machine the agent runs on, not a mode of `origod` and not a service of its own: `origod` gains no route, no listener, no configuration, and no threat-model surface, while the tool surface moves in the same commit as the contract it is shaped from and is proved against the same stack. Latere runs Origo at `code.latere.ai` and runs `origo-mcp` beside each agent pointed at it. The split spec 023 makes for the web interface is not made here, because that is a service with a deployment, sessions, and templates, and this is a stateless client binary | 025 | 002, 017, 023 |
-| a hosted MCP endpoint on an installation is refused for now on the protocol's own terms, not on taste: an MCP server on an HTTP transport is an OAuth 2.1 resource server that must validate that a token was issued for itself and must not accept or transit any other token, so it could not take an Origo bearer, and to obtain one per caller it would have to hold `admin` on every repository it serves in order to call `POST /v1/repos/{id}/tokens`. That is the credential broader than the task the design refuses, so a hosted transport is its own spec whose first paragraph is how the `admin` credential is avoided | 025 | 007, 016 |
-| `origo-mcp` never mints, signs, exchanges, or refreshes a credential. It carries one bearer from `ORIGO_MCP_TOKEN`, and the credential to hand it is a repository-bound token of spec 007, whose scope bounds what the agent may do and whose hour bounds a leak. Delegation reaches it because spec 007 copies the minter's `act` into the minted token, so an agent acting for a person carries the claim rather than constructing it, and the 3 600 second cap means an `unauthenticated` with `details.reason: "expired"` stops the server rather than starting a retry loop | 025 | 007, 012 |
-| no tool of `origo-mcp` can make a commit unreachable: every mutation is one of spec 020's operations, which appends a commit whose parent is `expected_head` and moves one branch to it, and no tool deletes a branch, a tag, a repository, or history. Spec 019's seven-day hold therefore never applies to an agent's mistake, for two independent reasons, no tool deletes and no bound token reaches an `admin` action, and the recovery path is `origo.replay_commits` with `mode: "revert"`, which is itself additive. A branch allow-list in the client is refused as a second access-control model diverging from the authorizer, the ground spec 023 refuses one on | 025 | 019, 020, 023 |
-| a tool result is one text block; `origo-mcp` declares an `outputSchema` and returns `structuredContent` on the three write tools alone, whose five-field receipt a host acts on. Structured content is optional in the protocol, so this breaks no rule: an agent pays per token for what reaches the model, and a schema plus the serialized duplicate beside it is two copies of the same bytes. The write tools are absent from `tools/list` without the `-write` flag, so a model cannot invoke a tool it has never seen, and the token's scope is the second, independent gate | 025 | - |
-| `origo-mcp` ships in spec 017's `release-archives` beside `origod` for the same four os/arch pairs and into the same `checksums.txt`; the upload is glob-driven and needs nothing, but `release-verify` downloads by an explicit `--pattern 'origod_*.tar.gz'` and then runs `sha256sum -c checksums.txt`, so the pattern gains `origo-mcp_*.tar.gz` in the same change or the next tag fails on four sums whose files it never fetched. It takes a `depcheck` row of its own with the node's allow list, `latere.ai/x/pkg` and the standard library: a newline-delimited JSON-RPC loop over `encoding/json` needs no upstream root at all, unlike spec 024's `golang.org/x/crypto/ssh` | 025, 017 | 001, 002 |
+| the agent client is a command, not a tool server, and the measurement is what decided it: a registry built to the first draft's own tables serializes to 5 725 bytes of `tools/list` JSON for its eight read tools and 10 137 for all eleven, roughly 1.6 k and 2.9 k tokens, resident on every turn of every session it is configured in, used or not, against a budget of 5 KiB and 8 KiB the draft set itself. Six of the eleven tools were pipelines fused in advance because one tool call cannot pipe into another, and the two searches the draft refused as impossible are one `grep` each against a command that prints lines. What MCP buys is an agent with no shell and per-tool permissioning owned by the host, and neither is Origo's question | 025 | 003, 009 |
+| `origo` is a second binary of this repository, `cmd/origo`, run on the machine the agent runs on, not a mode of `origod` and not a service of its own: `origod` gains no route, no listener, no configuration, and no threat-model surface, while the client surface moves in the same commit as the contract it is shaped from and is proved against the same stack. The split spec 023 makes for the web interface is not made here, because that is a service with a deployment, sessions, and templates, and this is a stateless client binary | 025 | 002, 017, 023 |
+| the client is three packages, and the boundary is the design rather than an implementation detail: `internal/origoclient` speaks contract 1 and formats nothing, `internal/origocli` holds every flag, byte default, line writer and exit code and reaches the network only through the client, and `cmd/origo` holds `main`. A tool server, if a product ever needs one for an agent with no shell, is a fourth package on `origoclient` and inherits the routes, the paging and the refusals without inheriting one formatting decision. The first draft fused its formatting into its tool handlers, which is exactly what this prevents | 025 | - |
+| data goes to stdout and every header, truncation and stale line goes to stderr. This is the rule a tool surface cannot have, and it is what makes `origo ls -r -n 0 \| grep -i handler` and `origo cat x.go > x.go` both correct: a truncation notice inside the payload would reach the filter and would land in the file. Each cut answer names on stderr the one flag that continues it, and an answer with no such line is whole | 025 | 009 |
+| `origo` never mints, signs, exchanges, or refreshes a credential, and `internal/origoclient` has no method that calls `POST /v1/repos/{id}/tokens` or any route of spec 019, asserted over its exported method set rather than left to review. It carries one bearer from `ORIGO_TOKEN`, and the credential to hand it is a repository-bound token of spec 007, whose scope bounds what the agent may do and whose hour bounds a leak. Delegation reaches it because spec 007 copies the minter's `act` into the minted token, so an agent acting for a person carries the claim rather than constructing it | 025 | 007, 012 |
+| no command of `origo` can make a commit unreachable: every mutation is one of spec 020's operations, which appends a commit whose parent is `expected_head` and moves one branch to it, and no command deletes a branch, a tag, a repository, or history. Spec 019's seven-day hold therefore never applies to an agent's mistake, for two independent reasons, no command deletes and no bound token reaches an `admin` action, and the recovery path is `origo revert`, which is itself additive. The credential is the write gate, because a flag on a command line is one the caller can also decline to type, and a branch allow-list in the client is refused as a second access-control model diverging from the authorizer, the ground spec 023 refuses one on | 025 | 019, 020, 023 |
+| `origo` ships in spec 017's `release-archives` beside `origod` for the same four os/arch pairs and into the same `checksums.txt`; the upload is glob-driven and needs nothing, but `release-verify` downloads by an explicit `--pattern 'origod_*.tar.gz'` and then runs `sha256sum -c checksums.txt`, so the pattern gains `origo_*.tar.gz` in the same change or the next tag fails on four sums whose files it never fetched. There is no second image: the command runs beside an agent, not in a cluster. It takes a `depcheck` row of its own that is a strict subset of the node's, `latere.ai/x/pkg` with `github.com/google/uuid` behind it reached only through `internal/contract`, and the standard library: an HTTP client over `net/http` and `encoding/json` needs no upstream root at all, unlike spec 024's `golang.org/x/crypto/ssh` | 025, 017 | 001, 002 |
 
 ## Applied fix lists
 
@@ -734,7 +735,9 @@ consumer needs it.
   bytes on the wire that a stat mode would not send.
 - Commit search: an author filter on `GET /v1/repos/{id}/commits`, and
   a content search over a repository. Spec 009 scopes search out and
-  spec 025 refuses to synthesize either on the client.
+  spec 025 refuses to synthesize either on the client; its command
+  answers both through a shell pipeline instead, which is cheaper than
+  either endpoint but reads only what a page already carries.
 
 ## Items for `latere.ai/x/pkg`
 
@@ -872,7 +875,7 @@ name, or when a spec names something no spec defines.
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
-| error code | `directory_unsupported` | [026](026-repository-directory.md) | - |
+| error code | `directory_unsupported` | [026](026-repository-directory.md) | 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025, 026 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
@@ -891,10 +894,11 @@ name, or when a spec names something no spec defines.
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 020, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 026 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 021, 024, 025 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025 |
+| variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |
@@ -919,10 +923,6 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 003, 017, 019, 020, 021 |
 | variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 003, 017, 018, 019, 020, 021 |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
-| variable | `ORIGO_MCP_AUTHOR` | [025](025-mcp-server.md) | - |
-| variable | `ORIGO_MCP_REPOS` | [025](025-mcp-server.md) | - |
-| variable | `ORIGO_MCP_TOKEN` | [025](025-mcp-server.md) | - |
-| variable | `ORIGO_MCP_URL` | [025](025-mcp-server.md) | - |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
@@ -935,6 +935,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_RELEASE_DEPLOY` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
+| variable | `ORIGO_REPO` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_REQUESTS_PER_MINUTE` | [002](002-repository-scaffold.md) | 007, 012, 020, 024, 025 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015 |
@@ -960,7 +961,9 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_S3_REGION` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025 |
-| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024 |
+| variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | - |
+| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025 |
+| variable | `ORIGO_URL` | [025](025-agent-client.md) | - |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
 | metric | `origo_authorizer_seconds` | [011](011-observability.md) | 007, 024 |
@@ -1017,7 +1020,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
-| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | - |
+| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 025 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
