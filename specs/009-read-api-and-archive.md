@@ -292,9 +292,13 @@ and the 40 second `FuzzValidPath` run. The spec moves to `complete`
 when both run there and `TestReadTrace` is green.
 
 Of those three, one is done. `TestE2EArchiveStreams` runs in the
-`integration and one-node e2e tiers` job on every push and passed in
-run 34460223906 of `verify.yml` on main, at commit `058eb6d`, the run
-the first release was cut from. Two remain and the first release closed
+`integration and one-node e2e tiers` job on every push, and that job
+passed in run 34460223906 of `verify.yml` on main, at commit `058eb6d`,
+the run the first release was cut from. The step runs `go test` without
+`-v`, so the log names no test and the evidence is the package's `ok`
+over the `TestE2E` selection together with the test's one way out:
+`requireStack` skips when `ORIGO_TEST_S3_ENDPOINT` is unset, and the
+job's step sets it from the MinIO service it starts. Two remain and the first release closed
 neither: `TestReadTrace` is not in the tree, and the 40 second
 `FuzzValidPath` run belongs to the weekly `fuzz` job, which is on a
 schedule and has not run. This spec's read cases are green against the
