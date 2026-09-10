@@ -767,8 +767,8 @@ published image are refused while the repository is private, so that
 row closes on the transition rather than gating it, and the first tag
 cut after the repository is public is what proves it. Until then the
 repository is private and the deck is written as if it were already
-public. A cloud provider
-named as a deployment target, a tested bucket, or an overlay name
+public. A cloud provider named as a deployment target, a tested
+bucket, or an overlay name
 (DigitalOcean Spaces and AWS S3 in specs 001, 004, and 018, the
 `digitalocean` and `aws` overlays of 018, the release checklist of
 017) is not what the naming rule bars: the rule bars naming another
@@ -783,8 +783,8 @@ What is built: all 21 specs, twelve of them at `complete`. Every
 criterion has a passing test but for the ten items the table at the
 end of this section lists, and none of those is unbuilt behaviour: they
 are runs that have not happened, tests nobody has written, and
-decisions outside this repository. The documentation an outside operator needs is in the tree and
-is tested rather than asserted: `docs/install.md` takes a cluster and a
+decisions outside this repository. The documentation an outside
+operator needs is in the tree and is tested rather than asserted: `docs/install.md` takes a cluster and a
 bucket to a first clone and push and its commands are run against a
 bare cluster on every push, `docs/configuration.md` and `docs/api.md`
 are generated from the code and the specs and a drift in either fails
