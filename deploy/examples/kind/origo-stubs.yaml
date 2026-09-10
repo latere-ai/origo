@@ -46,6 +46,7 @@ spec:
             - -allow=*
             - -secret=stub-sink-secret
             - -slowproxy-target=minio.origo.svc:9000
+            - -sshkeys-token=stub-sshkeys-token
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -62,6 +63,8 @@ spec:
               containerPort: 8085
             - name: slowproxy-data
               containerPort: 8086
+            - name: sshkeys
+              containerPort: 8087
           readinessProbe:
             httpGet:
               path: /jwks
@@ -106,6 +109,10 @@ spec:
       port: 8085
       targetPort: slowproxy
       nodePort: 30085
+    - name: sshkeys
+      port: 8087
+      targetPort: sshkeys
+      nodePort: 30086
 ---
 # The slow proxy's data listener, what ORIGO_S3_ENDPOINT on every node
 # names; in-cluster only.

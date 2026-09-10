@@ -121,8 +121,11 @@ by the node. A policy restricts every ingress it does not admit for
 the pods it selects, so `origod-http` in the same file admits TCP 8080
 and 8081, the two listeners of spec 002, from every peer: the ingress
 controller, the probes, and the scrape; the bearer of spec 007 is the
-control there. The two are additive, and `origod-gossip` alone is what
-the stack criterion reads.
+control there. `origod-ssh` beside it admits TCP 2222 from every peer
+for the same reason, because the public key and the authorizer are the
+control on that listener and not the network (spec 024); it is inert
+until an installation sets `ORIGO_SSH_ADDR`. The three are additive,
+and `origod-gossip` alone is what the stack criterion reads.
 The source of an `import` or a `verify` (specs 019, 014) is a host the
 caller names, so it is hostile until the egress allow-list admits it,
 and trusted only for the bytes git checks.
@@ -345,11 +348,13 @@ Divergences and interpretations, all kept and stated in the Design:
 - `GitConfig` with an empty token sets `GIT_CONFIG_COUNT=1` and the
   proxy key alone: an `Authorization: Bearer` header with no value is
   not a credential.
-- `origod-http` is a second NetworkPolicy beside `origod-gossip`: a
-  policy restricts every ingress it does not admit for the pods it
-  selects, so a gossip-only policy would close the two listeners to the
-  ingress controller and the probes. The criterion reads
-  `origod-gossip` alone, which keeps its one rule.
+- `origod-http` is a second NetworkPolicy beside `origod-gossip`, and
+  `origod-ssh` a third: a policy restricts every ingress it does not
+  admit for the pods it selects, so a gossip-only policy would close
+  the two listeners to the ingress controller and the probes, and a
+  policy set without `origod-ssh` would close the SSH listener spec 024
+  adds. The criterion reads `origod-gossip` alone, which keeps its one
+  rule.
 - A label containing `..` inside, `a..b`, stays admitted: spec 003's
   grammar admits it, a label is never a path component a subprocess
   sees, and `FuzzValidLabel` holds the validator to git's path rules

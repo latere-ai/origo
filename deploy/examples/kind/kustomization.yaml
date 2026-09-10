@@ -28,6 +28,8 @@ patches:
   - path: patches/ingress-nginx.yaml
   # The balanced Service on its host port.
   - path: patches/service-nodeport.yaml
+  # The balanced SSH Service on its host port (spec 024).
+  - path: patches/service-ssh-nodeport.yaml
   # The base's autoscaler on the StatefulSet, held at three replicas,
   # with the 60 second scale-down window of spec 005's row.
   - path: patches/hpa-statefulset.yaml

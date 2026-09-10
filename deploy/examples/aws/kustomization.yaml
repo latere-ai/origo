@@ -10,6 +10,7 @@
 # What to change:
 #   ingress.yaml     the hostname and the certificate ARN
 #   public-url.yaml  the same hostname
+#   ssh-loadbalancer.yaml  nothing, unless the NLB needs subnet annotations
 #   the Secret origod-s3: the S3 endpoint, region, bucket, and keys
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -23,3 +24,6 @@ patches:
   - path: ingress.yaml
   - path: public-url.yaml
   - path: replicas.yaml
+  # Git over SSH on port 22 (spec 024). Remove this patch to keep the
+  # SSH Service ClusterIP, which publishes nothing.
+  - path: ssh-loadbalancer.yaml

@@ -1,0 +1,22 @@
+# Git over SSH on port 22 (spec 024). DigitalOcean's cloud controller
+# gives a Service of type LoadBalancer a load balancer of its own, which
+# is what carries SSH: the ingress controller is HTTP-only and SSH is
+# not HTTP. Point the same DNS record the ingress uses at this load
+# balancer's address, and clients clone with
+# git@git.example.com:owner/slug.git.
+#
+# The listener opens only when the pods carry ORIGO_SSH_ADDR and the
+# three variables beside it (docs/install.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod-ssh
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-name: origod-ssh
+    # The proxy protocol is off: Origo reads no client address from it,
+    # and a load balancer that adds a header an SSH server does not
+    # expect breaks the handshake.
+    service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "false"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local

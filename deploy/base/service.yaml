@@ -27,3 +27,33 @@ spec:
       port: 7946
       targetPort: gossip
       protocol: UDP
+---
+# Git over SSH (spec 024). SSH is not HTTP, so it does not go through the
+# ingress: this Service is what publishes it. ClusterIP by default, which
+# reaches nothing from outside; an overlay changes the type. Port 22 is
+# what buys the short clone URL git@host:owner/slug.git, because scp
+# syntax has no place to put a port, and the mapping to the container's
+# 2222 belongs here rather than in a capability on the pod.
+#
+#   an L4 load balancer      patch this to type: LoadBalancer with the
+#                            provider's annotations (the digitalocean
+#                            and aws example overlays carry the patch)
+#   TCP passthrough          map external 22 to origod-ssh:22 in the
+#                            ingress controller's TCP services
+#   neither                  type: NodePort, and clients use
+#                            ssh://git@host:PORT/owner/slug.git
+#
+# The Service is inert until a node sets ORIGO_SSH_ADDR.
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod-ssh
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: origod
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: ssh
+      protocol: TCP

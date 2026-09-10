@@ -63,6 +63,9 @@ spec:
             - name: gossip
               containerPort: 7946
               protocol: UDP
+            - name: ssh
+              containerPort: 2222
+              protocol: TCP
           env:
             # The bucket: the MinIO row's fixed values, reached through
             # the slow proxy of spec 015, delay 0 until a test sets one
@@ -136,6 +139,19 @@ spec:
                 secretKeyRef:
                   name: origod-token-key
                   key: ORIGO_TOKEN_KEY
+            # Git over SSH (spec 024). One host key set on every pod,
+            # from the Secret up.sh and the install document generate,
+            # so a client that reaches node 2 after node 1 sees the same
+            # key. The key resolver is the stub of spec 013's table, on
+            # host port 30086.
+            - name: ORIGO_SSH_ADDR
+              value: :2222
+            - name: ORIGO_SSH_HOST_KEYS
+              value: /etc/origo/ssh/ssh_host_ed25519_key,/etc/origo/ssh/ssh_host_ecdsa_key
+            - name: ORIGO_SSH_KEYS_URL
+              value: http://origo-stubs.origo.svc:8087
+            - name: ORIGO_SSH_KEYS_TOKEN
+              value: stub-sshkeys-token
           livenessProbe:
             httpGet:
               path: /livez
@@ -171,12 +187,19 @@ spec:
               mountPath: /var/lib/origo
             - name: tmp
               mountPath: /tmp
+            - name: ssh-host-key
+              mountPath: /etc/origo/ssh
+              readOnly: true
       volumes:
         - name: data
           emptyDir:
             sizeLimit: 2Gi
         - name: tmp
           emptyDir: {}
+        - name: ssh-host-key
+          secret:
+            secretName: origod-ssh-host-key
+            defaultMode: 0400
 ---
 # Node 1 of the ports table: the pod origod-0.
 apiVersion: v1
@@ -195,6 +218,12 @@ spec:
       port: 8080
       targetPort: http
       nodePort: 30180
+    # Node 1's own SSH listener, so a stack test reaches one named
+    # node's host key (spec 024).
+    - name: ssh
+      port: 2222
+      targetPort: ssh
+      nodePort: 30122
 ---
 apiVersion: v1
 kind: Service
@@ -230,6 +259,12 @@ spec:
       port: 8080
       targetPort: http
       nodePort: 30181
+    # Node 2's own SSH listener, so a stack test reaches one named
+    # node's host key (spec 024).
+    - name: ssh
+      port: 2222
+      targetPort: ssh
+      nodePort: 30123
 ---
 apiVersion: v1
 kind: Service
@@ -265,6 +300,12 @@ spec:
       port: 8080
       targetPort: http
       nodePort: 30182
+    # Node 3's own SSH listener, so a stack test reaches one named
+    # node's host key (spec 024).
+    - name: ssh
+      port: 2222
+      targetPort: ssh
+      nodePort: 30124
 ---
 apiVersion: v1
 kind: Service

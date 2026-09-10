@@ -1,0 +1,19 @@
+# Git over SSH on port 22 (spec 024). The Application Load Balancer the
+# ingress uses speaks HTTP and SSH is not HTTP, so SSH takes a Network
+# Load Balancer of its own, which is what a Service of type LoadBalancer
+# with these annotations creates. Point a DNS record at it and clients
+# clone with git@git.example.com:owner/slug.git.
+#
+# The listener opens only when the pods carry ORIGO_SSH_ADDR and the
+# three variables beside it (docs/install.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod-ssh
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local

@@ -1,0 +1,14 @@
+# The balanced SSH Service on host port 30022 of the ports table (spec
+# 024), so a stack test pushes over SSH through whichever node answers.
+apiVersion: v1
+kind: Service
+metadata:
+  name: origod-ssh
+spec:
+  type: NodePort
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: ssh
+      protocol: TCP
+      nodePort: 30022

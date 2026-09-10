@@ -21,6 +21,15 @@ nodes:
         hostPort: 30181
       - containerPort: 30182
         hostPort: 30182
+      # origod, the balanced SSH Service, and node 1 to 3's own (spec 024)
+      - containerPort: 30022
+        hostPort: 30022
+      - containerPort: 30122
+        hostPort: 30122
+      - containerPort: 30123
+        hostPort: 30123
+      - containerPort: 30124
+        hostPort: 30124
       # node 1 to 3, the internal listener
       - containerPort: 30190
         hostPort: 30190
@@ -39,6 +48,9 @@ nodes:
         hostPort: 30084
       - containerPort: 30085
         hostPort: 30085
+      # the stub key resolver of spec 024
+      - containerPort: 30086
+        hostPort: 30086
       # MinIO
       - containerPort: 30900
         hostPort: 30900

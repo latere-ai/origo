@@ -42,7 +42,7 @@ for tar in "$origod_tar" "$stubs_tar"; do
 		exit 2
 	fi
 done
-for tool in kind kubectl helm curl openssl awk; do
+for tool in kind kubectl helm curl openssl ssh-keygen awk; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "up.sh: $tool is not on PATH" >&2
 		exit 2
@@ -77,6 +77,13 @@ wait_for() {
 		sleep 2
 	done
 	echo "up.sh: $what ready"
+}
+
+# ssh_answers reports whether an SSH listener on the host port has
+# completed a handshake. ssh-keyscan needs no key and no account: it
+# reads the host key the listener presents and nothing else.
+ssh_answers() {
+	test -n "$(ssh-keyscan -T 5 -p "$1" 127.0.0.1 2>/dev/null)"
 }
 
 sha256_check() {
@@ -122,15 +129,23 @@ awk -v image="$METRICS_SERVER_IMAGE" '
 kubectl apply -f "$out/metrics-server.yaml" >/dev/null
 
 # 5. The Secrets the overlay does not carry: ORIGO_TOKEN_KEY, generated
-# the way the install document does, and the source stub's CA with the
-# two SANs, its certificate alone in the ConfigMap the nodes mount.
+# the way the install document does, the SSH host keys of spec 024, the
+# same set on every pod, and the source stub's CA with the two SANs, its
+# certificate alone in the ConfigMap the nodes mount.
 openssl ecparam -genkey -name prime256v1 -out "$out/token-key.pem" 2>/dev/null
+rm -f "$out/ssh_host_ed25519_key" "$out/ssh_host_ed25519_key.pub" "$out/ssh_host_ecdsa_key" "$out/ssh_host_ecdsa_key.pub"
+ssh-keygen -q -t ed25519 -N "" -C "" -f "$out/ssh_host_ed25519_key"
+ssh-keygen -q -t ecdsa -b 256 -N "" -C "" -f "$out/ssh_host_ecdsa_key"
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
 	-keyout "$out/ca.key" -out "$out/ca.crt" -subj "/CN=origo-stubs CA" \
 	-addext "subjectAltName=DNS:origo-stubs.origo.svc,DNS:localhost" 2>/dev/null
 {
 	kubectl create secret generic origod-token-key --namespace origo --dry-run=client -o yaml \
 		--from-file=ORIGO_TOKEN_KEY="$out/token-key.pem"
+	echo ---
+	kubectl create secret generic origod-ssh-host-key --namespace origo --dry-run=client -o yaml \
+		--from-file=ssh_host_ed25519_key="$out/ssh_host_ed25519_key" \
+		--from-file=ssh_host_ecdsa_key="$out/ssh_host_ecdsa_key"
 	echo ---
 	kubectl create secret generic origo-stubs-ca --namespace origo --dry-run=client -o yaml \
 		--from-file=ca.crt="$out/ca.crt" --from-file=ca.key="$out/ca.key"
@@ -172,6 +187,11 @@ wait_for "port $(port 30082)" curl -fsS "http://localhost:$(port 30082)/requests
 wait_for "port $(port 30083)" curl -fsS "http://localhost:$(port 30083)/deliveries"
 wait_for "port $(port 30084)" curl -fsS --cacert "$out/ca.crt" "https://localhost:$(port 30084)/ca.pem"
 wait_for "port $(port 30085)" curl -fsS "http://localhost:$(port 30085)/"
+wait_for "port $(port 30086)" curl -fsS -X DELETE "http://localhost:$(port 30086)/requests"
+wait_for "port $(port 30022)" ssh_answers "$(port 30022)"
+for n in 0 1 2; do
+	wait_for "port $(port $((30122 + n)))" ssh_answers "$(port $((30122 + n)))"
+done
 wait_for "port $(port 30900)" curl -fsS "http://localhost:$(port 30900)/minio/health/live"
 
 # Every port answering does not mean the nodes hold the issuer's keys:

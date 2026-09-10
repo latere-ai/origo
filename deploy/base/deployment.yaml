@@ -123,6 +123,16 @@ spec:
             - name: gossip
               containerPort: 7946
               protocol: UDP
+            # Git over SSH (spec 024). The listener opens only when
+            # ORIGO_SSH_ADDR is set, which an installation does with the
+            # host keys and the key resolution endpoint of
+            # docs/install.md; the port is declared here so the Service
+            # in front of it names a port and not a number. It is 2222
+            # and never 22: the pod runs as 65532 with every capability
+            # dropped, and one clone URL is not worth NET_BIND_SERVICE.
+            - name: ssh
+              containerPort: 2222
+              protocol: TCP
           env:
             - name: ORIGO_DATA_DIR
               value: /var/lib/origo
