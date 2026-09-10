@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # The org runner droplet latere-ci-vm-linux-001 (terraform specs/023).
+  labels:
+    - linux-vm
