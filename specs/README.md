@@ -84,7 +84,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
-| [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | validated | 003, 007, 009, 012, 020, 026 |
+| [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | testing | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
 
 ## Dependency graph
@@ -124,7 +124,7 @@ flowchart BT
   S021[021 conformance suite]
   S022[022 landing page]
   S024[024 SSH access]
-  S025[025 MCP server]
+  S025[025 agent client]
   S026[026 repository directory]
   S002 --> S001
   S003 --> S001
@@ -175,7 +175,7 @@ flowchart BT
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
 | 10 | 024 | `git clone git@git.example.com:owner/slug.git` works beside the HTTPS form, on the same write path, with the keys held by the operator | 024 complete: `internal/sshd` as a third listener of the node with the key resolver, the host key set and its two OpenSSH extensions, the maintained command surface, the path parser and its fuzz, `internal/httpgit`'s two stream entry points in front of the same spool, hook, and commit, the four variables of spec 002's reference, the `origod-ssh` Service and its NetworkPolicy row, the kind overlay's host keys and four new host ports, the stub of spec 013's table, and the install document's SSH step and clone. The three cluster criteria and the install document's SSH step are proved by the dispatched `verify` run 34526886417 at commit `3f5bea6`, every job green, so 024 is `complete` |
-| 12 | 025 | An agent reads a file, finds one by name, opens a change, and pushes a commit through a command it pipes into a shell instead of a clone or a hand-written HTTP call | drafted; every dependency is at `testing` or later and nothing in Origo changes for it. `cmd/origo` is a second binary of this repository on `internal/origoclient`, with `skills/origo/SKILL.md` beside it; what it needs outside its own directory is a `release-archives` loop for a second binary and a second `release-verify` pattern (017), and a `depcheck` row (002) |
+| 12 | 025 | An agent reads a file, finds one by name, opens a change, and pushes a commit through a command it pipes into a shell instead of a clone or a hand-written HTTP call | 025 built and at testing: `internal/origoclient`, which speaks the contract and formats nothing, `internal/origocli` and the twelve commands on it, `cmd/origo` as a second binary, `docs/cli.md` whose blocks are its own test, and `skills/origo/SKILL.md`, whose resident cost is 99 bytes against the 5 725 the eight read tools of the MCP shape would hold, all in the tree; the release carries eight archives rather than four and `release-verify` downloads both patterns, pinned by `TestTheReleaseCarriesBothBinaries`. `TestE2EOrigoReadsCommitsAndReverts` drives every command of the surface against a running node. What holds it at testing is the same live run 021 waits on, and the wrong refusal code its Open section reports to 020 |
 | 13 | 026 | A browsing interface can ask which repositories a person may see, and address one by `<owner>/<slug>` instead of by identifier | drafted; the two additions spec 023 of `latere-ai/origo-web` states the shape of: a fourth action on the authorizer contract with an answer that says the authorizer has no directory, and `GET /v1/repos` in a directory mode and a name mode. Every dependency is at `testing` or later |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what

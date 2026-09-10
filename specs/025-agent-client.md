@@ -1,6 +1,6 @@
 ---
 title: "Agent client: Origo as a command and a skill"
-status: validated
+status: testing
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
