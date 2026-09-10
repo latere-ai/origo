@@ -18,3 +18,14 @@ coverage.out
 # Written by deploy/examples/kind/up.sh at run time: the CA of the source
 # stub for that cluster (spec 013).
 test/e2e/testdata/stub-ca.pem
+
+# `go build` in a tool directory writes a binary named after the directory.
+# The tools run with `go run` and `go test`; a compiled tool is never
+# committed, and one was, so every tool main package is named here.
+/tools/apidoc/apidoc
+/tools/configdoc/configdoc
+/tools/docs/docs
+/tools/release/release
+/tools/smoke/smoke
+/tools/specindex/specindex
+/tools/spike/condwrite/condwrite
