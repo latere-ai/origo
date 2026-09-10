@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The install page now gets you from nothing to a pushed commit on your own
+  cluster, not only on the throwaway one: it says how to obtain a token from
+  your own OIDC issuer and what claims Origo reads, and it says that your
+  authorization endpoint has to know a repository before Origo creates one,
+  which is the 403 a first push used to end in with nothing to read. The
+  endpoint's five rules are stated in full, and so is the fact that a
+  single-tenant installation needs no service behind it: a static list of
+  subjects that denies the reserved probe id is a complete implementation.
+  Every block that falls back to the example stack now says so beside
+  itself.
+- The API page carries the authorization endpoint: the request and the
+  answer, the action sent per operation, the reserved probe id, the caching
+  and the one retry, and the optional figures with when to send each. It is
+  what to code against when you write the endpoint.
 - Opening an installation in a browser now shows a small page instead of a
   username and password box that nothing could satisfy. It says what Origo
   is, that the address is a git remote rather than a website, how to clone,
