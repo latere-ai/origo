@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -152,7 +152,7 @@ deadline, and under the pod's security context.
 | Secret exposure in logs or metrics | fixed-vocabulary labels; the redaction test of spec 011; the registers rule for messages | 011 |
 | Tampering with the log | objects are immutable once written; entry lengths and digests are checked at materialization; a mismatch is an integrity error, never repaired from a local copy | 004, 015 |
 | Cross-repository leakage on a node | one bare repository per id under `repos/`, `GIT_DIR` per request, no shared object store, no alternates | 004 |
-| Supply chain | the image is built from a pinned Go toolchain and a pinned Debian base with git, signed with cosign keyless against the release workflow's identity, with an SPDX bill of materials shipped as a release asset; dependencies are the standard library and `latere.ai/x/pkg`. Attaching the bill of materials and the build provenance to the image as attestations is pending the repository becoming public, or the organization plan being upgraded and spec 017's condition changed with it: GitHub's attestation API refuses a private repository on this plan, which is what failed the v0.1.0 tag of 2026-09-10 | 002, 017 |
+| Supply chain | the image is built from a pinned Go toolchain and a pinned Debian base with git, signed with cosign keyless against the release workflow's identity, with an SPDX bill of materials shipped as a release asset and attached to each image as an attestation beside the build provenance; dependencies are the standard library and `latere.ai/x/pkg`. The two attestations were deferred while the repository was private, because GitHub's attestation API refuses a private repository on this plan, which is what failed the v0.1.0 tag of 2026-09-10; the repository is public now and `v0.1.1` carries both on both images | 002, 017 |
 | A compromised node | the node holds the bucket credentials and the signing key; the blast radius is every repository the credentials reach, which is why one installation serves one trust domain and the bucket prefix is dedicated | 001 |
 | SSH host key theft giving a machine in the middle | one host key set for the whole installation, in the Secret `origod-ssh-host-key`, read at start-up, never in the bucket and never in a log line beyond its fingerprint; rotation is the four-step overlap of spec 024, where the new key is announced through `hostkeys-00@openssh.com` before it is presented, so it is a procedure an operator can run rather than a flag day; a stolen key is a machine in the middle for every client until rotation completes | 024 |
 | A public key bound to the wrong subject | Origo stores no key: it asks the operator's key resolution endpoint, whose contract requires one subject per fingerprint installation-wide and refuses a fingerprint already registered, because a store that binds one key to two subjects lets pushes be attributed to the wrong person; a resolver that does not answer refuses the connection and never allows it | 024, 007 |
@@ -307,9 +307,10 @@ Audit export beyond the log itself.
   in the words of spec 017's rule, and the release carries a bill of
   materials as a signed release asset (spec 017's artifact criterion).
   The attestations that attach that bill of materials and the build
-  provenance to the image are deferred while the repository is
-  private, by spec 017's attestation rule; this criterion's
-  attestation half is what that defers.
+  provenance to the image had been deferred while the repository was
+  private, by spec 017's attestation rule; the repository is public
+  and `v0.1.1` carries both, so this criterion's attestation half is
+  closed.
 
 ## Outcome
 
@@ -331,7 +332,7 @@ a test in the tree:
 | a gossip datagram without a valid MAC is dropped; 10 000 datagrams cause at most one catch-up | spec 005, `TestGossipDropsABadMAC`, `TestGossipCatchUpIsRateLimited` |
 | the egress proxy on its own: a followed redirect, a refused hop, `CONNECT` 405, `git ls-remote` sends no `CONNECT` | `internal/api`, `TestEgressProxyFollowsRedirectsAndRefusesConnect` |
 | the pod's security context, the refused privileged pod, the gossip NetworkPolicy | `test/e2e`, `TestClusterPodSecurityContext`, in the `e2e` job |
-| `SECURITY.md` names the report address; the release carries a bill of materials | `cmd/origod`, `TestSecurityPolicyIsPresent`; the bill of materials is spec 017's artifact criterion, shipped as a release asset by the first tag, its attachment as an attestation deferred while the repository is private |
+| `SECURITY.md` names the report address; the release carries a bill of materials | `cmd/origod`, `TestSecurityPolicyIsPresent`; the bill of materials is spec 017's artifact criterion, shipped as a release asset by the first tag and attached to both images as an attestation by `v0.1.1`. Closed on 2026-09-11: `gh attestation verify oci://ghcr.io/latere-ai/origod:v0.1.1 --repo latere-ai/origo --predicate-type https://spdx.dev/Document` exits 0 with `predicateType` `https://spdx.dev/Document/v2.3` and the signer `https://github.com/latere-ai/origo/.github/workflows/release.yml@refs/tags/v0.1.1`, and the same command with `--predicate-type https://slsa.dev/provenance/v1` exits 0 for the provenance; both pass again for `ghcr.io/latere-ai/origo-stubs:v0.1.1`, four runs in all |
 
 Divergences and interpretations, all kept and stated in the Design:
 
@@ -434,10 +435,21 @@ the published release` job checked both image signatures and the
 `checksums.txt` bundle against the tag workflow's identity and the
 GitHub OIDC issuer and refused a foreign identity. The attachment
 half, the bill of materials and the provenance verifiable as
-attestations on the image, is closed by the repository becoming
-public, or by the plan being upgraded and spec 017's condition changed
-with it, and by no tag before then. That half is what holds this spec
-at `testing`, and it is a user's decision rather than work. Beside it
+attestations on the image, closed on 2026-09-11. The repository is
+public (`gh api repos/latere-ai/origo --jq '.private,.visibility'`
+answers `false` and `public`), so the four `attest-*` steps ran on the
+`v0.1.1` tag and `release-verify`'s `Verify the attestations` step
+succeeded in run 34511419232 rather than being skipped. Read back from
+a clean shell, `gh attestation verify oci://ghcr.io/latere-ai/origod:v0.1.1
+--repo latere-ai/origo` exits 0 for both predicate types,
+`https://spdx.dev/Document/v2.3` and `https://slsa.dev/provenance/v1`,
+each signed by
+`https://github.com/latere-ai/origo/.github/workflows/release.yml@refs/tags/v0.1.1`,
+and so does the same pair for `ghcr.io/latere-ai/origo-stubs:v0.1.1`.
+What holds this spec at `testing` is now one row alone: that `verify`
+runs through the dialer with `-c transfer.fsckObjects=true`, which is
+spec 014's criterion, the way spec 019 closed the `import` half.
+Beside it
 one thing is unproved rather than open: the 40 second `make fuzz`
 search of the validator row above has never run, because the weekly
 `fuzz` job has never fired. It closes on Sunday 2026-09-13 at 03:00 UTC
