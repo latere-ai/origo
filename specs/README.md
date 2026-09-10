@@ -78,6 +78,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing | 004, 007, 008, 009, 012, 019 |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
+| [023](023-web-interface.md) | Web interface: a separate service that browses an Origo installation | large | drafted | 003, 007, 009, 018 |
 
 ## Dependency graph
 
@@ -115,6 +116,7 @@ flowchart BT
   S020[020 server-side ops]
   S021[021 conformance suite]
   S022[022 landing page]
+  S023[023 web interface]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -145,6 +147,8 @@ flowchart BT
   S021 --> S015
   S021 --> S019
   S022 --> S016
+  S023 --> S009
+  S023 --> S018
 ```
 
 ## Build order
@@ -160,6 +164,7 @@ flowchart BT
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | 014 complete: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; the `cluster e2e tier` job of the tag run 34461461220 names `--- PASS: TestClusterMigrationCatchesALateWrite` and `--- PASS: TestClusterMigrationDocCommandsRun`, which was the last item |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
+| 10 | 023 | A person browses the repositories they may see, the log, a diff, and a file, in a browser, without a second access-control model anywhere | drafted; the one spec of this deck built in another repository. It is a pure client of spec 009 and moves to `latere-ai/origo-web` on that repository's first commit. Two Origo additions it names are not in it and are not built: resolving `<owner>/<slug>` to an id on the JSON surface, without which the interface addresses repositories by id alone, and a directory question on the authorizer contract, which is where the list of repositories a subject may see actually lives |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
 replaces the phase 1 bearer, and the overlay and the CI jobs are what
@@ -254,6 +259,9 @@ deck and stated here so a reader sees them without the owning spec.
 | a job of `release.yml` that leans on the implicit `success()` gate is skipped whenever any job above it in the graph is, however far up and through however many `always()` jobs, because GitHub evaluates that gate over the whole ancestor closure. `deploy` is skipped on every repository with no `ORIGO_RELEASE_DEPLOY`, so every job below it carries `if: ${{ always() && needs.<job>.result == 'success' }}`, held by `TestReleaseSurvivesASkippedDeploy` in `tools/release` | 017 | 018 |
 | a live target of `test/conformance` carries no `Issuer`, no `Authorizer`, no `Source` and `SourceToken`, and no `Fault`, so all six groups skip in every live run and `TestContract` asserts exactly that. The eight cases in them, `003/storage_unavailable`, `007/forbidden`, `007/authorizer_unavailable`, `007/delegation`, `012/over_quota`, `015/repository_unavailable`, `019/repo_not_empty`, and `019/import`, can never be closed by a `live` job whatever secrets are set; they close on the stack, where the run fails on a non-empty skip list while a `Fault` is wired. A spec waiting on the live run waits for its other cases alone | 021 | 003, 007, 012, 015, 019 |
 | the `fuzz` job of `verify.yml` carries `if: github.event_name == 'schedule'`, so `workflow_dispatch` cannot reach it and the cron `0 3 * * 0` is the only path to the 40 second search. The seed corpora of every fuzz function still run in the `test` gate on each push, so a fuzz row is proved on its seeds and unproved on its search until the first Sunday fires | 013 | 009, 016 |
+| the web interface is a separate service in its own repository, not a directory of this one and not part of `origod`: Origo stays stateless with no session, no cookie, and no template, the interface is optional for a self-hoster, and it is a pure client of spec 009 through `docs/api.md` rather than of any internal package. Spec 023 is written in this deck because that repository does not exist yet and moves out on its first commit; it defines no name this deck owns, so its removal breaks no cross-reference | 023 | 009, 022 |
+| the set of repositories a subject may see is an authorization fact, not a git fact: Origo's name index knows what exists and the authorizer knows what a subject may see, and the list is the intersection. Origo has no collection route and the authorizer contract has no enumerate verb, so a listing needs both a directory question on the contract of spec 007, answered 200 like every other answer so an authorizer that has not been taught it is not read as unavailable, and a collection route on Origo. Neither is specced or built, and deriving the list from a token's organisation claims instead is refused: it is a second access-control model that diverges silently from the authorizer | 023 | 003, 007 |
+| a browsing interface addresses a repository by `<owner>/<slug>`, which the JSON surface cannot resolve: the name index `origo/names/<owner>/<slug>` is read for every git request in the label form and by nothing under `/v1/`. Until Origo resolves a name there, an interface addresses repositories by id | 003, 023 | 007, 009 |
 
 ## Applied fix lists
 
@@ -829,12 +837,12 @@ name, or when a spec names something no spec defines.
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021 |
-| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021 |
+| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 023 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 023 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
@@ -881,7 +889,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 013, 019 |
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
-| variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
+| variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013, 023 |
 | variable | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | [017](017-release-and-versioning.md) | 002, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 010, 013, 018 |
@@ -995,14 +1003,14 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | - |
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
-| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003 |
+| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 023 |
 | header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006 |
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
-| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011 |
-| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003 |
+| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 023 |
+| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 023 |
 | header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021 |
 | header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021 |
 | failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
