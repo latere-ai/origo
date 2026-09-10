@@ -54,6 +54,28 @@ func TestSecurityNamesTheCurrentRelease(t *testing.T) {
 	}
 }
 
+// TestProductionOverlayPinsTheCurrentRelease keeps the overlay honest about
+// what production runs. The release workflow rolls the cluster forward with
+// `kubectl set image`, so an overlay left on an older tag is not merely stale:
+// anyone who applies deploy/prod rolls production back to it. The tag and the
+// changelog's newest section are bumped in the same commit as the release.
+func TestProductionOverlayPinsTheCurrentRelease(t *testing.T) {
+	dir := root(t)
+	want := newestRelease(t, dir)
+
+	body, err := os.ReadFile(filepath.Join(dir, "deploy", "prod", "kustomization.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^\s*newTag:\s*(v\d+\.\d+\.\d+)\s*$`).FindSubmatch(body)
+	if m == nil {
+		t.Fatal("deploy/prod/kustomization.yaml names no newTag")
+	}
+	if got := string(m[1]); got != want {
+		t.Errorf("deploy/prod pins %s, CHANGELOG.md's newest release is %s", got, want)
+	}
+}
+
 // TestNoDocumentClaimsAPrivateRepository catches the class of claim that
 // outlives the condition it describes. The repository is public, and a
 // document saying otherwise is read by someone standing in the public
