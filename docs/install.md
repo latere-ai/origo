@@ -598,7 +598,19 @@ until curl -sf "$ORIGO_URL/version"; do
 	[ "$n" -lt 60 ] || { echo "$ORIGO_URL does not answer" >&2; exit 1; }
 	sleep 1
 done
+n=0
+until curl -sf -o /dev/null "$ORIGO_URL/readyz"; do
+	n=$((n + 1))
+	[ "$n" -lt 60 ] || { echo "$ORIGO_URL answers but is not ready" >&2; exit 1; }
+	sleep 2
+done
 ```
+
+Two waits, because they answer different questions. `/version` answers
+as soon as a node is listening. `/readyz` answers `ok` only once that
+node has reached your bucket, and the first write to a bucket that is
+still waking up is what turns the next block into a 503 if you go on
+too early.
 
 **A token.** Origo needs one from an issuer you named in
 `ORIGO_OIDC_ISSUERS`, carrying the audience `origo`, for a subject your
@@ -662,15 +674,29 @@ yours would allow:
 ID="${ORIGO_REPO_ID:-$(uuidgen | tr 'A-Z' 'a-z')}"
 OWNER="${ORIGO_REPO_OWNER:-install}"
 SLUG="${ORIGO_REPO_SLUG:-hello-$$}"
-curl -sf -X POST "$ORIGO_URL/v1/repos" \
+BODY=$(mktemp)
+CODE=$(curl -s -o "$BODY" -w '%{http_code}' -X POST "$ORIGO_URL/v1/repos" \
 	-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-	-d "{\"id\":\"$ID\",\"owner\":\"$OWNER\",\"slug\":\"$SLUG\"}" >/dev/null
+	-d "{\"id\":\"$ID\",\"owner\":\"$OWNER\",\"slug\":\"$SLUG\"}")
+if [ "$CODE" != 201 ]; then
+	echo "create answered $CODE" >&2
+	cat "$BODY" >&2
+	exit 1
+fi
+rm -f "$BODY"
 echo "created $ID"
 ```
 
-A 403 here is the registration and not the token: the token got you past
+The status and the body are printed on anything but a 201, because the
+answer is the whole diagnosis and there are three of them.
+
+A 403 is the registration and not the token: the token got you past
 authentication, and then your endpoint refused the repository. Its own
-reason comes back in `details.reason`.
+reason comes back in `details.reason`. A 409 is an owner and a slug
+already in use, or an id already in use. A 503 is your bucket: the node
+is up and a write to the bucket did not finish in time, which happens
+on the first write to a store that is still waking up. Wait for
+`/readyz` and run the block again.
 
 Push to it and read it back. A repository with no history clones empty,
 which is not an error. `http.extraHeader` puts the token in a request
@@ -794,6 +820,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | `fail authorizer` with a status | your endpoint refused Origo's bearer or returned an error | check `ORIGO_AUTHORIZER_TOKEN` on both sides |
 | `fail disk` | the cache directory is not writable, or `ORIGO_CACHE_BYTES` exceeds the file system | check the volume in your overlay |
 | the pod is ready and `/readyz` is 503 | the bucket or the disk stopped answering after start-up | the node's log names the check that fails |
+| `POST /v1/repos` answers 503 and the log says `context deadline exceeded` on a bucket write | the node is serving but the bucket is slow, which a store that has just started is | wait until `/readyz` answers `ok`, then run the block again. If it keeps happening, the bucket is too slow or too far from the nodes |
 | every pod is `Pending` and `kubectl get nodes` says `NotReady` with `cni plugin not initialized` | the cluster has no network plugin. A kind cluster made from `kind.yaml` has none until you install one, and `kubectl apply -k` reports success either way | install one, the way the throwaway cluster section does. The pods schedule by themselves the moment the node goes `Ready`; nothing is reapplied |
 | `rollout status` ends in `error: timed out waiting for the condition` | no pod reached ready inside the timeout, for one of the reasons in the rows around this one | `kubectl -n "$NAMESPACE" get pods` names the stage each is stuck at, and the row for that stage says what to do. Run the same `rollout status` again once it is fixed |
 | `curl: (7) Failed to connect` on the throwaway cluster's address, whatever the pods say | the cluster publishes no host port for it. A plain `kind create cluster` maps only the API server | recreate it from `deploy/examples/kind/kind.yaml`, which maps every port this page uses |
