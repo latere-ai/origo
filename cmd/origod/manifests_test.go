@@ -162,3 +162,52 @@ func TestSigningKeyHasOneSource(t *testing.T) {
 		t.Errorf("%s does not generate the Secret origod-token-key", document)
 	}
 }
+
+// TestOverlayPatchesReachBothContainers extends the rule
+// TestCheckInitContainerSharesTheNodesEnvironment holds the base to,
+// out over every overlay. The base gives the check and the node one
+// environment; an overlay that adds a variable to the node alone takes
+// that away again, and the check then proves a configuration the node
+// does not have. ORIGO_PUBLIC_URL is the case that bites: the node
+// refuses to start without it, so a check that never receives it fails
+// to load its configuration and the pod never leaves Init, whatever the
+// installation is worth. Nothing walks the cloud overlays in CI, so this
+// is what reads them.
+func TestOverlayPatchesReachBothContainers(t *testing.T) {
+	overlays := []string{
+		"deploy/prod/public-url.yaml",
+		"deploy/examples/digitalocean/public-url.yaml",
+		"deploy/examples/aws/public-url.yaml",
+	}
+	for _, patch := range overlays {
+		body := manifest(t, patch)
+		blocks := map[string]string{}
+		starts := containerStart.FindAllStringSubmatchIndex(body, -1)
+		for i, m := range starts {
+			end := len(body)
+			if i+1 < len(starts) {
+				end = starts[i+1][0]
+			}
+			blocks[body[m[2]:m[3]]] = body[m[0]:end]
+		}
+		if len(blocks) != 2 {
+			t.Errorf("%s patches %d containers; the node and the check are two", patch, len(blocks))
+			continue
+		}
+		var check, node []string
+		for _, m := range envName.FindAllStringSubmatch(blocks["check"], -1) {
+			check = append(check, m[1])
+		}
+		for _, m := range envName.FindAllStringSubmatch(blocks["origod"], -1) {
+			node = append(node, m[1])
+		}
+		slices.Sort(check)
+		slices.Sort(node)
+		if len(node) == 0 {
+			t.Errorf("%s sets no variable on the node", patch)
+		}
+		if !slices.Equal(check, node) {
+			t.Errorf("%s gives the check %v and the node %v", patch, check, node)
+		}
+	}
+}

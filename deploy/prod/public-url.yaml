@@ -1,7 +1,14 @@
-# The origin clients see. It is not in the base because it is the one
-# value no default can be right for: it signs repository-bound tokens and
-# appears in every clone URL, so a node without it refuses to start
-# rather than serving another installation's name.
+# The origin clients see, and the size the cache is held under. Both
+# containers read both: the node serves the public URL in clone URLs and
+# signs repository-bound tokens with it, and the check runs against the
+# node's environment, so a check that lacked either would prove a
+# configuration the node does not have.
+#
+# ORIGO_CACHE_BYTES is set rather than left to its default, which is 80%
+# of the file system holding ORIGO_DATA_DIR. That directory is an
+# emptyDir with a 20Gi sizeLimit, and the file system under it is the
+# node's whole disk, so the default would let the cache grow far past the
+# limit the kubelet evicts the pod at. 16Gi leaves the margin.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,8 +16,17 @@ metadata:
 spec:
   template:
     spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_PUBLIC_URL
+              value: https://git.latere.ai
+            - name: ORIGO_CACHE_BYTES
+              value: "17179869184"
       containers:
         - name: origod
           env:
             - name: ORIGO_PUBLIC_URL
               value: https://git.latere.ai
+            - name: ORIGO_CACHE_BYTES
+              value: "17179869184"
