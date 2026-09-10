@@ -57,6 +57,13 @@ else
   pass "served version recorded ($served)"
 fi
 
+# The landing page (spec 022). A browser that opens the installation must
+# read a page, not a credential dialog: the 200 without an Authorization
+# header is that proof, and the version on it is the one just rolled out.
+check_status "GET /" "/" "200" "$tmp/root"
+grep -q "$served" "$tmp/root" || fail "GET /: the page does not name the served version $served"
+pass "the landing page names the served version"
+
 if [ -n "$OUTPUT_MD" ]; then
   {
     echo "<!-- release-evidence -->"
@@ -67,7 +74,7 @@ if [ -n "$OUTPUT_MD" ]; then
     echo "- Commit: \`${COMMIT}\`"
     [ -n "$DEPLOY_URL" ] && echo "- Deploy: ${DEPLOY_URL}"
     echo "- Served version: \`${served}\`"
-    echo "- Smoke: \`GET /readyz\` and \`GET /version\` returned 200"
+    echo "- Smoke: \`GET /readyz\`, \`GET /version\`, and \`GET /\` returned 200"
   } > "$OUTPUT_MD"
 fi
 
