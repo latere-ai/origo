@@ -396,11 +396,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # The namespace is the overlay's, not a name repeated here: an
+          # installation chooses where it runs, and this job deploys
+          # whatever deploy/prod declares.
+          NS=$(kubectl kustomize deploy/prod | awk '/^  namespace: /{print $2; exit}')
+          test -n "$NS"
           kubectl apply -k deploy/prod/
           # Every container of the workload, which is the node and the
           # check that runs in front of it; both are this one image.
-          kubectl -n origo set image deployment/origod "*=${ORIGOD_IMAGE}:${TAG}"
-          kubectl -n origo rollout status deployment/origod --timeout=600s
+          kubectl -n "$NS" set image deployment/origod "*=${ORIGOD_IMAGE}:${TAG}"
+          kubectl -n "$NS" rollout status deployment/origod --timeout=600s
       - name: Smoke the live service
         id: smoke
         env:
