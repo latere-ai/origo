@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The README is a front door: what Origo is, the problem it solves, how the
+  design works, a local quick start, and where the install and API pages
+  are. It no longer claims a hosted installation, because there is none.
+- `SECURITY.md` says what a release actually carries today: three SPDX
+  bills of materials and cosign signatures over the images and the
+  checksums, and no build provenance while the repository is private.
+- A code of conduct, issue templates, and a pull request template.
+- The documentation index is grouped by what the reader is doing: running
+  Origo, building against it, or changing it.
+
 ## v0.1.0 - 2026-09-10
 
 - The conformance suite (spec 021): `test/conformance` runs the whole
