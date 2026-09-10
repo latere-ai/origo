@@ -545,6 +545,11 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 		{"GET", "/nope"},
 		{"GET", "/livez"},
 		{"GET", "/metrics"},
+		// The landing page and its favicon (spec 022) are registered on
+		// GET alone, so every other method of those two paths falls to
+		// the application surface and demands a token like the rest.
+		{"POST", "/"},
+		{"POST", "/favicon.ico"},
 	}
 	now := time.Now()
 	tokens := []struct{ reason, token string }{
@@ -574,15 +579,29 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 	if len(id.authz.Requests()) != 0 {
 		t.Fatal("a refused request reached the authorizer")
 	}
-	// The unauthenticated paths of the contract, each stamped as well.
-	for _, path := range []string{"/readyz", "/version", "/.well-known/jwks.json"} {
-		resp, err := client.Get("http://" + public + path)
+	// The unauthenticated paths, each stamped as well. The list is the
+	// deliberate one: the two probes and the key set of the contract,
+	// and the landing page with its favicon (spec 022), which are
+	// served without a token because a person who has not authenticated
+	// is exactly who they are for. A route added anywhere else belongs
+	// in the sweep above, not here.
+	for _, p := range []struct {
+		path   string
+		status int
+	}{
+		{"/readyz", 200},
+		{"/version", 200},
+		{"/.well-known/jwks.json", 200},
+		{"/", 200},
+		{"/favicon.ico", 204},
+	} {
+		resp, err := client.Get("http://" + public + p.path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != 200 || resp.Header.Get(contract.Header) != contract.Version {
-			t.Errorf("%s: %d %v", path, resp.StatusCode, resp.Header)
+		if resp.StatusCode != p.status || resp.Header.Get(contract.Header) != contract.Version || resp.Header.Get("WWW-Authenticate") != "" {
+			t.Errorf("%s: %d %v", p.path, resp.StatusCode, resp.Header)
 		}
 	}
 	// A token the node minted itself is accepted on the route its scope

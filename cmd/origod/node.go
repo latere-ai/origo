@@ -474,12 +474,20 @@ func (n *node) metricsHandler() http.Handler {
 	})
 }
 
-// publicHandler serves the application surface with the three
+// publicHandler serves the application surface with five
 // unauthenticated paths in front of it: /readyz and /version, public as
 // well as internal so the release smoke reaches them through the
-// ingress, and the key set of spec 007. /livez and /metrics stay
+// ingress, the key set of spec 007, and the landing page of spec 022 at
+// the root with the favicon route beside it. /livez and /metrics stay
 // internal. Every response of the listener carries the contract
 // version (spec 003).
+//
+// Nothing here can shadow a git or an API route. Those patterns are
+// registered on the application mux, which this one reaches through its
+// single "/" entry, so a pattern added here is not a candidate against
+// them; and /{$} matches the one path / while the shortest git or API
+// pattern needs two segments, so the two could not collide even in one
+// mux.
 //
 // Three wrappers sit in front (spec 011), outermost first: the in-flight
 // gauge, which counts a request the moment it arrives; otel.Handler,
@@ -492,6 +500,8 @@ func (n *node) publicHandler() http.Handler {
 	mux.Handle("GET /readyz", probes)
 	mux.Handle("GET /version", probes)
 	mux.Handle("GET /.well-known/jwks.json", n.signer.JWKS())
+	mux.HandleFunc("GET /{$}", landing)
+	mux.HandleFunc("GET /favicon.ico", favicon)
 	mux.Handle("/", n.public)
 	traced := otel.Handler(n.requestLog(contract.Middleware(mux)), "origod",
 		otel.WithMetricsHook(n.recordRequest))
