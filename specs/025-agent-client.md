@@ -556,7 +556,7 @@ It teaches five things and nothing else:
 Its resident cost is measured, not asserted: the frontmatter's `name` and
 `description` are **99 bytes** together, against the **5 725 bytes** of
 `tools/list` JSON the first draft's eight read tools would have held in
-every context of every session. The body is 5 142 bytes and is paid once,
+every context of every session. The body is 5 447 bytes and is paid once,
 by an agent that decided the sentence matched its task.
 
 1. **The credential**, as one `curl` that mints a repository-bound
