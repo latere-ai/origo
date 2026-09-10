@@ -695,10 +695,17 @@ resolver's cache and every answer shape it may read
 
 ### Deferred
 
-Nothing of this spec is deferred. The two things it names as somebody
-else's stay there: `git-lfs-authenticate` and LFS over an SSH remote,
-which is a spec of its own, and certificate authentication, which is a
-smaller design and a different contract. Latere's key store is auth's,
+One half of one criterion. The install document's SSH step ran in the
+`install` job of `verify.yml` against the candidate image. The other
+half, `install-release`, walks the same blocks against the published
+release and runs only on a tag, so the next tag closes it. Nothing about
+the step is different there: the same document, the same overlay, and an
+image built from the same tree.
+
+The two things this spec names as somebody else's stay there:
+`git-lfs-authenticate` and LFS over an SSH remote, which is a spec of
+its own, and certificate authentication, which is a smaller design and a
+different contract. Latere's key store is auth's,
 in the task above, and the stub of `test/stubs/sshkeys` is what serves
 the stack and a first installation until it exists.
 
