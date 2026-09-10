@@ -248,3 +248,36 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// Acquire takes one subprocess slot for a transport with no response
+// writer: the SSH session of spec 024. It is Slot without the
+// rendering, so the caller writes the refusal in its own shape. The
+// wait it returns is what a refusal names as the retry.
+func (l *Limits) Acquire(ctx context.Context) (release func(), wait time.Duration, ok bool) {
+	if l == nil {
+		return func() {}, 0, true
+	}
+	if release, ok := l.slots.Acquire(ctx, l.wait); ok {
+		return release, l.wait, true
+	}
+	l.Refused(LimitSubprocesses)
+	l.logger.WarnContext(ctx, "no subprocess slot", "transport", "ssh", "waited", l.wait.String(), "max_git_procs", l.slots.Size())
+	return nil, l.wait, false
+}
+
+// Take spends one token of the subject's bucket outside the HTTP
+// middleware. One SSH session costs one token (spec 024): an HTTP clone
+// is two requests and an SSH clone is one connection, so charging one
+// keeps ORIGO_REQUESTS_PER_MINUTE a bound on operations. It reports
+// whether the session may go on and how long a refused one waits.
+func (l *Limits) Take(ctx context.Context, subject string) (bool, time.Duration) {
+	if l == nil {
+		return true, 0
+	}
+	ok, retry := l.buckets.Allow(subject)
+	if !ok {
+		l.Refused(LimitSubject)
+		l.logger.WarnContext(ctx, "subject rate limited", "transport", "ssh", "subject", subject, "retry_after_ms", retry.Milliseconds())
+	}
+	return ok, retry
+}

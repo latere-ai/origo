@@ -439,6 +439,44 @@ func TestNilLimitsEnforceNothing(t *testing.T) {
 	if ok, _ := b.Allow("alice"); !ok || b.Len() != 0 {
 		t.Error("a nil bucket table refused")
 	}
+	release, wait, ok := l.Acquire(context.Background())
+	if !ok || wait != 0 {
+		t.Errorf("a nil Limits refused an SSH slot: %v %v", wait, ok)
+	}
+	release()
+	if ok, retry := l.Take(context.Background(), "alice"); !ok || retry != 0 {
+		t.Errorf("a nil Limits refused an SSH session: %v %v", ok, retry)
+	}
+}
+
+// TestSSHTakesTheSameSlotAndTheSameToken is spec 024's rule that the SSH
+// listener meets spec 012's bounds through the same table the HTTP
+// surface does: one session costs one subprocess slot and one token of
+// the subject's bucket, and a refusal names the wait rather than
+// rendering an envelope.
+func TestSSHTakesTheSameSlotAndTheSameToken(t *testing.T) {
+	l := New(Options{MaxGitProcs: 1, SlotWait: 10 * time.Millisecond, PerMinute: 1, Burst: 1})
+	release, _, ok := l.Acquire(context.Background())
+	if !ok {
+		t.Fatal("the first session got no slot")
+	}
+	if _, wait, ok := l.Acquire(context.Background()); ok || wait != 10*time.Millisecond {
+		t.Errorf("the second session took the only slot: %v %v", wait, ok)
+	}
+	release()
+	if _, _, ok := l.Acquire(context.Background()); !ok {
+		t.Error("the slot was not released")
+	}
+	if ok, _ := l.Take(context.Background(), "alice"); !ok {
+		t.Error("the first session spent no token")
+	}
+	ok, retry := l.Take(context.Background(), "alice")
+	if ok || retry <= 0 {
+		t.Errorf("a subject over its rate was admitted: %v %v", ok, retry)
+	}
+	if ok, _ := l.Take(context.Background(), "bob"); !ok {
+		t.Error("another subject's bucket was spent")
+	}
 }
 
 // TestRetryAfterIsWholeSecondsAtLeastOne rounds a wait up, so a client
