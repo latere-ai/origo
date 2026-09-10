@@ -147,6 +147,23 @@ change at the top of its `kustomization.yaml`. In yours you set:
   ingress-nginx form and `deploy/examples/aws/ingress.yaml` the ALB form.
 - **the replica bounds**, in the autoscaler. It scales on CPU alone and
   needs `metrics-server` in the cluster.
+- **the release**, in a kustomize `images:` entry naming
+  `ghcr.io/latere-ai/origod` and the tag. The base carries the
+  placeholder `unreleased`, which never resolves, so an overlay that
+  pins nothing fails to pull rather than running an unknown build. One
+  entry covers both containers, because the node and the check in front
+  of it are one image. Step 5 sets the same tag imperatively for a
+  pipeline; an overlay that pins it is what makes `kubectl apply -k`
+  alone reproduce the installation.
+- **a registry pull secret**, if your copy of the images is private. The
+  base names none, because the released images are public. Add
+  `imagePullSecrets` to the pod spec in your overlay and create the
+  secret in the namespace yourself.
+- **`ORIGO_CACHE_BYTES`**, if the cache volume is bounded. The default is
+  80% of the file system holding `ORIGO_DATA_DIR`, and the base mounts an
+  `emptyDir` there with a `sizeLimit` of 20Gi: the file system underneath
+  is the node's whole disk, so the default lets the cache grow far past
+  the limit the kubelet evicts the pod at. Set it below the `sizeLimit`.
 
 Then the two Secrets. Copy `deploy/bootstrap/secrets.example.yaml`, fill
 it in, and apply it with `kubectl apply -f`; keep the filled copy out of
@@ -183,6 +200,16 @@ First the namespace. Pod Security admission at `restricted` is what the
 manifests are written for: the pods run as an unprivileged user with a
 read-only root file system and no capabilities, so nothing is given up by
 enforcing it.
+
+Origo runs happily in a namespace it shares with other services: every
+resource it creates is named `origod` or `origod-`something, and its two
+NetworkPolicies select its own pods alone, so they restrict nothing else.
+If you install into an existing namespace, set `NAMESPACE` to it, skip
+the block below, and do not add those labels to it: `restricted` is
+enforced on every pod in a namespace, and a workload already running
+there that does not meet it would fail its next admission. Name the
+namespace in your overlay's `namespace:` field, not on the command line,
+so the overlay is what records where the installation lives.
 
 ```sh
 kubectl apply -f - <<YAML
@@ -354,6 +381,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | What you see | What it means | What to do |
 |---|---|---|
 | the pod stays in `Init:0/1` | `origod check` is failing | `kubectl logs <pod> -c check`; the failing line names the requirement |
+| the pod stays in `Init:Error`, and the failing line is a dependency you have not brought up yet | the init container gates the node on every requirement, so an installation whose issuer or authorization endpoint is not serving yet has no ready node at all, even though a running node would start and answer `/readyz` without them | the init container retries with backoff and the pods go ready by themselves the moment the dependency answers; nothing is redeployed. Bring the dependency up rather than removing the gate |
 | the pod stays in `ContainerCreating` or `CreateContainerConfigError` | a Secret the pod reads is missing | `kubectl describe pod <pod>` names it: `origod-s3` and `origod-auth` come from step 3, `origod-token-key` from step 4 |
 | `configuration: missing …` in the log | a variable is unset or malformed | the message names every problem at once; fix them all and roll again |
 | `fail bucket` | the endpoint, region, credentials, or bucket name is wrong, or the network refuses the connection | check the four values in the `origod-s3` Secret, then reach the endpoint from a pod in the namespace |
