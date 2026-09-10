@@ -1,6 +1,6 @@
 ---
 title: "MCP server: Origo as tools an agent can drive"
-status: dispatched
+status: validated
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -641,6 +641,33 @@ and 50 MiB of blob; spec 020's budget is 300 seconds and its receipt is
 the five fields `commit`, `branch`, `entry_seq`, `tree`, `committed`;
 `release-verify` downloads by `--pattern 'origod_*.tar.gz'` and the
 upload beside it is glob-driven, exactly as What must land first says.
+
+## Open
+
+Two things this spec cannot settle on its own.
+
+**The shape.** MCP is one of two shapes for the same job, and the other
+is a command line client plus a skill document, which is how a model
+reaches GitHub through `gh`. This spec's own constraint decides between
+them and the figures are below, measured from a draft registry built to
+this spec's tables: eight read tools serialize to **5 725 bytes** of
+`tools/list` JSON and eleven to **10 137 bytes**, roughly 1.6 k and
+2.9 k tokens, resident for every turn of every session the server is
+configured in, used or not. A command's help text is read on demand and
+a skill's resident cost is its name and one sentence. Against that, a
+tool schema is typed and per-tool permissioning is the host's, and an
+agent with no shell has no other way in. The decision is the user's and
+it is recorded here rather than assumed.
+
+**The byte budget of the first criterion is not met by this design.**
+The measurement above is over budget on both halves: 5 725 against
+5 KiB and 10 137 against 8 KiB. The budget is reachable only by
+deleting every per-argument description, which brings the two to 4 084
+and 7 272 bytes and leaves each argument named and unexplained. So one
+of three moves is owed before the criterion can pass: raise the budget
+to 6 KiB and 10 KiB and say why, drop the argument descriptions and
+carry their content in the two-sentence tool descriptions, or drop
+tools. The figures are the draft's, not an estimate.
 
 ## Acceptance criteria
 
