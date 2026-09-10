@@ -936,10 +936,10 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 018 |
 | variable | `ORIGO_S3_REGION` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_SECRET` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_SSH_ADDR` | [024](024-ssh-access.md) | 001, 002 |
-| variable | `ORIGO_SSH_HOST_KEYS` | [024](024-ssh-access.md) | 002 |
-| variable | `ORIGO_SSH_KEYS_TOKEN` | [024](024-ssh-access.md) | 002 |
-| variable | `ORIGO_SSH_KEYS_URL` | [024](024-ssh-access.md) | 002 |
+| variable | `ORIGO_SSH_ADDR` | [024](024-ssh-access.md) | 001, 002, 013, 016 |
+| variable | `ORIGO_SSH_HOST_KEYS` | [024](024-ssh-access.md) | 002, 013 |
+| variable | `ORIGO_SSH_KEYS_TOKEN` | [024](024-ssh-access.md) | 002, 013 |
+| variable | `ORIGO_SSH_KEYS_URL` | [024](024-ssh-access.md) | 002, 013 |
 | variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 013, 015 |
 | variable | `ORIGO_STORAGE_TIMEOUT` | [002](002-repository-scaffold.md) | 012, 013, 015 |
 | variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004 |

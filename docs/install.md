@@ -627,8 +627,12 @@ SSH_HOST=$(echo "$SSH_URL" | sed 's|.*@||; s|/.*||')
 SSH_PORT=$(echo "$SSH_HOST" | sed 's|.*:||')
 case "$SSH_HOST" in *:*) SSH_HOST=${SSH_HOST%:*} ;; *) SSH_PORT=22 ;; esac
 KNOWN="$CLIENTKEY.known_hosts"
-ssh-keyscan -T 20 -p "$SSH_PORT" "$SSH_HOST" > "$KNOWN" 2>/dev/null
-test -s "$KNOWN"
+n=0
+until ssh-keyscan -T 10 -p "$SSH_PORT" "$SSH_HOST" >"$KNOWN" 2>/dev/null && test -s "$KNOWN"; do
+	n=$((n + 1))
+	[ "$n" -lt 30 ] || { echo "no SSH listener at $SSH_HOST:$SSH_PORT" >&2; exit 1; }
+	sleep 2
+done
 GIT_SSH_COMMAND="ssh -i $CLIENTKEY -o IdentitiesOnly=yes \
 	-o UserKnownHostsFile=$KNOWN -o GlobalKnownHostsFile=/dev/null \
 	-o StrictHostKeyChecking=yes -o BatchMode=yes" \
@@ -640,7 +644,9 @@ echo "the installation serves a clone over SSH"
 `ssh-keyscan` here reads the key the installation presents, which is
 what a person does once before their first clone; compare what it prints
 against the fingerprint you published in step 5 rather than trusting it
-blind.
+blind. The loop is for the same reason the one at the top of this
+section is: a rollout reports ready a moment before the Service in front
+of it routes to the new pods.
 
 ## Pointing your platform at Origo
 
