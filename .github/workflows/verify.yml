@@ -346,6 +346,13 @@ jobs:
           ORIGO_INSTALL_IMAGE: ghcr.io/latere-ai/origod:candidate
           ORIGO_INSTALL_MANIFESTS: deploy/examples/kind
         run: tools/docs/run-blocks.sh docs/install.md
+      - name: What the installation looked like when a block failed
+        if: failure()
+        run: |
+          kubectl -n origo get all -o wide || true
+          kubectl -n origo get endpoints || true
+          kubectl -n origo logs -l app.kubernetes.io/name=origod --tail=60 --prefix || true
+          kubectl -n origo describe pod origod-0 || true
       - name: The conformance suite against the installation
         run: |
           set -euo pipefail
