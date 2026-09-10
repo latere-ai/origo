@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -78,12 +78,14 @@ deletes by prefix, so a repository another test pushed beside it, spec
 017's release fixture among them, survives the run.
 
 The `rate_limited` case (spec 012) needs no field of `Target`: it reads
-`RateLimit-Limit` off any response of the surface, the requests one
-subject may send that node in a minute, and sends one more than the
-figure it names, so it holds against an installation at the default and
-against the `kind` stack, which runs at 6000 because its scenarios
-exceed 600. A target with the limit off sends no header and the case is
-reported skipped.
+`RateLimit-Limit` off a response under the token it will spend, the
+requests that subject may send that node in a minute, and sends past
+the figure it names under a bounded effort, so it holds against an
+installation at the default and against the `kind` stack, which runs at
+6000 because its scenarios exceed 600. A target with the limit off
+sends no header and the case is reported skipped. A target that refuses
+nothing inside the bound records the assertion in `Report.Unverified`;
+the decision below carries the bound and the reasoning.
 
 Cases a target does not support are skipped by a `Skip` list on the
 target, never silently: each skipped case is reported by name. Four
@@ -508,13 +510,53 @@ Divergences and interpretations, each kept, with the reason:
   makes the next request materialize again, so the missing object is
   met on the stub's one node and on any cold node of the stack, where
   the request is repeated until the balancer reaches one.
-- **The `rate_limited` case goes past the figure when a balancer
-  spreads the subject.** It sends one request more than `RateLimit-Limit`
-  first; behind the stack's balanced port each of the three nodes holds
-  a bucket of its own, so the case goes on, to four times the figure,
-  until one node refuses. With `Issuer` set it runs under a subject of
-  its own; on a live target it runs last, under the run's token, and
-  the cleanup waits out `Retry-After`.
+- **The `rate_limited` case spends a bounded effort and reports the
+  shape it could not observe.** Revised 2026-09-10; what it replaces is
+  below. It reads `RateLimit-Limit` off a response under the token it
+  will spend, and off the second response and not the first: since spec
+  012's fix of that date the header is the figure in force for the
+  response's own subject, and the bucket runs in front of the
+  authorizer, so a subject the authorizer names a rate for reads the
+  node's figure once before its own. It then sends `limit + 1`, and
+  where nothing refused, on to `2 * limit`. With `Issuer` set it runs
+  under a subject of its own; on a live target it runs last, under the
+  run's token, and the cleanup waits out `Retry-After`.
+
+  The bound is the drain. A bucket of depth `L` refills at `L/60` tokens
+  a second, so a runner sending `rho` a second leaves `L - N(1 - r)`
+  tokens after `N` requests, where `r = (L/60)/rho`; a refusal needs
+
+  $$N > \frac{L}{1 - r}, \qquad r = \frac{L/60}{\rho}$$
+
+  so `2L` holds for every runner that sends at least twice as fast as
+  one node refills, `r <= 1/2`. Where the case must converge the margin
+  is an order of magnitude: the `kind` stack runs at 6000 a minute, 100
+  tokens a second, against 32 workers over the loopback, which puts `r`
+  near 0.01 and the refusal near 6060. Where the case cannot converge no
+  bound helps: a balancer gives one subject `k` buckets refilling at
+  `k*L/60` together, which drives `r` past 1 at the replica counts
+  `deploy/base/hpa.yaml` scales to. `2L` is therefore the smallest bound
+  carrying that condition, and it is what a live run spends before it
+  reports the case unverified: 12001 requests at the service figure of
+  6000. A runner slower than one node's refill stops after the first
+  pass rather than spending the rest to learn it.
+
+  What this replaces: the case sent one more than the figure and then on
+  to four times it, on the reading that the stack's three nodes each
+  hold a bucket. That never converged on a live installation and it hid
+  a defect rather than finding one. Run 34529402937 of `release.yml` for
+  v0.1.2 read 600 off the header while the subject's real budget was
+  6000 a node across two replicas, sent 2401 requests, met no refusal,
+  and failed the release. Spec 012 fixed the header. Four times a
+  truthful 6000 would have been 24001 requests against production on
+  every release, which is not a release gate.
+
+  The stub and the stack are unchanged by this: both converge inside
+  `limit + 1` and neither adds anything to `Report.Unverified`, which
+  `TestStubConforms` and the stack branch of `TestContract` still
+  require empty. The live branch logs the list, so a live installation
+  that spreads the subject reports the row honestly instead of failing
+  the release on a target shape.
 - **The push event rows are asserted where a sink can be read.** The
   live run has no `EventsSink`, and spec 021's six groups name none for
   events, so the cases of spec 008 and the event assertions of specs

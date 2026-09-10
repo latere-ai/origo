@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/lfs/, internal/auth/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -63,7 +63,7 @@ spec 010's interim rule ends.
 
 | Header | Meaning |
 |---|---|
-| `RateLimit-Limit` | the requests one effective subject may send this node in a minute, the figure `ORIGO_REQUESTS_PER_MINUTE` names, on every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send one request more than the limit against any installation. Absent when the limit is off. |
+| `RateLimit-Limit` | the requests the effective subject of this response may send this node in a minute: the rate the authorizer named for that subject (spec 007's `requests_per_minute`) where it named one, `ORIGO_REQUESTS_PER_MINUTE` otherwise. On every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send past the limit against any installation. The bucket runs in front of the authorizer, so the first response of a subject the authorizer names a rate for still carries the node's figure and every later one carries the subject's. Absent when the limit is off, whatever rate the subject carries. |
 
 ### Where the bounds live
 
@@ -195,6 +195,7 @@ With that, every criterion is closed and the spec is `complete`.
 | a push past the single-push bound is 413 `over_quota` with `details.limit: "push"`, with the spool stopped at the limit | `internal/httpgit`, `TestPushOverTwoGiBIsRefused`, the bound lowered through `limits.Options` |
 | the 601st request of a subject in one minute is 429 with `Retry-After`, a second subject sees none, and a bucket idle for ten minutes is gone | `internal/limits`, `TestPerSubjectTokenBucket`, `TestIdleBucketsAreEvicted` |
 | with two slots a third caller waits and is then 429 `rate_limited` with `details.limit: "subprocesses"`, and a compaction that finds no slot skips and runs on the next sweep | `internal/limits`, `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`; `internal/httpgit`, `TestSubprocessSlotsAdmitAndRefuse`, `TestConcurrentPushesShareTheSubprocessCap`; `internal/api`, `TestReadWithoutASubprocessSlotIsRateLimited` |
+| `RateLimit-Limit` is the figure in force for the effective subject of the response: the authorizer's `requests_per_minute` where it named one, the node's figure otherwise, and no header at all when the limit is off | `internal/limits`, `TestRateLimitHeaderIsTheSubjectsFigure`; `internal/api`, `TestAuthorizerRateIsWhatRateLimitLimitReports` through a real authorizer decision (added 2026-09-10) |
 | a frozen repository accepts a clone and refuses a push with `repo_frozen` | spec 021's `TestContract/019/freeze` in `test/conformance`, run against the stub by `TestStubConforms` and against the stack in the `e2e` job: the clone succeeds, the push is refused at `info/refs` with `remote error: repo_frozen: <sentence>`, a second freeze is 409, and a push lands after the unfreeze (closed 2026-09-09) |
 
 The reference row and the `lfs/` byte cache have no criterion of their
@@ -356,3 +357,39 @@ Design's rules above:
 
 `latere.ai/x/pkg`: neither a token bucket nor a waiting semaphore is in
 the shared library; the README's items table carries the row.
+
+### The header reported the node's figure, not the subject's (2026-09-10)
+
+The v0.1.2 release run 34529402937 failed spec 021's `rate_limited`
+case against the live installation: `no 429 after 2401 requests against
+a limit of 600`. Every other case passed. The header was the defect.
+`Limits.Middleware` set `RateLimit-Limit` from `Buckets.perMinute`, the
+node's configured figure, on every response, while `SetSubjectRate` had
+already given that subject a rate and a burst of its own. The live run
+authenticates as `origo-conformance`, which `auth` classifies as a
+service subject and answers with 6000 a minute
+(`internal/authz/gitplane.go`), so the header said 600 against a real
+budget of 6000 a node. Nothing in `auth` was wrong.
+
+`Buckets.Allow` now returns the figure it read under the lock it
+already takes and `Middleware` sets the header from that return, so the
+header is truthful at no extra acquisition. The Design's header row
+above is the rule.
+
+The ordering stays as it was and is accepted. The middleware runs in
+front of the handler and the handler is what calls `SetSubjectRate`
+after it reads the decision, so the first response of a subject the
+authorizer names a rate for still reports the node's figure. That is
+the same one-request window this Outcome already records for the bucket
+itself: "the subject is bucketed at its own figure from the request
+after the first, because the bucket runs in front of the authorizer."
+Closing it would mean either an authorizer call in the middleware, on
+every request of the public listener and before the route is known, or
+a second decision cache in front of the bucket. Neither is worth one
+response of one figure to one subject; a client that reads the header
+reads a truthful figure from its second response on, and spec 021's
+case reads the second response for that reason.
+
+The third criterion's `rate_limited` row now runs under a bounded
+effort. Spec 021 records the bound and why a balanced installation
+cannot close the row.

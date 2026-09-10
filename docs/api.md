@@ -150,7 +150,7 @@ Defined by [012 limits and abuse](../specs/012-limits-and-abuse.md).
 
 | Header | Meaning |
 |---|---|
-| `RateLimit-Limit` | the requests one effective subject may send this node in a minute, the figure `ORIGO_REQUESTS_PER_MINUTE` names, on every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send one request more than the limit against any installation. Absent when the limit is off. |
+| `RateLimit-Limit` | the requests the effective subject of this response may send this node in a minute: the rate the authorizer named for that subject (spec 007's `requests_per_minute`) where it named one, `ORIGO_REQUESTS_PER_MINUTE` otherwise. On every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send past the limit against any installation. The bucket runs in front of the authorizer, so the first response of a subject the authorizer names a rate for still carries the node's figure and every later one carries the subject's. Absent when the limit is off, whatever rate the subject carries. |
 
 Defined by [015 degraded storage](../specs/015-degraded-storage.md).
 
@@ -274,6 +274,12 @@ The action Origo sends per operation:
 | `read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
 | `write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
 | `admin` | `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+
+Spec 026 adds a fourth action, `list`, which names no repository and
+asks which repositories a subject may see. It is that spec's to state
+and it changes nothing here: the three actions above, the five rules,
+the answer shape, and the caches are unchanged, and an endpoint built to
+this spec alone stays correct.
 
 Spec 019 marks three of its own operations `read`, and the per-operation
 row wins over the sentence that calls its operations `admin`: a reader
