@@ -37,7 +37,7 @@ git clone https://x-access-token:$ORIGO_TOKEN@{{.CloneHost}}/&lt;owner&gt;/&lt;n
 # read
 curl -H "Authorization: Bearer $ORIGO_TOKEN" \
   {{.RepoRead}}</pre>
-      <p>Every API address starts with <code>/v1/repos/</code> and names a repository by its <strong>identifier</strong>, not by owner and name. The identifier is what survives a rename; it is what these screens put in their own addresses, and it is what your administrator hands you. Owner and name work for cloning and fetching over git, and nowhere else.</p>
+      <p>Every API address starts with <code>/v1/repos/</code> and names a repository by its <strong>identifier</strong>, not by owner and name. The identifier is what survives a rename; it is what these screens put in their own addresses, and it is what your administrator hands you. Owner and name work for git itself, and nowhere else.</p>
       <p>Both credential forms are accepted: <code>Authorization: Bearer &lt;token&gt;</code>, and ordinary HTTP basic auth with the token as the password and any username, which is the form git itself sends.</p>
     </section>
 
@@ -61,7 +61,7 @@ curl -H "Authorization: Bearer $ORIGO_TOKEN" \
             <tr><th scope="row">one commit</th><td data-label="Address" class="path">/commits/&lt;sha&gt;</td><td data-label="Answer">its message, parents, trailers, and file and line counts</td></tr>
             <tr><th scope="row">a comparison</th><td data-label="Address" class="path">/compare/&lt;base&gt;...&lt;head&gt;?path=</td><td data-label="Answer">a unified diff, cut at 1 MiB on a file boundary</td></tr>
             <tr><th scope="row">a directory</th><td data-label="Address" class="path">/tree/&lt;sha&gt;?path=&amp;cursor=</td><td data-label="Answer">one level, 5,000 entries a page</td></tr>
-            <tr><th scope="row">a file</th><td data-label="Address" class="path">/blob/&lt;sha&gt;</td><td data-label="Answer">the bytes; ask for a range, and you must past 50 MiB</td></tr>
+            <tr><th scope="row">a file</th><td data-label="Address" class="path">/blob/&lt;sha&gt;</td><td data-label="Answer">the bytes; past 50 MiB you must ask for a range</td></tr>
             <tr><th scope="row">a snapshot</th><td data-label="Address" class="path">/archive/&lt;sha&gt;.tar.gz</td><td data-label="Answer">the whole tree at that commit</td></tr>
           </tbody>
         </table>

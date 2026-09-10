@@ -24,11 +24,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/net/html"
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authkit/oidc"
 
 	"github.com/latere-ai/origo-web/internal/config"
@@ -136,6 +138,28 @@ func (s *stack) get(path string, cookies ...*http.Cookie) *httptest.ResponseReco
 	return rec
 }
 
+// post submits one form, with the token the rendered form carries.
+func (s *stack) post(path string, form url.Values, c *http.Cookie) *httptest.ResponseRecorder {
+	s.t.Helper()
+	rendered := s.get(path, c)
+	m := csrfValue.FindStringSubmatch(rendered.Body.String())
+	if m == nil {
+		s.t.Fatalf("no form token on %s", path)
+	}
+	form.Set(authkit.CSRFFieldName(), m[1])
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(c)
+	for _, ck := range rendered.Result().Cookies() {
+		req.AddCookie(ck)
+	}
+	rec := httptest.NewRecorder()
+	s.server.ServeHTTP(rec, req)
+	return rec
+}
+
+var csrfValue = regexp.MustCompile(`name="` + regexp.QuoteMeta(authkit.CSRFFieldName()) + `" value="([^"]+)"`)
+
 func (s *stack) screens() map[string]string {
 	r := "/r/" + s.repo
 	return map[string]string{
@@ -145,7 +169,87 @@ func (s *stack) screens() map[string]string {
 		"log":        r + "/log",
 		"tree":       r + "/tree/",
 		"compare":    r + "/compare",
+		"tokens":     "/tokens",
+		"docs":       "/docs/agents",
 	}
+}
+
+// TestMintingAgainstARealInstallation drives the one form that is not a
+// read against a real installation.
+//
+// The installation decides whether this subject may mint for this
+// repository, and both answers are correct here: a token page carrying a
+// credential that is not the session's own, or the one sentence every
+// refusal on every screen uses. What is asserted is that it is one of the
+// two, that the session token never appears either way, and that the minted
+// token is on that page and on no page after it.
+func TestMintingAgainstARealInstallation(t *testing.T) {
+	s := start(t)
+	c, session := s.session("alice")
+
+	form := url.Values{"repo": {s.repo}, "scope": {"read"}, "ttl": {"300"}}
+	rec := s.post("/tokens", form, c)
+	body := rec.Body.String()
+	if strings.Contains(body, session) {
+		t.Error("the session token reached the mint page")
+	}
+
+	switch rec.Code {
+	case http.StatusOK:
+		minted := tokenValue(t, body)
+		if minted == "" {
+			t.Fatalf("the mint answered 200 with no token:\n%s", body)
+		}
+		if minted == session {
+			t.Error("the page handed back the session's own credential")
+		}
+		if !strings.Contains(body, "You will not see it again") {
+			t.Error("the page does not say the token is shown once")
+		}
+		for _, path := range []string{"/tokens", "/tokens?repo=" + s.repo} {
+			if strings.Contains(s.get(path, c).Body.String(), minted) {
+				t.Errorf("%s still carries the minted token", path)
+			}
+		}
+	case http.StatusNotFound:
+		if !strings.Contains(body, "cannot mint tokens for it") {
+			t.Errorf("a refusal is not the one sentence:\n%s", body)
+		}
+	default:
+		t.Fatalf("the mint answered %d:\n%s", rec.Code, body)
+	}
+}
+
+// tokenValue reads the token out of the field the page puts it in.
+func tokenValue(t *testing.T, body string) string {
+	t.Helper()
+	page, err := html.Parse(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "input" {
+			var isToken, value string
+			for _, a := range n.Attr {
+				switch a.Key {
+				case "id":
+					isToken = a.Val
+				case "value":
+					value = a.Val
+				}
+			}
+			if isToken == "token" {
+				out = value
+			}
+		}
+		for x := n.FirstChild; x != nil; x = x.NextSibling {
+			walk(x)
+		}
+	}
+	walk(page)
+	return out
 }
 
 // TestTokenNeverLeavesTheCookie asserts over every screen of a real
