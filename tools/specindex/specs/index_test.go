@@ -153,3 +153,38 @@ func TestHeaderMentionOutsideOrigosOwnNames(t *testing.T) {
 		t.Errorf("table:\n%swant the row %s", idx.Table(), want)
 	}
 }
+
+// TestSectionCarriesOneSpecPassage holds what a renderer needs of
+// Section: the body under a heading, stopping at the next heading of
+// that level or shallower, with a deeper heading kept, and an error
+// rather than an empty string for anything it cannot find.
+func TestSectionCarriesOneSpecPassage(t *testing.T) {
+	dir := writeSpecs(t, map[string]string{
+		"001-a.md": front + "# Title\n\n## Design\n\nfirst\n\n### The contract\n\nthe rules\n\n#### A detail\n\nkept\n\n### After\n\nnot this\n\n## Next\n\nnor this\n",
+	})
+	idx, err := Build(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := idx.Section("001", "### The contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "the rules\n\n#### A detail\n\nkept" {
+		t.Errorf("section %q", got)
+	}
+	if got, err := idx.Section("001", "## Design"); err != nil || !strings.HasPrefix(got, "first\n") || strings.Contains(got, "nor this") {
+		t.Errorf("a heading that keeps its own subsections and ends at the next of its level: %q %v", got, err)
+	}
+	for _, c := range []struct{ num, heading string }{
+		{"002", "## Design"},
+		{"001", "## Nowhere"},
+		{"001", "Design"},
+		{"001", "##Design"},
+		{"001", "##"},
+	} {
+		if _, err := idx.Section(c.num, c.heading); err == nil {
+			t.Errorf("Section(%q, %q) returned no error", c.num, c.heading)
+		}
+	}
+}

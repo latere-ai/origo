@@ -68,12 +68,66 @@ type Name struct {
 // File is the spec file that owns a number, "004-write-ahead-log.md".
 func (idx *Index) File(num string) string { return idx.files[num] }
 
+// Section is the body of one heading of one spec, from the line after
+// the heading to the line before the next heading of that level or
+// shallower, with the blank lines at both ends removed. It is how a
+// renderer carries a passage a spec writes rather than restating it, so
+// the passage has one source and cannot drift from it. An unknown spec
+// or heading is an error naming what was asked for, never an empty
+// section that would render as a missing paragraph.
+func (idx *Index) Section(num, heading string) (string, error) {
+	body, ok := idx.bodies[num]
+	if !ok {
+		return "", fmt.Errorf("no spec %s", num)
+	}
+	depth := 0
+	for depth < len(heading) && heading[depth] == '#' {
+		depth++
+	}
+	if depth == 0 || depth == len(heading) || heading[depth] != ' ' {
+		return "", fmt.Errorf("%q is not a Markdown heading", heading)
+	}
+	lines := strings.Split(body, "\n")
+	start := -1
+	end := len(lines)
+	for i, l := range lines {
+		if start < 0 {
+			if strings.TrimSpace(l) == heading {
+				start = i + 1
+			}
+			continue
+		}
+		if d := headingDepth(l); d > 0 && d <= depth {
+			end = i
+			break
+		}
+	}
+	if start < 0 {
+		return "", fmt.Errorf("spec %s has no section %q", num, heading)
+	}
+	return strings.Trim(strings.Join(lines[start:end], "\n"), "\n"), nil
+}
+
+// headingDepth is the level of an ATX heading line, or 0 for a line that
+// is not one.
+func headingDepth(l string) int {
+	n := 0
+	for n < len(l) && l[n] == '#' {
+		n++
+	}
+	if n == 0 || n >= len(l) || l[n] != ' ' {
+		return 0
+	}
+	return n
+}
+
 // Index is the deck's names and the findings against them.
 type Index struct {
 	Names    []Name
 	Findings []string
 	specs    []string // numbers in order
 	files    map[string]string
+	bodies   map[string]string // number -> the spec's body, frontmatter stripped
 }
 
 // Markers delimit the generated table in README.md.
@@ -113,7 +167,7 @@ func Build(dir string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	idx := &Index{files: map[string]string{}}
+	idx := &Index{files: map[string]string{}, bodies: map[string]string{}}
 	var defs []definition
 	var mentions []mention
 	for _, e := range entries {
@@ -128,6 +182,7 @@ func Build(dir string) (*Index, error) {
 		}
 		idx.specs = append(idx.specs, num)
 		idx.files[num] = e.Name()
+		idx.bodies[num] = stripFrontmatter(string(data))
 		d, ms := scan(num, string(data))
 		defs = append(defs, d...)
 		mentions = append(mentions, ms...)
