@@ -36,26 +36,36 @@ build:
 		-o $(OUT_DIR)/$(SERVICE) ./cmd/$(SERVICE)
 	@echo "built $(OUT_DIR)/$(SERVICE)"
 
-# The release archives of spec 017: origod for the four os/arch pairs
-# with the same LDFLAGS as build, one tar.gz each, and checksums.txt
-# with their SHA-256 sums, under out/release/. The binaries stay under
-# out/release/bin/<os>_<arch>/, where Dockerfile.ci copies the one of
-# its target platform from. release.yml runs this with VERSION set to
-# the tag, so a binary from the pipeline and one from make build carry
-# their identity the same way (internal/version). The target is not
-# called `release`: the shared gate reserves that name for the command
-# that cuts a tag, and a target of a gate's name that does something
-# else fails `lateregate contract`.
+# The release archives of spec 017: every binary of RELEASE_BINARIES for
+# the four os/arch pairs with the same LDFLAGS as build, one tar.gz each,
+# and checksums.txt with their SHA-256 sums, under out/release/. The
+# binaries stay under out/release/bin/<os>_<arch>/, where Dockerfile.ci
+# copies the one of its target platform from. release.yml runs this with
+# VERSION set to the tag, so a binary from the pipeline and one from make
+# build carry their identity the same way (internal/version). The target
+# is not called `release`: the shared gate reserves that name for the
+# command that cuts a tag, and a target of a gate's name that does
+# something else fails `lateregate contract`.
+#
+# origo is the agent client of spec 025. It runs on the machine an agent
+# runs on rather than in a cluster, which is why it takes an archive and
+# no image. The `release-verify` job of release.yml downloads by an
+# explicit --pattern and then runs `sha256sum -c checksums.txt`, so a
+# binary added here needs its pattern added there in the same change, or
+# the next tag fails on sums whose files it never fetched.
 RELEASE_DIR := $(OUT_DIR)/release
 RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+RELEASE_BINARIES := $(SERVICE) origo
 SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 release-archives:
 	@rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR)
 	@set -e; for p in $(RELEASE_PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; dir=$(RELEASE_DIR)/bin/$${os}_$${arch}; mkdir -p $$dir; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $$dir/$(SERVICE) ./cmd/$(SERVICE); \
-		tar -czf $(RELEASE_DIR)/$(SERVICE)_$(VERSION)_$${os}_$${arch}.tar.gz -C $$dir $(SERVICE); \
-		echo "built $(RELEASE_DIR)/$(SERVICE)_$(VERSION)_$${os}_$${arch}.tar.gz"; \
+		for b in $(RELEASE_BINARIES); do \
+			CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $$dir/$$b ./cmd/$$b; \
+			tar -czf $(RELEASE_DIR)/$${b}_$(VERSION)_$${os}_$${arch}.tar.gz -C $$dir $$b; \
+			echo "built $(RELEASE_DIR)/$${b}_$(VERSION)_$${os}_$${arch}.tar.gz"; \
+		done; \
 	done
 	@cd $(RELEASE_DIR) && $(SHA256) *.tar.gz > checksums.txt && cat checksums.txt
 

@@ -711,8 +711,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p verify && cd verify
+          # Every archive checksums.txt names, because sha256sum -c below
+          # fails on a sum whose file was not fetched. origo_ and origod_
+          # are two patterns: neither glob matches the other's name.
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'origod_*.tar.gz' --pattern 'checksums.txt*' \
+            --pattern 'origod_*.tar.gz' --pattern 'origo_*.tar.gz' \
+            --pattern 'checksums.txt*' \
             --pattern 'deploy-*.tar.gz' --pattern 'fixture-*.tar.gz'
           sha256sum -c checksums.txt
           identity="^https://github.com/${GITHUB_REPOSITORY}/\.github/workflows/release\.yml@refs/tags/"

@@ -4,7 +4,16 @@
 
 cover:
   trim_prefix: github.com/latere-ai/origo/
-  exempt: {}
+  exempt:
+    cmd/origo: >-
+      main and nothing else: it reads the environment, opens a signal
+      context, and passes both to origocli.Run, which returns the exit
+      code. Spec 025 draws that boundary on purpose, so the package holds
+      no behaviour a test could call. The exit codes a shell reads are
+      proved by TestTheBinaryCarriesTheExitCodesThroughTheProcess, which
+      runs the built binary as a subprocess and therefore attributes no
+      coverage to it, and every decision behind them is covered in
+      internal/origocli
 
 spec:
   status:
@@ -74,6 +83,20 @@ depcheck:
         github.com/felixge/httpsnoop: otelhttp's response recorder
         github.com/go-logr: the OpenTelemetry SDK's internal logging interface
         github.com/grpc-ecosystem/grpc-gateway: the OTLP status marshalling the exporters read errors with
+    github.com/latere-ai/origo/cmd/origo:
+      decision: >-
+        the agent client of spec 025 reaches the standard library and
+        internal/contract, and through that one package latere.ai/x/pkg
+        with github.com/google/uuid behind it, so it carries no
+        OpenTelemetry package, no golang.org/x/crypto, no cloud SDK and
+        no Kubernetes client. It imports internal/contract so the error
+        codes it branches on are the ones the node writes and cannot
+        drift. Spec 001's seventh invariant needs no amendment: its
+        module half is unchanged and its gate half names ./cmd/origod,
+        which this row joins rather than widens
+      allow:
+        latere.ai/x/pkg: the shared library every Latere service is built on (spec 002), reached only through internal/contract's error envelope
+        github.com/google/uuid: reached behind latere.ai/x/pkg; not a cloud SDK
 
 license:
   spdx: MIT
