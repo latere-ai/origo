@@ -1,6 +1,6 @@
 ---
 title: "MCP server: Origo as tools an agent can drive"
-status: validated
+status: dispatched
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
