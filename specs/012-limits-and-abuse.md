@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/lfs/, internal/auth/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -64,6 +64,7 @@ spec 010's interim rule ends.
 | Header | Meaning |
 |---|---|
 | `RateLimit-Limit` | the requests the effective subject of this response may send this node in a minute: the rate the authorizer named for that subject (spec 007's `requests_per_minute`) where it named one, `ORIGO_REQUESTS_PER_MINUTE` otherwise. On every response of the rate-limited surface; the `RateLimit-Limit` field of the IETF draft [RateLimit header fields for HTTP](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). A client reads the figure in force rather than assuming the default, which is what lets spec 021's `rate_limited` case send past the limit against any installation. The bucket runs in front of the authorizer, so the first response of a subject the authorizer names a rate for still carries the node's figure and every later one carries the subject's. Absent when the limit is off, whatever rate the subject carries. |
+| `RateLimit-Remaining` | the requests that same subject has left on this node after this response: the tokens in its bucket, rounded down, so a client that trusts the figure never sends a request the bucket cannot pay for. Beside every `RateLimit-Limit` and absent wherever that one is; the `RateLimit-Remaining` field of the same IETF draft. `0` on the 429 that refuses. It is the only figure of the limit that survives a balancer: a subject spread over several nodes has a bucket a node, so a client, and spec 021's `rate_limited` case, reads the limit in force from the counter rather than by exhausting it. |
 
 ### Where the bounds live
 
@@ -195,7 +196,8 @@ With that, every criterion is closed and the spec is `complete`.
 | a push past the single-push bound is 413 `over_quota` with `details.limit: "push"`, with the spool stopped at the limit | `internal/httpgit`, `TestPushOverTwoGiBIsRefused`, the bound lowered through `limits.Options` |
 | the 601st request of a subject in one minute is 429 with `Retry-After`, a second subject sees none, and a bucket idle for ten minutes is gone | `internal/limits`, `TestPerSubjectTokenBucket`, `TestIdleBucketsAreEvicted` |
 | with two slots a third caller waits and is then 429 `rate_limited` with `details.limit: "subprocesses"`, and a compaction that finds no slot skips and runs on the next sweep | `internal/limits`, `TestSubprocessCap`; `internal/compact`, `TestCompactionSkipsWhenNoSlot`; `internal/httpgit`, `TestSubprocessSlotsAdmitAndRefuse`, `TestConcurrentPushesShareTheSubprocessCap`; `internal/api`, `TestReadWithoutASubprocessSlotIsRateLimited` |
-| `RateLimit-Limit` is the figure in force for the effective subject of the response: the authorizer's `requests_per_minute` where it named one, the node's figure otherwise, and no header at all when the limit is off | `internal/limits`, `TestRateLimitHeaderIsTheSubjectsFigure`; `internal/api`, `TestAuthorizerRateIsWhatRateLimitLimitReports` through a real authorizer decision (added 2026-09-10) |
+| `RateLimit-Limit` is the figure in force for the effective subject of the response: the authorizer's `requests_per_minute` where it named one, the node's figure otherwise, and no header at all when the limit is off | `internal/limits`, `TestRateLimitHeadersAreTheSubjectsFigures`; `internal/api`, `TestAuthorizerRateIsWhatTheRateLimitHeadersReport` through a real authorizer decision (added 2026-09-10) |
+| `RateLimit-Remaining` is beside it on every response, the subject's tokens on this node rounded down, falling as the subject spends, `0` on the refusal, and absent wherever `RateLimit-Limit` is | `internal/limits`, `TestRateLimitHeadersAreTheSubjectsFigures`; `internal/api`, `TestAuthorizerRateIsWhatTheRateLimitHeadersReport`; spec 021's `TestContract/012/rate_limited` on every target (added 2026-09-11) |
 | a frozen repository accepts a clone and refuses a push with `repo_frozen` | spec 021's `TestContract/019/freeze` in `test/conformance`, run against the stub by `TestStubConforms` and against the stack in the `e2e` job: the clone succeeds, the push is refused at `info/refs` with `remote error: repo_frozen: <sentence>`, a second freeze is 409, and a push lands after the unfreeze (closed 2026-09-09) |
 
 The reference row and the `lfs/` byte cache have no criterion of their
@@ -393,3 +395,35 @@ case reads the second response for that reason.
 The third criterion's `rate_limited` row now runs under a bounded
 effort. Spec 021 records the bound and why a balanced installation
 cannot close the row.
+
+### `RateLimit-Remaining`, and what the limit is proved by (2026-09-11)
+
+The header fix above made the figure truthful and did not make the
+limit provable. Spec 021's `rate_limited` case proved it by exhaustion,
+which needs one bucket: a production installation runs two to eight
+replicas behind a balancer, the budget is a bucket a node, and the
+balancer's total refill outruns what a runner sends. Any bound large
+enough to drain one node there is a bound too large to spend against
+production on every release, and at eight replicas no bound converges
+at all. Exhaustion is the wrong observable when the budget is spread.
+
+The counter is the right one. `RateLimit-Remaining`, the companion
+field of the same IETF draft, is on every response `RateLimit-Limit` is
+on, carries the tokens left in that subject's bucket on the node that
+answered, and costs nothing: `Buckets.Allow` already holds the bucket
+under its lock and now answers an `Allowance` with both figures. The
+Design's header rows above are the rule.
+
+The ordering is the one recorded above and is unchanged: the first
+response of a subject the authorizer names a rate for carries the
+node's figure and the depth that figure gave the bucket, because the
+bucket runs in front of the authorizer.
+
+What this buys the third criterion: the limit is now asserted on every
+target, balanced or not, for a few dozen requests, because a burst that
+leaves every response carrying a `Remaining` inside a stable `Limit`,
+and drives the counter down, is the limit in force. The 429 and its
+`Retry-After` stay where they converge, which is a target answering
+from one bucket. Spec 021 records the burst, how the case reads the
+number of buckets off how far the counter fell, and what a live target
+reports instead.
