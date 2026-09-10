@@ -42,14 +42,16 @@ jobs:
   # The gate runs on the org's self-hosted runner: this repository is
   # private, so hosted minutes are metered, and origo is the largest meter
   # in the org. Removing the two inputs is the fallback to hosted runners.
-  # The jobs below stay hosted: they start named containers on fixed ports
-  # and would collide with each other on one machine.
+  # Every job runs on GitHub's hosted runners. The repository is public,
+  # so they cost nothing, and a hosted runner is a fresh machine per job:
+  # the self-hosted VM held four slots, so jobs starved each other and
+  # containers on fixed ports collided.
   gate:
     if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
     with:
-      runs_on: linux-vm
-      test_os: '["linux-vm"]'
+      runs_on: ubuntu-latest
+      test_os: '["ubuntu-latest"]'
   # The web interface of spec 023 is a nested module, so the root gate
   # cannot see it: `go tool lateregate` reads one module and Go forbids
   # a nested module's packages from being reached out of the root. Its
