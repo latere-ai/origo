@@ -436,7 +436,7 @@ func TestNilLimitsEnforceNothing(t *testing.T) {
 		t.Errorf("a nil Limits refused a request: %d", rec.Code)
 	}
 	var b *Buckets
-	if ok, _, _ := b.Allow("alice"); !ok || b.Len() != 0 {
+	if a := b.Allow("alice"); !a.OK || b.Len() != 0 {
 		t.Error("a nil bucket table refused")
 	}
 	release, wait, ok := l.Acquire(context.Background())
@@ -506,17 +506,17 @@ func TestOptionsTakeTheSpecsValues(t *testing.T) {
 	if l.Slots().Size() != 3 || l.MaxPush() != 7 {
 		t.Errorf("lowered: %d slots, %d bytes", l.Slots().Size(), l.MaxPush())
 	}
-	if ok, _, _ := l.buckets.Allow("alice"); !ok {
+	if a := l.buckets.Allow("alice"); !a.OK {
 		t.Error("the first request was refused")
 	}
-	ok, retry, _ := l.buckets.Allow("alice")
-	if ok || retry <= 0 {
-		t.Errorf("the second request: %v %s", ok, retry)
+	a := l.buckets.Allow("alice")
+	if a.OK || a.Retry <= 0 {
+		t.Errorf("the second request: %v %s", a.OK, a.Retry)
 	}
 	// A rate of zero or less lets everything through.
 	off := NewBuckets(0, 0, 0, nil)
 	for range 10 {
-		if ok, _, _ := off.Allow("alice"); !ok {
+		if a := off.Allow("alice"); !a.OK {
 			t.Fatal("a rate of zero refused")
 		}
 	}
@@ -563,7 +563,7 @@ func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
 	// The figure raises the rate and fills the bucket to the new depth,
 	// so a tool that was granted a higher rate is not held to the one
 	// its bucket was created with.
-	if ok, _, _ := l.buckets.Allow("bot"); !ok {
+	if a := l.buckets.Allow("bot"); !a.OK {
 		t.Fatal("the first request was refused")
 	}
 	l.SetSubjectRate("bot", 10)
@@ -571,17 +571,17 @@ func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
 		t.Fatalf("the named rate is %d", l.SubjectRate("bot"))
 	}
 	for i := range 10 {
-		if ok, _, _ := l.buckets.Allow("bot"); !ok {
+		if a := l.buckets.Allow("bot"); !a.OK {
 			t.Fatalf("request %d of a subject bucketed at 10 was refused", i)
 		}
 	}
-	if ok, retry, _ := l.buckets.Allow("bot"); ok || retry <= 0 {
-		t.Errorf("the eleventh request: %v %s", ok, retry)
+	if a := l.buckets.Allow("bot"); a.OK || a.Retry <= 0 {
+		t.Errorf("the eleventh request: %v %s", a.OK, a.Retry)
 	}
 	// The refill is the subject's own rate: six seconds buys one token
 	// at 10 a minute.
 	now = now.Add(6 * time.Second)
-	if ok, _, _ := l.buckets.Allow("bot"); !ok {
+	if a := l.buckets.Allow("bot"); !a.OK {
 		t.Error("the bucket did not refill at the named rate")
 	}
 	// Another subject keeps the node's figure.
@@ -589,11 +589,11 @@ func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
 		t.Fatalf("another subject is at %d", l.SubjectRate("alice"))
 	}
 	for range 2 {
-		if ok, _, _ := l.buckets.Allow("alice"); !ok {
+		if a := l.buckets.Allow("alice"); !a.OK {
 			t.Fatal("a request inside the node's rate was refused")
 		}
 	}
-	if ok, _, _ := l.buckets.Allow("alice"); ok {
+	if a := l.buckets.Allow("alice"); a.OK {
 		t.Error("a request past the node's rate was admitted")
 	}
 	// A lowered figure holds the subject to it at once, and a figure of
@@ -624,8 +624,8 @@ func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
 	}
 }
 
-// TestRateLimitHeaderIsTheSubjectsFigure is spec 012's header row: the
-// figure RateLimit-Limit names is the one in force for the effective
+// TestRateLimitHeadersAreTheSubjectsFigures is spec 012's header rows:
+// the figure RateLimit-Limit names is the one in force for the effective
 // subject of the response, not the node's variable. A subject the
 // authorizer named a rate for reads that rate, a subject it named none
 // for reads the node's, and the header is absent when the limit is off
@@ -633,15 +633,24 @@ func TestASubjectTheAuthorizerNamesARateForIsBucketedAtIt(t *testing.T) {
 // figure to a subject on an override is what made spec 021's
 // rate_limited case send 2401 requests against a budget of 6000 in the
 // v0.1.2 release run.
-func TestRateLimitHeaderIsTheSubjectsFigure(t *testing.T) {
+func TestRateLimitHeadersAreTheSubjectsFigures(t *testing.T) {
 	e := newEnv(t, Options{PerMinute: 60, Burst: 60})
 	h := e.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 
-	// A subject with no override reads the node's figure.
-	code, _, header := call(t, h, "alice")
-	if code != http.StatusNoContent || header.Get(contract.HeaderRateLimit) != "60" {
-		t.Fatalf("without an override: %d, %s %q", code, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+	// A subject with no override reads the node's figure, and
+	// RateLimit-Remaining falls by one a request from the depth that
+	// figure gave the bucket.
+	for i := range 5 {
+		code, _, header := call(t, h, "alice")
+		if code != http.StatusNoContent || header.Get(contract.HeaderRateLimit) != "60" {
+			t.Fatalf("without an override: %d, %s %q", code, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+		}
+		if want := strconv.Itoa(59 - i); header.Get(contract.HeaderRateRemaining) != want {
+			t.Fatalf("request %d: %s %q, want %s", i+1, contract.HeaderRateRemaining, header.Get(contract.HeaderRateRemaining), want)
+		}
 	}
+	var header http.Header
+	var code int
 
 	// Once the authorizer has named a rate the header reports it. The
 	// handler calls SetSubjectRate after this middleware has answered,
@@ -651,6 +660,11 @@ func TestRateLimitHeaderIsTheSubjectsFigure(t *testing.T) {
 	code, _, header = call(t, h, "bot")
 	if code != http.StatusNoContent || header.Get(contract.HeaderRateLimit) != "6000" {
 		t.Fatalf("with an override: %d, %s %q", code, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+	}
+	// Raising the rate raised the depth, so what is left is measured
+	// against the figure beside it.
+	if header.Get(contract.HeaderRateRemaining) != "5999" {
+		t.Errorf("%s under the override is %q", contract.HeaderRateRemaining, header.Get(contract.HeaderRateRemaining))
 	}
 	// The other subject is untouched by it.
 	if _, _, header = call(t, h, "alice"); header.Get(contract.HeaderRateLimit) != "60" {
@@ -676,6 +690,10 @@ func TestRateLimitHeaderIsTheSubjectsFigure(t *testing.T) {
 	if code != http.StatusTooManyRequests || header.Get(contract.HeaderRateLimit) != "3" {
 		t.Fatalf("the refusal: %d, %s %q", code, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
 	}
+	// A refused request has nothing left, which is what it reports.
+	if header.Get(contract.HeaderRateRemaining) != "0" {
+		t.Errorf("%s on the refusal is %q", contract.HeaderRateRemaining, header.Get(contract.HeaderRateRemaining))
+	}
 
 	// With the limit off there is no header, and an override recorded
 	// on a table that admits everything does not bring one back.
@@ -686,6 +704,9 @@ func TestRateLimitHeaderIsTheSubjectsFigure(t *testing.T) {
 		code, _, header = call(t, h, "bot")
 		if code != http.StatusNoContent || header.Get(contract.HeaderRateLimit) != "" {
 			t.Fatalf("with the limit off: %d, %s %q", code, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+		}
+		if header.Get(contract.HeaderRateRemaining) != "" {
+			t.Fatalf("%s %q with the limit off", contract.HeaderRateRemaining, header.Get(contract.HeaderRateRemaining))
 		}
 	}
 }

@@ -39,6 +39,15 @@ const HeaderStale = "Origo-Stale"
 // before it meets it; absent when the limit is off.
 const HeaderRateLimit = "RateLimit-Limit"
 
+// HeaderRateRemaining is the tokens left in the effective subject's
+// bucket on the node that answered, rounded down (spec 012), the
+// RateLimit-Remaining field of the same IETF draft. It is on every
+// response HeaderRateLimit is on and absent wherever that one is, so a
+// client reads what it has left rather than counting its own requests,
+// and spec 021's rate_limited case reads the limit in force without
+// exhausting it.
+const HeaderRateRemaining = "RateLimit-Remaining"
+
 // The stable error codes: spec 003's table and the codes later specs add
 // to it.
 const (

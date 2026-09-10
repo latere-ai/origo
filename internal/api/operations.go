@@ -301,11 +301,11 @@ func (h *Handler) begin(w http.ResponseWriter, r *http.Request, name string, bud
 		contract.Write(w, http.StatusForbidden, contract.CodeRepoFrozen, map[string]any{"frozen_at": m.FrozenAt})
 		return nil, false
 	}
-	if allowed, retry, _ := h.operations.Allow(m.ID); !allowed {
+	if a := h.operations.Allow(m.ID); !a.OK {
 		h.limits.Refused(limits.LimitRepository)
 		h.logger.WarnContext(r.Context(), "repository rate limited", "repo", m.ID, "path", r.URL.Path,
-			"retry_after_ms", retry.Milliseconds())
-		limits.WriteRateLimited(w, limits.LimitRepository, retry)
+			"retry_after_ms", a.Retry.Milliseconds())
+		limits.WriteRateLimited(w, limits.LimitRepository, a.Retry)
 		return nil, false
 	}
 	return &operation{h: h, w: w, r: r, name: name, budget: budget, id: m.ID, base: ix, quota: d.QuotaBytes}, true

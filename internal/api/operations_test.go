@@ -797,7 +797,7 @@ func TestAuthorizerRateBucketsTheSubject(t *testing.T) {
 // node's figure to a subject on an override is what let spec 021's
 // rate_limited case send 2401 requests against a budget of 6000 in the
 // v0.1.2 release run.
-func TestAuthorizerRateIsWhatRateLimitLimitReports(t *testing.T) {
+func TestAuthorizerRateIsWhatTheRateLimitHeadersReport(t *testing.T) {
 	h := newHarness(t, withLimits(limits.Options{}), withBucketed())
 	o := seedOps(t, h, repoA)
 
@@ -826,6 +826,16 @@ func TestAuthorizerRateIsWhatRateLimitLimitReports(t *testing.T) {
 	}
 	if status, _, header = h.doHeader("GET", "/v1/repos/"+o.id, ""); status != 200 || header.Get(contract.HeaderRateLimit) != "6000" {
 		t.Fatalf("after the decision: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+	}
+	// RateLimit-Remaining is measured against the figure beside it, so
+	// what is left is near the override's depth and not near the node's.
+	left, err := strconv.Atoi(header.Get(contract.HeaderRateRemaining))
+	if err != nil || left <= limits.RequestsPerMinute || left >= 6000 {
+		t.Fatalf("%s is %q against a limit of 6000", contract.HeaderRateRemaining, header.Get(contract.HeaderRateRemaining))
+	}
+	// It falls as the subject spends.
+	if _, _, header = h.doHeader("GET", "/v1/repos/"+o.id, ""); header.Get(contract.HeaderRateRemaining) != strconv.Itoa(left-1) {
+		t.Fatalf("%s went %d then %q", contract.HeaderRateRemaining, left, header.Get(contract.HeaderRateRemaining))
 	}
 	if h.limits.SubjectRate("alice") != 6000 {
 		t.Fatalf("alice is bucketed at %d", h.limits.SubjectRate("alice"))

@@ -60,16 +60,26 @@ func NewBuckets(perMinute, burst int, idle time.Duration, now func() time.Time) 
 	}
 }
 
-// Allow takes one token for the subject. It reports whether the request
-// goes on, when it does not how long until the next token, and the
-// figure in force for this subject: the rate the authorizer named for
-// it when it has one, the table's own otherwise, and zero when the
-// limit is off. The figure travels back from here because Allow has
-// already read it under the lock, so RateLimit-Limit on every response
-// costs no second acquisition.
-func (b *Buckets) Allow(subject string) (bool, time.Duration, int) {
+// Allowance is what Allow answers about one request: whether it goes
+// on, how long a refused one waits, the figure in force for the
+// subject, and the tokens left in its bucket after this request. The
+// two figures travel back from here because Allow read the bucket under
+// the lock it already takes, so the two RateLimit headers on every
+// response cost no second acquisition. PerMinute is zero when the limit
+// is off, which is how the middleware knows to send neither header.
+type Allowance struct {
+	OK        bool
+	Retry     time.Duration
+	PerMinute int
+	Remaining int
+}
+
+// Allow takes one token for the subject and reports what the request
+// may do and what is left. The rate in force is the one the authorizer
+// named for this subject where it named one, the table's own otherwise.
+func (b *Buckets) Allow(subject string) Allowance {
 	if b == nil || b.perMinute <= 0 {
-		return true, 0, 0
+		return Allowance{OK: true}
 	}
 	now := b.now()
 	b.mu.Lock()
@@ -86,11 +96,14 @@ func (b *Buckets) Allow(subject string) (bool, time.Duration, int) {
 		e.updated = now
 	}
 	if e.tokens < 1 {
-		// The wait until one whole token has accrued.
-		return false, time.Duration((1 - e.tokens) / float64(perMinute) * float64(time.Minute)), perMinute
+		// The wait until one whole token has accrued. Nothing is left,
+		// which is what the refusal reports.
+		return Allowance{Retry: time.Duration((1 - e.tokens) / float64(perMinute) * float64(time.Minute)), PerMinute: perMinute}
 	}
 	e.tokens--
-	return true, 0, perMinute
+	// Rounded down, so a client that trusts the figure never sends a
+	// request the bucket cannot pay for.
+	return Allowance{OK: true, PerMinute: perMinute, Remaining: int(e.tokens)}
 }
 
 // SetRate records the rate the authorizer named for one subject (spec
@@ -169,34 +182,39 @@ func (b *Buckets) Len() int {
 // a request without one is bucketed under the empty subject, which is
 // no route of the public listener.
 //
-// Every response it passes carries RateLimit-Limit, the figure in
-// force for the effective subject of that request: the rate the
-// authorizer named for it where it named one, the node's
-// ORIGO_REQUESTS_PER_MINUTE otherwise, and no header at all when the
-// limit is off. Allow reads that figure under the lock it already
-// takes, so the header costs nothing extra. A client and the
-// conformance suite of spec 021 read the limit before they meet it
-// rather than guessing at the default.
+// Every response it passes carries two figures of the same IETF draft,
+// both of the effective subject of that request and both read under the
+// one lock Allow takes: RateLimit-Limit, the rate in force, which is
+// the one the authorizer named for that subject where it named one and
+// the node's ORIGO_REQUESTS_PER_MINUTE otherwise, and
+// RateLimit-Remaining, the tokens left in that subject's bucket on this
+// node after the request, rounded down. Neither is sent when the limit
+// is off. A client reads what it has left rather than counting its own
+// requests, and spec 021's rate_limited case reads the limit in force
+// without exhausting it, which is the only observation that survives a
+// balancer spreading one subject over a bucket a node.
 //
 // The bucket runs in front of the authorizer, so the first response of
 // a subject the authorizer names a rate for still reports the node's
-// figure: SetSubjectRate is called by the handler, after this
-// middleware has answered. Spec 012 records that window, which the
-// bucket itself has always had.
+// figure, and its Remaining is the depth that figure gave it:
+// SetSubjectRate is called by the handler, after this middleware has
+// answered. Spec 012 records that window, which the bucket itself has
+// always had.
 func (l *Limits) Middleware(next http.Handler) http.Handler {
 	if l == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		subject := auth.Subject(r.Context())
-		ok, retry, perMinute := l.buckets.Allow(subject)
-		if perMinute > 0 {
-			w.Header().Set(contract.HeaderRateLimit, itoa(perMinute))
+		a := l.buckets.Allow(subject)
+		if a.PerMinute > 0 {
+			w.Header().Set(contract.HeaderRateLimit, itoa(a.PerMinute))
+			w.Header().Set(contract.HeaderRateRemaining, itoa(a.Remaining))
 		}
-		if !ok {
+		if !a.OK {
 			l.Refused(LimitSubject)
-			l.logger.WarnContext(r.Context(), "subject rate limited", "path", r.URL.Path, "subject", subject, "retry_after_ms", retry.Milliseconds())
-			WriteRateLimited(w, LimitSubject, retry)
+			l.logger.WarnContext(r.Context(), "subject rate limited", "path", r.URL.Path, "subject", subject, "retry_after_ms", a.Retry.Milliseconds())
+			WriteRateLimited(w, LimitSubject, a.Retry)
 			return
 		}
 		next.ServeHTTP(w, r)

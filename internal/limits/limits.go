@@ -274,10 +274,10 @@ func (l *Limits) Take(ctx context.Context, subject string) (bool, time.Duration)
 	if l == nil {
 		return true, 0
 	}
-	ok, retry, _ := l.buckets.Allow(subject)
-	if !ok {
+	a := l.buckets.Allow(subject)
+	if !a.OK {
 		l.Refused(LimitSubject)
-		l.logger.WarnContext(ctx, "subject rate limited", "transport", "ssh", "subject", subject, "retry_after_ms", retry.Milliseconds())
+		l.logger.WarnContext(ctx, "subject rate limited", "transport", "ssh", "subject", subject, "retry_after_ms", a.Retry.Milliseconds())
 	}
-	return ok, retry
+	return a.OK, a.Retry
 }
