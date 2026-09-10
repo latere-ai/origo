@@ -232,11 +232,11 @@ candidate image in the kind stack (spec 013).
 What no job proves and a maintainer does by hand before the tag, each
 recorded in the release notes as done or as not applicable:
 
-| Item | Spec |
-|---|---|
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec |
-| the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 |
-| `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 |
+| Item | Spec | Last done |
+|---|---|---|
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec | never, in either half |
+| the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 | not recorded here |
+| `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 | done on 2026-09-11 against `v0.1.1`, with `deploy-v0.1.1.tar.gz` and the two published images and no checkout on the path of any command. It reached a push and a clone that read it back, after eight prose defects the walk found and fixed; spec 018's Outcome holds the list. The SSH half of the page could not be walked, because the page on `main` is newer than the newest archive, which is the open row there |
 
 ## Not in this spec
 

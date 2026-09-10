@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -320,7 +320,7 @@ published release are listed below with what closes each.
 | the document's blocks run with nothing set and with an operator's variables set, and the second path never reaches the example stack's issuer | walked by hand on 2026-09-10 against a local node with the stubs of spec 013, once with nothing set and once with the token, the repository id, the owner, and the slug set through the document's own variables, which are the page's and not the node's; the `install` job walks the first path on every push | passing by hand; the job is the standing proof of the first path |
 | every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
 | `ORIGO_TOKEN_KEY` comes from the Secret `origod-token-key` and from nowhere else, in every workload that runs `origod` | `cmd/origod`, `TestSigningKeyHasOneSource` | passing |
-| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | pending the first release |
+| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | walked on 2026-09-11 against `v0.1.1`. It reached a push and a clone that read it back over HTTPS, after the eight defects below were fixed and the page was walked a second time from a fresh cluster. The SSH half of the page did not hold and is the new open row |
 
 Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 `internal/config` 98.9%, `tools/configdoc` 93.8%, `tools/apidoc` 94.6%,
@@ -396,4 +396,126 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 | Pending | Closed by | State |
 |---|---|---|
 | `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag | closed by the tag run 34461460766 of `v0.1.0` |
-| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | open, and the one thing holding this spec at `testing`: it is a person reading the document, which no job replaces. Nothing blocks it now. `v0.1.0` published `deploy-v0.1.0.tar.gz` and both images, so the walk can be made against those on a cluster and a bucket of the maintainer's own and written into the `v0.1.0` notes, which carry no checklist entry today. It needs the maintainer's time and no change to this repository |
+| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | closed for the HTTPS path by the walk of 2026-09-11 against `v0.1.1`, recorded below. The next release's notes carry the checklist entry; `v0.1.1`'s were already published |
+| the same walk reaching an SSH clone | a release whose `deploy-<version>.tar.gz` carries the SSH overlay, or a change that ships the page and the manifests together | open, and the one thing holding this spec at `testing`. It is not a prose defect and the section below says what the software would have to do |
+
+### The walk of 2026-09-11
+
+Walked against `v0.1.1`: `deploy-v0.1.1.tar.gz` and
+`ghcr.io/latere-ai/origod:v0.1.1` with `origo-stubs:v0.1.1`, all three
+downloaded from the release, with no checkout on the path of any
+command the walk ran. The machine was macOS 27 on arm64 with podman
+5.7.1 as the container engine and the kind node image at Kubernetes
+1.36.1. Two deviations from what an operator would have, both forced by
+that machine and neither touching what the page says: Cilium cannot
+start under podman on macOS (`mount: /sys/fs/bpf: permission denied` in
+its `mount-bpf-fs` init container), so the cluster ran kind's own
+network plugin, which does not enforce the overlay's NetworkPolicies;
+and the container VM has 2 GiB shared with other work, so the
+StatefulSet ran one node where the overlay asks for three. The
+`install` job runs three nodes behind Cilium on every push, which is
+where that half is proved.
+
+Eight defects, each what the page said, what happened, and the change:
+
+1. **No cluster.** Every default address on the page is a host port of
+   a kind cluster the page never tells you to make. A plain `kind
+   create cluster` publishes the API server and nothing else (`podman
+   port` prints one line, `6443/tcp`), so `curl
+   http://localhost:30080/version` answers `curl: (7)` for good. New
+   section, "A throwaway cluster, if you do not have one", which
+   creates it from `deploy/examples/kind/kind.yaml`.
+2. **No network plugin.** That `kind.yaml` sets `disableDefaultCNI:
+   true`. A cluster made from it stays `NotReady` with `cni plugin not
+   initialized`, `kubectl apply -k` still reports every object created,
+   all six pods sit in `Pending`, and step 6's `rollout status` ends in
+   `error: timed out waiting for the condition`, which no row of the
+   failure table covered. The same new section installs Cilium at the
+   version `versions.env` pins, and three rows were added to the table.
+3. **No archive.** `MANIFESTS` defaulted to `deploy/examples/kind`, a
+   relative path that resolves only if you unpacked the archive in the
+   current directory, which the page never said to do or how. New
+   section, "Get the manifests", with the download and the unpack.
+4. **A stale version that overrode the archive.** The settings block
+   read `VERSION="${ORIGO_VERSION:-v0.1.0}"` while `v0.1.1` was the
+   newest release, so pasting it printed `installing
+   ghcr.io/latere-ai/origod:v0.1.0` and step 6's `kubectl set image
+   "*=$IMAGE"` would have installed `v0.1.0` over the `v0.1.1`
+   manifests just unpacked. `IMAGE` is empty by default now and step 6
+   skips `set image` when it is, so the archive's own pins stand; the
+   two install jobs set `ORIGO_INSTALL_IMAGE` and are unaffected. The
+   version number appears once, in the download line a reader edits.
+5. **A file that is not in the archive.** Step 3 said to copy
+   `deploy/bootstrap/secrets.example.yaml`. `tar tzf
+   deploy-v0.1.1.tar.gz` lists `deploy/base` and `deploy/examples` and
+   nothing else, because `tools/release/deploy-archive.sh` packs those
+   two. The page now prints both Secrets in full as appliable objects
+   and names no file. `TestInstallDocumentIsWellFormed` cannot catch
+   this class: it resolves a `deploy/` path against the checkout, where
+   the file does exist.
+6. **Secrets before the namespace.** Step 3 applied them and step 4
+   created the namespace, so a reader in order met `namespaces "origo"
+   not found`. Step 3 says to apply them after step 4, and the failure
+   table names the message.
+7. **A global setting changed with no warning.** `kind create cluster`
+   made its cluster the current context in the shared kubeconfig, and
+   while this walk was running another session operating the production
+   cluster failed with `namespaces latere not found`. The page runs
+   bare `kubectl` throughout and never said which cluster it acts on.
+   The cluster section exports `KUBECONFIG` to a file of its own and
+   says why, and the settings section ends with `kubectl config
+   current-context` before anything applies.
+8. **A create that swallowed its own error.** `curl -sf ...
+   >/dev/null` on `POST /v1/repos` exited 22 and printed nothing when
+   the node was serving and the bucket was still waking: the node
+   logged `503` and `wal: create origo/repos/<id>/meta: context
+   deadline exceeded`, while the paragraph under the block promised a
+   `details.reason` the block had thrown away. The block prints the
+   status and the body on anything but a 201, the address wait now
+   waits for `/readyz` as well as `/version`, and three failure rows
+   name the 503, the `storage_unavailable` a first push can meet, and
+   the SSH case below. The same walk after the change printed `create
+   answered 503` with
+   `{"error":{"code":"storage_unavailable",...,"details":{"error":"breaker
+   open","key":"origo/repos/.../meta","op":"get"}}}`, which is the
+   whole diagnosis on one line.
+
+The page was then walked a second time from a fresh cluster through
+`tools/docs/run-blocks.sh docs/install.md`, which runs its `sh` blocks
+in order the way the install jobs do. It reported seven `ok` lines from
+`origod check`, `{"version":"v0.1.1",...}` from `/version`, `created
+ab23e1d6-1201-4022-94b1-314916c27c0d`, and `the installation serves a
+clone and a push`.
+
+### What the software would have to do
+
+Step 5 and the SSH half of the walkthrough cannot be walked from the
+newest release, and no wording fixes it. `deploy-v0.1.1.tar.gz` maps no
+host port 30022 and no 30086 in its `kind.yaml`, runs no key resolution
+stub, and sets none of the four `ORIGO_SSH_*` variables, while the page
+on `main` says "The example overlay carries all of it, so on a
+throwaway cluster there is nothing to add" and defaults the SSH
+walkthrough to `http://localhost:30086` and `ssh://git@127.0.0.1:30022`.
+Run against `v0.1.1` the key registration answers `curl: (7)` and
+`ssh-keyscan -T 10 -p 30022 127.0.0.1` answers `write (127.0.0.1):
+Broken pipe`.
+
+The cause is that the page and the manifests do not travel together.
+`tools/release/deploy-archive.sh` packs `deploy/base` and
+`deploy/examples`, so a reader holds the newest archive and reads the
+page on `main`, which documents whatever landed since the tag. Every
+feature that reaches the example overlay before a release does this
+again; SSH is only the first.
+
+One of two changes closes it, and both are in this repository rather
+than in the prose:
+
+- pack `docs/install.md` into `deploy-<version>.tar.gz`, so the page a
+  reader follows is the page of the release they unpacked; or
+- publish the page per release and link it from the release notes, so
+  the address a reader lands on carries the tag.
+
+The page now says to check `kind.yaml` for the two ports before relying
+on step 5, and a failure row names the two errors, which is the most
+prose can do. Until one of the two changes above, this spec stays at
+`testing` on that row.
