@@ -345,8 +345,15 @@ commit `2b2468d`, ran `go test -v -tags=e2e ./test/e2e/... -run
 TestCluster` against the kind stack and its log names
 `--- PASS: TestClusterMigrationCatchesALateWrite (4.47s)` and
 `--- PASS: TestClusterMigrationDocCommandsRun (24.18s)`, with every
-other job of that run green. That was the last item: every criterion of
-the table above now has a passing test, named in a run, and the
+other job of that run green. That was the last item, and the spec moves
+to `complete`. One row of the table above is proved without a name: the
+`308` redirect row is `TestE2EOldCloneURLRedirectsToOrigo`, which runs
+in the `integration and one-node e2e tiers` job, and `make test-tiers`
+runs `go test` without `-v`, so the evidence there is the package's
+`ok` over the `TestE2E` selection plus the test's one way out, the
+`requireStack` skip that the job's `ORIGO_TEST_S3_ENDPOINT` rules out;
+the job passed in run 34460223906 of `verify.yml` on main at commit
+`058eb6d`. Every other row is named in a run above. The
 `default_branch` builder item below moves no status. The citation above
 of run 34349791440 stands as the evidence on its own commit and is not
 refreshed.
