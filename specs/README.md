@@ -198,10 +198,10 @@ flowchart LR
 |---|---|---|---|
 | 1 | 002, 003, 004 | A single node serves clone, fetch, and push with the log as the source of truth | built; 002 complete, 003 and 004 wait on later specs for their remaining criteria |
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
-| 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
+| 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing on `TestReadTrace`, which is in no file, and on the 40 second fuzz search, whose job first fires on 2026-09-13; `TestE2EArchiveStreams` is done, green in the tier of run 34460223906; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 complete, its last criterion, the frozen repository, owned by 021's `TestContract` and green against the stack in the dispatched run 34358421294; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
-| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing on the attachment half of its supply-chain row alone: 019 asserted the `import` half and 014 the `verify` half on 2026-09-09, and the tag run 34461460766 shipped the three SPDX documents as release assets with both images and `checksums.txt` signed, so what is left is the bill of materials and the provenance attached to the image, which needs the repository to be public. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's live run covers the conformance cases of its first criterion, which are written and green against the stack, named case by case in the `cluster e2e tier` job of the tag run 34461461220 and green against the published image in run 34461460766, 014's `TestSourceTokenIsNeverLogged` having closed the source-bearer half; the first release did not produce the live run |
-| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the first release ran on 2026-09-10: tag `v0.1.0` at commit `2b2468d`, Release run 34461460766 with every job green or deliberately skipped, and the tag's `verify` run 34461461220 green over the cluster tiers, the up-script check, and the mutation job. All three specs stay at `testing`. 021: the suite is green whole against the stack and against the image the release published, named case by case in both runs; what remains is the live run, which the release did not produce, and 014's `verify` case of the source group. 017: the tag closed every row a tag can close, the artifacts and signatures and body through `release-verify`, the three SPDX assets, the conformance run against the published image, the deploy-less tag, and `install-release`; what remains is the attestations, which need a public repository, the `live` job, which needs the two secrets and an installation, and the N-1 fixture, which needs a second tag. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
+| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing on the attachment half of its supply-chain row alone: 019 asserted the `import` half and 014 the `verify` half on 2026-09-09, and the tag run 34461460766 shipped the three SPDX documents as release assets with both images and `checksums.txt` signed, so what is left is the bill of materials and the provenance attached to the image, which needs the repository to be public. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's live run covers the conformance cases of its first criterion, less `019/repo_not_empty` and `019/import`, which sit in the source group and no live run can carry; every case is written and green against the stack, named case by case in the `cluster e2e tier` job of the tag run 34461461220, and green against the published image in run 34461460766, 014's `TestSourceTokenIsNeverLogged` having closed the source-bearer half; the first release did not produce the live run |
+| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the first release ran on 2026-09-10: tag `v0.1.0` at commit `2b2468d`, Release run 34461460766 with every job green or deliberately skipped, and the tag's `verify` run 34461461220 green over the cluster tiers, the up-script check, and the mutation job. All three specs stay at `testing`. 021: the suite is green whole against the stack and against the image the release published, named case by case in both runs; what remains is the live run of the 51 cases a live target can carry, which the release did not produce, and 014's `verify` case of the source group, which is in no file. 017: the tag closed every row a tag can close, the artifacts and signatures and body through `release-verify`, the three SPDX assets, the conformance run against the published image, the deploy-less tag, and `install-release`; what remains is the attestations, which need a public repository, the `live` job, which needs the two secrets and an installation, the N-1 fixture, which needs a second tag, and the fork tag in both halves, which needs a maintainer and is the only path by which `deploy and smoke` has ever been asked to run. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | 014 complete: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; the `cluster e2e tier` job of the tag run 34461461220 names `--- PASS: TestClusterMigrationCatchesALateWrite` and `--- PASS: TestClusterMigrationDocCommandsRun`, which was the last item |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 
@@ -296,6 +296,8 @@ deck and stated here so a reader sees them without the owning spec.
 | the four `actions/attest-*` steps of `release.yml` and `release-verify`'s `gh attestation verify` run only when `!github.event.repository.private`: GitHub's attestation API refuses a private repository on Latere's organization plan, which failed the v0.1.0 tag of 2026-09-10 in the `build` job after both images were pushed. The three SPDX documents are still built and still shipped as release assets and cosign keyless signing is untouched, so a private release is complete and signed with its bill of materials; only the attachment of the bill of materials and the provenance to the image, and their verification, are deferred. The condition reads `private`, not the plan, so the steps return by themselves when the repository is made public and need an edit if the plan is upgraded instead | 017 | 016, 018 |
 | the `live` job of `release.yml` runs `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN`, and `TestContract` skips when the URL is unset, so on a repository with neither secret the job passes without running a case and `publish`'s `needs.live.result == 'success'` is satisfied by a skip. Latere has no installation: no `ORIGO_LIVE_URL`, no `ORIGO_LIVE_TOKEN`, no `ORIGO_RELEASE_DEPLOY`, no `production` environment, and `git.latere.ai` does not resolve, so the v0.1.0 tag of 2026-09-10 published without a live run and `deploy and smoke` was skipped with it. No spec reads that green as the run; 003, 019, 020, and 021 stay at `testing` on it | 017 | 003, 019, 020, 021 |
 | a job of `release.yml` that leans on the implicit `success()` gate is skipped whenever any job above it in the graph is, however far up and through however many `always()` jobs, because GitHub evaluates that gate over the whole ancestor closure. `deploy` is skipped on every repository with no `ORIGO_RELEASE_DEPLOY`, so every job below it carries `if: ${{ always() && needs.<job>.result == 'success' }}`, held by `TestReleaseSurvivesASkippedDeploy` in `tools/release` | 017 | 018 |
+| a live target of `test/conformance` carries no `Issuer`, no `Authorizer`, no `Source` and `SourceToken`, and no `Fault`, so all six groups skip in every live run and `TestContract` asserts exactly that. The eight cases in them, `003/storage_unavailable`, `007/forbidden`, `007/authorizer_unavailable`, `007/delegation`, `012/over_quota`, `015/repository_unavailable`, `019/repo_not_empty`, and `019/import`, can never be closed by a `live` job whatever secrets are set; they close on the stack, where the run fails on a non-empty skip list while a `Fault` is wired. A spec waiting on the live run waits for its other cases alone | 021 | 003, 007, 012, 015, 019 |
+| the `fuzz` job of `verify.yml` carries `if: github.event_name == 'schedule'`, so `workflow_dispatch` cannot reach it and the cron `0 3 * * 0` is the only path to the 40 second search. The seed corpora of every fuzz function still run in the `test` gate on each push, so a fuzz row is proved on its seeds and unproved on its search until the first Sunday fires | 013 | 009, 016 |
 
 ## Applied fix lists
 
@@ -670,6 +672,59 @@ prose, 004 on two tests nobody has written and the Spaces probe, and
 009 on `TestReadTrace` and the weekly `fuzz` job. Each of those is
 stated in the spec's own Outcome with what closes it.
 
+The twenty-second round, the close-out read back against the runs. No
+spec's status changed; five statements did.
+
+The `live` job's skip was attributed to a hostname. Four specs said the
+job skipped because no secret is set "and nothing answers at
+`https://git.latere.ai`". The log says otherwise: with `ORIGO_LIVE_URL`
+empty, `TestContract` never takes its live branch at all, so it fell to
+the stack branch and skipped on `nothing answers at ORIGO_TEST_URL
+(http://localhost:30080)`. The job dialled no installation. The empty
+secret is the whole cause; `git.latere.ai` not resolving is a separate
+fact and stays in 017's limits table, where it says why setting the
+secrets is not by itself enough.
+
+The live run was read as able to close cases it can never close. A live
+target supplies none of the four `Target` fields the groups need, so
+all six groups skip in every live run by design and eight cases go with
+them. Those eight close on the stack and have, named case by case in
+the tag's `verify` run 34461461220. Specs 003, 019, and 021 now scope
+their remaining item to the cases a live run can carry, and the
+decision row above states the rule once.
+
+The `install from the release artifacts` job was not being read at all,
+and it is the one job of the release that ran `TestContract` in live
+mode: `51 passed`, exactly the six groups skipped. Its target is a kind
+cluster the job built from the published artifacts, so it closes spec
+018's job row and nothing else. The four specs that wait on the live
+run now say so, so a later reader does not mistake it for the run.
+
+The fork-tag row was marked passing on an argument. The criterion has
+two halves, the deploy skipped with `ORIGO_RELEASE_DEPLOY` unset and
+the deploy run with it set, and only the first ran; it did not run on a
+fork, and the `v0.1.0` notes carry no checklist entry. `deploy and
+smoke` has therefore never executed on any run, so the release smoke is
+proved against the stub of `TestReleaseSmoke` and against no rollout.
+The row is pending in 017, which now lists four open rows rather than
+three.
+
+The weekly fuzz was cited as if it had run. It has not: no scheduled
+run exists, and the job's `if: github.event_name == 'schedule'` puts it
+out of reach of a dispatch, so the first fire is Sunday 2026-09-13 at
+03:00 UTC. 009 and 016 now date it and say the seeds are proved and the
+40 second search is not.
+
+Three claims of the audit that prompted the round were checked against
+the tree and hold. `TestReadTrace` is in no file; neither is
+`TestE2EHundredConcurrentPushesFromEightClients` nor
+`TestSlowMaterializeTenThousandEntries`; and there is no
+`cases014.go`. The last one does not hold 014:
+that case is spec 021's own deferred item and no criterion of 014, so
+014's move to `complete` stands. One row of 014 is proved by the
+tier's `ok` rather than by name, `TestE2EOldCloneURLRedirectsToOrigo`
+in the job that runs without `-v`, and 014 now says which row that is.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -699,32 +754,36 @@ carried to that module's own queue; the workaround stays until it lands.
 
 ## Open source readiness
 
-The repository goes public when phase 6 is complete: every spec through
-019 except 014, and spec 021, at `complete`, the conformance suite
-green against the release artifacts in the `kind` example overlay and
-against the installation `ORIGO_LIVE_URL` names with only its stated
-skip list skipped, spec 017's release checklist done once (the fork
-tag, the object-store probe of `tools/spike/condwrite`, and
-`docs/install.md` walked by a maintainer on a fresh cluster),
+The repository goes public when every spec is at `complete`: the
+conformance suite green against the release artifacts in the `kind`
+example overlay and against the installation `ORIGO_LIVE_URL` names
+with only the six groups skipped, spec 017's release checklist done
+once (the fork tag, the object-store probe of `tools/spike/condwrite`,
+and `docs/install.md` walked by a maintainer on a fresh cluster),
 `SECURITY.md` in place, and no Latere hostname or value anywhere but
-as a default or an example. Until then the repository is private and
-the deck is written as if it were already public. A cloud provider
+as a default or an example. One item of spec 016 is not on that list
+and cannot be: the bill of materials and the provenance attached to a
+published image are refused while the repository is private, so that
+row closes on the transition rather than gating it, and the first tag
+cut after the repository is public is what proves it. Until then the
+repository is private and the deck is written as if it were already
+public. A cloud provider
 named as a deployment target, a tested bucket, or an overlay name
 (DigitalOcean Spaces and AWS S3 in specs 001, 004, and 018, the
 `digitalocean` and `aws` overlays of 018, the release checklist of
 017) is not what the naming rule bars: the rule bars naming another
-company as a source or a reference. Specs 003 and 004
-stay short of `complete` until then on purpose: their remaining
-criteria are the conformance suite, the code table, and the stub
-(spec 021, spec 013), the cluster-job tests and the packs (specs 013,
-006), and the Spaces probe of the release checklist (spec 017), each
-named on the criterion it owns, so the two specs close with phase 6
-and the dispatch gate above is what lets every phase between build on
-them.
+company as a source or a reference. Specs 003 and 004 stay short of
+`complete` on purpose: their remaining criteria are owned elsewhere,
+003's by the suite's live run (spec 021) and 004's by two unwritten
+cluster tests and the Spaces probe of the release checklist (specs 013,
+006, 017), each named on the criterion it owns, and the dispatch gate
+above is what lets every phase between build on them meanwhile.
 
-What holds now that 018 is built: every spec through 021 is built and
-its criteria have passing tests but for the ones a published release
-proves. The documentation an outside operator needs is in the tree and
+What is built: all 21 specs, twelve of them at `complete`. Every
+criterion has a passing test but for the ten items the table at the
+end of this section lists, and none of those is unbuilt behaviour: they
+are runs that have not happened, tests nobody has written, and
+decisions outside this repository. The documentation an outside operator needs is in the tree and
 is tested rather than asserted: `docs/install.md` takes a cluster and a
 bucket to a first clone and push and its commands are run against a
 bare cluster on every push, `docs/configuration.md` and `docs/api.md`
@@ -734,17 +793,45 @@ the same push, `docs/operations.md`, `docs/migration.md`, and
 `deploy/base` is provider-neutral with an example overlay for a
 throwaway cluster and two for a cloud. `SECURITY.md` is in place.
 
-What the first release closes: the four artifact criteria of 017 that
-need published bytes (the signatures, the checksums, the bill of
-materials of a published image, and the release body against the
-changelog section), 021's `live` job against `ORIGO_LIVE_URL`, 018's
-`install-release` job walking the install document against the
-published images and the published deploy archive, and the three
-by-hand checklist items (the fork tag, the object-store probe, and a
-maintainer walking the install prose on a fresh cluster). Those, and
-the criteria of 003, 004, 012, 014, 016, 019, and 020 that wait on
-them, are the whole of what stands between the tree as it is and
-`complete` on phase 6.
+What shipped. `v0.1.0` was cut on 2026-09-10 from `main` at `058eb6d`,
+tagged `2b2468d`, Release run 34461460766, every job green or
+deliberately skipped. It published eleven assets, four `origod`
+archives for `linux` and `darwin` on `amd64` and `arm64`,
+`checksums.txt` with its cosign bundle, `deploy-v0.1.0.tar.gz`,
+`fixture-v0.1.0.tar.gz`, and the three SPDX documents, and both images
+as OCI indexes for `linux/amd64` and `linux/arm64`. `release-verify`
+checked both signatures against the release workflow's identity and the
+GitHub OIDC issuer and refused a foreign one, checked the checksums,
+read the deploy archive, and matched the body against the changelog
+section. The suite ran against the image the tag published,
+`--- PASS: TestContract (65.84s)`, and `install-release` walked
+`docs/install.md` against the published artifacts on a bare cluster and
+ended in a live-mode `TestContract` of 51 passing cases. The tag's
+`verify` run 34461461220 was green over the cluster tiers, the
+up-script check, and the mutation job. That closed spec 014 and every
+row of 016, 017, and 018 that a tag on a private repository can close.
+
+What remains, all of it, with what closes each. Nine specs are at
+`testing`.
+
+| Item | Specs | What closes it |
+|---|---|---|
+| the live run of `TestContract` against a deployed Origo | 003, 019, 020, 021 | `ORIGO_LIVE_URL` and `ORIGO_LIVE_TOKEN` set on the repository with an installation answering at the URL, then a tag or a re-run of the `live` job. The eight group cases are not in it and are closed on the stack already |
+| spec 014's `verify` case of the source group, absent from `test/conformance` | 021 | a builder writing it; there is no `cases014.go` |
+| `TestE2EHundredConcurrentPushesFromEightClients` and `TestSlowMaterializeTenThousandEntries` | 004 | a builder writing them and the `e2e` and `e2e-slow` jobs running them |
+| the object-store probe on DigitalOcean Spaces | 004, 017 | a Spaces bucket and its credentials, then a maintainer running `tools/spike/condwrite` and recording it in the release notes |
+| `TestReadTrace` in `cmd/origod` | 009 | a builder writing it |
+| the 40 second fuzz search | 009, 016 | the weekly `fuzz` job's first fire, Sunday 2026-09-13 at 03:00 UTC; no dispatch can bring it forward |
+| the attestations attached to a published image | 016, 017 | the repository going public, or the organization plan being upgraded and `release.yml`'s condition changed with it |
+| `TestPreviousReleaseFixture` against a fixture an earlier release attached | 017 | the second tag, which reads `fixture-v0.1.0.tar.gz` |
+| the fork tag in both halves, and with it the only run of `deploy and smoke` | 017 | a maintainer tagging a fork with `ORIGO_RELEASE_DEPLOY` unset and again with it set, recorded in the release notes |
+| a maintainer walking `docs/install.md` to a push on a fresh cluster | 018 | the same maintainer, against the published `v0.1.0` artifacts; nothing blocks it |
+
+Four of those need a decision from the user rather than work: an
+installation to point the live secrets at, a Spaces bucket for the
+probe, the repository going public or the plan being upgraded, and the
+maintainer's time for the checklist and the prose walk. The rest is a
+builder's, and one closes by itself on the next Sunday.
 
 ## Conventions
 
