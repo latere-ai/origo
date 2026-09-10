@@ -1,0 +1,12 @@
+# Replica bounds for the installation as it stands: two nodes always, up
+# to eight under load. The base allows 32, which is more than this
+# cluster has room for. The autoscaler scales on CPU alone; raise
+# maxReplicas when the pods sit at their CPU request under normal
+# traffic.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: origod
+spec:
+  minReplicas: 2
+  maxReplicas: 8

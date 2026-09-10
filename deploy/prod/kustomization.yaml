@@ -6,16 +6,32 @@
 #
 # The base is provider-neutral: the hostname, the ingress class, the
 # certificate issuer, and the controller's own settings are here, and so
-# is ORIGO_PUBLIC_URL. An operator's overlay is these two patches with
+# is ORIGO_PUBLIC_URL. An operator's overlay is these patches with
 # their own names in them.
+#
+# Latere runs Origo beside its other services in the namespace `latere`,
+# not in one of its own, so this overlay names that namespace and reads
+# the Secrets and the registry pull secret that live there. An operator
+# with a dedicated namespace changes the one line below and drops
+# pull-secret.yaml.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: origo
+namespace: latere
 
 resources:
   - ../base
 
+# The release the target runs. The base carries the placeholder tag
+# `unreleased`, which never resolves, so a target that pins nothing fails
+# to pull rather than running an unknown build. One name covers both
+# containers: the node and the check it runs in front of are one image.
+images:
+  - name: ghcr.io/latere-ai/origod
+    newTag: v0.1.0
+
 patches:
   - path: ingress.yaml
   - path: public-url.yaml
+  - path: pull-secret.yaml
+  - path: replicas.yaml
