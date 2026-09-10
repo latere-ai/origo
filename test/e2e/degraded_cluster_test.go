@@ -48,18 +48,17 @@ func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int,
 }
 
 // nodeMetric reads one series from a node's internal host port over a
-// fresh connection. Every fault this file injects takes the node out of
-// the endpoint list for a few seconds and puts it back, so nothing
-// answering right now is a reason to wait, the same reason
-// tryNodeMetric exists; a node that never returns fails the wait.
+// fresh connection, at one instant: a caller taking a delta needs the
+// two reads to bound a known window, so a node that does not answer
+// fails here rather than widening the window by waiting. A caller that
+// reads a counter after a fault waits for the node's return first
+// (inRotation).
 func nodeMetric(t *testing.T, internalPort int, name, labels string) float64 {
 	t.Helper()
-	var v float64
-	waitUntil(t, fmt.Sprintf("node %d back on its internal host port", internalPort), time.Minute, func() bool {
-		var ok bool
-		v, ok = tryNodeMetric(t, internalPort, name, labels)
-		return ok
-	})
+	v, ok := tryNodeMetric(t, internalPort, name, labels)
+	if !ok {
+		t.Fatalf("metrics on %d: nothing answered", internalPort)
+	}
 	return v
 }
 
@@ -295,9 +294,23 @@ func TestClusterDegradedStorage(t *testing.T) {
 
 	t.Run("slow", func(t *testing.T) {
 		// Every connection's first bytes are held past the storage
-		// deadline: the check fails after the deadline, one call and one
+		// deadline: the check fails after the deadline, one check and one
 		// failure, the breaker stays closed below its threshold.
-		before := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`)
+		//
+		// The failure is counted on origo_wal_head_check_seconds, which
+		// only the currency check records, and not on the node's head
+		// operations: every Head the process makes lands on that
+		// counter, the marker of an event delivered after the push above
+		// and the events repair sweep included, so a delta of it is not
+		// this request's. The operations delta is logged beside the
+		// assertion, because the two differing is what tells a second
+		// currency check apart from a Head of another caller. That one
+		// call of three attempts counts one failure is spec 015's
+		// internal/wal criterion (TestOneCallWithThreeAttemptsIsOneFailure);
+		// what the stack proves here is the deadline and the closed
+		// breaker.
+		before := nodeMetric(t, node1Int, "origo_wal_head_check_seconds_count", `result="error"`)
+		beforeOps := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`)
 		if err := slowproxy.Set(ctx, proxy, 8*time.Second); err != nil {
 			t.Fatal(err)
 		}
@@ -308,8 +321,11 @@ func TestClusterDegradedStorage(t *testing.T) {
 		if status != 503 || !strings.Contains(string(body), `"storage_unavailable"`) || took < 5*time.Second || took > 25*time.Second {
 			t.Fatalf("slow bucket: %d %s after %s", status, body, took)
 		}
-		if after := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`); after != before+1 {
-			t.Fatalf("head errors went from %v to %v for one slow check", before, after)
+		after := nodeMetric(t, node1Int, "origo_wal_head_check_seconds_count", `result="error"`)
+		afterOps := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`)
+		t.Logf("one slow check: currency checks failed %v to %v, head operations failed %v to %v", before, after, beforeOps, afterOps)
+		if after != before+1 {
+			t.Fatalf("failed currency checks went from %v to %v for one slow check", before, after)
 		}
 		if nodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`) != 0 {
 			t.Fatal("one slow check opened the breaker")
