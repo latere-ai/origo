@@ -353,6 +353,17 @@ jobs:
           kubectl -n origo get endpoints || true
           kubectl -n origo logs -l app.kubernetes.io/name=origod --tail=60 --prefix || true
           kubectl -n origo describe pod origod-0 || true
+          # The SSH step of the document is the one that reaches a host
+          # port with something other than curl, so the account says
+          # which hop is missing: the node's published ports, the port
+          # from inside the node, and the two spellings of the loopback
+          # host the document and up.sh use.
+          docker port origo-control-plane || true
+          docker exec origo-control-plane timeout 5 bash -c 'head -c 64 </dev/tcp/127.0.0.1/30022' || true
+          for host in 127.0.0.1 localhost; do
+            getent ahosts "$host" || true
+            ssh-keyscan -v -T 5 -p 30022 "$host" 2>&1 | tail -5 || true
+          done
       - name: The conformance suite against the installation
         run: |
           set -euo pipefail
