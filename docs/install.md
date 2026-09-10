@@ -16,8 +16,9 @@ the manifests fails the build rather than your installation. That
 throwaway cluster is why some blocks fall back to the example stack when
 you set nothing: each one says so where it does, and the paragraph beside
 it says what your installation does instead. The blocks that are not
-shell are sketches of a request, to read rather than to paste, because
-their shape is your provider's and not Origo's.
+shell are the two steps this page cannot run for you, obtaining the
+manifests and making a throwaway cluster, and sketches of a request
+whose shape is your provider's rather than Origo's.
 
 ## What you need
 
@@ -44,18 +45,77 @@ event sink, so it installs on a throwaway cluster with nothing prepared,
 and it is what the commands below install when you set nothing. Nothing
 in it belongs in a real installation.
 
+## Get the manifests
+
+Every release carries `deploy-<version>.tar.gz`, the manifests of that
+exact release with both images pinned to it. The releases page lists
+the releases; take the newest unless you have a reason not to. Unpack
+it in an empty directory and stay in that directory for the rest of
+this page, because every path below is relative to it:
+
+```
+VERSION=v0.1.1   # the release you picked
+curl -fLO "https://github.com/latere-ai/origo/releases/download/$VERSION/deploy-$VERSION.tar.gz"
+tar xzf "deploy-$VERSION.tar.gz"
+```
+
+That writes `deploy/`, whose two directories the next section names. You
+never edit what you unpacked: you copy an example overlay out of it,
+and your copy names `../deploy/base` or wherever you keep it. What a
+version number promises and how to move between two of them is in
+[`upgrades/`](upgrades/README.md).
+
 ## Where things go
 
 ```
 deploy/base/          the service: Deployment, Services, Ingress, autoscaler,
                       disruption budget, network policies
-deploy/bootstrap/     what you create once by hand: the namespace and the Secrets
 deploy/examples/      overlays to copy: kind, digitalocean, aws
 ```
+
+That is the whole of the archive, and it is everything you apply with
+`kubectl`. The namespace and the three Secrets are not
+in it and are not in any file: this page prints the commands that
+create them, so you need nothing you did not download.
 
 You never apply `deploy/base` directly. You write an overlay that names
 it and supplies what is yours: the hostname, the ingress class and its
 settings, the replica bounds, and the Secrets.
+
+## A throwaway cluster, if you do not have one
+
+Skip this if you are installing on a cluster you already run. Otherwise
+`deploy/examples/kind/kind.yaml` describes the one-node cluster the
+example overlay expects, and every default address on this page is one
+of the host ports it maps. It needs [kind](https://kind.sigs.k8s.io),
+[Helm](https://helm.sh), and a container engine:
+
+```
+export KUBECONFIG="$PWD/origo-kubeconfig"
+. deploy/examples/kind/versions.env
+kind create cluster --name origo --config deploy/examples/kind/kind.yaml
+helm repo add cilium https://helm.cilium.io --force-update
+helm install cilium cilium/cilium --version "$CILIUM_CHART_VERSION" \
+	--namespace kube-system --set ipam.mode=kubernetes
+kubectl -n kube-system rollout status daemonset/cilium --timeout=300s
+```
+
+Both halves matter. A cluster made with a plain `kind create cluster`
+publishes no host port but the API server's, so nothing on this page
+can reach it and every address answers `curl: (7) Failed to connect`.
+And `kind.yaml` turns kind's own network plugin off, because the
+manifests carry NetworkPolicies and kind's plugin does not enforce
+them, so a cluster made from it has no networking at all until you
+install one: the node stays `NotReady` with `cni plugin not
+initialized`, `kubectl apply -k` still reports success, and every pod
+sits in `Pending` for as long as you let it. Cilium is what the
+project's own tests install and `versions.env` is where its version is
+pinned. Any plugin that enforces NetworkPolicy works in its place.
+
+The `KUBECONFIG` line is not decoration. Without it `kind create
+cluster` writes into your usual kubeconfig and makes the throwaway
+cluster the current context, so the next `kubectl` you run in any
+window, for any cluster, goes here.
 
 ## Settings for this page
 
@@ -65,18 +125,29 @@ installs the throwaway cluster of `deploy/examples/kind` and nothing of
 yours: `MANIFESTS` is your overlay from step 3.
 
 ```sh
-VERSION="${ORIGO_VERSION:-v0.1.0}"
-IMAGE="${ORIGO_INSTALL_IMAGE:-ghcr.io/latere-ai/origod:$VERSION}"
 MANIFESTS="${ORIGO_INSTALL_MANIFESTS:-deploy/examples/kind}"
 NAMESPACE="${ORIGO_NAMESPACE:-origo}"
-echo "installing $IMAGE from $MANIFESTS into $NAMESPACE"
+IMAGE="${ORIGO_INSTALL_IMAGE:-}"
+echo "installing ${IMAGE:-the images $MANIFESTS pins} from $MANIFESTS into $NAMESPACE"
 ```
 
-`VERSION` is the release you are installing. The releases page lists
-them, and each release carries `deploy-<version>.tar.gz`, the manifests
-of that exact release with both images pinned; unpack it and point
-`MANIFESTS` at the overlay inside. What a version number promises and
-how to move between two of them is in [`upgrades/`](upgrades/README.md).
+`IMAGE` is empty on purpose and you should leave it so. The manifests
+you unpacked already name the release they came from, on both the node
+and the stub images, and step 6 changes nothing when this is unset.
+Set it only in a pipeline that installs a build with no release behind
+it, and then it must be the whole reference, registry and tag.
+
+Before anything applies, check which cluster you are about to install
+into:
+
+```sh
+kubectl config current-context
+```
+
+Every `kubectl` on this page acts on that cluster and this page never
+names one. On a machine whose kubeconfig already reaches a cluster you
+care about, this is the difference between a throwaway installation and
+an unplanned change to the cluster you run.
 
 ## 1. The bucket
 
@@ -260,27 +331,48 @@ change at the top of its `kustomization.yaml`. In yours you set:
   is the node's whole disk, so the default lets the cache grow far past
   the limit the kubelet evicts the pod at. Set it below the `sizeLimit`.
 
-Then the two Secrets. Copy `deploy/bootstrap/secrets.example.yaml`, fill
-it in, and apply it with `kubectl apply -f`; keep the filled copy out of
-version control. It is two objects:
+Then the two Secrets. Nothing you downloaded carries them, because a
+manifest that did would overwrite yours on every rollout. Save the two
+objects below with your values in place of the ellipses, apply them
+with `kubectl apply -f`, and keep the filled copy out of version
+control. They go into the namespace step 4 creates, so apply them
+after that step and not before: applied first, they fail with
+`namespaces "origo" not found`.
 
 ```yaml
-# origod-s3: the bucket
-ORIGO_S3_ENDPOINT: https://fra1.digitaloceanspaces.com
-ORIGO_S3_REGION: fra1
-ORIGO_S3_BUCKET: your-bucket
-ORIGO_S3_KEY: …
-ORIGO_S3_SECRET: …
-
-# origod-auth: identity
-ORIGO_OIDC_ISSUERS: https://auth.example.com
-ORIGO_AUTHORIZER_URL: https://platform.example.com/internal/origo/authorize
-ORIGO_AUTHORIZER_TOKEN: …
-ORIGO_GOSSIP_SECRET: …    # openssl rand -hex 32, the same on every node
+apiVersion: v1
+kind: Secret
+metadata:
+  name: origod-s3
+type: Opaque
+stringData:
+  ORIGO_S3_ENDPOINT: https://fra1.digitaloceanspaces.com
+  ORIGO_S3_REGION: fra1
+  ORIGO_S3_BUCKET: your-bucket
+  ORIGO_S3_KEY: …
+  ORIGO_S3_SECRET: …
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: origod-auth
+type: Opaque
+stringData:
+  ORIGO_OIDC_ISSUERS: https://auth.example.com
+  ORIGO_AUTHORIZER_URL: https://platform.example.com/internal/origo/authorize
+  ORIGO_AUTHORIZER_TOKEN: …
+  # openssl rand -hex 32, the same on every node
+  ORIGO_GOSSIP_SECRET: …
 ```
 
-There is a third Secret, `origod-token-key`, and it is not in the
-template because its value has to be generated. The next step is that.
+Apply them with `kubectl -n "$NAMESPACE" apply -f`, or add a
+`namespace:` to each object first.
+
+There is a third Secret, `origod-token-key`, and it is not printed here
+because its value has to be generated. The next step is that. On the
+throwaway cluster there is nothing to do in this step at all: the
+example overlay carries both of these Secrets with the values its own
+bucket, issuer, and authorizer use.
 
 Every variable, its default, and what it does is in
 [`configuration.md`](configuration.md).
@@ -391,8 +483,14 @@ Then four variables on the pods, in your overlay beside the rest:
 
 with the Secret mounted at `/etc/origo/ssh`. All four go together: a
 node with `ORIGO_SSH_ADDR` set and any of the other three missing
-refuses to start and says which. The example overlay carries all of it,
-so on a throwaway cluster there is nothing to add.
+refuses to start and says which. The example overlay carries all of it
+from the release that introduced SSH, so on a throwaway cluster there
+is nothing to add. Check before you rely on that: if
+`deploy/examples/kind/kind.yaml` in the archive you unpacked maps no
+host port 30022 and no 30086, the release you are installing is older
+than this step. Nothing on this page works around that. Install a
+newer release, or read this page at the release you install rather
+than the newest one.
 
 Last, the address people clone from. The container listens on 2222 and
 never on 22, because the pod runs as an unprivileged user with every
@@ -421,13 +519,18 @@ rollout.
 kubectl apply -k "$MANIFESTS"
 WORKLOAD=$(kubectl -n "$NAMESPACE" get deployment,statefulset \
 	-l app.kubernetes.io/name=origod -o name | head -1)
-kubectl -n "$NAMESPACE" set image "$WORKLOAD" "*=$IMAGE"
+if [ -n "$IMAGE" ]; then
+	kubectl -n "$NAMESPACE" set image "$WORKLOAD" "*=$IMAGE"
+fi
 kubectl -n "$NAMESPACE" rollout status "$WORKLOAD" --timeout=300s
 ```
 
-`*=` sets every container of the workload, which is the node and the
-check that runs in front of it; both are the same image, and a release is
-one image.
+With `IMAGE` unset, which is what you want, the workload runs the
+images the manifests pin and the middle step does nothing. Setting it
+overrides them, so a stale value there installs an older release than
+the archive you unpacked. `*=` sets every container of the workload,
+which is the node and the check that runs in front of it; both are the
+same image, and a release is one image.
 
 Each pod runs `origod check` before it starts serving, so a pod that
 comes up ready has already reached your bucket, your issuer, and your
@@ -691,6 +794,10 @@ a signed webhook, so a build starts from a push rather than a poll.
 | `fail authorizer` with a status | your endpoint refused Origo's bearer or returned an error | check `ORIGO_AUTHORIZER_TOKEN` on both sides |
 | `fail disk` | the cache directory is not writable, or `ORIGO_CACHE_BYTES` exceeds the file system | check the volume in your overlay |
 | the pod is ready and `/readyz` is 503 | the bucket or the disk stopped answering after start-up | the node's log names the check that fails |
+| every pod is `Pending` and `kubectl get nodes` says `NotReady` with `cni plugin not initialized` | the cluster has no network plugin. A kind cluster made from `kind.yaml` has none until you install one, and `kubectl apply -k` reports success either way | install one, the way the throwaway cluster section does. The pods schedule by themselves the moment the node goes `Ready`; nothing is reapplied |
+| `rollout status` ends in `error: timed out waiting for the condition` | no pod reached ready inside the timeout, for one of the reasons in the rows around this one | `kubectl -n "$NAMESPACE" get pods` names the stage each is stuck at, and the row for that stage says what to do. Run the same `rollout status` again once it is fixed |
+| `curl: (7) Failed to connect` on the throwaway cluster's address, whatever the pods say | the cluster publishes no host port for it. A plain `kind create cluster` maps only the API server | recreate it from `deploy/examples/kind/kind.yaml`, which maps every port this page uses |
+| `namespaces "origo" not found` when you apply the Secrets | the namespace of step 4 is not there yet | apply the Secrets after step 4, not before |
 | a push hangs or is cut off | the ingress controller is buffering the body or timing out | the two settings in step 3: no body size limit, and a long read timeout |
 | a clone works and a push is refused | your authorization endpoint denies `write` for that subject | its answer carries a `reason`, which Origo passes back to the client |
 | every operation on one repository is 403, `POST /v1/repos` included | your authorization endpoint has not been told about this repository, and rule 4 of step 2 makes it deny what it does not know | register the repository there under the id you gave Origo and grant the subject; the endpoint's own `reason` is in `details.reason` on the 403 |
