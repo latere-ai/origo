@@ -176,8 +176,8 @@ the two secrets and nothing else.
 
 `internal/contract` gains the code table as data: code, every status
 the row lists, and the one sentence, for every row of the Code tables
-of spec 003 and of specs 007, 009, 010, 015, 019, and 020, which is
-every code the cross-reference in `specs/README.md` lists, the 24 of
+of spec 003 and of specs 007, 009, 010, 015, 019, 020, and 026, which
+is every code the cross-reference in `specs/README.md` lists, the 25 of
 the `producers` table below; spec 020's two rows, `invalid_change` and
 `merge_conflict`, are in the table from the start and spec 020 adds
 the call sites that send them when it lands, and the rule below that a
