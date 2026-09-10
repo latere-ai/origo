@@ -375,7 +375,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: https://git.latere.ai
+      url: https://code.latere.ai
     outputs:
       evidence: ${{ steps.smoke.outputs.evidence }}
     steps:
@@ -404,7 +404,7 @@ jobs:
       - name: Smoke the live service
         id: smoke
         env:
-          BASE_URL: https://git.latere.ai
+          BASE_URL: https://code.latere.ai
           TAG: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
           DEPLOY_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

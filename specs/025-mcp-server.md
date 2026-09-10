@@ -110,7 +110,7 @@ weighed.
 | a hosted MCP endpoint at the installation | refused for v1, on the protocol's own terms. See below |
 
 **Why there is no hosted endpoint, in the words the question deserves.**
-Latere runs Origo at `git.latere.ai`; it runs `origo-mcp` beside each
+Latere runs Origo at `code.latere.ai`; it runs `origo-mcp` beside each
 agent, pointed at that address. There is no MCP endpoint on the
 installation and none is planned in this spec. The reason is not
 distaste for hosting. An MCP server on an HTTP transport is an OAuth

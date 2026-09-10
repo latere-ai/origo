@@ -4,7 +4,7 @@
 write-ahead log in S3 compatible object storage. Repositories on disk are
 only a cache. There is no database, no leader, and no consensus cluster.
 
-Latere runs Origo at [git.latere.ai](https://git.latere.ai) for its own
+Latere runs Origo at [code.latere.ai](https://code.latere.ai) for its own
 platform. Anyone with a Kubernetes cluster and an S3 compatible bucket can
 run their own.
 

@@ -20,13 +20,13 @@ spec:
         - name: check
           env:
             - name: ORIGO_PUBLIC_URL
-              value: https://git.latere.ai
+              value: https://code.latere.ai
             - name: ORIGO_CACHE_BYTES
               value: "17179869184"
       containers:
         - name: origod
           env:
             - name: ORIGO_PUBLIC_URL
-              value: https://git.latere.ai
+              value: https://code.latere.ai
             - name: ORIGO_CACHE_BYTES
               value: "17179869184"

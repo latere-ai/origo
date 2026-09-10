@@ -33,8 +33,8 @@ reference that lists every variable with its default.
 Service, an Ingress, a PodDisruptionBudget, and a ServiceAccount.
 `deploy/prod` sets the namespace `origo`; `deploy/bootstrap` holds the
 Namespace and Secret templates. The Ingress assumes the `nginx` class
-and the cert-manager issuer `letsencrypt-prod` with host `git.latere.ai`;
-the Deployment sets `ORIGO_PUBLIC_URL` to `https://git.latere.ai` and
+and the cert-manager issuer `letsencrypt-prod` with host `code.latere.ai`;
+the Deployment sets `ORIGO_PUBLIC_URL` to `https://code.latere.ai` and
 reads the bootstrap Secrets `origod-s3` and `origod-auth` (spec 007)
 through `envFrom`. There is no HPA, no
 PrometheusRule, no `deploy/examples`, no `origod check`, no

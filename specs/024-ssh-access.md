@@ -1,6 +1,6 @@
 ---
 title: "SSH access: git over SSH beside smart HTTP"
-status: drafted
+status: in-progress
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md

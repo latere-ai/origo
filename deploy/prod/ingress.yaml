@@ -1,4 +1,4 @@
-# Latere's own values: the hostname git.latere.ai, the ingress-nginx
+# Latere's own values: the hostname code.latere.ai, the ingress-nginx
 # class, the certificate issued by cert-manager, and the four settings a
 # git remote needs from that controller. An operator's overlay is this
 # file with their own names in it.
@@ -16,10 +16,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - git.latere.ai
+        - code.latere.ai
       secretName: origod-tls
   rules:
-    - host: git.latere.ai
+    - host: code.latere.ai
       http:
         paths:
           - path: /
