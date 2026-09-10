@@ -84,7 +84,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
-| [025](025-mcp-server.md) | MCP server: Origo as tools an agent can drive | large | drafted | 003, 007, 009, 012, 020 |
+| [025](025-mcp-server.md) | MCP server: Origo as tools an agent can drive | large | validated | 003, 007, 009, 012, 020 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
 
 ## Dependency graph
@@ -876,7 +876,7 @@ name, or when a spec names something no spec defines.
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 026 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
@@ -950,7 +950,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_STORAGE_TIMEOUT` | [002](002-repository-scaffold.md) | 012, 013, 015 |
 | variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004 |
 | variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006 |
-| variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 012, 013, 014, 021 |
+| variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 012, 013, 014, 021, 025 |
 | variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 013, 021 |
 | variable | `ORIGO_TEST_S3_BUCKET` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 008, 009, 013, 014, 015, 017, 021 |

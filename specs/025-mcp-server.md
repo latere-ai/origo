@@ -1,6 +1,6 @@
 ---
 title: "MCP server: Origo as tools an agent can drive"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -81,6 +81,11 @@ recalled:
 | Property of `2026-07-28` | What this design does with it |
 |---|---|
 | there is no `initialize` handshake and no connection-scoped session; every request carries its protocol version and client capabilities in `_meta.io.modelcontextprotocol/*` | the server holds no per-connection state at all, which is what lets one process serve one agent with one credential and nothing else |
+| `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities` are required on every request, and a request missing either is malformed and answered `-32602` | the stateless era refuses such a request by name. A client that opened with `initialize` is in the other era and carries neither, which is how the two are told apart with no session |
+| every result carries `resultType`, and a client reads an absent one as `complete` | every result of the stateless era carries `"resultType": "complete"`; the handshake era's carry none. That, and the handshake itself, is the whole of what "only the envelope differs" means |
+| an unknown tool in `tools/call` is a protocol error and not a tool result: JSON-RPC `-32602` with `Unknown tool: <name>` | what a write tool answers without `-write` |
+| a server SHOULD put `io.modelcontextprotocol/serverInfo` in a result's `_meta` | sent on `tools/list` and on the handshake, omitted on a tool result. A tool result is what the model pays for on every call and the host already holds the server's name; this is the one place the byte rule declines a SHOULD, and it is recorded rather than silent |
+| a tool that returns `structuredContent` SHOULD serialize it into a text block beside it | the three write tools' text receipt is that serialization, which is why the duplication in rule 1 below is the protocol's own recommendation and not an extra |
 | two standard transports: stdio (newline-delimited JSON-RPC over a client-launched subprocess) and Streamable HTTP | stdio only, for the reasons in Where it lives |
 | a tool carries `name`, `title`, `description`, `inputSchema`, optional `outputSchema`, and optional `annotations` | the tool table below fixes all of them |
 | `ToolAnnotations` are `readOnlyHint` (default false), `destructiveHint` (default true), `idempotentHint` (default false), and `openWorldHint` (default true), and a client must treat them as untrusted unless the server is trusted | every tool states all four rather than leaning on a default, because three of the four defaults are the unsafe reading |
@@ -246,14 +251,39 @@ the alias map is what stands in until it can.
 
 | Tool | Input | Result | Origo calls |
 |---|---|---|---|
-| `origo.list_repos` | none | one line per configured repository: `<alias>  <id>  <owner>/<slug>`, and a closing line saying this is the list the server was configured with and not the list the subject may see | `GET /v1/repos/{id}` once per alias, cached for the process |
+| `origo.list_repos` | none | one line per configured repository: `<alias>  <id>  <owner>/<slug>`, and a closing line saying this is the list the server was configured with and not the list the subject may see. Under a bound token it is the one repository the token names, whatever `ORIGO_MCP_REPOS` holds, because every other alias would answer `forbidden` | `GET /v1/repos/{id}` once per alias, cached for the process |
 | `origo.repo_overview` | `repo` | the default branch, the full head object id, `pushed_at`, `size_bytes`, the branch and tag counts, and the five newest commits as history lines. The one call that orients an agent in a repository it has not seen | `GET /v1/repos/{id}`, `GET /v1/repos/{id}/refs` twice, `GET /v1/repos/{id}/commits` |
 | `origo.list_refs` | `repo`, `kind` (`branches` \| `tags` \| `all`, default `branches`), `prefix`, `limit` (default 100), `cursor` | `<name> <7 hex>` per line. Origo's `refs` has no cursor and caps at 10 000 with `Origo-Truncated`, so the cursor here is a position in the one answer and the cap is reported as the cap it is | `GET /v1/repos/{id}/refs` |
 | `origo.list_files` | `repo`, `ref` (default `HEAD`), `path`, `recursive` (default false), `limit` (default 200), `cursor` | one line per entry: the path, a trailing `/` for a tree, `*` for `100755`, `@` for `120000`, and the size for a blob. No object ids: nothing takes a tree entry's id as an argument | `GET /v1/repos/{id}/tree/{sha}` |
-| `origo.read_file` | `repo`, `path`, `ref` (default `HEAD`), `offset_lines` (default 0), `max_lines` (default 800), `max_bytes` (default 32768) | a header line `<path>@<7 hex>  <n> bytes  <m> lines`, then the text. Binary is refused by naming its size and object id rather than putting it in the context | `GET /v1/repos/{id}/tree/{sha}` to resolve the path to a blob id and its size, then `GET /v1/repos/{id}/blob/{sha}` with a `Range` when the window or the 50 MiB rule needs one |
+| `origo.read_file` | `repo`, `path`, `ref` (default `HEAD`), `offset_lines` (default 0), `max_lines` (default 800), `max_bytes` (default 32768) | a header line `<path>@<7 hex>  <n> bytes  <m> lines`, then the text. Binary is refused by naming its size and object id rather than putting it in the context | `GET /v1/repos/{id}/tree/{sha}` over the path's **parent directory** to resolve the path to a blob id and its size, then `GET /v1/repos/{id}/blob/{sha}` with a `Range` when the window or the 50 MiB rule needs one |
 | `origo.history` | `repo`, `ref` (default `HEAD`), `path`, `since`, `until`, `limit` (default 20), `cursor` | one line per commit: `<7 hex> <YYYY-MM-DD> <author name> <subject, at most 72 characters>`. Bodies, trailers, and committer fields are dropped; `origo.show_commit` has them | `GET /v1/repos/{id}/commits` |
-| `origo.show_commit` | `repo`, `commit`, `include_patch` (default false), `paths`, `max_patch_bytes` (default 32768) | the metadata, the full message, the trailers, the totals, and one stat line per file; the patch only when asked. A merge commit is compared against its first parent, which the result says | `GET /v1/repos/{id}/commits/{sha}`, and `GET /v1/repos/{id}/compare/{base}...{head}` for the file list and any patch |
+| `origo.show_commit` | `repo`, `commit`, `include_patch` (default false), `paths`, `max_patch_bytes` (default 32768) | the metadata, the full message, the trailers, the totals, and one stat line per file; the patch only when asked. A merge commit is compared against its first parent, which the result says, and a commit with no parent answers the totals and one line saying a root commit has no comparison | `GET /v1/repos/{id}/commits/{sha}`, and `GET /v1/repos/{id}/compare/{base}...{head}` with `base` its first parent, for the file list and any patch |
 | `origo.diff` | `repo`, `base`, `head`, `paths`, `include_patch` (default false), `max_patch_bytes` (default 32768) | stat first: `+12 -3  internal/api/read.go` per file and a totals line, no patch. With `paths`, the patch of those files alone; with `include_patch`, the whole patch up to `max_patch_bytes`, cut at a file boundary | `GET /v1/repos/{id}/compare/{base}...{head}`, once per path when `paths` is given |
+
+**Three facts about the routes, read from `internal/api/read.go` rather
+than from the endpoint table, because a builder who reads only the table
+gets each of them wrong.**
+
+1. **A reference with a slash cannot travel in a path segment.** The
+   `{sha}` segment of `commits/{sha}`, `tree/{sha}` and `blob/{sha}`, and
+   each side of `compare/{base}...{head}`, is a full object id or a short
+   name with no slash; anything else is 400 `invalid_request`. A full
+   name goes in `?ref=`, `?base=` or `?head=` with the segment set to the
+   placeholder `-`, and a query parameter beside a real segment is
+   refused too. So `origo-mcp` always sends the placeholder form, the
+   tree route with its segment set to `-` and the name in `?ref=`, and a
+   branch named `feature/x` works on every tool. `refs` and `commits` take their names
+   in the query already and need nothing.
+2. **`?path=` on the tree route lists a directory, never a file.** The
+   handler runs `git ls-tree -l -z <oid> -- <path>/` with a trailing
+   slash, so `?path=internal/api/read.go` matches nothing. `origo-mcp`
+   resolves a file by listing its **parent directory** and matching the
+   basename among the full paths `ls-tree` prints, which is one call and
+   no descent; a directory past the route's 5 000 entries is paged with
+   `cursor` until the basename is seen. `origo.list_files` uses the same
+   call with the directory the caller named.
+3. **`refs` answers a bare JSON array**, `[{"name","sha","peeled"}]`,
+   with no envelope and no cursor, and `Origo-Truncated: true` at 10 000.
 
 There is no search tool. Origo has no search endpoint, spec 009 scopes
 one out, and a client-side search would mean downloading a repository
@@ -289,6 +319,15 @@ sometimes wrongly, and it is the wire's problem, not the model's.
 Content that is not text is `content_ref`, an object id already in the
 repository. A change larger than spec 020's limits is refused by Origo
 with `invalid_change`, and this server adds no limit of its own.
+
+Spec 020 makes `expected_head` optional and `author` required on every
+one of the four routes: `validateCommon` refuses a body with no author
+and accepts one with a null `expected_head`. This surface inverts the
+first and hides the second. `expected_head` is required on all three
+tools because a write without it is a write over a branch the agent has
+not read, and `author` is in no schema because the server sends
+`ORIGO_MCP_AUTHOR`, which is also why that variable is required with
+`-write` rather than merely advised.
 
 `expected_head` accepts a short object id. Anything under 40 hexadecimal
 characters is expanded through `GET /v1/repos/{id}/commits/{sha}`
@@ -376,11 +415,11 @@ rather than worked around here.
 object id, not a path. The server resolves `ref` and `path` through
 `GET /v1/repos/{id}/tree/{sha}`, which also gives it the size, so it
 knows before it asks whether a `Range` is needed and never provokes
-`blob_too_large`. Whether `?path=` on that route answers the entry for
-a nested path, or whether the server must descend a level at a time, is
-a question about how spec 009's `ls-tree` invocation behaves that the
-spec does not state, so the acceptance criterion below makes the
-builder prove nested resolution rather than assume it.
+`blob_too_large`. The tree route's `?path=` lists a directory and not a
+file, as fact 2 above says, so the resolution is one listing of the
+path's parent directory and a match on the basename: one call for a
+nested path as for a root one, and no descent. The acceptance criterion
+below asserts that, over a nested path, rather than leaving it open.
 
 **Revalidation** costs the agent nothing and saves the installation
 work. The server keeps the `ETag` of every read response in memory,
@@ -544,7 +583,7 @@ Three items outside this spec's own directory:
 | Item | Owner | What it is |
 |---|---|---|
 | `release-archives` builds `origo-mcp` for the four platforms of `RELEASE_PLATFORMS` and sums it into `checksums.txt` beside `origod`, spec 017's artifact table gains the `origo-mcp_<version>_<os>_<arch>.tar.gz` row, and the `release-verify` job of `release.yml` gains `--pattern 'origo-mcp_*.tar.gz'` on its `gh release download` | 017 | the upload is glob-driven (`out/release/*.tar.gz`), so the archives reach the release on their own, but `release-verify` downloads by an explicit pattern and then runs `sha256sum -c checksums.txt` over what it fetched. Four sums in that file with no files beside them fails the next tag, so the pattern is not optional and is the one line a builder would otherwise miss |
-| a `depcheck` row for `github.com/latere-ai/origo/cmd/origo-mcp` in `.lateregate.yaml` | 002 | the same allow list as the node, `latere.ai/x/pkg` and the standard library, with the reason that a newline-delimited JSON-RPC loop over `encoding/json` needs no upstream root at all, unlike spec 024's `golang.org/x/crypto/ssh` |
+| a `depcheck` row for `github.com/latere-ai/origo/cmd/origo-mcp` in `.lateregate.yaml` | 002 | a strict subset of the node's allow list, not a copy of it: the standard library, and `latere.ai/x/pkg` with `github.com/google/uuid` behind it, both reached only through `internal/contract`, which the binary imports so the error codes it branches on are the ones the node writes and cannot drift. It reaches no OpenTelemetry package and no `golang.org/x/crypto`, so a newline-delimited JSON-RPC loop over `encoding/json` adds no upstream root to the module, unlike spec 024's `golang.org/x/crypto/ssh`. Spec 001's seventh invariant therefore needs no amendment for this spec: its module half, the direct dependencies a reader can name, is unchanged, and its gate half names `./cmd/origod` and is joined by a second row rather than widened |
 | `docs/mcp.md` and its row in `docs/README.md` | this spec | below |
 
 Build order inside the spec: the stdio loop and the registry with the
@@ -573,6 +612,36 @@ first three are where the design is, and each is testable against a
   binary, what it is for, and that a release now carries eight archives
   rather than four.
 
+## Validation
+
+Reviewed on 2026-09-10 against the protocol at revision `2026-07-28` and
+against `internal/api`, `internal/auth`, `test/e2e` and `.github/workflows`
+as they stand. What the review changed:
+
+| # | What was wrong | What it says now |
+|---|---|---|
+| 1 | the protocol table named the stateless era's `_meta` fields but not the envelope, so a builder would have written a result with no `resultType` and accepted a request with no protocol version | five rows added: the two required `_meta` fields and the `-32602` for a request missing one, `resultType` on every result of the stateless era, `-32602` `Unknown tool: <name>` as a protocol error, `serverInfo` in a result's `_meta` as the one SHOULD the byte rule declines, and the SHOULD that a `structuredContent` result also serializes into a text block |
+| 2 | the route tables took a reference in a path segment; `internal/api/read.go` refuses any segment with a slash, so every tool would have answered 400 on a branch named `feature/x` | fact 1 after the read tool table: every call uses the placeholder segment `-` with `?ref=`, `?base=`, `?head=` |
+| 3 | `origo.read_file` was to resolve a path through `?path=` on the tree route, and the spec left open whether that reaches a nested path. The handler appends a trailing slash, so a file path matches nothing, ever | fact 2, and the design and the criterion now both say one listing of the path's **parent directory** with a match on the basename, paged past 5 000 entries |
+| 4 | `origo.show_commit` promised one stat line per file for every commit; the single-commit route carries only the totals and the per-file lines come from a comparison a root commit has no base for | the row names `parents[0]` as the base and gives a root commit the totals with one line saying why there is no comparison |
+| 5 | nothing said `refs` answers a bare array | fact 3 |
+| 6 | the `depcheck` row was "the same allow list as the node", which admits OpenTelemetry and `golang.org/x/crypto` that this binary never reaches, and the spec did not say which half of spec 001's seventh invariant binds a second binary | the row is a named strict subset, and the answer is stated: the invariant's module half binds `origo-mcp` and its gate half names `./cmd/origod`, so a second row joins it and the invariant needs no amendment |
+| 7 | spec 020 makes `expected_head` optional and `author` required; the spec inverted both without saying it was doing so | a paragraph before the short-id rule states Origo's own rule and why this surface inverts it |
+| 8 | `origo.list_repos` would call `GET /v1/repos/{id}` for every alias under a bound token and answer `forbidden` for all but one | the row says a bound token lists the repository it names |
+| 9 | the three end-to-end criteria named `ORIGO_TEST_URL`, which selects the cluster stack through `requireNodes`; the one-node run they describe is `requireStack` and `startNode` | each names the one-node harness, and the document test names the two variables it passes into `run-blocks.sh` |
+| 10 | "the whole scenario is eleven tool calls" counts seven | the criterion asks that every one of the eleven tools is called at least once, which is also what the token criterion needs |
+
+Unchanged after checking: the revision `2026-07-28` resolves from
+`modelcontextprotocol.io/specification/latest` and its statelessness,
+transports, tool shape, annotations and stdio credential rule are as the
+table says; spec 007's `Mint` writes `repo`, `scope` and a copied `act`
+and caps `ttl` at 3 600 seconds; spec 009's budget is 30 seconds and its
+caps are 10 000 refs, 200 commits, 5 000 tree entries, 1 MiB of compare
+and 50 MiB of blob; spec 020's budget is 300 seconds and its receipt is
+the five fields `commit`, `branch`, `entry_seq`, `tree`, `committed`;
+`release-verify` downloads by `--pattern 'origod_*.tar.gz'` and the
+upload beside it is glob-driven, exactly as What must land first says.
+
 ## Acceptance criteria
 
 - `tools/list` without `-write` returns exactly the eight read tools
@@ -581,17 +650,25 @@ first three are where the design is, and each is testable against a
   5 KiB of JSON in read-only mode and 8 KiB in write mode (proposed:
   `cmd/origo-mcp`, `TestToolListIsGatedAndFitsTheBudget`).
 - A `tools/call` of `origo.commit_files` against a server started
-  without `-write` answers the protocol's unknown-tool error and the
-  stub Origo receives no request at all (proposed: `cmd/origo-mcp`,
+  without `-write` answers the protocol's unknown-tool error, JSON-RPC
+  `-32602` with `Unknown tool: origo.commit_files`, as an error response
+  and not a tool result, and the stub Origo receives no request at all
+  (proposed: `cmd/origo-mcp`,
   `TestWriteToolsAreUnreachableWithoutTheFlag`).
 - A client whose first message is an `initialize` request is served the
-  initialization-based handshake at `2025-06-18` and a client that
-  sends `tools/call` with `_meta.io.modelcontextprotocol/protocolVersion`
-  of `2026-07-28` is served the stateless shape, both against the same
-  registry and with byte-identical tool results (proposed:
-  `cmd/origo-mcp`, `TestBothProtocolErasAreServed`).
+  initialization-based handshake at `2025-06-18`, whose results carry no
+  `resultType`, and a client that sends `tools/call` with
+  `_meta.io.modelcontextprotocol/protocolVersion` of `2026-07-28` and
+  `_meta.io.modelcontextprotocol/clientCapabilities` is served the
+  stateless shape, whose every result carries `"resultType": "complete"`;
+  both are served from the same registry and the `content` of the two
+  tool results is byte-identical. A stateless request missing either
+  required `_meta` field is `-32602` (proposed: `cmd/origo-mcp`,
+  `TestBothProtocolErasAreServed`, `TestStatelessRequestNeedsItsMeta`).
 - `origo.read_file` on `internal/api/read.go` at a ref resolves the
-  nested path through the tree and fetches the blob by its object id: a
+  nested path through one listing of its parent directory, `tree/-` with
+  `?ref=` and `?path=internal/api`, and fetches the blob by the object id
+  that listing gave: a
   3 120-line file answers 800 lines with the truncation line naming
   `offset_lines=800`, the next call answers lines 800 to 1599, the two
   windows are the file's lines 0 to 1599 exactly with no overlap and no
@@ -659,19 +736,24 @@ first three are where the design is, and each is testable against a
   files with `expected_head` from `origo.repo_overview`, sees the new
   head in a second `origo.repo_overview`, reverts that commit through
   `origo.replay_commits` with `mode: "revert"`, and is refused
-  `non_fast_forward` on a third write carrying the stale head; the
-  whole scenario is eleven tool calls, no clone, and no `git` process
+  `non_fast_forward` on a third write carrying the stale head; every one
+  of the eleven tools is called at least once in the run, with no clone
+  and no `git` process
   (proposed: `test/e2e`, `TestE2EMCPReadsCommitsAndReverts`, a plain
-  test of the one-node run against `ORIGO_TEST_URL`).
+  test of the one-node run: `requireStack` and `startNode` of
+  `test/e2e/harness_test.go`, under the `TestE2E` prefix `make
+  test-tiers` selects, and not `requireNodes`, which is the cluster
+  stack `ORIGO_TEST_URL` names).
 - The same scenario under a `read` scoped bound token, with `-write`
   set, answers `forbidden` on the first write and leaves the branch
   where it was, which is the proof that the two write gates are
-  independent (proposed: `test/e2e`,
-  `TestE2EMCPReadTokenCannotWrite`).
+  independent (proposed: `test/e2e`, `TestE2EMCPReadTokenCannotWrite`,
+  the one-node run as above).
 - Every `sh` block of `docs/mcp.md` runs against the one-node run under
-  `tools/docs/run-blocks.sh`, from minting the repository-bound token
-  to a `tools/list` and a `tools/call` written to the process on its
-  standard input, so the document cannot document a command that does
-  not work; the test mirrors spec 014's
-  `TestClusterMigrationDocCommandsRun` (proposed: `test/e2e`,
-  `TestE2EMCPDocCommandsRun`).
+  `tools/docs/run-blocks.sh`, with `ORIGO_TEST_URL` and
+  `ORIGO_TEST_ADMIN_TOKEN` pointed at that node, from minting the
+  repository-bound token to a `tools/list` and a `tools/call` written to
+  the process on its standard input, so the document cannot document a
+  command that does not work; the test mirrors spec 014's
+  `TestClusterMigrationDocCommandsRun` with the one-node harness in place
+  of `requireNodes` (proposed: `test/e2e`, `TestE2EMCPDocCommandsRun`).
