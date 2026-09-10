@@ -63,8 +63,14 @@ func origod(t *testing.T) string {
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	if binary != "" {
-		_ = os.RemoveAll(filepath.Dir(binary))
+	// Both binaries are built once per process behind a sync.Once, so their
+	// directories are removed once per process too. A t.Cleanup would delete
+	// them after the first test and leave every later one with a path that
+	// no longer exists.
+	for _, dir := range []string{binary, origoBin} {
+		if dir != "" {
+			_ = os.RemoveAll(filepath.Dir(dir))
+		}
 	}
 	os.Exit(code)
 }
