@@ -115,6 +115,16 @@ func table(header []string, rows []row) string {
 	return b.String()
 }
 
+// The one call Origo makes rather than serves. It is not an endpoint,
+// a header, or a code, so no definition table carries it; the page takes
+// the passage its spec writes, verbatim, so the contract has one source
+// and the page cannot drift from it.
+const (
+	authzSpec    = "007"
+	authzHeading = "### The authorization endpoint"
+	authzIntro   = "Every path above is one Origo serves. This is the one call it makes: to the authorization endpoint the operator runs, which decides every repository operation. Whoever writes that endpoint is the reader here; an operator installing one starts at [`install.md`](install.md)."
+)
+
 var contractValue = regexp.MustCompile("`([0-9]+)`")
 
 // contract is the contract version spec 003 states in its Origo-Contract
@@ -167,5 +177,11 @@ token may do, is your installation's own configuration; see
 			fmt.Fprintf(&b, "\nDefined by %s.\n\n%s", specLink(idx, g.owner), table(g.header, g.rows))
 		}
 	}
+
+	authz, err := idx.Section(authzSpec, authzHeading)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "\n## The authorization endpoint\n\n%s\n\nDefined by %s.\n\n%s\n", authzIntro, specLink(idx, authzSpec), authz)
 	return b.String(), nil
 }

@@ -3,7 +3,9 @@
 
 // Command apidoc renders docs/api.md, the reference a consumer codes
 // against: every endpoint, header, and error code the deck defines,
-// grouped by the spec that owns it and linked to it.
+// grouped by the spec that owns it and linked to it, and the one call
+// Origo makes rather than serves, the authorization endpoint, carried
+// verbatim from the spec that states its contract.
 //
 // It reads the specs through the package specindex/specs, the parser the
 // cross-reference table is built with, so the page carries no name the

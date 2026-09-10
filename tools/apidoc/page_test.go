@@ -126,6 +126,58 @@ func TestPageStatesTheContractAndNothingElse(t *testing.T) {
 	}
 }
 
+// TestAuthorizationSectionComesFromTheSpec holds the rule the section
+// exists for: the contract an operator's endpoint is held to is written
+// once, in the spec, and the page carries that passage rather than a
+// restatement of it. A deck whose spec does not state it renders no page
+// at all, which is what keeps the two from drifting apart silently.
+func TestAuthorizationSectionComesFromTheSpec(t *testing.T) {
+	idx := index(t)
+	page, err := Page(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := idx.Section(authzSpec, authzHeading)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(page, "\n## The authorization endpoint\n") {
+		t.Fatal("the page carries no authorization endpoint section")
+	}
+	if !strings.Contains(page, want) {
+		t.Error("the section on the page is not the passage the spec writes")
+	}
+	// The five rules, the probe id, and the single-tenant sentence are
+	// what spec 072 of the auth deck asked this page to carry; each is a
+	// line an operator's endpoint is held to.
+	for _, s := range []string{
+		"00000000-0000-0000-0000-000000000001",
+		"A single-tenant installation needs no service",
+		"Answer 200 for both verdicts",
+		"Treat the endpoint's availability as Origo's",
+	} {
+		if !strings.Contains(page, s) {
+			t.Errorf("the page does not state %q", s)
+		}
+	}
+	// A deck that defines every kind but states no such contract renders
+	// no page: the section is required, not optional.
+	dir := t.TempDir()
+	body := "---\ntitle: t\n---\n\n| Code | Status | Message |\n|---|---|---|\n| `repo_not_found` | 404 | Repository not found. |\n\n" +
+		"| Method | Path | Body |\n|---|---|---|\n| GET | `/version` | the version |\n\n" +
+		"| Header | Meaning |\n|---|---|\n| `Origo-Contract` | the contract version, `1` |\n"
+	if err := os.WriteFile(filepath.Join(dir, "003-a.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bare, err := specs.Build(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Page(bare); err == nil {
+		t.Error("a deck that states no authorization contract renders a page anyway")
+	}
+}
+
 func TestRunWritesAndReportsFindings(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "api.md")

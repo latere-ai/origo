@@ -214,3 +214,108 @@ Defined by [020 server side git operations](../specs/020-server-side-git-operati
 |---|---|---|---|
 | `merge_conflict` | 409 | The change conflicts with the branch. Resolve it in a clone and push. | `commit`, `paths` |
 | `invalid_change` | 400 | A change in the request is not valid. | `index`, `reason` (`path`, `mode`, `content`, `too_many`, `too_large`) |
+
+## The authorization endpoint
+
+Every path above is one Origo serves. This is the one call it makes: to the authorization endpoint the operator runs, which decides every repository operation. Whoever writes that endpoint is the reader here; an operator installing one starts at [`install.md`](install.md).
+
+Defined by [007 authentication and delegation](../specs/007-authentication-and-delegation.md).
+
+Origo holds no permission. Before every operation that names a
+repository it calls one endpoint the operator runs and asks whether a
+subject may do one thing to one repository. That endpoint is the whole
+permission model, and Origo adds nothing to it and caches its answer.
+Nothing here is any one operator's: it is what an endpoint must do to
+serve any installation, whatever holds the permissions behind it.
+
+The call, after verification, per request that names a repository:
+
+```
+POST <ORIGO_AUTHORIZER_URL>
+Authorization: Bearer <ORIGO_AUTHORIZER_TOKEN>
+Content-Type: application/json
+
+{"subject": "…", "actor": "…", "repo": {"id": "…", "owner": "…", "slug": "…"}, "action": "read"}
+```
+
+| Field | Value |
+|---|---|
+| `subject` | the effective subject: the token's `sub`, or its `act` when the token carried one. It is empty only for the probe below |
+| `actor` | the delegating service when the token carried `act`, else empty |
+| `repo.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve |
+| `repo.owner`, `repo.slug` | set on the name form and on a creation, empty on the id form |
+| `action` | `read`, `write`, or `admin` |
+
+The answer is 200 either way, `{"allow": true}` with the optional
+figures below, or `{"allow": false, "reason": "…"}` whose `reason`
+reaches the client as `details.reason` on Origo's 403 `forbidden`:
+
+```
+200 {"allow": true, "ttl": 60, "replicas": 1, "quota_bytes": 53687091200, "requests_per_minute": 600}
+200 {"allow": false, "reason": "…"}
+```
+
+The action Origo sends per operation:
+
+| Action | Operations |
+|---|---|
+| `read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
+| `write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
+| `admin` | `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+
+Spec 019 marks three of its own operations `read`, and the per-operation
+row wins over the sentence that calls its operations `admin`: a reader
+who may clone may also read the size of what they cloned. On
+`POST /v1/repos` the `repo` object carries the id, owner, and slug the
+body names, so the endpoint decides a creation from the name the caller
+chose.
+
+**The five rules.** An endpoint that keeps them serves any installation.
+
+1. **Answer 200 for both verdicts.** Anything else, a 500, a timeout, a
+   body that does not parse, is a refusal, and Origo renders it as
+   `authorizer_unavailable`. There is no fail-open.
+2. **Deny `00000000-0000-0000-0000-000000000001` for every subject and
+   every action**, the empty subject included. That repository id is
+   reserved as a probe: `origod check` (spec 018) sends it with an empty
+   subject and reads an allow as an endpoint that does not read the
+   request. The stub of spec 013 denies it.
+3. **Key on the repository id when the answer varies by repository.**
+   The id form sends the id alone, with no owner and no slug, and it is
+   what every clone by id and every API call uses.
+4. **Decide without the repository.** An empty or unknown id is the
+   ordinary case, for a creation and for a name that did not resolve.
+   Answer it without revealing which, because Origo asks before it reads
+   any metadata, so that a deny and a repository that does not exist
+   look alike.
+5. **Treat the endpoint's availability as Origo's.** It is called on the
+   request path of every repository operation, so it sits near the nodes,
+   answers from memory, and keeps nothing slow in front of the answer.
+
+**A single-tenant installation needs no service.** Nothing above asks
+for a database, a permission model, or an answer that varies by
+repository. An endpoint that answers `{"allow": true}` for a list of
+subjects, `{"allow": false}` for everyone else, and always denies the
+probe id keeps the contract in full: rule 3 does not apply when the
+answer is the same everywhere, and every figure may be omitted for
+Origo's defaults. That is a few dozen lines behind the same bearer, and
+it is where a team hosting its own repositories starts.
+
+**The figures, and when to send them.** Each is optional and each has a
+default, so an endpoint that sends `allow` alone is complete.
+
+| Field | Omit it when | Send it when |
+|---|---|---|
+| `ttl` | 60 seconds of revocation lag suits you | you want fewer calls; the cap is 600 |
+| `replicas` | always, unless you run Origo's placement policy (spec 005); absent is 1 | a repository needs more than one warm node |
+| `quota_bytes` | 50 GiB per repository suits you (spec 012); absent is 53687091200 | you sell plans or cap by tenant |
+| `requests_per_minute` | your subjects are people; absent buckets the subject at `ORIGO_REQUESTS_PER_MINUTE` (spec 012), and absent is not zero | one subject drives many repositories, a build fleet under one token, which spec 020 names as its case |
+
+**What Origo does with the answer.** An allow is cached per
+`(subject, actor, repo id, action)` for `ttl`; a deny for 5 seconds; an
+answer for an unresolved name (an empty id) is not cached. So the call
+rate an endpoint sees is set by the cache and not by the traffic, and a
+higher `ttl` divides it. The call is made once and retried once when the
+connection failed before a response line arrived (a refused or reset
+connection, a dial timeout); a 5xx, a timeout after the request was
+sent, and a body that does not parse are never retried.
