@@ -235,14 +235,16 @@ func groupField(group string) string {
 	return "Fault"
 }
 
-// unverifiable records an assertion the target gave no way to make,
-// an event delivery without a sink to read.
-func (s *session) unverifiable(t *testing.T, what string) {
+// unverifiable records an assertion the target's shape gave no way to
+// make: an event delivery without a sink to read, or a rate limit a
+// balanced installation spreads past the case's bounded effort. what
+// names the assertion and why names the shape that prevented it.
+func (s *session) unverifiable(t *testing.T, what, why string) {
 	t.Helper()
 	s.mu.Lock()
 	s.unverified = append(s.unverified, t.Name()+": "+what)
 	s.mu.Unlock()
-	t.Logf("unverified on this target: %s (no EventsSink)", what)
+	t.Logf("unverified on this target: %s (%s)", what, why)
 }
 
 // newID is a fresh lower-case UUID v4.

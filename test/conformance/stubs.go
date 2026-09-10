@@ -77,7 +77,7 @@ func (s *session) deliveries(t testing.TB, repo, kind string) []sink.Delivery {
 func (s *session) expectEvent(t *testing.T, repo, kind string, n int) (sink.Delivery, bool) {
 	t.Helper()
 	if s.target.EventsSink == "" {
-		s.unverifiable(t, "the "+kind+" event of "+repo)
+		s.unverifiable(t, "the "+kind+" event of "+repo, "no EventsSink")
 		return sink.Delivery{}, false
 	}
 	var got []sink.Delivery
@@ -95,7 +95,7 @@ func (s *session) expectEvent(t *testing.T, repo, kind string, n int) (sink.Deli
 func (s *session) expectNoEvent(t *testing.T, repo, kind string, n int) {
 	t.Helper()
 	if s.target.EventsSink == "" {
-		s.unverifiable(t, "the absence of a "+kind+" event of "+repo)
+		s.unverifiable(t, "the absence of a "+kind+" event of "+repo, "no EventsSink")
 		return
 	}
 	time.Sleep(3 * time.Second)
