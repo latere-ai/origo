@@ -30,9 +30,14 @@ import (
 var freshClient = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 
 // gitGet fetches a smart HTTP path of a node with the bearer over a
-// fresh connection and returns the status, the headers, and the body,
-// 0 when nothing answered inside the timeout.
-func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int, http.Header, []byte) {
+// fresh connection and returns the status, the headers, the body, and
+// the transport error. A status of 0 means nothing answered, and then
+// the error is the only account of why: a refused connection, a reset,
+// a TLS failure and a timeout are one status apart otherwise, and the
+// failure message a cluster run leaves behind is the only evidence
+// anybody gets. Every caller that reports a status reports the error
+// beside it.
+func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int, http.Header, []byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -40,11 +45,11 @@ func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int,
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := freshClient.Do(req)
 	if err != nil {
-		return 0, nil, nil
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, resp.Header, body
+	return resp.StatusCode, resp.Header, body, nil
 }
 
 // nodeMetric reads one series from a node's internal host port over a
@@ -176,12 +181,21 @@ func TestClusterDegradedStorage(t *testing.T) {
 	warm, cold := newID(t), newID(t)
 	waitStackHealthy := func(t *testing.T) {
 		t.Helper()
-		waitUntil(t, "every node's read breaker closed and the bucket answering", 3*time.Minute, func() bool {
+		waitUntil(t, "every node's read breaker closed, the bucket answering, and every node back in rotation", 3*time.Minute, func() bool {
 			for i := range 3 {
 				if v, ok := tryNodeMetric(t, portNode1Int+i, "origo_storage_breaker_state", `class="read"`); !ok || v != 0 {
 					return false
 				}
-				if status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/readyz", portNode1Int+i)); status != 200 {
+				// inRotation and not the internal port alone. The
+				// failing listings of a fault take every node out of
+				// rotation, and kube-proxy reinstates the endpoints
+				// after the kubelet flips Ready, not with it, so the
+				// breaker closes and the internal /readyz answers while
+				// the public port is still refused. The partial case
+				// drives node 3's public port as its first request, and
+				// a wait that never touched that port let it meet the
+				// lag: see inRotation above.
+				if !inRotation(t, fmt.Sprintf("origod-%d", i), portNode1+i, portNode1Int+i) {
 					return false
 				}
 			}
@@ -200,8 +214,8 @@ func TestClusterDegradedStorage(t *testing.T) {
 	work := clone(t, nodeURL(node1, warm))
 	c1 := commitFile(t, work, "a.txt", "one", "first")
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
-	if status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 || header.Get("Origo-Stale") != "" {
-		t.Fatalf("consistent advertisement: %d Origo-Stale %q", status, header.Get("Origo-Stale"))
+	if status, header, _, err := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 || header.Get("Origo-Stale") != "" {
+		t.Fatalf("consistent advertisement: %d Origo-Stale %q (err %v)", status, header.Get("Origo-Stale"), err)
 	}
 	commitFile(t, work, "b.txt", "two", "second")
 
@@ -214,7 +228,9 @@ func TestClusterDegradedStorage(t *testing.T) {
 		waitUntil(t, "node 1's read breaker open", 2*time.Minute, func() bool {
 			var wg sync.WaitGroup
 			for range 6 {
-				wg.Go(func() { gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", time.Minute) })
+				wg.Go(func() {
+					_, _, _, _ = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", time.Minute)
+				})
 			}
 			wg.Wait()
 			v, ok := tryNodeMetric(t, node1Int, "origo_storage_breaker_state", `class="read"`)
@@ -233,11 +249,12 @@ func TestClusterDegradedStorage(t *testing.T) {
 		// seconds one request took.
 		var status int
 		var header http.Header
+		var err error
 		waitUntil(t, "node 1 back in rotation with the stale advertisement", time.Minute, func() bool {
 			if !inRotation(t, "origod-0", portNode1, node1Int) {
 				return false
 			}
-			status, header, _ = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+			status, header, _, err = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 			return status == 200
 		})
 		age, err := strconv.Atoi(header.Get("Origo-Stale"))
@@ -254,16 +271,16 @@ func TestClusterDegradedStorage(t *testing.T) {
 		// A push is refused at info/refs with the ERR pkt-line, no pack
 		// uploaded, and a cold repository answers 503 at once.
 		var body []byte
-		status, header, body = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-receive-pack", 30*time.Second)
+		status, header, body, err = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-receive-pack", 30*time.Second)
 		if status != 200 || header.Get("Retry-After") == "" || !strings.Contains(string(body), "ERR storage_unavailable: ") {
-			t.Fatalf("push advertisement: %d Retry-After %q %q", status, header.Get("Retry-After"), body)
+			t.Fatalf("push advertisement: %d Retry-After %q %q (err %v)", status, header.Get("Retry-After"), body, err)
 		}
 		out, err := git(t, work, "push", "origin", "HEAD:refs/heads/main")
 		if err == nil || !strings.Contains(out, "remote error: storage_unavailable: ") {
 			t.Fatalf("push under the cut: %v\n%s", err, out)
 		}
 		started := time.Now()
-		status, _, body = gitGet(t, node1, token, "/r/"+cold+".git/info/refs?service=git-upload-pack", 30*time.Second)
+		status, _, body, err = gitGet(t, node1, token, "/r/"+cold+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		var env struct {
 			Error struct {
 				Code    string         `json:"code"`
@@ -272,21 +289,21 @@ func TestClusterDegradedStorage(t *testing.T) {
 		}
 		_ = json.Unmarshal(body, &env)
 		if took := time.Since(started); status != 503 || env.Error.Code != "storage_unavailable" || env.Error.Details["error"] != "breaker open" || took > 3*time.Second {
-			t.Fatalf("cold repository: %d %s after %s", status, body, took)
+			t.Fatalf("cold repository: %d %s after %s (err %v)", status, body, took, err)
 		}
 		if nodeMetric(t, node1Int, "origo_stale_responses_total", "") < 1 {
 			t.Fatal("no stale response counted on node 1")
 		}
 		// Past ORIGO_STALE_MAX the warm copy is refused too.
 		waitUntil(t, "503 for the warm repository after the stale bound", time.Minute, func() bool {
-			status, _, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+			status, _, _, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 			return status == 503
 		})
 	})
 	// The policy is gone: the next probe after the window closes the
 	// breaker and the first consistent response carries no header.
 	waitUntil(t, "node 1 consistent again", 3*time.Minute, func() bool {
-		status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+		status, header, _, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		return status == 200 && header.Get("Origo-Stale") == ""
 	})
 	waitStackHealthy(t)
@@ -316,10 +333,10 @@ func TestClusterDegradedStorage(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = slowproxy.Set(context.Background(), proxy, 0) })
 		started := time.Now()
-		status, _, body := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+		status, _, body, err := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		took := time.Since(started)
 		if status != 503 || !strings.Contains(string(body), `"storage_unavailable"`) || took < 5*time.Second || took > 25*time.Second {
-			t.Fatalf("slow bucket: %d %s after %s", status, body, took)
+			t.Fatalf("slow bucket: %d %s after %s (err %v)", status, body, took, err)
 		}
 		after := nodeMetric(t, node1Int, "origo_wal_head_check_seconds_count", `result="error"`)
 		afterOps := nodeMetric(t, node1Int, "origo_storage_ops_total", `op="head",result="error"`)
@@ -334,7 +351,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 			t.Fatal(err)
 		}
 		waitUntil(t, "node 1 answering after the delay is cleared", time.Minute, func() bool {
-			status, header, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+			status, header, _, _ := gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 			return status == 200 && header.Get("Origo-Stale") == ""
 		})
 		waitStackHealthy(t)
@@ -360,7 +377,7 @@ func TestClusterDegradedStorage(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := nodeMetric(t, node3Int, "origo_log_integrity_errors_total", "")
-		status, _, body := gitGet(t, node3, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
+		status, _, body, err := gitGet(t, node3, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 		var env struct {
 			Error struct {
 				Code    string         `json:"code"`
@@ -369,21 +386,21 @@ func TestClusterDegradedStorage(t *testing.T) {
 		}
 		_ = json.Unmarshal(body, &env)
 		if status != 503 || env.Error.Code != "repository_unavailable" || env.Error.Details["key"] != key {
-			t.Fatalf("missing entry on node 3: %d %s", status, body)
+			t.Fatalf("missing entry on node 3: %d %s (err %v); origod-2: %s", status, body, err, podConditions(t, "origod-2"))
 		}
 		if after := nodeMetric(t, node3Int, "origo_log_integrity_errors_total", ""); after != before+1 {
 			t.Fatalf("integrity errors went from %v to %v", before, after)
 		}
 		other := newID(t)
 		create(node3, other, "other-"+other[:8])
-		if status, _, _ := gitGet(t, node3, token, "/r/"+other+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 {
-			t.Fatalf("the other repository on node 3: %d", status)
+		if status, _, _, err := gitGet(t, node3, token, "/r/"+other+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 {
+			t.Fatalf("the other repository on node 3: %d (err %v)", status, err)
 		}
 		if _, err := s.store.Put(ctx, key, wal.BytesBody(data)); err != nil {
 			t.Fatal(err)
 		}
-		if status, header, _ := gitGet(t, node3, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 || header.Get("Origo-Stale") != "" {
-			t.Fatalf("after the restore on node 3: %d", status)
+		if status, header, _, err := gitGet(t, node3, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second); status != 200 || header.Get("Origo-Stale") != "" {
+			t.Fatalf("after the restore on node 3: %d Origo-Stale %q (err %v)", status, header.Get("Origo-Stale"), err)
 		}
 		restored := clone(t, nodeURL(node3, warm))
 		if mustGit(t, restored, "rev-list", "--count", "HEAD") != "2" {
