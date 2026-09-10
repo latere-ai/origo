@@ -408,15 +408,39 @@ func (n *node) storageReady(ctx context.Context) error {
 	select {
 	case <-p.done:
 	case <-ctx.Done():
-		return fmt.Errorf("listing still running: %w", ctx.Err())
+		return n.storageVerdict(fmt.Errorf("listing still running: %w", ctx.Err()))
 	}
-	switch {
-	case p.err == nil:
+	if p.err == nil {
 		n.storageSeen.Store(true)
-	case errors.Is(p.err, wal.ErrStorageOpen) && n.storageSeen.Load():
+	}
+	return n.storageVerdict(p.err)
+}
+
+// storageVerdict applies the rule above to one listing, reading the
+// read breaker's state now rather than the shape of the listing's
+// error. A tripped breaker is the one fact readiness needs: whether the
+// listing was refused by it, failed as its probe, or was still running
+// when the probe's budget ended, the bucket is gone and the replica is
+// serving its warm repositories stale. Keying on wal.ErrStorageOpen
+// alone answered the first of the three and took the replica out of
+// rotation for the other two, which is once every open window for as
+// long as the outage lasts.
+func (n *node) storageVerdict(err error) error {
+	tripped := false
+	if bs := n.log.Breakers(); bs != nil {
+		tripped = bs.Tripped(wal.ClassRead)
+	}
+	return storageVerdict(err, tripped, n.storageSeen.Load())
+}
+
+// storageVerdict is the rule itself, over the three facts it reads: the
+// listing's error, whether the read breaker is tripped, and whether the
+// bucket has answered this replica since it started. nil is ready.
+func storageVerdict(err error, tripped, seen bool) error {
+	if err == nil || (tripped && seen) {
 		return nil
 	}
-	return p.err
+	return err
 }
 
 // diskWritable proves the data directory accepts a write. A read-only

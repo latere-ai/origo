@@ -307,6 +307,14 @@ func (b *BreakerStore) State(c Class) circuitbreaker.State { return b.breaker(c)
 // the probe. It takes no probe slot itself.
 func (b *BreakerStore) Admits(c Class) bool { return b.breaker(c).Admits() }
 
+// Tripped reports whether the class's breaker has stopped trusting the
+// bucket: open, or half-open with its probe in flight. It is the one
+// question readiness asks (spec 015), because the three ways a call
+// fails while a breaker is tripped say the same thing about the bucket:
+// refused by the open breaker, failed as the probe, or still running
+// when the caller's own budget ended.
+func (b *BreakerStore) Tripped(c Class) bool { return b.State(c) != circuitbreaker.Closed }
+
 // RetryAfter is the whole seconds of the open window that remain for
 // the class, at least one second, and zero when the breaker is closed.
 func (b *BreakerStore) RetryAfter(c Class) time.Duration { return b.breaker(c).Remaining() }

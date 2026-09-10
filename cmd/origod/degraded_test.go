@@ -4,6 +4,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -13,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	pkgmetrics "latere.ai/x/pkg/metrics"
+
+	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -74,18 +80,30 @@ func TestReadyzStaysReadyWhileTheBreakerIsOpen(t *testing.T) {
 // the way there. Probes and listings are not one to one: a listing runs
 // detached under the storage deadline and every probe that arrives
 // while it runs shares it, so on a loaded machine six probes can be
-// three listings and a count of probes is not a count of failures.
+// three listings and a count of probes is not a count of failures. The
+// probe whose listing is the one that opens the breaker answers ready
+// on a replica the bucket has answered, because readiness reads the
+// breaker's state after the listing reports: the gauge read again is
+// what tells that probe apart from one with the breaker still closed.
 func awaitOpenBreaker(t *testing.T, internal string) {
 	t.Helper()
+	open := func() bool {
+		_, text := probe(t, "http://"+internal+"/metrics")
+		return strings.Contains(text, `origo_storage_breaker_state{class="read"} 1`)
+	}
 	deadline := time.Now().Add(30 * time.Second)
 	for i := 1; ; i++ {
-		if _, text := probe(t, "http://"+internal+"/metrics"); strings.Contains(text, `origo_storage_breaker_state{class="read"} 1`) {
+		if open() {
 			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("the breaker did not open after %d probes", i-1)
 		}
-		if code, body := probe(t, "http://"+internal+"/readyz"); code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
+		code, body := probe(t, "http://"+internal+"/readyz")
+		if code == 200 && open() {
+			return
+		}
+		if code != 503 || !strings.HasPrefix(body, "not ready: storage: ") {
 			t.Fatalf("probe %d with the breaker closed: %d %q", i, code, body)
 		}
 	}
@@ -140,4 +158,95 @@ func TestStorageTimeoutBoundsTheReadinessListing(t *testing.T) {
 	}
 	_, text := probe(t, "http://"+internal+"/metrics")
 	t.Fatalf("the shared listing did not count once:\n%s", text)
+}
+
+// storageClock moves only when advanced, so the breaker's open window
+// passes in a test without waiting for it.
+type storageClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *storageClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *storageClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// readyProbe runs one readiness listing under a probe's budget.
+func readyProbe(t *testing.T, n *node, budget time.Duration) error {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	return n.storageReady(ctx)
+}
+
+// TestReadinessFollowsTheReadBreakerAndNotTheListingsError: once the
+// bucket has answered a replica, a tripped read breaker keeps it ready
+// however the listing failed (spec 015). The three ways a listing fails
+// under a tripped breaker are the refusal by the open breaker, the
+// half-open probe's own failure, and the probe's budget ending while
+// the shared listing still runs; keying readiness on wal.ErrStorageOpen
+// answered only the first, so a replica serving stale left the endpoint
+// list once every open window for as long as the outage lasted. A
+// listing that fails while the breaker is closed still takes the
+// replica out of rotation.
+func TestReadinessFollowsTheReadBreakerAndNotTheListingsError(t *testing.T) {
+	mem := wal.NewMemStore()
+	clock := &storageClock{now: time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)}
+	set := metrics.Register(pkgmetrics.NewRegistry())
+	bs := wal.NewBreakerStore(wal.BreakerOptions{Store: mem, Clock: clock, Metrics: set, Threshold: 2, Timeout: time.Minute})
+	n := &node{log: wal.New(wal.Options{Store: bs, Logger: slog.New(slog.DiscardHandler), Metrics: set})}
+
+	// The bucket answers: the replica has something warm to serve.
+	if err := readyProbe(t, n, time.Second); err != nil {
+		t.Fatalf("with the bucket answering: %v", err)
+	}
+	// It goes away. The first failing listing runs with the breaker
+	// closed, which takes the replica out of rotation, and opens it.
+	mem.SetFault(func(op, _ string) error {
+		if op == "List" {
+			return errors.New("bucket unreachable")
+		}
+		return nil
+	})
+	if err := readyProbe(t, n, time.Second); err == nil {
+		t.Fatal("a listing that failed with the breaker closed left the replica ready")
+	}
+	if bs.Tripped(wal.ClassRead) {
+		t.Fatal("one failed listing of two opened the read breaker")
+	}
+	// The second failure opens it, and the replica is ready from that
+	// listing on: it serves its warm repositories stale.
+	if err := readyProbe(t, n, time.Second); err != nil {
+		t.Fatalf("the listing that opened the breaker: %v", err)
+	}
+	if !bs.Tripped(wal.ClassRead) {
+		t.Fatal("two failed listings did not open the read breaker")
+	}
+	// Refused by the open breaker: ready, which is what the rule always
+	// answered.
+	if err := readyProbe(t, n, time.Second); err != nil {
+		t.Fatalf("refused by the open breaker: %v", err)
+	}
+	// The window passes and the listing runs as the half-open probe. It
+	// fails, reopening the window; the replica stays ready.
+	clock.Advance(wal.BreakerOpenFor)
+	if err := readyProbe(t, n, time.Second); err != nil {
+		t.Fatalf("the half-open probe failed: %v", err)
+	}
+	// The window passes again and the half-open probe is slow, so the
+	// probe's own budget ends while the shared listing still runs.
+	clock.Advance(wal.BreakerOpenFor)
+	mem.SetLatency(2 * time.Second)
+	defer mem.SetLatency(0)
+	if err := readyProbe(t, n, 100*time.Millisecond); err != nil {
+		t.Fatalf("the probe's budget ended while the half-open listing ran: %v", err)
+	}
 }
