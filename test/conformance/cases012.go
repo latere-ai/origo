@@ -5,6 +5,7 @@ package conformance
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,45 +115,71 @@ func case012RateLimited(t *testing.T, s *session) {
 	failIf(t, err != nil || limit <= 0, "%s %q", contract.HeaderRateLimit, raw)
 
 	// The burst never spends more than half the figure, so a target with
-	// a small limit meets the counter rather than the refusal here.
+	// a small limit meets the counter rather than the refusal here. The
+	// workers only collect; every assertion is made on the test's own
+	// goroutine, where a Fatalf ends the case.
 	burst := min(rateBurst, max(4, limit/2))
-	var mu sync.Mutex
-	high, low := -1, limit+1
+	got := make([]response, burst)
 	var wg sync.WaitGroup
 	start := time.Now()
 	for w := range rateWorkers {
 		wg.Go(func() {
 			for i := w; i < burst; i += rateWorkers {
-				resp := s.as(t, token, "GET", "/v1/repos/"+f.id, "")
-				expectStatus(t, resp, http.StatusOK)
-				failIf(t, resp.header.Get(contract.HeaderRateLimit) != raw,
-					"%s moved from %q to %q under one subject", contract.HeaderRateLimit, raw, resp.header.Get(contract.HeaderRateLimit))
-				left, err := strconv.Atoi(resp.header.Get(contract.HeaderRateRemaining))
-				failIf(t, err != nil || left < 0 || left >= limit,
-					"%s %q against a limit of %d", contract.HeaderRateRemaining, resp.header.Get(contract.HeaderRateRemaining), limit)
-				mu.Lock()
-				high, low = max(high, left), min(low, left)
-				mu.Unlock()
+				got[i] = s.as(t, token, "GET", "/v1/repos/"+f.id, "")
 			}
 		})
 	}
 	wg.Wait()
-	fall := high - low
-	t.Logf("%s over %d requests in %s: %d down to %d", contract.HeaderRateRemaining, burst, time.Since(start).Round(time.Millisecond), high, low)
-	if fall <= 0 {
-		// Every bucket gave back more than the burst took from it. The
-		// counter is in force and inside the figure, which the loop
-		// asserted, but nothing here or below can watch it fall.
-		s.unverifiable(t, "a falling "+contract.HeaderRateRemaining+" and a 429 rate_limited refusal past "+raw+" requests a minute",
-			"the target answered the burst from buckets that refill faster than the runner sends")
-		return
+	elapsed := time.Since(start)
+	left := make([]int, burst)
+	for i, resp := range got {
+		expectStatus(t, resp, http.StatusOK)
+		failIf(t, resp.header.Get(contract.HeaderRateLimit) != raw,
+			"request %d: %s moved from %q to %q under one subject", i+1, contract.HeaderRateLimit, raw, resp.header.Get(contract.HeaderRateLimit))
+		n, err := strconv.Atoi(resp.header.Get(contract.HeaderRateRemaining))
+		failIf(t, err != nil || n < 0 || n >= limit,
+			"request %d: %s %q against a limit of %d", i+1, contract.HeaderRateRemaining, resp.header.Get(contract.HeaderRateRemaining), limit)
+		left[i] = n
 	}
 
-	// The shape of the target, and with it whether exhaustion converges.
-	buckets := (burst - 1 + fall - 1) / fall
-	if buckets > 1 {
+	// The shape of the target, read off the values alone because no
+	// header names the node. One bucket answers a burst with one run of
+	// consecutive figures, nearly one per request: it falls a token a
+	// request and refill only repeats a figure, never skips one. Several
+	// buckets break that in one of two ways, and the test takes both: at
+	// different depths they leave a gap between their runs, and at the
+	// same depth they leave one run but each figure is answered once a
+	// bucket, so the run is a fraction of the burst.
+	values := slices.Compact(slices.Sorted(slices.Values(left)))
+	runs := 1
+	for i := 1; i < len(values); i++ {
+		if values[i] != values[i-1]+1 {
+			runs++
+		}
+	}
+	// A bucket refills while the burst runs, and what it gives back is
+	// known: limit/60 a second over the burst's own wall clock. One
+	// bucket therefore answers with about burst - refill figures, and
+	// the test is against that rather than against the burst, so a slow
+	// target is not mistaken for a wide one. The fifth is slack for the
+	// clock the runner measures against the clock the node refills on.
+	refill := float64(limit) * elapsed.Seconds() / 60
+	expect := float64(burst) - refill
+	one := runs == 1 && expect >= 2 && float64(len(values)) >= expect*0.8
+	t.Logf("%s over %d requests in %s: %d down to %d, %d figures in %d runs, about %.0f refilled",
+		contract.HeaderRateRemaining, burst, elapsed.Round(time.Millisecond), values[len(values)-1], values[0], len(values), runs, refill)
+	if len(values) < 2 {
+		// Every bucket gave back at least what the burst took from it.
+		// The counter is in force and inside the figure, which the loop
+		// above asserted on every response, but nothing here can watch
+		// it fall.
+		s.unverifiable(t, "a falling "+contract.HeaderRateRemaining+" and a 429 rate_limited refusal past "+raw+" requests a minute",
+			"the target answered the burst from buckets that refill at least as fast as the runner spends")
+		return
+	}
+	if !one {
 		s.unverifiable(t, "a 429 rate_limited refusal past "+raw+" requests a minute",
-			"the target answered "+strconv.Itoa(burst)+" requests from about "+strconv.Itoa(buckets)+" buckets, each with a budget of its own, so no bounded run exhausts one")
+			"the target answered "+strconv.Itoa(burst)+" requests with "+strconv.Itoa(len(values))+" figures in "+strconv.Itoa(runs)+" runs, so it holds more than one bucket for this subject and no bounded run exhausts one")
 		return
 	}
 

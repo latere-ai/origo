@@ -533,10 +533,17 @@ Divergences and interpretations, each kept, with the reason:
   runs, and only requests arriving faster than `L/60` a second move the
   counter down.
 
-  How far the counter fell is how the case reads the shape of the
-  target, with no header naming the node: one bucket falls by the burst
-  less what refilled, and `k` buckets cut the fall to about the burst
-  over `k`, so `k` is the burst over the fall. That decides the second
+  The figures the burst collected are also how the case reads the shape
+  of the target, with no header naming the node. One bucket answers with
+  one run of consecutive figures, nearly one a request: it falls a token
+  a request, and refill repeats a figure but never skips one. Several
+  buckets break that in one of two ways and the case takes both: at
+  different depths they leave a gap between their runs, and at the same
+  depth they leave one run in which each figure is answered once a
+  bucket, so the run is a fraction of the burst. The fraction is
+  measured against what one bucket would have left, `burst` less the
+  `L/60` a second it gave back over the burst's own wall clock, so a
+  slow target is not mistaken for a wide one. That decides the second
   half. On one bucket the case exhausts and asserts the 429, its
   `Retry-After`, its `details.limit`, and a `RateLimit-Remaining` of
   `0`, under a bound of
@@ -552,7 +559,11 @@ Divergences and interpretations, each kept, with the reason:
   refusal is recorded in `Report.Unverified` and nothing is spent on it,
   because the balancer's total refill outruns the runner and no bound
   converges. A single bucket that still refuses nothing inside the bound
-  is recorded the same way.
+  is recorded the same way, and so is a target whose buckets refilled at
+  least as fast as the burst spent, where no figure fell at all. What
+  stays fatal on every target is the burst's own assertion: both headers
+  on every response, a `RateLimit-Limit` that does not move under one
+  subject, and a `RateLimit-Remaining` inside it.
 
   What this replaces: the case sent one more than the figure and then on
   to four times it, on the reading that the stack's three nodes each
