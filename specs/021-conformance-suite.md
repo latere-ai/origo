@@ -646,6 +646,23 @@ remains, and neither is a stack run: the live run of `TestContract`
 against `ORIGO_LIVE_URL`, and spec 014's `verify` case of the source
 group, which is not in `test/conformance` yet.
 
+What the live run can and cannot close, stated once here for the specs
+that wait on it. `has` gates a case on a field of the `Target`, and a
+live target sets none of the four: no `Issuer`, no `Authorizer`, no
+`Source` and `SourceToken`, no `Fault`. So all six groups skip in every
+live run, by design, and `TestContract` asserts exactly that. The eight
+cases in them, `003/storage_unavailable`, `007/forbidden`,
+`007/authorizer_unavailable`, `007/delegation`, `012/over_quota`,
+`015/repository_unavailable`, `019/repo_not_empty`, and `019/import`,
+can never be closed by a `live` job, whatever secrets are set. They
+close on the stack instead, and they have: the `cluster e2e tier` job
+of the tag run 34461461220 of `verify.yml` on `v0.1.0` names
+`--- PASS: TestContract (67.32s)`, and the stack branch of
+`TestContract` fails on a non-empty skip list whenever a `Fault` is
+wired, so a passing stack run is proof that all eight ran. What the
+live run adds is the other 51 cases against a real installation, and
+the assertion that the skip list on one is exactly the six groups.
+
 Named stack proof, at the first release: the `cluster e2e tier` job of
 the tag run 34461461220 of `verify.yml` on `v0.1.0`, at commit
 `2b2468d`, ran the conformance step with `-v` and its log names
@@ -660,12 +677,23 @@ refreshed.
 
 The first release ran on 2026-09-10 and did not produce the live run.
 The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
-`TestContract` skipped, because the repository carries no
-`ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret and nothing answers
-at `https://git.latere.ai`; the job's log reads `nothing answers at
-ORIGO_TEST_URL` then `--- SKIP: TestContract (0.00s)`. A skipped test
-passes, so the job is green, and this spec does not read that green as
-the run. Spec 017's Outcome records the limit. What closes it: the two
-secrets set on the repository, with an installation behind the URL, and
-a tag or a re-run of that job.
+`TestContract` skipped, because the repository carries neither
+`ORIGO_LIVE_URL` nor `ORIGO_LIVE_TOKEN`. With the URL empty the test
+takes its stack branch instead of its live branch, finds nothing at
+`ORIGO_TEST_URL`, and skips there: the job's log reads
+`contract_test.go:136: nothing answers at ORIGO_TEST_URL
+(http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. The
+job never dialled an installation. A skipped test passes, so the job is
+green, and this spec does not read that green as the run.
+
+The `install from the release artifacts` job of the same run did run
+`TestContract` in live mode, and it passed: `contract_test.go:133: live
+run against http://localhost:30180: 51 passed`, with exactly the six
+groups skipped. Its target is a kind cluster the job had just built
+from the published artifacts, not an installation, so that run closes
+spec 018's job row and no criterion here.
+
+Spec 017's Outcome records the limit. What closes this: the two secrets
+set on the repository with an installation behind the URL, and a tag or
+a re-run of that job.
 

@@ -307,15 +307,36 @@ without `-v`, so the evidence is the package's `ok` and those
 assertions rather than a named case. Spec 021's Outcome records the
 same run.
 
-This spec stays at `testing` until spec 021's live run has run once.
+This spec stays at `testing` until spec 021's live run has run once,
+for the cases a live run can carry. One of this spec's cases is not
+among them: `TestContract/003/storage_unavailable` sits in
+`GroupStorage`, which needs a `Fault` on the target, and a live target
+has none by definition, so every live run skips it and reports it by
+name. That case closes on the stack and has: the `cluster e2e tier`
+job of the tag run 34461461220 of `verify.yml` on `v0.1.0` names
+`--- PASS: TestContract (67.32s)`, and `TestContract` fails the stack
+run on anything skipped while a `Fault` is wired, so the whole run is
+proof that the case ran and passed. What the live run adds for this
+spec is every other 003 case against a real installation.
 
 The first release ran on 2026-09-10 and did not produce the live run.
 The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
-`TestContract` skipped, because the repository carries no
-`ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret and nothing answers
-at `https://git.latere.ai`; the job's log reads `nothing answers at
-ORIGO_TEST_URL` then `--- SKIP: TestContract (0.00s)`. A skipped test
-passes, so the job is green, and this spec does not read that green as
-the run. Spec 017's Outcome records the limit. What closes it: the two
-secrets set on the repository, with an installation behind the URL, and
-a tag or a re-run of that job.
+`TestContract` skipped, because the repository carries neither
+`ORIGO_LIVE_URL` nor `ORIGO_LIVE_TOKEN`. With the URL empty the test
+takes its stack branch instead of its live branch, finds nothing at
+`ORIGO_TEST_URL`, and skips there: the job's log reads
+`contract_test.go:136: nothing answers at ORIGO_TEST_URL
+(http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. The
+job never dialled an installation. A skipped test passes, so the job is
+green, and this spec does not read that green as the run.
+
+The `install from the release artifacts` job of the same run did run
+`TestContract` in live mode, and it passed: `contract_test.go:133: live
+run against http://localhost:30180: 51 passed`, with exactly the six
+groups skipped. Its target is a kind cluster the job had just built
+from the published artifacts, not an installation, so that run closes
+spec 018's job row and no criterion here.
+
+Spec 017's Outcome records the limit. What closes this: the two secrets
+set on the repository with an installation behind the URL, and a tag or
+a re-run of that job.
