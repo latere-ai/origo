@@ -407,9 +407,14 @@ The first release, on 2026-09-10, closed none of the three, and none of
 them is waiting on one. `TestE2EHundredConcurrentPushesFromEightClients`
 and `TestSlowMaterializeTenThousandEntries` are still not in the tree,
 so no job can run them, and the DigitalOcean Spaces probe is a
-maintainer's step of spec 017's release checklist. Writing the two
-tests, running them in the `e2e` and `e2e-slow` jobs, and recording the
-probe is what closes this spec.
+maintainer's step of spec 017's release checklist, which the `v0.1.0`
+notes do not record. No tag closes any of the three, so this spec waits
+on no release at all: it waits on work nobody has started. Two of the
+three are a builder's, writing the tests and seeing them green in the
+`e2e` and `e2e-slow` jobs. The third is the user's decision: the probe
+runs against a real DigitalOcean Spaces bucket, so it needs a bucket
+and its credentials, and until those exist the row cannot close however
+many tags are cut.
 
 ## Outcome
 
