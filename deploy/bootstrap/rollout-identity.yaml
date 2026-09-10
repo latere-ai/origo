@@ -1,0 +1,77 @@
+# The identity a release pipeline deploys with. It is bounded twice: to
+# one namespace, and to the kinds `deploy/prod` actually contains. It can
+# roll the workload and read the result, and it can do nothing else: no
+# Secret, no Namespace, no delete, and nothing outside this namespace.
+#
+# A release applies `deploy/prod` and then waits for the rollout, so the
+# verbs are the ones those two steps need and no more. `deploy/bootstrap`
+# is never applied by a pipeline, which is why the Secrets stay out of
+# reach of this identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: origod-rollout
+  namespace: latere
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: origod-rollout
+  namespace: latere
+rules:
+  # `kubectl apply -k` reads before it writes, and `set image` patches.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services", "serviceaccounts"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  # `rollout status` watches the Deployment and the ReplicaSets under it.
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["watch"]
+  # Reading a failed rollout's pods is what makes a red release legible.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: origod-rollout
+  namespace: latere
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: origod-rollout
+subjects:
+  - kind: ServiceAccount
+    name: origod-rollout
+    namespace: latere
+---
+# A ServiceAccount no longer mints a long-lived token on its own, and a
+# pipeline cannot refresh a short one, so the token is a Secret bound to
+# the account. It is the only credential this identity has.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: origod-rollout-token
+  namespace: latere
+  annotations:
+    kubernetes.io/service-account.name: origod-rollout
+type: kubernetes.io/service-account-token

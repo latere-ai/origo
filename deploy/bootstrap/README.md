@@ -6,6 +6,8 @@ are one-time: the namespace and the secrets.
 
 ```sh
 kubectl apply -f deploy/bootstrap/namespace.yaml
+# Only if a pipeline deploys for you: the identity it deploys with.
+kubectl apply -f deploy/bootstrap/rollout-identity.yaml
 cp deploy/bootstrap/secrets.example.yaml /tmp/origod-secrets.yaml
 # fill in the bucket credentials, the issuers, the authorizer, and the
 # gossip secret, then
