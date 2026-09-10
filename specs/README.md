@@ -603,6 +603,17 @@ and the attestations wait. `docs/upgrades/README.md` stops telling an
 operator to run a command that finds nothing. The decision row above
 states the condition.
 
+The round did not cut the tag. Two limits outside the repository stop
+it, both recorded in 017's Outcome and neither worked around: the
+attestation API's refusal above, which blocks two rows and nothing
+else, and an organization budget on the `actions` product SKU, 80 with
+`prevent_further_usage` set, reached in September 2026, which blocks
+every job of every workflow. Under the second one a tag would produce a
+Release run whose first job never starts, so `v0.1.0` and its changelog
+commit were undone instead, the commit by `git revert` so the published
+history stands, and the version is free to cut once the budget is
+lifted. Lifting it is the user's decision.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a

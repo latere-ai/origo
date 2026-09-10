@@ -299,6 +299,11 @@ test in the tree; the rest need a real tag and are listed below with
 what closes each. The spec stays at `testing` until the first release
 runs, so its status is not a claim about artifacts that do not exist.
 
+The first tag, `v0.1.0` of 2026-09-10, published nothing and was
+deleted. It is blocked twice over, on two limits outside this
+repository that the table below states and neither of which is worked
+around.
+
 ### Criterion to test
 
 | Criterion | Test | State |
@@ -312,6 +317,23 @@ runs, so its status is not a claim about artifacts that do not exist.
 | a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | pending the first tag |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | deferred while the repository is private: GitHub's attestation API refuses a private repository on this plan, so nothing is attached and nothing is verified. The repository going public, or the condition being changed after a plan upgrade, is what closes it |
 | a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | pending the first tag |
+
+### What blocks the first release
+
+Two limits outside this repository, neither worked around, both for the
+user to decide on:
+
+| Limit | What it blocks | Evidence |
+|---|---|---|
+| GitHub's attestation API refuses a private repository on the `latere-ai` organization plan | the SBOM and provenance attestations, and `release-verify`'s `gh attestation verify`; nothing else. The attestation rule above skips those steps, so a private release is otherwise complete: every artifact, the three SPDX documents as assets, and the cosign signatures | run 34416521585 of 2026-09-10, the `build` job, `actions/attest-sbom`: "Feature not available for the latere-ai organization. To enable this feature, please upgrade the billing plan, or make this repository public." |
+| an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | every job of every workflow, so no push run, no dispatched run, and no release run starts at all. The tag is not re-cut under this: a `v0.1.0` tag would produce a Release run whose first job never starts, and the images would be pushed by nothing | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint |
+
+The first tag waits on the budget. Once it is lifted, `v0.1.0` is cut
+again from a green `main` with `go tool lateregate release v0.1.0`; the
+tag and its changelog commit were both undone on 2026-09-10, the commit
+by `git revert` so the published history stands, so the version is free.
+The attestation limit does not block the release, only the two rows
+above that name it.
 
 ### What only a real release proves
 
