@@ -296,12 +296,14 @@ workflow identity, which is what an outside operator can verify.
 
 Built on 2026-09-09; the first release ran on 2026-09-10. Every
 criterion a checkout can prove has a passing test in the tree, and the
-tag closed every row below that a tag can close. The spec stays at
-`testing` on the three that a tag cannot: the attestations, which need
-the repository to be public; the `live` job, which needs the two
-secrets and an installation behind them; and the compatibility
+tag closed every row below that a tag on this repository can close. The
+spec stays at `testing` on four rows that one cannot: the attestations,
+which need the repository to be public; the `live` job, which needs the
+two secrets and an installation behind them; the compatibility
 assertion against a fixture an earlier release attached, which needs a
-second tag.
+second tag; and the fork tag in both its halves, with the deploy
+variable set and unset, which needs a maintainer and a fork. The last
+two are the same person's work as spec 018's walk of the prose.
 
 The first tag, `v0.1.0` of 2026-09-10, published nothing and was
 deleted. It is blocked twice over, on two limits outside this
@@ -320,7 +322,7 @@ around.
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
 | a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | passing: the `verify the published release` job of the tag run 34461460766, 50 s, verified both signatures against `^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/` and the GitHub OIDC issuer, refused a foreign identity, checked `checksums.txt` and its cosign bundle, read the deploy archive, and matched the body against the section |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | deferred while the repository is private: GitHub's attestation API refuses a private repository on this plan, so nothing is attached and nothing is verified. The repository going public, or the condition being changed after a plan upgrade, is what closes it |
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | the behaviour is observed: no repository variable is set here, so the tag run 34461460766 skipped `deploy and smoke` and published all eleven assets and both images anyway, and a fork adds nothing the run did not show, because the variable is what the condition reads. The test the row names is not done: the release notes of `v0.1.0` carry no checklist entry, so the maintainer's half is open |
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step, and the same tag with the variable set runs it | the release checklist, done by a maintainer and recorded in the release notes | pending. One of the three parts ran: with no repository variable set, the tag run 34461460766 skipped `deploy and smoke` and published all eleven assets and both images anyway. The variable-set half has never run at all, on any tag, so `deploy and smoke` has never executed and `tools/smoke/release.sh` is proved against the stub of `TestReleaseSmoke` and against no deployment. It was not a fork either, and the release notes of `v0.1.0` carry no checklist entry. A maintainer tagging a fork twice, once with the variable and once without, and writing the result into the notes, is what closes the row |
 
 ### What blocked the first release, and what still holds
 
@@ -332,7 +334,7 @@ worked around, each for the user to decide on:
 |---|---|---|
 | GitHub's attestation API refuses a private repository on the `latere-ai` organization plan | the SBOM and provenance attestations, and `release-verify`'s `gh attestation verify`; nothing else. The attestation rule above skips those steps, so a private release is otherwise complete: every artifact, the three SPDX documents as assets, and the cosign signatures | run 34416521585 of 2026-09-10, the `build` job, `actions/attest-sbom`: "Feature not available for the latere-ai organization. To enable this feature, please upgrade the billing plan, or make this repository public." |
 | an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | lifted. It blocked every job of every workflow, so no push run, no dispatched run, and no release run started at all | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint. Run 34447226405 of the same day is the first green push run after it was restored |
-| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://git.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, and the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
+| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://git.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, for the 51 cases a live run can carry: the other eight sit in the six groups a live target cannot supply and close on the stack instead, which spec 021's Outcome states. It also holds the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: with `ORIGO_LIVE_URL` empty the test takes its stack branch, so the log reads `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)` and no installation was dialled. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
 
 `v0.1.0` was cut on 2026-09-10 from a green `main` at commit `058eb6d`
 with `go tool lateregate release v0.1.0`, and the tagged commit is
@@ -356,14 +358,16 @@ up-script check, and the mutation job, all green.
 | conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
 | the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on; no tag closes it while the repository is private | open |
 | the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | open. Run 34461460766's `live` job ran and skipped: neither secret is set and `https://git.latere.ai` does not resolve. The job is green because a skipped test passes, which is why `publish`'s `needs.live.result == 'success'` did not stop the release and why nothing here claims the live run happened |
-| the fork tag with `ORIGO_RELEASE_DEPLOY` unset | a maintainer, recorded in the release notes | the behaviour ran and is recorded here; the checklist entry in the release notes is not written, so the maintainer's half is open beside spec 018's walk of the prose |
+| the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | open. The unset half ran on this repository and is recorded here. The set half has never run, so no tag has yet deployed or smoked a real rollout; neither half ran on a fork, and no checklist entry is in the notes. It sits beside spec 018's walk of the prose as the maintainer's work |
 | `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | open. Run 34461460766 reports `--- SKIP: TestPreviousReleaseFixture (0.00s)`: no earlier release carried a fixture. `fixture-v0.1.0.tar.gz` is on this release, so the second tag closes it |
 | `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
 
-The spec stays at `testing`. Three rows are open, and each needs
-something outside a tag: the repository becoming public or the plan
-being upgraded, the two live secrets with an installation behind them,
-and a second tag.
+The spec stays at `testing`. Four rows are open, and each needs
+something outside a tag on this repository: the repository becoming
+public or the plan being upgraded; the two live secrets with an
+installation behind them; a second tag; and a maintainer tagging a
+fork with `ORIGO_RELEASE_DEPLOY` set and unset, which is also the only
+way `deploy and smoke` has ever been asked to run.
 
 ### The defect the first tag found
 
