@@ -10,9 +10,14 @@ to run, no leader to elect, and no volume to back up. What you supply is
 a bucket, an identity provider, an endpoint that answers who may do what,
 and a hostname.
 
-Every command on this page is run by the project's own tests against a
-throwaway cluster before it is published, so a command that drifts from
-the manifests fails the build rather than your installation.
+Every shell block on this page is run by the project's own tests against
+a throwaway cluster before it is published, so a command that drifts from
+the manifests fails the build rather than your installation. That
+throwaway cluster is why some blocks fall back to the example stack when
+you set nothing: each one says so where it does, and the paragraph beside
+it says what your installation does instead. The blocks that are not
+shell are sketches of a request, to read rather than to paste, because
+their shape is your provider's and not Origo's.
 
 ## What you need
 
@@ -23,7 +28,7 @@ the manifests fails the build rather than your installation.
 | A hostname and a certificate | one name pointed at the ingress | clients only ever see this name. |
 | A bucket | any S3 compatible endpoint | it must honour a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO, DigitalOcean Spaces, and AWS S3 are known to. `origod check` proves it before you trust it. |
 | An OIDC issuer | discovery and a key set over HTTPS | it mints the tokens people and services present. Register one client for people and one for each service that acts on their behalf. |
-| An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. |
+| An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. It has to know your repositories before Origo does, and with one tenant it can be a static list of subjects behind an HTTP handler. |
 | Disk | a default storage class, or nodes with local disk | the cache. Sized for the repositories in active use, not for all of them. |
 | On your machine | `kubectl`, `openssl`, `curl`, `uuidgen`, `git` | nothing is installed in the cluster beyond the manifests. |
 
@@ -53,8 +58,10 @@ settings, the replica bounds, and the Secrets.
 
 ## Settings for this page
 
-The rest of the page reads these. Set them for your installation; the
-defaults install the example overlay on a throwaway cluster.
+The rest of the page reads these. Set them for your installation. Every
+default here is the example stack's, so a variable you leave unset
+installs the throwaway cluster of `deploy/examples/kind` and nothing of
+yours: `MANIFESTS` is your overlay from step 3.
 
 ```sh
 VERSION="${ORIGO_VERSION:-v0.1.0}"
@@ -88,8 +95,11 @@ corrupts a repository.
 **The issuer.** Any OIDC provider with discovery and a key set over
 HTTPS. Tokens it mints for people and services are what clients present
 to Origo. Register a client for your platform's users, and one client per
-service that will act on a user's behalf. Origo accepts tokens whose
-audience is `origo`.
+service that will act on a user's behalf. Origo accepts a token whose
+`iss` is one of the issuers you configure, character for character, and
+whose `aud` contains `origo`; how a client asks your provider for that
+audience is the provider's own, and the first clone at the end of this
+page is where you find out whether you asked correctly.
 
 **The authorization endpoint.** One `POST` endpoint you run. Origo sends
 it a subject, an action, and a repository, and it answers whether that is
@@ -104,18 +114,59 @@ Authorization: Bearer <the value you put in ORIGO_AUTHORIZER_TOKEN>
 200 {"allow": false, "reason": "not a member"}
 ```
 
-Two rules make it safe to run:
+Five rules make an endpoint safe to run. An endpoint that keeps them
+serves any installation, and one that breaks any of them fails somewhere
+you will find hard to read.
 
-- It must deny the repository id `00000000-0000-0000-0000-000000000001`
-  for every subject. That id is reserved as a probe, and `origod check`
-  uses it to prove your endpoint reads the request rather than answering
-  yes to everything.
-- Anything other than `200` with an `allow` field is treated as a refusal.
-  Origo fails closed.
+1. **Answer `200` for both verdicts.** Anything else, a 500, a timeout,
+   a body that does not parse, is a refusal. There is no fail-open, so
+   an endpoint that is down is a git plane that is down for reads as
+   well as writes.
+2. **Deny the repository id `00000000-0000-0000-0000-000000000001` for
+   every subject and every action**, the empty subject included. That id
+   is reserved as a probe, and `origod check` uses it to prove your
+   endpoint reads the request rather than answering yes to everything.
+3. **Key on the repository id** when your answer differs per repository.
+   A clone by id sends the id alone, with no owner and no slug, and that
+   is what most calls use.
+4. **Decide without the repository.** An empty or unknown id is
+   ordinary, not an error: it is what a creation sends, and what a name
+   that resolved to nothing sends. Answer it without revealing which,
+   because Origo asks before it reads any metadata, so a deny and a
+   repository that does not exist look the same to a caller.
+5. **Treat the endpoint's availability as Origo's.** Every repository
+   operation waits on it. Put it near the nodes, answer from memory, and
+   keep nothing slow in front of the answer.
+
+**What it has to know.** Rule 4 has a consequence worth reading twice:
+an endpoint that has never heard of a repository denies it, and Origo
+has no call that tells it about one. So whatever holds your permissions
+learns about a repository before Origo does. You choose the id, you
+register it and who may use it wherever your permissions live, and only
+then do you create it at Origo. In the other order the repository exists
+and nobody, its owner included, can reach it. The walkthrough at the end
+of this page does the two in that order.
+
+**One tenant needs no service at all.** Nothing above asks for a
+database, a permission model, or an answer that varies by repository. An
+endpoint that answers `{"allow": true}` for a list of subjects,
+`{"allow": false}` for everyone else, and always denies the probe id
+keeps the contract in full: rule 3 does not apply when the answer is the
+same everywhere, and every optional figure may be left out for Origo's
+defaults. That is a few dozen lines behind the same bearer, and for a
+team hosting its own repositories it is the whole of step 2.
+
+**Where to start reading.** `test/stubs/authorizer` in this repository
+is a working endpoint of about that size, and it is what the example
+stack runs. Read it as a reference and do not run it in front of
+anything you care about: it allows every subject unless a rule says
+otherwise, it holds its rules in memory and forgets them when it
+restarts, and it carries a control API that a test drives, with no
+authentication on it.
 
 Everything else is yours: your own permission model, your own answer
-caching through `ttl`. The full request and answer are in
-[`api.md`](api.md).
+caching through `ttl`. The full request, the action Origo sends per
+operation, and the optional figures are in [`api.md`](api.md).
 
 If you are trying Origo out, the example overlay runs a stub issuer and a
 stub authorizer for you and you can skip this step until you have seen it
@@ -265,7 +316,10 @@ authorization endpoint. A pod stuck in `Init:` failed one of them, and
 
 ## 6. Check
 
-Run the same check by hand and read all seven lines:
+Run the same check by hand and read all seven lines. It runs against
+your configuration, so this is the first thing that proves your bucket,
+your issuer, and your authorization endpoint rather than the example
+stack's:
 
 ```sh
 POD=$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=origod \
@@ -289,7 +343,7 @@ ok git: 2.47.3
 | `conditional-create` | the store refuses a second create of a key that exists, which is what keeps two nodes from committing the same push |
 | `issuer` | every issuer's discovery document and key set were fetched, so a token can be verified |
 | `authorizer` | your endpoint answered, and it denied the reserved probe id |
-| `events` | a signed delivery reached your webhook sink, or you have configured none |
+| `events` | a signed delivery reached your webhook sink. With no sink configured the line reads `ok events: not configured`, which is not a failure; push events are optional |
 | `disk` | the cache directory is writable and the file system is large enough |
 | `git` | the git in the image runs and is new enough |
 
@@ -298,15 +352,20 @@ exits non-zero. Fix that one thing and run it again.
 
 ## First clone and push
 
-Wait for your hostname to answer, then get a token from your issuer for a
-subject your authorization endpoint allows. A rollout reports ready a
-moment before the Service, the ingress, or the load balancer in front of
-it routes to the new pods, and a request in that moment is refused or
-reset; the loop below is what waits it out, and it gives up rather than
-hanging when the address is wrong. `/version` answers the release the
-node runs, and opening the same address in a browser shows a small page
-naming it; there is no web interface beyond that page. The fallbacks below are the example stack's stub issuer, so
-this section runs against a trial installation with nothing set.
+Four things stand between a fresh installation and a pushed commit: the
+address has to answer, you need a token, your authorization endpoint has
+to know the repository, and only then does Origo create it.
+
+**The address.** Set `ORIGO_URL` to your hostname. A rollout reports
+ready a moment before the Service, the ingress, or the load balancer in
+front of it routes to the new pods, and a request in that moment is
+refused or reset; the loop below is what waits it out, and it gives up
+rather than hanging when the address is wrong. `/version` answers the
+release the node runs, and opening the same address in a browser shows a
+small page naming it; there is no web interface beyond that page. The
+`http://localhost:30080` below is the example stack's, the port its kind
+cluster maps, and it is the default only so this page can be walked on a
+throwaway cluster.
 
 ```sh
 ORIGO_URL="${ORIGO_URL:-${ORIGO_TEST_URL:-http://localhost:30080}}"
@@ -316,26 +375,85 @@ until curl -sf "$ORIGO_URL/version"; do
 	[ "$n" -lt 60 ] || { echo "$ORIGO_URL does not answer" >&2; exit 1; }
 	sleep 1
 done
+```
+
+**A token.** Origo needs one from an issuer you named in
+`ORIGO_OIDC_ISSUERS`, carrying the audience `origo`, for a subject your
+authorization endpoint allows. Getting it is your issuer's business and
+not Origo's: a service asks for one at the `token_endpoint` of the
+issuer's discovery document, and a person gets one from whatever login
+your platform already runs. A client credentials grant has this shape,
+and it is here for its last line, which is the part that differs between
+providers:
+
+```
+POST https://auth.example.com/oauth2/token
+Authorization: Basic <the client id and secret>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&audience=origo
+```
+
+There is no standard parameter for asking for an audience. Some
+providers call it `audience`, some `resource`, some derive it from a
+scope you request, and some from the client's own configuration in their
+console. What Origo reads is the `aud` claim of the token you end up
+with, so decode the token and look at it before you go on; a token
+without `origo` in `aud` is refused with 401 on every route, and so is
+one whose `iss` is not one of your configured issuers.
+
+Put the token in `ORIGO_TOKEN` and the rest of this page uses it. The
+fallback below is the example stack's stub issuer, which mints a token
+for any subject at `/mint`. No real issuer has that endpoint; it is here
+so this page can be walked end to end on a throwaway cluster.
+
+```sh
 TOKEN="${ORIGO_TOKEN:-$(curl -sf -X POST \
 	"${ORIGO_EXAMPLE_ISSUER:-http://localhost:30081}/mint" \
 	-d '{"sub":"install-doc"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')}"
 test -n "$TOKEN"
 ```
 
-Create a repository. The id is a UUID you choose, so your own records can
-carry it and Origo's name for a repository never changes even when its
-owner or slug does:
+**Register the repository before you create it.** Origo asks your
+authorization endpoint about a repository before it creates one, sending
+the id, the owner, and the slug from the request body with the action
+`admin`, and it asks again on every clone and every push afterwards. An
+endpoint that has not been told about this repository denies it, so the
+create answers 403 carrying whatever reason your endpoint gave, and
+nothing you do at Origo fixes that. So: choose the id, tell whatever
+holds your permissions about it and grant the subject you hold a token
+for, and only then run the next block. How you tell it is yours entirely
+and Origo never sees that call.
+
+On the example stack there is nothing to do here, because its stub
+authorizer allows every subject on every repository.
+
+Now create it. The id is a UUID you choose, so your own records can carry
+it and Origo's name for a repository never changes even when its owner or
+slug does. Set `ORIGO_REPO_ID`, `ORIGO_REPO_OWNER`, and `ORIGO_REPO_SLUG`
+to the repository you just registered; unset, the block invents an id and
+a name, which is what the example stack wants and what no endpoint of
+yours would allow:
 
 ```sh
-ID=$(uuidgen | tr 'A-Z' 'a-z')
+ID="${ORIGO_REPO_ID:-$(uuidgen | tr 'A-Z' 'a-z')}"
+OWNER="${ORIGO_REPO_OWNER:-install}"
+SLUG="${ORIGO_REPO_SLUG:-hello-$$}"
 curl -sf -X POST "$ORIGO_URL/v1/repos" \
 	-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-	-d "{\"id\":\"$ID\",\"owner\":\"install\",\"slug\":\"hello-$$\"}" >/dev/null
+	-d "{\"id\":\"$ID\",\"owner\":\"$OWNER\",\"slug\":\"$SLUG\"}" >/dev/null
 echo "created $ID"
 ```
 
+A 403 here is the registration and not the token: the token got you past
+authentication, and then your endpoint refused the repository. Its own
+reason comes back in `details.reason`.
+
 Push to it and read it back. A repository with no history clones empty,
-which is not an error:
+which is not an error. `http.extraHeader` puts the token in a request
+header, so it is exactly as private as the connection: over the plain
+`http` address of a throwaway cluster it travels in the clear, and over
+the `https` hostname of your installation it does not.
 
 ```sh
 WORK=$(mktemp -d)
@@ -366,6 +484,12 @@ repositories. Three things connect them:
 
 - **The authorization endpoint** you wrote in step 2. It is the whole
   permission model, and Origo asks it every time.
+- **The order of a creation.** Choose the id, register the repository
+  and its permissions with your endpoint, then `POST /v1/repos`. The
+  reverse order leaves a repository at Origo that every caller is denied,
+  including its owner, and the repair is to register it and try again.
+  Registered but never created is the safer half-failure: the repository
+  simply answers 404 until the create succeeds.
 - **Repository ids.** Choose the UUID, store it, and address repositories
   by `/r/{id}.git`. That URL survives a rename or a transfer.
 - **Repository-bound tokens.** When your platform needs to hand a
@@ -394,6 +518,8 @@ a signed webhook, so a build starts from a push rather than a poll.
 | the pod is ready and `/readyz` is 503 | the bucket or the disk stopped answering after start-up | the node's log names the check that fails |
 | a push hangs or is cut off | the ingress controller is buffering the body or timing out | the two settings in step 3: no body size limit, and a long read timeout |
 | a clone works and a push is refused | your authorization endpoint denies `write` for that subject | its answer carries a `reason`, which Origo passes back to the client |
+| every operation on one repository is 403, `POST /v1/repos` included | your authorization endpoint has not been told about this repository, and rule 4 of step 2 makes it deny what it does not know | register the repository there under the id you gave Origo and grant the subject; the endpoint's own `reason` is in `details.reason` on the 403 |
+| every operation on every repository is 403 | the endpoint is answering, and refusing this subject | check that the subject in the token is the one you granted: it is the token's `sub`, or its `act` when a service is acting for someone |
 | 401 on every request | the token's issuer is not in `ORIGO_OIDC_ISSUERS`, or its audience is not `origo` | decode the token and compare |
 
 Origo's own alert rules, for a cluster running the Prometheus operator,
