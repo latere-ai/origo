@@ -6,7 +6,8 @@
 # inline here with the same kubectl and tools/smoke/release.sh
 # invocations the shared workflow makes.
 #
-#   build           the four binary archives, checksums.txt, the two
+#   build           the eight binary archives, origod and origo for the
+#                   four platforms, checksums.txt, the two
 #                   multi-arch images, the signatures, the bills of
 #                   materials, and the deploy archive; the SBOM and
 #                   provenance attestations are attached only when the
@@ -71,11 +72,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # The four archives and checksums.txt, with the -ldflags of spec
-      # 002 setting internal/version, so a binary from the pipeline and
-      # one from `make build` carry their identity the same way. The
-      # binaries stay under out/release/bin/<os>_<arch>/, which
-      # Dockerfile.ci copies its platform's from.
+      # Every archive RELEASE_BINARIES names for every platform of
+      # RELEASE_PLATFORMS, and checksums.txt over all of them: origod and
+      # origo, the agent client of spec 025, for the four os/arch pairs.
+      # The -ldflags of spec 002 set internal/version, so a binary from
+      # the pipeline and one from `make build` carry their identity the
+      # same way. The binaries stay under out/release/bin/<os>_<arch>/,
+      # which Dockerfile.ci copies its platform's from.
       - name: Build the release archives
         env:
           TAG: ${{ github.ref_name }}
