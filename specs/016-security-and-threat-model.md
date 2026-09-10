@@ -41,10 +41,13 @@ variables of spec 002 and handed to the handler, whose `import` and
 the security context below (`deploy/base/deployment.yaml`) and the
 NetworkPolicy `origod-gossip` of `deploy/base/networkpolicy.yaml`,
 with `origod-http` beside it. `SECURITY.md` exists at the root with
-the disclosure process. The gate runs `vuln` on every push. Not yet: a
-bill of materials and provenance, spec 017's first criterion, the
-`release-verify` job of `release.yml` at which `cosign verify` and
-`gh attestation verify` accept the image. Both callers of the dialer
+the disclosure process. The gate runs `vuln` on every push. Not yet: the
+`release-verify` job of `release.yml` at which `cosign verify` accepts
+the image and `sha256sum -c` accepts the archives, which the first tag
+closes. The bill of materials ships with that tag as three SPDX release
+assets; its attachment to the image, and the provenance beside it, are
+deferred while the repository is private, by spec 017's attestation
+rule. Both callers of the dialer
 have landed: `import` with spec 019 and `verify` with spec 014, whose
 `TestSourceTokenIsNeverLogged` covers the bearer of both.
 
@@ -144,7 +147,7 @@ deadline, and under the pod's security context.
 | Secret exposure in logs or metrics | fixed-vocabulary labels; the redaction test of spec 011; the registers rule for messages | 011 |
 | Tampering with the log | objects are immutable once written; entry lengths and digests are checked at materialization; a mismatch is an integrity error, never repaired from a local copy | 004, 015 |
 | Cross-repository leakage on a node | one bare repository per id under `repos/`, `GIT_DIR` per request, no shared object store, no alternates | 004 |
-| Supply chain | the image is built from a pinned Go toolchain and a pinned Debian base with git, with a bill of materials and provenance attached to the release; dependencies are the standard library and `latere.ai/x/pkg` | 002, 017 |
+| Supply chain | the image is built from a pinned Go toolchain and a pinned Debian base with git, signed with cosign keyless against the release workflow's identity, with an SPDX bill of materials shipped as a release asset; dependencies are the standard library and `latere.ai/x/pkg`. Attaching the bill of materials and the build provenance to the image as attestations is pending the repository becoming public, or the organization plan being upgraded and spec 017's condition changed with it: GitHub's attestation API refuses a private repository on this plan, which is what failed the v0.1.0 tag of 2026-09-10 | 002, 017 |
 | A compromised node | the node holds the bucket credentials and the signing key; the blast radius is every repository the credentials reach, which is why one installation serves one trust domain and the bucket prefix is dedicated | 001 |
 
 ### Process and pod hardening
@@ -291,7 +294,11 @@ Audit export beyond the log itself.
   the test's own source file (proposed: `cmd/origod`,
   `TestSecurityPolicyIsPresent`), states which releases receive a fix
   in the words of spec 017's rule, and the release carries a bill of
-  materials and provenance (spec 017's artifact criterion).
+  materials as a signed release asset (spec 017's artifact criterion).
+  The attestations that attach that bill of materials and the build
+  provenance to the image are deferred while the repository is
+  private, by spec 017's attestation rule; this criterion's
+  attestation half is what that defers.
 
 ## Outcome
 
@@ -313,7 +320,7 @@ a test in the tree:
 | a gossip datagram without a valid MAC is dropped; 10 000 datagrams cause at most one catch-up | spec 005, `TestGossipDropsABadMAC`, `TestGossipCatchUpIsRateLimited` |
 | the egress proxy on its own: a followed redirect, a refused hop, `CONNECT` 405, `git ls-remote` sends no `CONNECT` | `internal/api`, `TestEgressProxyFollowsRedirectsAndRefusesConnect` |
 | the pod's security context, the refused privileged pod, the gossip NetworkPolicy | `test/e2e`, `TestClusterPodSecurityContext`, in the `e2e` job |
-| `SECURITY.md` names the report address; the release carries a bill of materials | `cmd/origod`, `TestSecurityPolicyIsPresent`; the bill of materials is spec 017's artifact criterion |
+| `SECURITY.md` names the report address; the release carries a bill of materials | `cmd/origod`, `TestSecurityPolicyIsPresent`; the bill of materials is spec 017's artifact criterion, shipped as a release asset by the first tag, its attachment as an attestation deferred while the repository is private |
 
 Divergences and interpretations, all kept and stated in the Design:
 
@@ -379,7 +386,8 @@ to `auth.DefaultQuotaBytes` and went through; it is refused with
 
 Deferred: that `import` and `verify` run through the dialer with
 `-c transfer.fsckObjects=true` is asserted by specs 019 and 014 in
-their own criteria; the bill of materials and provenance by spec 017.
+their own criteria; the bill of materials by spec 017, whose
+attestation half spec 017's attestation rule defers.
 Spec 019 closed the import half on 2026-09-09: `internal/api`,
 `TestExportRoundTrip` asserts the clone's exact command line and that
 neither the source's `https` URL nor its bearer reaches git's
@@ -396,10 +404,20 @@ The spec stays at `testing` by the lifecycle rule of `specs/README.md`:
 what remains is a criterion another spec owns the test for, the bill
 of materials (spec 017), the way specs 003 and 004 wait. Spec 017
 built the pipeline on 2026-09-09: the `build` job of `release.yml`
-attaches an SPDX bill of materials and build provenance to each
-published image and the `release-verify` job checks both from a
-clean runner, so what is left of this row is the first tag, which
-is the artifact those jobs act on. The dialer's
+builds three SPDX documents, ships them as release assets, and signs
+every image and `checksums.txt` with cosign keyless, which the
+`release-verify` job checks from a clean runner. The v0.1.0 tag of
+2026-09-10 then showed that the same job's `attest-sbom` and
+`attest-build-provenance` steps cannot run at all here: GitHub's
+attestation API refuses a private repository on Latere's plan. Spec
+017's attestation rule makes those four steps and the matching
+`gh attestation verify` conditional on the repository being public.
+So this row splits. The shipping half, a signed release carrying its
+bill of materials, is closed by the first tag. The attachment half,
+the bill of materials and the provenance verifiable as attestations
+on the image, is closed by the repository becoming public, or by the
+plan being upgraded and spec 017's condition changed with it, and by
+no tag before then. The dialer's
 half is done: spec 019 asserted `import` and spec 014 asserted `verify`
 on 2026-09-09, `TestSourceTokenIsNeverLogged` in `internal/api` holding
 the bearer of both, and `cmd/origod` reaches `AllowLoopback` only
