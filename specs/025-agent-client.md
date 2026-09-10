@@ -1,6 +1,6 @@
 ---
 title: "Agent client: Origo as a command and a skill"
-status: drafted
+status: validated
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -665,8 +665,9 @@ tools. The last column says where each row lives now.
 ### Second pass, 2026-09-11
 
 The shape changed, so the spec went back to `drafted` and forward again
-rather than being edited in place at `validated`. What this pass
-changed, beyond replacing the surface:
+rather than being edited in place at `validated`. This pass is what
+carries it to `validated` a second time. What it changed, beyond
+replacing the surface:
 
 | # | What was wrong | What it says now |
 |---|---|---|
@@ -681,6 +682,14 @@ changed, beyond replacing the surface:
 | 19 | the author variable was `Name <email>` on both sides. Spec 020's `author` is `{"name", "email"}` and `validateCommon` refuses an email with no `@`, so the whole string would have travelled as a name with an empty address and been refused on the wire | Configuration says the variable is one string here and two fields there, the command splits at the angle brackets, and the start-up refusal catches a missing `@` before a round trip |
 | 20 | the write receipt was read as five fields with `committed` a boolean. A real write answers 201 with `committed` absent, never `true`, and only a dry run carries `committed: false` with a null `entry_seq` | fact 5, and the receipt reads `committed` as present-and-false rather than as a boolean with a default |
 | 21 | the commit route's budget was given as 300 seconds with the other three. `MergeBudget` is 300 and covers merge, cherry-pick and revert; the commit route runs under the 30 second budget the reads have | Configuration gives `origo commit` the 60 second client timeout of a read, and 330 to the other three |
+
+**The dependency ordering, stated rather than assumed.** Spec 026 is at
+`drafted` while the route it specifies, `GET /v1/repos`, is built,
+served and in `docs/api.md`. This spec therefore does not go to
+`dispatched`, whose gate is every dependency at `testing` or later; it
+is built against the route as the tree holds it, and 026's status is
+what lags its code rather than a design still moving. A reader who finds
+025 at `testing` before 026 has the reason here.
 
 Unchanged after checking: spec 007's `Mint` writes `repo`, `scope` and a
 copied `act` and caps `ttl` at 3 600 seconds; spec 009's budget is 30

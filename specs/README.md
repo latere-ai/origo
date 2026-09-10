@@ -84,7 +84,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
-| [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | drafted | 003, 007, 009, 012, 020, 026 |
+| [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | validated | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
 
 ## Dependency graph
