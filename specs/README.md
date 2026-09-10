@@ -293,6 +293,7 @@ deck and stated here so a reader sees them without the owning spec.
 | `TestClusterPodSecurityContext` asserts the CPU request at the base's 250m or the kind overlay's 50m, the memory request and limit at the base's figures | 016 | 005, 013 |
 | `internal/tracing` is the one package that imports `go.opentelemetry.io/otel` and `otel/trace`; every other package takes its span helpers from there and `cmd/origod` reaches the SDK through `latere.ai/x/pkg/otel`. The SDK is the one direct dependency beside the standard library and `latere.ai/x/pkg`, which amends spec 001's seventh invariant, and `depcheck` holds the node's whole build list | 011 | 001, 002 |
 | the cluster and conformance steps of `verify.yml` run `go test -v` since `1f4bbb9`, so a stack proof cited from a run at or after it names its test in the log; a citation from an earlier run reads the package's `ok` together with the assertions inside the test it names, and neither kind is refreshed afterwards | 013, 021 | 003, 012, 014, 016, 019, 020 |
+| the four `actions/attest-*` steps of `release.yml` and `release-verify`'s `gh attestation verify` run only when `!github.event.repository.private`: GitHub's attestation API refuses a private repository on Latere's organization plan, which failed the v0.1.0 tag of 2026-09-10 in the `build` job after both images were pushed. The three SPDX documents are still built and still shipped as release assets and cosign keyless signing is untouched, so a private release is complete and signed with its bill of materials; only the attachment of the bill of materials and the provenance to the image, and their verification, are deferred. The condition reads `private`, not the plan, so the steps return by themselves when the repository is made public and need an edit if the plan is upgraded instead | 017 | 016, 018 |
 
 ## Applied fix lists
 
@@ -583,6 +584,24 @@ list are still open and stay with their owners: 021's builder carries
 `test/conformance`, where the push refusal is still asserted only when
 the import is still running, and 020's builder asserts the `compacted`
 event and `pusher` on every kind in `TestAdministrationEvents`.
+
+The twentieth round, cutting the first tag: `release.yml` makes its
+four `attest-*` steps and `release-verify`'s `gh attestation verify`
+conditional on the repository being public, after the v0.1.0 tag of
+2026-09-10 failed in the `build` job on GitHub's attestation API,
+which refuses a private repository on this plan; each half logs a
+`::notice::` naming the reason, so the run carries it. 017 states the
+attestation rule in its Design, splits its first acceptance criterion
+so the `gh attestation verify` clause is named as the deferred part,
+splits the pending row of its Outcome into the shipping half that the
+first tag closes and the attachment half that only a public repository
+closes, and drops the stale divergence that said `install-release` was
+not in `release.yml`, which spec 018 added. 016's supply-chain threat
+row, its `SECURITY.md` criterion, and its Outcome say the same split:
+the release carries a signed bill of materials as three SPDX assets,
+and the attestations wait. `docs/upgrades/README.md` stops telling an
+operator to run a command that finds nothing. The decision row above
+states the condition.
 
 ## Later
 
