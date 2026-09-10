@@ -97,6 +97,10 @@ questions rather than deciding them itself.
 - **Delegation.** A service acts on behalf of a user or an organization
   under an auditable claim, so it commits for its users without holding
   their credentials.
+- **A command for an agent.** `origo` reads and changes a repository from a
+  shell without cloning it, printing lines a pipeline can filter, so
+  `origo ls -r -n 0 | grep -i handler` finds a file in a large repository for
+  the cost of one command. It ships in the same release archives.
 - **A browsing interface, if you want one.** Origo itself serves git and
   JSON and has no web pages. [origo-web](https://github.com/latere-ai/origo-web)
   is a separate, optional program that reads this API and renders
@@ -113,6 +117,7 @@ questions rather than deciding them itself.
 | [Operations](docs/operations.md) | backup, restore, scaling, and what to do during an outage |
 | [Upgrades](docs/upgrades/README.md) | what a version number promises, and how to verify what you install |
 | [Migration](docs/migration.md) | moving repositories in from another git host |
+| [The origo command](docs/cli.md) | reading and changing a repository from a shell or an agent, without cloning it |
 
 [`docs/README.md`](docs/README.md) is the index. The design, and the
 reasoning behind it, is in [`specs/`](specs/README.md).

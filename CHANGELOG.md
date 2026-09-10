@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A release now carries a second command, `origo`, beside the server. It
+  reads and changes a repository on your installation without cloning it,
+  from a shell or from an agent: list a tree, read a file, read history,
+  compare two commits, and commit, merge, cherry-pick or revert. It prints
+  lines, so finding a file in a large repository is one command and one
+  `grep` instead of a checkout, and every read also takes `--json`. It runs
+  on your own machine, needs four environment variables and no
+  configuration file, and changes nothing about the installation. Read
+  [the page](docs/cli.md); a release now carries eight archives rather than
+  four.
+- Beside it, `skills/origo/SKILL.md` is a short document that teaches an
+  agent to use that command correctly the first time: how to get a
+  credential scoped to one repository, what the defaults give it, and how
+  to read a truncated answer. Copy it wherever your agent host keeps
+  skills.
 - Your installation can now list the repositories a person may see. Until
   now it could only answer about one repository at a time, so anything
   browsing it had to ask you for an identifier before it could show you

@@ -20,6 +20,7 @@ Read these in order the first time.
 | Page | |
 |---|---|
 | [API](api.md) | the endpoints, headers, and error codes a client relies on, and the authorization endpoint an operator writes |
+| [The origo command](cli.md) | reading and changing a repository from a shell or an agent, without cloning it |
 
 Trying Origo out before installing it takes one command: see the quick start
 in the [README](../README.md).
