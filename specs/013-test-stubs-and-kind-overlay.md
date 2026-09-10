@@ -8,7 +8,7 @@ depends_on:
 affects: [test/stubs/sink/, test/stubs/origo/, test/stubs/source/, test/stubs/cmd/, Dockerfile.stubs, test/e2e/, test/e2e/cluster/, test/e2e/testdata/, deploy/examples/kind/, Makefile, .github/workflows/, .lateregate.yaml, internal/config/, tools/docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -249,10 +249,10 @@ table", and never by a pod name a Kubernetes version might change:
 | 30180 | node 1, the pod `origod-0`, public listener | `http://localhost:30180` | a test that pushes or clones through one named node (005, 006, 015) |
 | 30181 | node 2, the pod `origod-1`, public listener | `http://localhost:30181` | same |
 | 30182 | node 3, the pod `origod-2`, public listener | `http://localhost:30182` | same |
-| 30022 | `origod-ssh`, all three pods behind one balanced Service | `ssh://git@localhost:30022/` | a test that pushes or clones over SSH without caring which node answers (024) |
-| 30122 | node 1, the pod `origod-0`, SSH listener | `ssh://git@localhost:30122/` | a test that reads one named node's host key (024) |
-| 30123 | node 2, the pod `origod-1`, SSH listener | `ssh://git@localhost:30123/` | same |
-| 30124 | node 3, the pod `origod-2`, SSH listener | `ssh://git@localhost:30124/` | same |
+| 30022 | `origod-ssh`, all three pods behind one balanced Service | `ssh://git@127.0.0.1:30022/` | a test that pushes or clones over SSH without caring which node answers (024) |
+| 30122 | node 1, the pod `origod-0`, SSH listener | `ssh://git@127.0.0.1:30122/` | a test that reads one named node's host key (024) |
+| 30123 | node 2, the pod `origod-1`, SSH listener | `ssh://git@127.0.0.1:30123/` | same |
+| 30124 | node 3, the pod `origod-2`, SSH listener | `ssh://git@127.0.0.1:30124/` | same |
 | 30190 | node 1, internal listener, `GET /metrics` | `http://localhost:30190/metrics` | a test that reads one node's counters (005, 006, 015) |
 | 30191 | node 2, internal listener | `http://localhost:30191/metrics` | same |
 | 30192 | node 3, internal listener | `http://localhost:30192/metrics` | same |
@@ -263,6 +263,13 @@ table", and never by a pod name a Kubernetes version might change:
 | 30085 | the slow proxy's control endpoint | `http://localhost:30085` | 015's slow-bucket case |
 | 30086 | the stub key resolver, its endpoint and control endpoints | `http://localhost:30086` | 024's cluster tests registering and revoking a public key |
 | 30900 | MinIO | `http://localhost:30900`, the value of `ORIGO_S3_PUBLIC_ENDPOINT` on every node | LFS transfers from the runner (010), the fixture extraction of 017, the `Fault` of 021, a test that starts a node of its own in a cluster job (008, 021) through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables |
+
+The SSH rows name the loopback address where every other row names
+`localhost`. `kind` publishes a host port on IPv4, and `ssh` and
+`ssh-keyscan` ask the first address a name resolves to and do not try
+the next one, where `curl` and Go's HTTP client walk the whole list. On
+a machine that answers `localhost` with `::1` first, every HTTP row of
+this table is reachable by name and no SSH row is.
 
 Inside the cluster the nodes reach the stubs and MinIO by their Service
 names; the host ports are for the runner. The fixed dev subject of the
@@ -578,6 +585,15 @@ Divergences and interpretations, all kept:
   `minio/mc` were `arm64` manifests, not multi-arch indexes, so the
   `build` and `integration` jobs failed with `exec format error` on the
   `amd64` runners until every pin became the index digest.
+
+- The four SSH rows of the ports table read `127.0.0.1` where every
+  other row reads `localhost`, changed after spec 018's install job
+  stopped on them. `ssh-keyscan` asks the first address a name resolves
+  to and does not try the next, so the document's wait found nothing at
+  `localhost:30022` while `up.sh`, which has always written the
+  address, reached the same port of the same cluster in the same run.
+  The job is the proof: red on the name in runs 34524148220 and
+  34525855273, green on the address in run 34526990408.
 
 Verified on this machine against a live stack: `make dev` and
 `TestE2EDevStackClones` on podman compose, and `make test-integration`
