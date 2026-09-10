@@ -61,7 +61,7 @@ depcheck:
         binary carries no cloud SDK and no Kubernetes client (spec 001)
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
-        github.com/google/uuid: reached through latere.ai/x/pkg, which names events and deliveries with it; not a cloud SDK
+        github.com/google/uuid: imported directly to name events, deliveries, and the probe object of `origod check`, and reached through latere.ai/x/pkg besides; not a cloud SDK
         go.opentelemetry.io: the OpenTelemetry SDK, exporters, and instrumentation the traces, metrics, and log bridge of spec 011 go out through
         google.golang.org: protobuf and gRPC, the wire format and the transport of the OTLP exporters
         golang.org/x/crypto: the SSH transport of internal/sshd (spec 024), the fourth direct dependency of the module, confined to that package and reaching golang.org/x/sys and nothing else

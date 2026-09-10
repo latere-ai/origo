@@ -184,10 +184,11 @@ on gossip arriving.
    disk. No database, no custom resource, no cloud SDK: the module's
    direct dependencies are the standard library, `latere.ai/x/pkg`, the
    OpenTelemetry SDK, which only `internal/tracing` imports (spec 011),
-   and `golang.org/x/crypto/ssh`, which only `internal/sshd` imports
-   (spec 024). The `depcheck` gate of `.lateregate.yaml` lists the whole
-   build list of `./cmd/origod` with a reason per upstream root, so a
-   fifth fails the gate.
+   `golang.org/x/crypto/ssh`, which only `internal/sshd` imports (spec
+   024), and `github.com/google/uuid`, which names events, deliveries,
+   and the probe object the check writes. The `depcheck` gate of
+   `.lateregate.yaml` lists the whole build list of `./cmd/origod` with a
+   reason per upstream root, so a sixth fails the gate.
 
 ## Not in this spec
 
