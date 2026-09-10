@@ -492,7 +492,7 @@ clone and a push`.
 Step 5 and the SSH half of the walkthrough cannot be walked from the
 newest release, and no wording fixes it. `deploy-v0.1.1.tar.gz` maps no
 host port 30022 and no 30086 in its `kind.yaml`, runs no key resolution
-stub, and sets none of the four `ORIGO_SSH_*` variables, while the page
+stub, and sets none of the four SSH variables step 5 lists, while the page
 on `main` says "The example overlay carries all of it, so on a
 throwaway cluster there is nothing to add" and defaults the SSH
 walkthrough to `http://localhost:30086` and `ssh://git@127.0.0.1:30022`.
