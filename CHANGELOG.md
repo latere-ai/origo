@@ -18,6 +18,16 @@ committed: the commit log already holds that.
   directory, rather than looking broken.
 - A repository can be addressed by its owner and name, not only by its
   identifier, so a link written by hand keeps working.
+- Every answer now tells a caller how much of its request budget is left,
+  not only what the budget is. Tooling that pushes or reads in a loop can
+  slow down before it is turned away, instead of discovering the limit by
+  being refused, and it works the same behind a load balancer, where each
+  of your replicas keeps a budget of its own.
+- The advertised budget is now the one that applies to the caller reading
+  it. Where your permission service raises the rate for a particular
+  client, that client used to be shown the installation default and had no
+  way to learn its real allowance; it is now shown its own. Nothing about
+  who is allowed what has changed, only what the answer says.
 
 ## v0.1.2 - 2026-09-10
 
