@@ -698,23 +698,28 @@ func TestOperationRefusalsAndBudget(t *testing.T) {
 // subprocesses run past the budget, with the seconds of the row.
 func TestOperationBudgetIsAnswered(t *testing.T) {
 	spy := newSpyGit(t)
-	h := newHarness(t, withGit(spy.bin()), withReadTimeout(2*time.Second))
+	h := newHarness(t, withGit(spy.bin()))
 	o := seedOps(t, h, repoA)
 	body := `{"branch":"main","expected_head":"` + o.main + `",` + author + `,"message":"m","changes":[{"path":"a","content":"` + b64("a") + `"}]}`
-	// The copy is materialized by a request that answers, so the budget
-	// of the one below is spent on the operation alone; then the fake
-	// git holds read-tree open until the deadline cuts it.
+	// The copy is materialized by a request that answers, and it runs
+	// under the default budget: materializing a repository is work the
+	// budget below is not measuring, and a loaded machine takes seconds
+	// over it. The short budget is set after it, for the one request
+	// this test is about, where the fake git holds read-tree open until
+	// the deadline cuts it. Requests here are sequential, so the field
+	// is read by no other goroutine while it is written.
 	status, out := o.post("commits", body)
 	if status != 201 {
 		t.Fatalf("warm: %d %v", status, out)
 	}
+	h.handler.readTimeout = 2 * time.Second
 	spy.hold("read-tree")
 	next := `{"branch":"main","expected_head":"` + out["commit"].(string) + `",` + author + `,"message":"m","changes":[{"path":"b","content":"` + b64("b") + `"}]}`
 	status, out = o.post("commits", next)
 	if status != 504 || code(out) != contract.CodeOperationTimeout {
 		t.Fatalf("budget: %d %v", status, out)
 	}
-	if details(out)["operation"] != OpCommits || details(out)["budget_seconds"] == nil {
+	if details(out)["operation"] != OpCommits || details(out)["budget_seconds"] != float64(2) {
 		t.Fatalf("details: %v", details(out))
 	}
 }
