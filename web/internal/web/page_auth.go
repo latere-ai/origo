@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/latere-ai/origo-web/internal/origo"
-	"github.com/latere-ai/origo-web/internal/session"
 )
 
 // req is what one request carries into a screen: the reader's token, which
@@ -30,7 +29,7 @@ func (s *Server) begin(w http.ResponseWriter, r *http.Request, section string) r
 			Section:     section,
 			SignedIn:    tok != "",
 			KeysEnabled: s.cfg.KeysURL != "",
-			CSRF:        s.sessions.CSRFToken(w),
+			CSRF:        s.sessions.CSRFToken(w, r),
 		},
 	}
 }
@@ -201,7 +200,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		data.Directory = false
 	}
 
-	for _, id := range session.Recent(r) {
+	for _, id := range s.sessions.Recent(r) {
 		data.Recent = append(data.Recent, listRow{ID: id, Name: id, URL: "/r/" + url.PathEscape(id)})
 	}
 	s.render(w, r, http.StatusOK, "home", data)

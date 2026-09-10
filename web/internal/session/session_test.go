@@ -291,7 +291,7 @@ func TestRecentIsBoundedAndChecked(t *testing.T) {
 	m.Remember(rec2, req, "r2")
 	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	req2.AddCookie(cookieNamed(t, rec2, RecentCookieName))
-	if got := Recent(req2); len(got) != 2 || got[0] != "r2" || got[1] != "r1" {
+	if got := m.Recent(req2); len(got) != 2 || got[0] != "r2" || got[1] != "r1" {
 		t.Errorf("the list reads as %v", got)
 	}
 
@@ -303,14 +303,14 @@ func TestRecentIsBoundedAndChecked(t *testing.T) {
 		seed = httptest.NewRequest(http.MethodGet, "/", nil)
 		seed.AddCookie(cookieNamed(t, w, RecentCookieName))
 	}
-	if got := Recent(seed); len(got) != recentLimit {
+	if got := m.Recent(seed); len(got) != recentLimit {
 		t.Errorf("the list grew to %d", len(got))
 	}
 
 	// A cookie somebody edited cannot become a request path.
 	edited := httptest.NewRequest(http.MethodGet, "/", nil)
 	edited.AddCookie(&http.Cookie{Name: RecentCookieName, Value: url.QueryEscape("../../etc/passwd") + " ok1"})
-	if got := Recent(edited); len(got) != 1 || got[0] != "ok1" {
+	if got := m.Recent(edited); len(got) != 1 || got[0] != "ok1" {
 		t.Errorf("an edited cookie read as %v", got)
 	}
 
@@ -336,7 +336,7 @@ func TestCSRFRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	token := m.CSRFToken(rec)
+	token := m.CSRFToken(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if token == "" {
 		t.Fatal("no token was issued")
 	}
@@ -415,4 +415,101 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b[i:])
+}
+
+// TestTheTokenSurvivesASecondPage is the regression for a form that broke
+// itself: issuing a fresh token on every render rotated the cookie, so the
+// sign-out form on the page a person left open was refused, and two tabs of
+// the interface broke each other.
+func TestTheTokenSurvivesASecondPage(t *testing.T) {
+	is := newIssuer(t)
+	m, err := New(testConfig(t, is))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := httptest.NewRecorder()
+	tokenOnFirstPage := m.CSRFToken(first, httptest.NewRequest(http.MethodGet, "/", nil))
+	cookie := cookieNamed(t, first, CSRFCookieName)
+	if cookie == nil {
+		t.Fatal("the first page issued no token")
+	}
+
+	// A second page, carrying the cookie the first one set.
+	secondReq := httptest.NewRequest(http.MethodGet, "/r/1", nil)
+	secondReq.AddCookie(cookie)
+	second := httptest.NewRecorder()
+	if got := m.CSRFToken(second, secondReq); got != tokenOnFirstPage {
+		t.Errorf("the second page rotated the token to %q", got)
+	}
+	if cookieNamed(t, second, CSRFCookieName) != nil {
+		t.Error("the second page rewrote the cookie")
+	}
+
+	// The form on the first page still submits.
+	form := url.Values{CSRFField(): {tokenOnFirstPage}}
+	post := httptest.NewRequest(http.MethodPost, "/sign-out", strings.NewReader(form.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	post.AddCookie(cookie)
+	if !m.CSRFValid(post) {
+		t.Error("the form on the page that was left open was refused")
+	}
+}
+
+// TestCookiesOverPlainHTTPDropTheHostPrefix is the regression for a local run
+// that could not hold a session: a __Host- cookie must be Secure, so a
+// browser rejects one served over plain HTTP, and every name has to lose the
+// prefix together or the session is written under one name and looked for
+// under another.
+func TestCookiesOverPlainHTTPDropTheHostPrefix(t *testing.T) {
+	is := newIssuer(t)
+	cfg := testConfig(t, is)
+	cfg.InsecureCookies = true
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := m.SessionCookie(); strings.HasPrefix(got, "__Host-") {
+		t.Errorf("the session cookie is named %q over plain HTTP", got)
+	}
+	for _, got := range []string{m.RecentCookie(), m.CSRFCookie()} {
+		if strings.HasPrefix(got, "__Host-") {
+			t.Errorf("a cookie is named %q over plain HTTP", got)
+		}
+	}
+
+	// A session written by this manager reads back through this manager.
+	rec := httptest.NewRecorder()
+	if err := m.client.SetSession(rec, &oidc.Session{
+		AccessToken: jwtFor("alice"), RefreshToken: "refresh-token",
+		Expiry: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := cookieNamed(t, rec, m.SessionCookie())
+	if c == nil {
+		t.Fatalf("no cookie named %q was written", m.SessionCookie())
+	}
+	if c.Secure {
+		t.Error("a cookie for a plain connection was marked Secure")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(c)
+	if _, err := m.Load(httptest.NewRecorder(), req); err != nil {
+		t.Errorf("the session did not read back over plain HTTP: %v", err)
+	}
+
+	// So does the recent list.
+	out := httptest.NewRecorder()
+	m.Remember(out, req, "r1")
+	rc := cookieNamed(t, out, m.RecentCookie())
+	if rc == nil || rc.Secure {
+		t.Fatalf("the recent cookie is %+v", rc)
+	}
+	back := httptest.NewRequest(http.MethodGet, "/", nil)
+	back.AddCookie(rc)
+	if got := m.Recent(back); len(got) != 1 || got[0] != "r1" {
+		t.Errorf("the recent list read back as %v", got)
+	}
 }

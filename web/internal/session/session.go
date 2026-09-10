@@ -59,6 +59,17 @@ var ErrNoSession = errors.New("session: no usable session")
 type Manager struct {
 	client *oidc.Client
 	secure bool
+
+	// The three cookie names in force. A __Host- prefix binds a cookie to
+	// one origin and to a secure connection, and a browser rejects such a
+	// cookie outright when the connection is not secure, so a local run
+	// over plain HTTP carries the same names without the prefix. The
+	// library does this to the session cookie; these are the two this
+	// service writes itself, plus the effective session name, which Load
+	// needs before it asks the library for anything.
+	sessionName string
+	recentName  string
+	csrfName    string
 }
 
 // New returns a manager over the configured relying party. The session
@@ -71,7 +82,24 @@ func New(cfg oidc.Config) (*Manager, error) {
 	if c == nil {
 		return nil, errors.New("session: the identity provider is not configured")
 	}
-	return &Manager{client: c, secure: !cfg.InsecureCookies}, nil
+	secure := !cfg.InsecureCookies
+	return &Manager{
+		client:      c,
+		secure:      secure,
+		sessionName: hostPrefixed(CookieName, secure),
+		recentName:  hostPrefixed(RecentCookieName, secure),
+		csrfName:    hostPrefixed(CSRFCookieName, secure),
+	}, nil
+}
+
+// hostPrefixed drops the __Host- prefix when the connection is not secure,
+// the way authkit does, because a browser rejects a __Host- cookie that is
+// not Secure and the cookie would simply never arrive.
+func hostPrefixed(name string, secure bool) string {
+	if secure {
+		return name
+	}
+	return strings.TrimPrefix(name, "__Host-")
 }
 
 // SignIn starts the authorization-code flow and redirects to the issuer.
@@ -96,7 +124,7 @@ func (m *Manager) Callback(w http.ResponseWriter, r *http.Request) {
 // Every failure is ErrNoSession with the cookie cleared, so a caller has one
 // case to handle and cannot leave a half-dead cookie in place.
 func (m *Manager) Load(w http.ResponseWriter, r *http.Request) (*oidc.Session, error) {
-	if _, err := r.Cookie(CookieName); err != nil {
+	if _, err := r.Cookie(m.sessionName); err != nil {
 		return nil, ErrNoSession
 	}
 	sess, err := m.client.SessionFromRequest(w, r)
@@ -122,28 +150,46 @@ func (m *Manager) Token(w http.ResponseWriter, r *http.Request) string {
 func (m *Manager) Clear(w http.ResponseWriter) {
 	m.client.ClearSession(w)
 	http.SetCookie(w, &http.Cookie{
-		Name: RecentCookieName, Value: "", Path: "/", MaxAge: -1,
+		Name: m.recentName, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteLaxMode,
 	})
 }
 
-// CSRFToken issues the token the two POST routes require and sets its
-// cookie. Everything else in the interface is a GET and changes nothing.
-func (m *Manager) CSRFToken(w http.ResponseWriter) string {
-	return authkit.CSRFIssue(w, CSRFCookieName, m.secure)
+// CSRFToken is the token the two POST routes require, issued once per
+// browser session and not once per page.
+//
+// A fresh one on every render would rotate the cookie, and the form on a
+// page a person left open would then be refused: two tabs of the same
+// interface would break each other. So a request that already carries one
+// keeps it, and only a request with none is given one.
+func (m *Manager) CSRFToken(w http.ResponseWriter, r *http.Request) string {
+	if c, err := r.Cookie(m.csrfName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	return authkit.CSRFIssue(w, m.csrfName, m.secure)
 }
 
 // CSRFValid reports whether a POST carries a token matching its cookie.
 func (m *Manager) CSRFValid(r *http.Request) bool {
-	return authkit.CSRFValidate(r, CSRFCookieName)
+	return authkit.CSRFValidate(r, m.csrfName)
 }
+
+// CSRFCookie is the name of the token cookie in force, which a test and a
+// local run need to know because the prefix depends on the connection.
+func (m *Manager) CSRFCookie() string { return m.csrfName }
+
+// RecentCookie is the name of the recent-repository cookie in force.
+func (m *Manager) RecentCookie() string { return m.recentName }
+
+// SessionCookie is the name of the session cookie in force.
+func (m *Manager) SessionCookie() string { return m.sessionName }
 
 // CSRFField is the form field name a template writes the token into.
 func CSRFField() string { return authkit.CSRFFieldName() }
 
 // Recent reads the repositories this session has opened, newest first.
-func Recent(r *http.Request) []string {
-	c, err := r.Cookie(RecentCookieName)
+func (m *Manager) Recent(r *http.Request) []string {
+	c, err := r.Cookie(m.recentName)
 	if err != nil || c.Value == "" {
 		return nil
 	}
@@ -167,7 +213,7 @@ func (m *Manager) Remember(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	next := []string{id}
-	for _, old := range Recent(r) {
+	for _, old := range m.Recent(r) {
 		if old != id {
 			next = append(next, old)
 		}
@@ -180,7 +226,7 @@ func (m *Manager) Remember(w http.ResponseWriter, r *http.Request, id string) {
 		parts[i] = url.QueryEscape(id)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     RecentCookieName,
+		Name:     m.recentName,
 		Value:    strings.Join(parts, " "),
 		Path:     "/",
 		MaxAge:   int(Lifetime / time.Second),
