@@ -18,6 +18,7 @@ package authorizer
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -43,6 +44,14 @@ type Request struct {
 		Slug  string `json:"slug"`
 	} `json:"repo"`
 	Action string `json:"action"`
+}
+
+// DirectoryEntry is one repository of the stub's directory, as spec
+// 026's list answer names it.
+type DirectoryEntry struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Slug  string `json:"slug"`
 }
 
 // Rule is one row of the table. Subject, Actor, Repo, and Action are `*`
@@ -97,10 +106,17 @@ type Server struct {
 	rules    []Rule
 	requests []Request
 	fail     int
-	hung     chan struct{}
-	closed   chan struct{}
-	srv      *httptest.Server
-	mux      *http.ServeMux
+	// directory is spec 026's answer to a list request, and supported
+	// says whether the stub has one at all. An unset directory answers
+	// {"directory": false}, so an installation and a test that never
+	// mention one see an authorizer with no directory, which is what
+	// every deployment of this stub was before spec 026.
+	supported bool
+	directory []DirectoryEntry
+	hung      chan struct{}
+	closed    chan struct{}
+	srv       *httptest.Server
+	mux       *http.ServeMux
 }
 
 // New starts a stub authorizer for the test and stops it with the test.
@@ -121,6 +137,7 @@ func NewHandler(opts ...Option) *Server {
 	}
 	s.mux.HandleFunc("POST /{$}", s.decide)
 	s.mux.HandleFunc("PUT /rules", s.putRules)
+	s.mux.HandleFunc("PUT /directory", s.putDirectory)
 	s.mux.HandleFunc("GET /requests", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.Requests()) })
 	s.mux.HandleFunc("DELETE /requests", func(w http.ResponseWriter, _ *http.Request) { s.ClearRequests(); w.WriteHeader(http.StatusNoContent) })
 	// The outage is set over HTTP as well as by method (spec 013), so a
@@ -179,6 +196,56 @@ func (s *Server) SetRules(rules ...Rule) {
 	defer s.mu.Unlock()
 	s.rules = slices.Clone(rules)
 }
+
+// SetDirectory sets the directory spec 026's list action answers with.
+// supported false answers {"directory": false} whatever the entries.
+func (s *Server) SetDirectory(supported bool, repos ...DirectoryEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.supported, s.directory = supported, slices.Clone(repos)
+}
+
+// Directory answers one list request: the entries the rule table allows
+// this subject and actor to read, cut at limit from cursor. It runs the
+// same table a read request runs, so a rule that denies a subject one
+// repository denies it in the directory too and there is no second
+// table to keep in step.
+func (s *Server) Directory(req Request, cursor string, limit int) (entries []DirectoryEntry, next string, supported bool) {
+	entries = []DirectoryEntry{}
+	s.mu.Lock()
+	held, supported := slices.Clone(s.directory), s.supported
+	s.mu.Unlock()
+	if !supported {
+		return nil, "", false
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	started := cursor == ""
+	for _, e := range held {
+		if !started {
+			started = e.ID == cursor
+			continue
+		}
+		probe := Request{Subject: req.Subject, Actor: req.Actor, Action: string(actionRead)}
+		probe.Repo.ID, probe.Repo.Owner, probe.Repo.Slug = e.ID, e.Owner, e.Slug
+		if !s.Decide(probe).Allow {
+			continue
+		}
+		if len(entries) == limit {
+			return entries, entries[len(entries)-1].ID, true
+		}
+		entries = append(entries, e)
+	}
+	return entries, "", true
+}
+
+// The two actions the stub names itself: the directory question, and
+// the read it puts each entry through.
+const (
+	actionList = "list"
+	actionRead = "read"
+)
 
 // Requests lists every request seen, in order.
 func (s *Server) Requests() []Request {
@@ -246,11 +313,23 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bearer required", http.StatusUnauthorized)
 		return
 	}
-	var req Request
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+	payload, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	var req Request
+	if err := json.Unmarshal(payload, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// A list request carries a cursor and a limit and no repo object
+	// (spec 026); the three actions carry neither.
+	var listQuery struct {
+		Cursor string `json:"cursor"`
+		Limit  int    `json:"limit"`
+	}
+	_ = json.Unmarshal(payload, &listQuery)
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	fail, hung := s.fail, s.hung
@@ -265,6 +344,25 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	if fail != 0 {
 		http.Error(w, "failing on request", fail)
+		return
+	}
+	if req.Action == actionList {
+		entries, next, supported := s.Directory(req, listQuery.Cursor, listQuery.Limit)
+		switch {
+		case !supported:
+			// An authorizer with no directory says so whatever the rule
+			// table holds: it cannot answer the question at all.
+			writeJSON(w, map[string]any{"directory": false})
+			return
+		case !s.Decide(req).Allow:
+			writeJSON(w, map[string]any{"allow": false, "reason": s.Decide(req).Reason})
+			return
+		}
+		out := map[string]any{"repos": entries}
+		if next != "" {
+			out["next_cursor"] = next
+		}
+		writeJSON(w, out)
 		return
 	}
 	rule := s.Decide(req)
@@ -286,6 +384,22 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 		out["requests_per_minute"] = rule.RequestsPerMinute
 	}
 	writeJSON(w, out)
+}
+
+// putDirectory reads {"supported": <bool>, "repos": [...]} and calls
+// SetDirectory with it, so a stack run sets a directory through the
+// host port the way it sets the rules.
+func (s *Server) putDirectory(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Supported bool             `json:"supported"`
+		Repos     []DirectoryEntry `json:"repos"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.SetDirectory(body.Supported, body.Repos...)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {

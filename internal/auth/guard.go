@@ -86,6 +86,26 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 	return d, nil
 }
 
+// Directory answers spec 026's question for the principal: which
+// repositories may this subject see.
+//
+// A repository-bound token cannot ask it. Its decision was made at
+// minting, for one repository, so there is no subject-wide answer to
+// give and the authorizer is never called. An authorizer client that
+// does not implement Lister is an installation with no directory, which
+// is the same answer as {"directory": false}: the caller renders it as
+// the one 501 and stops asking.
+func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit int) (Directory, error) {
+	if p.Bound != nil {
+		return Directory{}, &Denied{Subject: p.Subject, Action: ActionList, Reason: ReasonScope}
+	}
+	lister, ok := g.authorizer.(Lister)
+	if !ok {
+		return Directory{}, nil
+	}
+	return lister.List(ctx, ListRequest{Subject: p.Subject, Actor: p.Actor, Cursor: cursor, Limit: limit})
+}
+
 // quota is spec 012's rule for a repository-bound token's writes: the
 // token carries no quota claim, so the figure is the minting subject's,
 // asked of the authorizer with the token's own subject and actor on the
