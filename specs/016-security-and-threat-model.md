@@ -413,11 +413,18 @@ attestation API refuses a private repository on Latere's plan. Spec
 017's attestation rule makes those four steps and the matching
 `gh attestation verify` conditional on the repository being public.
 So this row splits. The shipping half, a signed release carrying its
-bill of materials, is closed by the first tag. The attachment half,
-the bill of materials and the provenance verifiable as attestations
-on the image, is closed by the repository becoming public, or by the
-plan being upgraded and spec 017's condition changed with it, and by
-no tag before then. The dialer's
+bill of materials, is closed: the tag run 34461460766 of `v0.1.0`, at
+commit `2b2468d`, put `sbom-origod.spdx.json`,
+`sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json` on the
+release beside the four archives and `checksums.txt`, and its `verify
+the published release` job checked both image signatures and the
+`checksums.txt` bundle against the tag workflow's identity and the
+GitHub OIDC issuer and refused a foreign identity. The attachment
+half, the bill of materials and the provenance verifiable as
+attestations on the image, is closed by the repository becoming
+public, or by the plan being upgraded and spec 017's condition changed
+with it, and by no tag before then. That half is the one thing holding
+this spec at `testing`. The dialer's
 half is done: spec 019 asserted `import` and spec 014 asserted `verify`
 on 2026-09-09, `TestSourceTokenIsNeverLogged` in `internal/api` holding
 the bearer of both, and `cmd/origod` reaches `AllowLoopback` only

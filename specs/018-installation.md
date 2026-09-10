@@ -280,7 +280,7 @@ published release are listed below with what closes each.
 | Criterion | Test | State |
 |---|---|---|
 | the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | in the tree; it runs on every push from this commit, and its first green run is what the criterion closes on |
-| the same from the release artifacts alone on a tag | the `install-release` job of `release.yml` after `publish`, with the published images pulled and loaded and the `kind` overlay of `deploy-<version>.tar.gz` | pending the first tag |
+| the same from the release artifacts alone on a tag | the `install-release` job of `release.yml` after `publish`, with the published images pulled and loaded and the `kind` overlay of `deploy-<version>.tar.gz` | passing: the job ran in 3 m 43 s in the tag run 34461460766 of `v0.1.0`, at commit `2b2468d`, against `ghcr.io/latere-ai/origod:v0.1.0` and the published `deploy-v0.1.0.tar.gz`, and ended in `TestContract`. It had been skipped by the first cut of the tag, run 34450584556, which spec 017 records and fixed |
 | `kustomize build` succeeds on `deploy/examples/digitalocean` and `deploy/examples/aws` | the `overlays` job of `verify.yml`, 5 minutes, over all three example overlays | passing |
 | `deploy/base/ingress.yaml` carries no `nginx.ingress.kubernetes.io/` or `cert-manager.io/` annotation and no `ingressClassName`, and the `kind` overlay renders `proxy-body-size: "0"` and `proxy-read-timeout: "600"` | `cmd/origod`, `TestBaseIngressIsControllerNeutral` | passing |
 | `origod check` runs the check, `origod` and `origod serve` serve, `origod -version` prints the identity, and `origod nosuch` exits 2 with a usage line | `cmd/origod`, `TestSubcommandDispatch` | passing |
@@ -349,7 +349,7 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 
 ### What only a real release proves
 
-| Pending | Closed by |
-|---|---|
-| `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag |
-| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes |
+| Pending | Closed by | State |
+|---|---|---|
+| `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag | closed by the tag run 34461460766 of `v0.1.0` |
+| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | open, and the one thing holding this spec at `testing`: it is a person reading the document, which no job replaces |

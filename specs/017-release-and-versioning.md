@@ -294,10 +294,14 @@ workflow identity, which is what an outside operator can verify.
 
 ## Outcome
 
-Built on 2026-09-09. Every criterion a checkout can prove has a passing
-test in the tree; the rest need a real tag and are listed below with
-what closes each. The spec stays at `testing` until the first release
-runs, so its status is not a claim about artifacts that do not exist.
+Built on 2026-09-09; the first release ran on 2026-09-10. Every
+criterion a checkout can prove has a passing test in the tree, and the
+tag closed every row below that a tag can close. The spec stays at
+`testing` on the three that a tag cannot: the attestations, which need
+the repository to be public; the `live` job, which needs the two
+secrets and an installation behind them; and the compatibility
+assertion against a fixture an earlier release attached, which needs a
+second tag.
 
 The first tag, `v0.1.0` of 2026-09-10, published nothing and was
 deleted. It is blocked twice over, on two limits outside this
@@ -314,38 +318,72 @@ around.
 | `tools/smoke/release.sh` passes against a stub whose `/readyz` answers `ok` and `/version` serves `TAG`, with standard input closed, and fails naming the mismatch | `tools/smoke/release_test.sh`, run by the `test` gate through `TestReleaseSmoke` | passing |
 | `main.version` no longer exists and a binary linked with `internal/version.Version` serves and prints it | `cmd/origod`, `TestVersionHasOneSource` | passing |
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
-| a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | pending the first tag |
+| a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | passing: the `verify the published release` job of the tag run 34461460766, 50 s, verified both signatures against `^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/` and the GitHub OIDC issuer, refused a foreign identity, checked `checksums.txt` and its cosign bundle, read the deploy archive, and matched the body against the section |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | deferred while the repository is private: GitHub's attestation API refuses a private repository on this plan, so nothing is attached and nothing is verified. The repository going public, or the condition being changed after a plan upgrade, is what closes it |
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | pending the first tag |
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | passing on the repository itself rather than on a fork: no repository variable is set here, so the tag run 34461460766 skipped `deploy and smoke` and published all eleven assets and both images anyway. A fork adds nothing the run did not show, because the variable is what the condition reads |
 
-### What blocks the first release
+### What blocked the first release, and what still holds
 
-Two limits outside this repository, neither worked around, both for the
-user to decide on:
+The budget limit was lifted by the user on 2026-09-10 and `v0.1.0` was
+cut. Three limits outside this repository remain on the record, none
+worked around, each for the user to decide on:
 
 | Limit | What it blocks | Evidence |
 |---|---|---|
 | GitHub's attestation API refuses a private repository on the `latere-ai` organization plan | the SBOM and provenance attestations, and `release-verify`'s `gh attestation verify`; nothing else. The attestation rule above skips those steps, so a private release is otherwise complete: every artifact, the three SPDX documents as assets, and the cosign signatures | run 34416521585 of 2026-09-10, the `build` job, `actions/attest-sbom`: "Feature not available for the latere-ai organization. To enable this feature, please upgrade the billing plan, or make this repository public." |
-| an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | every job of every workflow, so no push run, no dispatched run, and no release run starts at all. The tag is not re-cut under this: a `v0.1.0` tag would produce a Release run whose first job never starts, and the images would be pushed by nothing | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint |
+| an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | lifted. It blocked every job of every workflow, so no push run, no dispatched run, and no release run started at all | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint. Run 34447226405 of the same day is the first green push run after it was restored |
+| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://git.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, and the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
 
-The first tag waits on the budget. Once it is lifted, `v0.1.0` is cut
-again from a green `main` with `go tool lateregate release v0.1.0`; the
-tag and its changelog commit were both undone on 2026-09-10, the commit
-by `git revert` so the published history stands, so the version is free.
-The attestation limit does not block the release, only the two rows
-above that name it.
+`v0.1.0` was cut on 2026-09-10 from a green `main` at commit `058eb6d`
+with `go tool lateregate release v0.1.0`, and the tagged commit is
+`2b2468d`. Neither remaining limit blocks a release: the attestation
+limit blocks the two rows that name it, and the live limit blocks the
+`live` row and the four specs that wait on it. What closes each is in
+the table above and in the pending table below; both need the user, not
+this repository.
 
 ### What only a real release proves
 
-| Pending | Closed by |
-|---|---|
-| every artifact of the table for `linux/amd64` and `linux/arm64`, the signatures, the checksums, and the body against the changelog | the `release-verify` job of the first tag |
-| the bill of materials as a release asset, spec 016's supply-chain row in its shipping half | the `build` job of the first tag: the three SPDX documents are uploaded with the other assets |
-| the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on; no tag closes it while the repository is private |
-| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set |
-| the fork tag with `ORIGO_RELEASE_DEPLOY` unset | a maintainer, recorded in the release notes |
-| `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag |
-| `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline |
+The first release ran on 2026-09-10: tag `v0.1.0`, commit `2b2468d`,
+Release run 34461460766, every job green or deliberately skipped. Beside
+it the tag's `verify` run 34461461220 ran the cluster tiers, the
+up-script check, and the mutation job, all green.
+
+| Pending | Closed by | State |
+|---|---|---|
+| every artifact of the table for `linux/amd64` and `linux/arm64`, the signatures, the checksums, and the body against the changelog | the `release-verify` job of the first tag | closed by run 34461460766. Both images are OCI indexes carrying `linux/amd64` and `linux/arm64`; the four archives, `checksums.txt`, its cosign bundle, the deploy archive, the fixture, and the three SPDX documents are the eleven assets |
+| the bill of materials as a release asset, spec 016's supply-chain row in its shipping half | the `build` job of the first tag: the three SPDX documents are uploaded with the other assets | closed by run 34461460766: `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json` are on the release |
+| conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
+| the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on; no tag closes it while the repository is private | open |
+| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | open. Run 34461460766's `live` job ran and skipped: neither secret is set and `https://git.latere.ai` does not resolve. The job is green because a skipped test passes, which is why `publish`'s `needs.live.result == 'success'` did not stop the release and why nothing here claims the live run happened |
+| the fork tag with `ORIGO_RELEASE_DEPLOY` unset | a maintainer, recorded in the release notes | closed by run 34461460766 itself, which ran with the variable unset |
+| `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | open. Run 34461460766 reports `--- SKIP: TestPreviousReleaseFixture (0.00s)`: no earlier release carried a fixture. `fixture-v0.1.0.tar.gz` is on this release, so the second tag closes it |
+| `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
+
+The spec stays at `testing`. Three rows are open, and each needs
+something outside a tag: the repository becoming public or the plan
+being upgraded, the two live secrets with an installation behind them,
+and a second tag.
+
+### The defect the first tag found
+
+The first cut of `v0.1.0`, run 34450584556, published the release and
+then skipped `install-release` and `release-verify`, so nothing verified
+what had been published. The cause is not in either job: `deploy` is
+skipped whenever `ORIGO_RELEASE_DEPLOY` is unset, and GitHub evaluates
+the implicit `success()` gate of a job over its whole ancestor closure,
+not over its direct `needs` alone, so the skip travelled through
+`publish`, which runs under `always()`, into the two jobs below it,
+which carried no condition. Both now carry
+`if: ${{ always() && needs.publish.result == 'success' }}`, the same
+form `live` and `publish` already used.
+`TestReleaseSurvivesASkippedDeploy` in `tools/release` parses
+`release.yml`, walks the graph, and fails on any job below `deploy` that
+does not say `always()`;
+`TestSilentSkipIsFound` proves the check on the shape the workflow had
+when the release went out unverified. The tag was unwound, the release
+deleted so the `conformance` job could not read `v0.1.0`'s own fixture
+as a previous release's, and the version re-cut.
 
 ### Divergences
 

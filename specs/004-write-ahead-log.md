@@ -403,6 +403,14 @@ spec stays at `testing` until those land; the dispatch rule of
 `specs/README.md` (every dependency at `testing` or later) is what lets
 the specs that build on this one start meanwhile.
 
+The first release, on 2026-09-10, closed none of the three, and none of
+them is waiting on one. `TestE2EHundredConcurrentPushesFromEightClients`
+and `TestSlowMaterializeTenThousandEntries` are still not in the tree,
+so no job can run them, and the DigitalOcean Spaces probe is a
+maintainer's step of spec 017's release checklist. Writing the two
+tests, running them in the `e2e` and `e2e-slow` jobs, and recording the
+probe is what closes this spec.
+
 ## Outcome
 
 Phase 1 shipped the log on 2026-09-06 as the Current state describes.

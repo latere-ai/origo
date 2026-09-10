@@ -307,5 +307,15 @@ without `-v`, so the evidence is the package's `ok` and those
 assertions rather than a named case. Spec 021's Outcome records the
 same run.
 
-This spec stays at `testing` until spec 021's live run has run once,
-which the first release tag produces.
+This spec stays at `testing` until spec 021's live run has run once.
+
+The first release ran on 2026-09-10 and did not produce the live run.
+The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
+`TestContract` skipped, because the repository carries no
+`ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret and nothing answers
+at `https://git.latere.ai`; the job's log reads `nothing answers at
+ORIGO_TEST_URL` then `--- SKIP: TestContract (0.00s)`. A skipped test
+passes, so the job is green, and this spec does not read that green as
+the run. Spec 017's Outcome records the limit. What closes it: the two
+secrets set on the repository, with an installation behind the URL, and
+a tag or a re-run of that job.

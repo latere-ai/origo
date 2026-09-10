@@ -359,7 +359,22 @@ have.
 This spec stays at `testing` until spec 021 reaches `complete`, the
 way specs 003 and 004 wait on the suite: what remains is the run of
 the four cases against the installation `ORIGO_LIVE_URL` names, which
-spec 021 owns.
+spec 021 owns. The four cases are green against the image the first
+release published: the `conformance` job of the tag run 34461460766 of
+`v0.1.0` names `--- PASS: TestContract/020 (3.16s)`, and the `cluster
+e2e tier` job of the tag's `verify` run 34461461220 names its four
+subtests, `commits`, `merge`, `cherry-pick`, and `revert`.
+
+The first release ran on 2026-09-10 and did not produce the live run.
+The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
+`TestContract` skipped, because the repository carries no
+`ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret and nothing answers
+at `https://git.latere.ai`; the job's log reads `nothing answers at
+ORIGO_TEST_URL` then `--- SKIP: TestContract (0.00s)`. A skipped test
+passes, so the job is green, and this spec does not read that green as
+the run. Spec 017's Outcome records the limit. What closes it: the two
+secrets set on the repository, with an installation behind the URL, and
+a tag or a re-run of that job.
 
 ### Open
 

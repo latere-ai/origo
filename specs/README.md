@@ -69,7 +69,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | complete |
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
-| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | testing |
+| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | complete |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing |
@@ -200,9 +200,9 @@ flowchart LR
 | 2 | 007, 013 | Authenticated, delegated access with the stub issuer and authorizer (built by 007) in place of `ORIGO_DEV_TOKEN`, `ORIGO_TOKEN_KEY` required in every mode; the kind overlay with every row its table names (MinIO with fixed values on a host port, three pods each on host ports of their own, the stubs with the TLS source, metrics-server, Cilium, the restricted namespace, the HPA patch), `up.sh` and `down.sh`, the `test/e2e/cluster` helper, the tiers, and the CI jobs selecting tests by name prefix, which every later spec's criteria run on | built; 007 and 013 complete, the cluster jobs green on main |
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, at testing until 013's jobs run `TestE2EArchiveStreams` and the 40 second fuzz; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 complete, its last criterion, the frozen repository, owned by 021's `TestContract` and green against the stack in the dispatched run 34358421294; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
-| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing until 014 asserts that `verify` runs through the dialer and 017 attaches the bill of materials, 019 having asserted the `import` half. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's live run covers the conformance cases of its first criterion, which are written and green against the stack in the dispatched run 34358421294, 014's `TestSourceTokenIsNeverLogged` having closed the source-bearer half |
-| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | 021 built and at testing: `test/conformance` with 60 cases green against the stub (`TestStubConforms`, `TestRunCleansUp`), the code table with every status and the `go/ast` walk, the sideband rule, the mutation seam and `TestMutation` green for all five capabilities against MinIO, the `e2e` job running `TestContract` and `TestSameAnswersOnStubAndStack`, the `live` job in `release.yml`; the suite green whole against the stack, 020's four cases in it, in the dispatched run 34358421294; at testing until a release's live run and 014's `verify` case of the source group. 017 built and at testing: `release.yml` builds, signs, attests, conforms against the published image, deploys, publishes, and verifies its own release, with the four binary archives, the two multi-architecture images, the deploy archive of `tools/release/deploy-archive.sh`, the release fixture, the trixie-slim base in all three Dockerfiles, `internal/version` as the one version source, the newer-format refusal, the smoke fix, and `docs/upgrades/` in the tree; no tag is cut yet, and the first one is what proves the signed artifacts, the bill of materials of a published image, and the `live` job. 018 built and at testing: `deploy/base` provider-neutral with the check as an init container, `deploy/examples/digitalocean` and `deploy/examples/aws` beside the `kind` overlay, `origod check` on the subcommand table with its seven lines, `docs/install.md` from a cluster and a bucket to a first push with its blocks run by `tools/docs/run-blocks.sh`, and `docs/configuration.md` and `docs/api.md` generated by `make docs`; the `install` and `overlays` jobs run on every push and `install-release` waits for the first tag, as does the maintainer's walk of the prose |
-| 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | built and at testing: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; `TestClusterMigrationCatchesALateWrite` and `TestClusterMigrationDocCommandsRun` ran in the `e2e` job of the dispatched run 34349791440, whose `test/e2e` package passed |
+| 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; at testing on the attachment half of its supply-chain row alone: 019 asserted the `import` half and 014 the `verify` half on 2026-09-09, and the tag run 34461460766 shipped the three SPDX documents as release assets with both images and `checksums.txt` signed, so what is left is the bill of materials and the provenance attached to the image, which needs the repository to be public. 019 built and at testing: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; at testing until 021's live run covers the conformance cases of its first criterion, which are written and green against the stack, named case by case in the `cluster e2e tier` job of the tag run 34461461220 and green against the published image in run 34461460766, 014's `TestSourceTokenIsNeverLogged` having closed the source-bearer half; the first release did not produce the live run |
+| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the first release ran on 2026-09-10: tag `v0.1.0` at commit `2b2468d`, Release run 34461460766 with every job green or deliberately skipped, and the tag's `verify` run 34461461220 green over the cluster tiers, the up-script check, and the mutation job. All three specs stay at `testing`. 021: the suite is green whole against the stack and against the image the release published, named case by case in both runs; what remains is the live run, which the release did not produce, and 014's `verify` case of the source group. 017: the tag closed every row a tag can close, the artifacts and signatures and body through `release-verify`, the three SPDX assets, the conformance run against the published image, the deploy-less tag, and `install-release`; what remains is the attestations, which need a public repository, the `live` job, which needs the two secrets and an installation, and the N-1 fixture, which needs a second tag. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
+| 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | 014 complete: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; the `cluster e2e tier` job of the tag run 34461461220 names `--- PASS: TestClusterMigrationCatchesALateWrite` and `--- PASS: TestClusterMigrationDocCommandsRun`, which was the last item |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
@@ -294,6 +294,8 @@ deck and stated here so a reader sees them without the owning spec.
 | `internal/tracing` is the one package that imports `go.opentelemetry.io/otel` and `otel/trace`; every other package takes its span helpers from there and `cmd/origod` reaches the SDK through `latere.ai/x/pkg/otel`. The SDK is the one direct dependency beside the standard library and `latere.ai/x/pkg`, which amends spec 001's seventh invariant, and `depcheck` holds the node's whole build list | 011 | 001, 002 |
 | the cluster and conformance steps of `verify.yml` run `go test -v` since `1f4bbb9`, so a stack proof cited from a run at or after it names its test in the log; a citation from an earlier run reads the package's `ok` together with the assertions inside the test it names, and neither kind is refreshed afterwards | 013, 021 | 003, 012, 014, 016, 019, 020 |
 | the four `actions/attest-*` steps of `release.yml` and `release-verify`'s `gh attestation verify` run only when `!github.event.repository.private`: GitHub's attestation API refuses a private repository on Latere's organization plan, which failed the v0.1.0 tag of 2026-09-10 in the `build` job after both images were pushed. The three SPDX documents are still built and still shipped as release assets and cosign keyless signing is untouched, so a private release is complete and signed with its bill of materials; only the attachment of the bill of materials and the provenance to the image, and their verification, are deferred. The condition reads `private`, not the plan, so the steps return by themselves when the repository is made public and need an edit if the plan is upgraded instead | 017 | 016, 018 |
+| the `live` job of `release.yml` runs `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN`, and `TestContract` skips when the URL is unset, so on a repository with neither secret the job passes without running a case and `publish`'s `needs.live.result == 'success'` is satisfied by a skip. Latere has no installation: no `ORIGO_LIVE_URL`, no `ORIGO_LIVE_TOKEN`, no `ORIGO_RELEASE_DEPLOY`, no `production` environment, and `git.latere.ai` does not resolve, so the v0.1.0 tag of 2026-09-10 published without a live run and `deploy and smoke` was skipped with it. No spec reads that green as the run; 003, 019, 020, and 021 stay at `testing` on it | 017 | 003, 019, 020, 021 |
+| a job of `release.yml` that leans on the implicit `success()` gate is skipped whenever any job above it in the graph is, however far up and through however many `always()` jobs, because GitHub evaluates that gate over the whole ancestor closure. `deploy` is skipped on every repository with no `ORIGO_RELEASE_DEPLOY`, so every job below it carries `if: ${{ always() && needs.<job>.result == 'success' }}`, held by `TestReleaseSurvivesASkippedDeploy` in `tools/release` | 017 | 018 |
 
 ## Applied fix lists
 
@@ -613,6 +615,60 @@ Release run whose first job never starts, so `v0.1.0` and its changelog
 commit were undone instead, the commit by `git revert` so the published
 history stands, and the version is free to cut once the budget is
 lifted. Lifting it is the user's decision.
+
+The twenty-first round, the first release. The budget was lifted and
+`v0.1.0` was cut from `main` at `058eb6d`, tagged `2b2468d`. Three
+defects were found and fixed before or during it, each with a test that
+fails without the fix.
+
+`release.yml` published a release nothing verified. `deploy` is skipped
+on a repository with no `ORIGO_RELEASE_DEPLOY`, and GitHub evaluates a
+job's implicit `success()` gate over its whole ancestor closure, so that
+skip travelled through `publish`, which runs under `always()`, into
+`install-release` and `release-verify`, which carried no condition of
+their own; run 34450584556 shows both skipped after `publish` succeeded.
+Both jobs now carry `always()` with an explicit `needs.publish.result`
+check, and `TestReleaseSurvivesASkippedDeploy` in `tools/release` walks
+the graph of `release.yml` and fails on any job below `deploy` that does
+not, with `TestSilentSkipIsFound` proving the check on the shape the
+workflow had. The tag was unwound to carry the fix: the release was
+deleted first, so the re-cut's `conformance` job could not read
+`v0.1.0`'s own fixture as a previous release's, then the tag and the
+changelog commit, the commit by `git revert`. The decision row above
+states the rule.
+
+`docs/install.md` raced the datapath. A rollout reports ready a moment
+before the Service routes to the new pods, so the document's first
+request through `$ORIGO_URL` was reset; the `install` job failed twice
+in a row on `curl` exit 56 in run 34452566717. The document now waits
+for the address to answer before it asks for anything, bounded so a
+wrong hostname fails the walk instead of hanging, and
+`TestInstallWaitsForTheAddress` in `tools/docs` holds it. Spec 018 owns
+the document and records the row.
+
+`TestOperationBudgetIsAnswered` measured the wrong thing. Its harness
+set the 2 second budget at construction, so the warm request that
+materializes the repository ran under it too, and on a loaded runner
+that request was cut instead of the one the test is about; it failed
+that way in run 34452566717. The warm request now runs under the
+default budget and the short one is set for the request under test,
+which also lets the test assert `budget_seconds` is 2 rather than
+merely present.
+
+What the release closed and what it did not. 014 moves to `complete`:
+the `cluster e2e tier` job of the tag's `verify` run 34461461220 ran
+with `-v` and names `TestClusterMigrationCatchesALateWrite` and
+`TestClusterMigrationDocCommandsRun` outright, which was its last item.
+Nothing else moves. The `live` job ran and skipped, because the
+repository carries neither `ORIGO_LIVE_URL` nor `ORIGO_LIVE_TOKEN` and
+`git.latere.ai` does not resolve, so 003, 019, 020, and 021 stay at
+`testing` on a run that has still not happened; the decision row above
+states it and 017's Outcome records it as the third external limit.
+016 stays on the attestation attachment, 017 on that and on the live
+job and the second tag's N-1 fixture, 018 on a maintainer walking the
+prose, 004 on two tests nobody has written and the Spaces probe, and
+009 on `TestReadTrace` and the weekly `fuzz` job. Each of those is
+stated in the spec's own Outcome with what closes it.
 
 ## Later
 

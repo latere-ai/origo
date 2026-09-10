@@ -1,6 +1,6 @@
 ---
 title: "Migration of existing repositories from a prior host"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -338,6 +338,18 @@ Items left to another builder, from the same review:
   proves a later tree. The next dispatched or tag run is the first
   whose log names `TestClusterMigrationCatchesALateWrite` and
   `TestClusterMigrationDocCommandsRun` outright.
+
+Named stack proof, and what moves this spec to `complete`: the `cluster
+e2e tier` job of the tag run 34461461220 of `verify.yml` on `v0.1.0`, at
+commit `2b2468d`, ran `go test -v -tags=e2e ./test/e2e/... -run
+TestCluster` against the kind stack and its log names
+`--- PASS: TestClusterMigrationCatchesALateWrite (4.47s)` and
+`--- PASS: TestClusterMigrationDocCommandsRun (24.18s)`, with every
+other job of that run green. That was the last item: every criterion of
+the table above now has a passing test, named in a run, and the
+`default_branch` builder item below moves no status. The citation above
+of run 34349791440 stands as the evidence on its own commit and is not
+refreshed.
 
 ### Divergences
 

@@ -643,6 +643,29 @@ returns at once.
 
 The spec stays at `testing`. The two deferred items above are what
 remains, and neither is a stack run: the live run of `TestContract`
-against `ORIGO_LIVE_URL`, which needs a release and so closes at the
-first tag, and spec 014's `verify` case of the source group, which is
-not in `test/conformance` yet.
+against `ORIGO_LIVE_URL`, and spec 014's `verify` case of the source
+group, which is not in `test/conformance` yet.
+
+Named stack proof, at the first release: the `cluster e2e tier` job of
+the tag run 34461461220 of `verify.yml` on `v0.1.0`, at commit
+`2b2468d`, ran the conformance step with `-v` and its log names
+`--- PASS: TestContract (67.32s)` with every group and every case
+beneath it, and `--- PASS: TestSameAnswersOnStubAndStack`. The
+`conformance against the published image` job of the Release run
+34461460766 ran the same suite against the image the tag published and
+names `--- PASS: TestContract (65.84s)`. The `mutation` job of run
+34461461220 passed for all five capabilities. The citation of run
+34358421294 above stands as the evidence on its own commit and is not
+refreshed.
+
+The first release ran on 2026-09-10 and did not produce the live run.
+The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
+`TestContract` skipped, because the repository carries no
+`ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret and nothing answers
+at `https://git.latere.ai`; the job's log reads `nothing answers at
+ORIGO_TEST_URL` then `--- SKIP: TestContract (0.00s)`. A skipped test
+passes, so the job is green, and this spec does not read that green as
+the run. Spec 017's Outcome records the limit. What closes it: the two
+secrets set on the repository, with an installation behind the URL, and
+a tag or a re-run of that job.
+

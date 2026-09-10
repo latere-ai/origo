@@ -290,3 +290,14 @@ package; the criterion is `TestReadTrace` in `cmd/origod`.
 Deferred to spec 013's jobs: `TestE2EArchiveStreams` on every push,
 and the 40 second `FuzzValidPath` run. The spec moves to `complete`
 when both run there and `TestReadTrace` is green.
+
+Of those three, one is done. `TestE2EArchiveStreams` runs in the
+`integration and one-node e2e tiers` job on every push and passed in
+run 34460223906 of `verify.yml` on main, at commit `058eb6d`, the run
+the first release was cut from. Two remain and the first release closed
+neither: `TestReadTrace` is not in the tree, and the 40 second
+`FuzzValidPath` run belongs to the weekly `fuzz` job, which is on a
+schedule and has not run. This spec's read cases are green against the
+release's own image, the `conformance` job of the tag run 34461460766
+naming `--- PASS: TestContract/009 (1.68s)`, but that is not what the
+spec waits on.
