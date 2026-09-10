@@ -82,13 +82,15 @@ was applied; the tool settles every round from the stored object, and the
 spec's retry path reads `index/<n+1>` back and checks whether it names
 its own entry.
 
-### DigitalOcean Spaces (fra1, bucket `latere-storage`)
+### DigitalOcean Spaces (fra1)
 
 Run on 2026-09-06 with the current build and cluster credentials against
-the production bucket under `origo-spike/71b6b35776d30ba0/`, deleted at
-the end. An earlier run of the previous build (prefix
-`origo-spike/2f900c8e7cfc0f89/`) found the same `If-Match` behaviour; the
-recorded report is the later run.
+a production DigitalOcean Spaces bucket in fra1, under
+`origo-spike/71b6b35776d30ba0/`, deleted at the end. An earlier run of
+the previous build (prefix `origo-spike/2f900c8e7cfc0f89/`) found the
+same `If-Match` behaviour; the recorded report is the later run. The
+bucket is named in neither this page nor the raw report: the finding is
+about the provider, not about one bucket.
 
 | Primitive | Expected | Got | Result |
 |---|---|---|---|

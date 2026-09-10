@@ -1,6 +1,6 @@
 {
   "endpoint": "https://fra1.digitaloceanspaces.com",
-  "bucket": "latere-storage",
+  "bucket": "<redacted>",
   "prefix": "origo-spike/71b6b35776d30ba0/",
   "server_header": "",
   "started": "2026-09-06T14:37:03.194411Z",
