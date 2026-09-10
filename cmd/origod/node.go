@@ -34,6 +34,7 @@ import (
 	"github.com/latere-ai/origo/internal/metrics"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/repo"
+	"github.com/latere-ai/origo/internal/sshd"
 	"github.com/latere-ai/origo/internal/tracing"
 	versionpkg "github.com/latere-ai/origo/internal/version"
 	"github.com/latere-ai/origo/internal/wal"
@@ -69,8 +70,9 @@ type readyCheck struct {
 	fn   func(context.Context) error
 }
 
-// node is the process: three listeners, the readiness checks, and the
-// background loops, started together and stopped in order.
+// node is the process: three listeners, a fourth when SSH is turned on,
+// the readiness checks, and the background loops, started together and
+// stopped in order.
 type node struct {
 	cfg    *config.Config
 	logger *slog.Logger
@@ -109,6 +111,11 @@ type node struct {
 	egress *api.Egress
 	api    *api.Handler
 
+	// ssh is the third listener of spec 024, built only when
+	// ORIGO_SSH_ADDR is set. Nil is SSH off and the node runs exactly as
+	// it runs without it.
+	ssh *sshd.Server
+
 	public     http.Handler
 	checks     []readyCheck
 	background []func(context.Context) error
@@ -138,6 +145,7 @@ type node struct {
 	publicAddr   string
 	internalAddr string
 	gossipAddr   string
+	sshAddr      string
 	started      chan struct{}
 }
 
@@ -260,7 +268,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// the verifier, every request authorized before its repository is
 	// looked up.
 	app := http.NewServeMux()
-	httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact, Limits: n.limits}).Register(app)
+	git := httpgit.New(httpgit.Options{Cache: n.cache, Logger: logger, Metrics: n.metrics, Guard: guard, Events: n.events, Placement: n.set, Compaction: n.compact, Limits: n.limits})
+	git.Register(app)
 	n.egress = api.NewEgress(api.EgressOptions{Allow: cfg.EgressAllow, Pinned: cfg.EgressPinned, ClusterCIDRs: cfg.ClusterCIDRs, Roots: cfg.EgressCA})
 	// The administration operations of spec 019 need the node's own
 	// name for an import lease, the live set the lease and the weekly
@@ -291,6 +300,23 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// against the effective subject the token named, and in front of
 	// every route of the application surface.
 	n.public = n.verifier.Middleware(n.limits.Middleware(capture(app)))
+	// SSH (spec 024), when the operator turned it on: a third listener
+	// over the same guard, the same cache, and the same git handler, so
+	// a push over SSH is the same log entry. The key resolver's calls go
+	// out over the transport the authorizer's do.
+	if cfg.SSHAddr != "" {
+		keys, err := sshd.NewResolver(sshd.ResolverOptions{URL: cfg.SSHKeysURL, Token: cfg.SSHKeysToken, HTTP: authClient, Metrics: n.metrics})
+		if err != nil {
+			return nil, err
+		}
+		n.ssh, err = sshd.New(sshd.Options{
+			HostKeys: cfg.SSHHostKeys, Keys: keys, Guard: guard, Cache: n.cache,
+			Git: git, Limits: n.limits, Metrics: n.metrics, Logger: logger,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return n, nil
 }
 
@@ -728,8 +754,23 @@ func (n *node) run(ctx context.Context) error {
 		_ = internalLn.Close()
 		return fmt.Errorf("gossip listener: %w", err)
 	}
+	// The SSH listener of spec 024, bound only when the operator turned
+	// it on. A node without ORIGO_SSH_ADDR opens no socket here.
+	var sshLn net.Listener
+	if n.ssh != nil {
+		sshLn, err = lc.Listen(ctx, "tcp", n.cfg.SSHAddr)
+		if err != nil {
+			_ = publicLn.Close()
+			_ = internalLn.Close()
+			_ = gossip.Close()
+			return fmt.Errorf("ssh listener: %w", err)
+		}
+	}
 	n.mu.Lock()
 	n.publicAddr, n.internalAddr, n.gossipAddr = publicLn.Addr().String(), internalLn.Addr().String(), gossip.LocalAddr().String()
+	if sshLn != nil {
+		n.sshAddr = sshLn.Addr().String()
+	}
 	n.mu.Unlock()
 	// The gossip loop is a background loop below; the socket is bound
 	// and the peers resolved here, before anything is served, so the
@@ -739,9 +780,17 @@ func (n *node) run(ctx context.Context) error {
 	publicSrv := &http.Server{Handler: n.publicHandler(), ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
 	internalSrv := &http.Server{Handler: n.internalHandler(), ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: slog.NewLogLogger(n.logger.Handler(), slog.LevelWarn)}
 
-	failed := make(chan error, 2)
+	failed := make(chan error, 3)
 	go func() { failed <- serveHTTP(publicSrv, publicLn, "public") }()
 	go func() { failed <- serveHTTP(internalSrv, internalLn, "internal") }()
+	// The SSH listener stops with the run context, and its accept loop
+	// waits for the sessions in flight, so a clone is not cut short by a
+	// drain that has begun.
+	sshCtx, stopSSH := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopSSH()
+	if sshLn != nil {
+		go func() { failed <- n.ssh.Serve(sshCtx, sshLn) }()
+	}
 
 	bgCtx, cancelBackground := context.WithCancel(context.WithoutCancel(ctx))
 	var bg sync.WaitGroup
@@ -753,7 +802,11 @@ func (n *node) run(ctx context.Context) error {
 		})
 	}
 
-	n.logger.InfoContext(ctx, "serving", "public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "peers", n.gossip.Peers(), "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "cache_bytes", n.cfg.CacheBytes, "version", versionpkg.String())
+	serving := []any{"public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "peers", n.gossip.Peers(), "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "cache_bytes", n.cfg.CacheBytes, "version", versionpkg.String()}
+	if n.ssh != nil {
+		serving = append(serving, "ssh", n.sshAddr, "ssh_host_keys", n.ssh.Fingerprints())
+	}
+	n.logger.InfoContext(ctx, "serving", serving...)
 	close(n.started)
 
 	var runErr error
@@ -773,6 +826,11 @@ func (n *node) run(ctx context.Context) error {
 	defer cancelGrace()
 	errs := []error{runErr}
 	errs = append(errs, publicSrv.Shutdown(graceCtx), internalSrv.Shutdown(graceCtx))
+	if sshLn != nil {
+		// Serve returns when its context ends and the sessions in flight
+		// are done; the error it reports is already on failed.
+		stopSSH()
+	}
 	errs = append(errs, gossip.Close())
 	cancelBackground()
 	bg.Wait()
@@ -797,4 +855,13 @@ func (n *node) addrs() (public, internal, gossip string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.publicAddr, n.internalAddr, n.gossipAddr
+}
+
+// sshAddress is the SSH listener's bound address, empty when the node
+// opened none.
+func (n *node) sshAddress() string {
+	<-n.started
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.sshAddr
 }
