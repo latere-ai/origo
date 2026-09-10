@@ -126,6 +126,13 @@ func (c Config) CloneSSH(owner, slug string) string {
 	return fmt.Sprintf("git@%s:%s/%s.git", c.SSHCloneHost, owner, slug)
 }
 
+// RepoAPIURL is the address of one repository on the Origo installation:
+// the read API's own entry point, which an agent with a token calls
+// directly rather than through this interface.
+func (c Config) RepoAPIURL(id string) string {
+	return fmt.Sprintf("%s/v1/repos/%s", strings.TrimRight(c.OrigoURL.String(), "/"), id)
+}
+
 // ArchiveURL is the address of a repository's archive on the Origo
 // installation. The link points at Origo directly, so a large tarball never
 // passes through this service.

@@ -304,3 +304,168 @@ func TestShortAbbreviates(t *testing.T) {
 		t.Errorf("a short id was cut to %q", got)
 	}
 }
+
+// TestMintSendsTheChoiceAndReturnsTheToken holds the one write this client
+// makes to the shape the installation publishes: a POST carrying the scope
+// and the lifetime in seconds, answered with the token and its expiry.
+func TestMintSendsTheChoiceAndReturnsTheToken(t *testing.T) {
+	var body map[string]any
+	var method, contentType string
+	s := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		method, contentType = r.Method, r.Header.Get("Content-Type")
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token":      "a.signed.token",
+			"expires_at": "2026-09-10T12:00:00Z",
+		})
+	})
+	c := s.client(t)
+
+	tok, err := c.Mint(t.Context(), "abc", "r1", ScopeWrite, 15*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || contentType != "application/json" {
+		t.Errorf("the mint was a %s of %q", method, contentType)
+	}
+	if s.paths[0] != "/v1/repos/r1/tokens" {
+		t.Errorf("the mint asked %q", s.paths[0])
+	}
+	if s.auth[0] != "Bearer abc" {
+		t.Errorf("the mint carried %q", s.auth[0])
+	}
+	if body["scope"] != "write" || body["ttl"] != float64(900) {
+		t.Errorf("the mint sent %v", body)
+	}
+	if tok.Value != "a.signed.token" {
+		t.Errorf("the token is %q", tok.Value)
+	}
+	if want := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC); !tok.ExpiresAt.Equal(want) {
+		t.Errorf("the expiry is %v, want %v", tok.ExpiresAt, want)
+	}
+}
+
+// TestMintRefusesWhatTheInstallationWouldRefuse asserts the bounds are held
+// here, before the request. A choice the installation would answer 400 to is
+// a choice no screen should have offered, and it never reaches the wire.
+func TestMintRefusesWhatTheInstallationWouldRefuse(t *testing.T) {
+	s := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	c := s.client(t)
+
+	for _, tc := range []struct {
+		name  string
+		scope Scope
+		ttl   time.Duration
+	}{
+		{"a scope that is neither", "admin", time.Minute},
+		{"an empty scope", "", time.Minute},
+		{"no lifetime at all", ScopeRead, 0},
+		{"a lifetime past the cap", ScopeRead, MaxTokenTTL + time.Second},
+		{"a negative lifetime", ScopeRead, -time.Minute},
+	} {
+		if _, err := c.Mint(t.Context(), "abc", "r1", tc.scope, tc.ttl); err == nil {
+			t.Errorf("%s was allowed", tc.name)
+		}
+	}
+	if len(s.paths) != 0 {
+		t.Errorf("a refused choice still asked the installation: %v", s.paths)
+	}
+
+	// The two ends of the range are inclusive, and both are sent.
+	for _, ttl := range []time.Duration{MinTokenTTL, MaxTokenTTL} {
+		if _, err := c.Mint(t.Context(), "abc", "r1", ScopeRead, ttl); err != nil {
+			t.Errorf("a lifetime of %s was refused: %v", ttl, err)
+		}
+	}
+}
+
+// TestMintCarriesTheRefusalThrough asserts a refusal of the mint route is the
+// same classified error every read produces, so one caller handles both.
+func TestMintCarriesTheRefusalThrough(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		is     func(error) bool
+	}{
+		{http.StatusUnauthorized, Unauthenticated},
+		{http.StatusForbidden, Absent},
+		{http.StatusNotFound, Absent},
+		{http.StatusServiceUnavailable, Unavailable},
+	} {
+		s := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "forbidden"}})
+		})
+		if _, err := s.client(t).Mint(t.Context(), "abc", "r1", ScopeRead, time.Minute); !tc.is(err) {
+			t.Errorf("a %d from the mint route was classified as %v", tc.status, err)
+		}
+	}
+
+	// An installation that cannot be reached at all is the same answer.
+	u, err := url.Parse("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(u, http.DefaultClient).Mint(t.Context(), "abc", "r1", ScopeRead, time.Minute); !Unavailable(err) {
+		t.Errorf("an unreachable installation gave %v", err)
+	}
+
+	// A body that is not the answer is an error and not a token.
+	s := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("not json"))
+	})
+	if _, err := s.client(t).Mint(t.Context(), "abc", "r1", ScopeRead, time.Minute); err == nil {
+		t.Error("a body that is not the answer was accepted as a token")
+	}
+}
+
+// TestTokenListDegradesRatherThanFails asserts the token registry is treated
+// the way the repository directory is: an installation that does not serve
+// the route is a capability that is absent, not a failure, and one that grows
+// it is read without another line of code.
+func TestTokenListDegradesRatherThanFails(t *testing.T) {
+	for _, status := range []int{
+		http.StatusNotImplemented, http.StatusNotFound,
+		http.StatusBadRequest, http.StatusMethodNotAllowed,
+	} {
+		s := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "no"}})
+		})
+		if _, err := s.client(t).Tokens(t.Context(), "abc", "r1"); !errors.Is(err, ErrNoTokenRegistry) {
+			t.Errorf("a %d from the token route gave %v, want no registry", status, err)
+		}
+	}
+
+	// A refusal that is about the reader and not about the route stays a
+	// refusal: a 401 must sign somebody out, not hide a table.
+	s := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "unauthenticated"}})
+	})
+	if _, err := s.client(t).Tokens(t.Context(), "abc", "r1"); !Unauthenticated(err) {
+		t.Errorf("a 401 from the token route gave %v", err)
+	}
+
+	// An installation that grew one is read with no change here.
+	at := time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC)
+	s = newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"tokens": []TokenRecord{
+			{ID: "7Kd2", Scope: ScopeWrite, IssuedAt: &at, ExpiresAt: &at},
+		}})
+	})
+	records, err := s.client(t).Tokens(t.Context(), "abc", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].ID != "7Kd2" || records[0].Scope != ScopeWrite {
+		t.Errorf("the registry read as %+v", records)
+	}
+	if s.paths[0] != "/v1/repos/r1/tokens" {
+		t.Errorf("the registry was asked at %q", s.paths[0])
+	}
+}

@@ -6,8 +6,10 @@
 // It holds no git knowledge: it sends the reader's own token to an Origo
 // installation and returns what came back. It never runs git, never reads
 // object storage, never resolves a reference, and never decides who may see
-// what. Every call is a GET of a path Origo's specs 003 and 009 publish, and
-// the fields below are the fields those documents name.
+// what. Every read is a GET of a path Origo's specs 003 and 009 publish, and
+// the fields below are the fields those documents name. The one call that is
+// not a read mints a repository-bound token, which writes no repository
+// content and which a person makes by hand on a screen of their own.
 //
 // A call carries an Authorization header when the caller has a token and no
 // Authorization header at all when it does not, so the same code path serves
@@ -16,6 +18,7 @@
 package origo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -430,4 +433,124 @@ func setIf(q url.Values, k, v string) {
 	if v != "" {
 		q.Set(k, v)
 	}
+}
+
+// Scope is what a repository-bound token may do: read the repository, or
+// read and write it. Neither scope may administer, which is why a token
+// cannot mint another.
+type Scope string
+
+// The two scopes Origo accepts (spec 007).
+const (
+	ScopeRead  Scope = "read"
+	ScopeWrite Scope = "write"
+)
+
+// The bounds Origo puts on a token's lifetime (spec 007). Both ends are
+// inclusive, and there is no unbounded lifetime: a token is signed and
+// carries no server-side record, so its expiry is the only thing that ends
+// it.
+const (
+	MinTokenTTL = time.Second
+	MaxTokenTTL = time.Hour
+)
+
+// Token is one minted repository-bound token, as the mint route answers it.
+// The value is the whole credential and exists nowhere else: Origo keeps no
+// copy, so this struct is the only place it is ever seen.
+type Token struct {
+	Value     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// Mint asks Origo for a token bound to one repository.
+//
+// The route needs the caller to administer that repository, so a reader who
+// may only read it is refused. Origo answers 400 for a scope or a lifetime
+// outside the bounds above; this call refuses those before the request, so a
+// screen never renders Origo's developer sentence.
+func (c *Client) Mint(ctx context.Context, tok, id string, scope Scope, ttl time.Duration) (Token, error) {
+	if scope != ScopeRead && scope != ScopeWrite {
+		return Token{}, fmt.Errorf("origo: scope %q is neither read nor write", scope)
+	}
+	if ttl < MinTokenTTL || ttl > MaxTokenTTL {
+		return Token{}, fmt.Errorf("origo: a lifetime of %s is outside %s to %s", ttl, MinTokenTTL, MaxTokenTTL)
+	}
+	body, err := json.Marshal(map[string]any{"scope": string(scope), "ttl": int(ttl.Seconds())})
+	if err != nil {
+		return Token{}, fmt.Errorf("build request: %w", err)
+	}
+	var out Token
+	err = c.postJSON(ctx, tok, "/v1/repos/"+url.PathEscape(id)+"/tokens", body, &out)
+	return out, err
+}
+
+// TokenRecord is one row of a token registry: what an installation that kept
+// a record of its tokens would say about one. The value is never a field,
+// because a registry that could return a token would be a registry that
+// could leak one.
+type TokenRecord struct {
+	ID        string     `json:"id"`
+	Scope     Scope      `json:"scope"`
+	IssuedAt  *time.Time `json:"issued_at"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	LastUsed  *time.Time `json:"last_used_at"`
+	RevokedAt *time.Time `json:"revoked_at"`
+}
+
+// ErrNoTokenRegistry is what Tokens returns from an installation that keeps
+// no record of the tokens it minted, which is every installation today. It
+// is not a failure, and the token screen degrades to the mint form on it.
+var ErrNoTokenRegistry = fmt.Errorf("origo: this installation keeps no record of minted tokens")
+
+// Tokens lists the tokens minted against one repository.
+//
+// Origo has one token route and it mints (spec 007). The tokens it mints are
+// signed and stateless: nothing is written when one is created, so there is
+// nothing to list and nothing to revoke, and their short lifetime is what
+// bounds a leak instead. An installation that grew a registry would serve it
+// beside the mint route, at the same repository-keyed address, and this call
+// is the probe for it: absence is ErrNoTokenRegistry and the screen says so
+// in its own words.
+func (c *Client) Tokens(ctx context.Context, tok, id string) ([]TokenRecord, error) {
+	var out struct {
+		Tokens []TokenRecord `json:"tokens"`
+	}
+	_, err := c.getJSON(ctx, tok, "/v1/repos/"+url.PathEscape(id)+"/tokens", nil, &out)
+	var apiErr *Error
+	if As(err, &apiErr) {
+		switch apiErr.Status {
+		case http.StatusNotImplemented, http.StatusNotFound, http.StatusBadRequest, http.StatusMethodNotAllowed:
+			return nil, ErrNoTokenRegistry
+		}
+	}
+	return out.Tokens, err
+}
+
+// postJSON sends one JSON body and reads one JSON answer. It is the only
+// write this client makes, and it writes no repository content: minting a
+// credential is the one thing a person does here that Origo records nowhere.
+func (c *Client) postJSON(ctx context.Context, tok, path string, body []byte, out any) error {
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return &Error{Status: 0, Code: "unreachable", cause: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return readError(resp)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(out); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	return nil
 }
