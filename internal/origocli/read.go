@@ -26,6 +26,8 @@ const (
 	defaultCatBytes = 32768
 	defaultCommits  = 20
 	defaultPatch    = 32768
+	// maxDirectoryLimit is the largest page GET /v1/repos serves (spec 026).
+	maxDirectoryLimit = 200
 )
 
 // emit writes a value as the contract's own JSON. A paged answer is one merged
@@ -53,6 +55,11 @@ func runRepos(ctx context.Context, s *session, args []string) error {
 	opt := origoclient.DirectoryOptions{}
 	cut := false
 	for {
+		// Ask for what is still wanted rather than the node's default page,
+		// so `origo repos -n 1` is one row of wire and not fifty.
+		if *n > 0 {
+			opt.Limit = min(*n-len(page.Repos), maxDirectoryLimit)
+		}
 		got, err := s.client.Directory(ctx, opt)
 		if err != nil {
 			return directoryHint(err)
@@ -289,7 +296,7 @@ func runCat(ctx context.Context, s *session, args []string) error {
 	if entry.Type != "blob" {
 		return misuse("%s is a %s, not a file; list it with origo ls", entry.Path, entry.Type)
 	}
-	blob, err := s.client.Blob(ctx, id, entry.SHA, window(entry.Size, *maxBytes))
+	blob, err := s.client.Blob(ctx, id, entry.SHA, window(entry.Size))
 	if err != nil {
 		return err
 	}
@@ -310,7 +317,20 @@ func runCat(ctx context.Context, s *session, args []string) error {
 	}
 	text, shown, taken, total := lineWindow(string(blob.Bytes), *offset, lines, cap)
 	s.out.notice("%s@%s  %s bytes  %d lines", entry.Path, short(blob.Meta.Commit), size(entry.Size), total)
+	if entry.Size != nil && *entry.Size > origoclient.MaxBlobBytes {
+		// The blob route serves at most 50 MiB at once, so the line count
+		// above is of the first 50 MiB and not of the file.
+		s.out.notice("%s", wall(fmt.Sprintf("the installation serves at most %d bytes of a blob at once, so this is the first %d of %s and the line count is of that much",
+			origoclient.MaxBlobBytes, origoclient.MaxBlobBytes, size(entry.Size))))
+	}
 	s.out.write([]byte(text))
+	if cap > 0 && taken > cap {
+		// A line is atomic: cutting one at the byte cap would print a
+		// fragment that is not a line of the file, and the next window would
+		// have to start mid-line for the two to compose. So the cap yields
+		// to the line, and says that it did.
+		s.out.notice("%s", wall(fmt.Sprintf("one line is longer than -max-bytes, so this window is %d bytes rather than %d; a line is not cut in half", taken, cap)))
+	}
 	if *offset+shown < total {
 		s.out.notice("%s", truncation(
 			fmt.Sprintf("lines %d-%d of %d, %d bytes", *offset, *offset+shown-1, total, taken),
@@ -319,22 +339,22 @@ func runCat(ctx context.Context, s *session, args []string) error {
 	return nil
 }
 
-// window decides whether a blob needs a Range. The node measures the
-// requested length against its 50 MiB bound, so knowing the size in advance is
-// what keeps blob_too_large unreachable. A window of the byte cap is enough:
-// no more text than that is ever printed.
-func window(fileSize *int64, maxBytes int) *origoclient.ByteRange {
-	if fileSize == nil {
+// window decides whether a blob needs a Range, and it is about one thing
+// only: the node refuses a request for more than 50 MiB at once, measuring
+// the requested length rather than the blob's size, so knowing the size in
+// advance is what keeps blob_too_large unreachable.
+//
+// It deliberately does not window by -max-bytes. That flag bounds what is
+// printed, not what is fetched: the bytes are paid on this machine, which is
+// a reason the binary is local. Fetching only the first -max-bytes would make
+// -offset unusable past that point and would compute the file's line count
+// from a fragment, so `origo cat -offset 900` on a large file would answer
+// nothing and call it the whole file.
+func window(fileSize *int64) *origoclient.ByteRange {
+	if fileSize == nil || *fileSize <= origoclient.MaxBlobBytes {
 		return nil
 	}
-	want := int64(maxBytes)
-	if want <= 0 || want > origoclient.MaxBlobBytes {
-		want = origoclient.MaxBlobBytes
-	}
-	if *fileSize <= want {
-		return nil
-	}
-	return &origoclient.ByteRange{First: 0, Last: want - 1}
+	return &origoclient.ByteRange{First: 0, Last: origoclient.MaxBlobBytes - 1}
 }
 
 func head(b []byte, n int) []byte { return b[:min(len(b), n)] }

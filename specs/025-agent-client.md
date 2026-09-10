@@ -221,8 +221,27 @@ person did it, which is true.
 **A token from the issuer** is accepted and is the broader case: it is
 not bound to a repository, so the authorizer decides each call, and what
 the agent may do is what the person may do. It is what an operator with
-no minting path starts with, and it is what makes `origo repos` answer
-more than one row. The spec states the cost plainly rather than
+no minting path starts with, and **it is the only credential `origo
+repos` works under**.
+
+That last point is a fact about the model rather than a gap. A
+repository-bound token's decision was made at minting, for one
+repository, so `internal/auth`'s guard refuses the `list` action on its
+scope before the authorizer is asked (`guard.go`, `ReasonScope`), and no
+directory on the authorizer changes that. There is no subject-wide
+answer to give for a credential that names one repository, and inventing
+one would mean the client deciding what the installation refused to.
+`origo repos` therefore answers `forbidden` with `action=list` under the
+credential the skill recommends, and the line says what to do instead:
+name the repository with `-repo`, or use a token from the issuer. Every
+other command works under a bound token, and the skill's pipelines all
+name a repository.
+
+The first draft hit the same wall from the other side, and its
+Validation row 8 recorded it: its repository list would have called
+`GET /v1/repos/{id}` per alias and answered `forbidden` for all but one.
+Spec 026 gave the route a real directory but it did not, and could not,
+give a bound token a subject-wide question to ask. The spec states the cost plainly rather than
 forbidding it: a leak of it is a leak of the person's whole access,
 where a leak of a bound token is a leak of one repository for at most an
 hour.
@@ -248,7 +267,7 @@ every read command is any reference name, a short name, or an object id.
 
 | Command | What it does |
 |---|---|
-| `origo repos` | one line per repository the subject may see, `<id>  <owner>/<slug>`, paged through spec 026's directory mode |
+| `origo repos` | one line per repository the subject may see, `<id>  <owner>/<slug>`, paged through spec 026's directory mode. It is the one command a repository-bound token does not have: see below |
 | `origo info` | the repository in one screen: `owner/slug`, default branch, full head, `size_bytes`, `updated_at`, `pushed_at`, from one call |
 | `origo refs` | `<name> <7 hex>` per line; `-heads` (default), `-tags`, `-all`, `-prefix` |
 | `origo ls [path]` | one line per tree entry: the path, `/` for a tree, `*` for `100755`, `@` for `120000`, and the size for a blob; `-r` walks the whole tree, paging past the route's 5 000 per page |
@@ -354,7 +373,7 @@ stays in the context. Four rules, then the numbers.
 | `origo info` | one repository, one call | never | the other commands |
 | `origo refs` | 100 refs | Origo's 10 000 | `-n 0` |
 | `origo ls` | 200 entries, one directory | Origo's 5 000 per page, paged | `-r`, `-n 0` |
-| `origo cat` | 800 lines or 32 KiB, whichever first | Origo's 50 MiB blob rule, handled by `Range` before it fires | `-offset`, `-n`, `-max-bytes` |
+| `origo cat` | 800 lines or 32 KiB of printed text, whichever first | Origo's 50 MiB blob rule, handled by `Range` before it fires | `-offset`, `-n`, `-max-bytes` |
 | `origo log` | 20 commits, subject only | Origo's 200 per page, paged | `-n`, `-n 0` |
 | `origo show` | metadata, message, per-file stat | Origo's 1 MiB compare | `-p`, `-path` |
 | `origo diff` | per-file stat and a totals line | Origo's 1 MiB compare | `-p`, `-path`, `-max-bytes` |
@@ -384,6 +403,20 @@ it asks whether a `Range` is needed and never provokes `blob_too_large`.
 Fact 2 above is why the resolution is one listing of the path's parent
 directory and a match on the basename: one call for a nested path as for
 a root one, and no descent.
+
+`-max-bytes` bounds what is printed and not what is fetched, and the
+`Range` exists for one reason only: the node refuses a request for more
+than 50 MiB at once. Windowing the fetch by the byte cap instead would
+make `-offset` unusable past the cap and would compute the file's line
+count from a fragment, so `origo cat -offset 900` on a large file would
+answer nothing and present it as the whole file. The bytes are paid on
+the local machine, which is the same trade the stat-first diff makes and
+the same reason the binary is local.
+
+A byte cap cannot cut a line in half, because a fragment is not a line of
+the file and the next window would have to start mid-line for the two to
+compose. So a single line longer than `-max-bytes` is printed whole and
+the answer says why, which keeps the windows exact.
 
 **`info` is one call.** The first draft's `repo_overview` was four: the
 repository, the branches, the tags, and five commits. It existed because
@@ -519,6 +552,12 @@ advantage of the shape, so the body has to earn its place and the
 frontmatter has to be honest about when to load it.
 
 It teaches five things and nothing else:
+
+Its resident cost is measured, not asserted: the frontmatter's `name` and
+`description` are **99 bytes** together, against the **5 725 bytes** of
+`tools/list` JSON the first draft's eight read tools would have held in
+every context of every session. The body is 5 142 bytes and is paid once,
+by an agent that decided the sentence matched its task.
 
 1. **The credential**, as one `curl` that mints a repository-bound
    token, with `"scope": "read"` first and the sentence that says the
@@ -688,9 +727,12 @@ replacing the surface:
 | 16 | nothing separated the payload from the commentary, so a truncation notice would have reached a `grep` and `origo cat x.go > x.go` would have written a note into the file | rule 3 of Byte defaults: data on stdout, every header, truncation and stale line on stderr |
 | 17 | the first draft was one binary with its formatting fused into its tool handlers, which is what made a second front end impossible | three packages with a stated boundary, and `internal/origoclient` formats nothing |
 | 18 | `ORIGO_TOKEN` sits one word from the node's `ORIGO_TOKEN_KEY`, and nothing caught a PEM key sent as a bearer | a value beginning `-----BEGIN` is refused at start-up by name |
-| 19 | the author variable was `Name <email>` on both sides. Spec 020's `author` is `{"name", "email"}` and `validateCommon` refuses an email with no `@`, so the whole string would have travelled as a name with an empty address and been refused on the wire | Configuration says the variable is one string here and two fields there, the command splits at the angle brackets, and the start-up refusal catches a missing `@` before a round trip |
-| 20 | the write receipt was read as five fields with `committed` a boolean. A real write answers 201 with `committed` absent, never `true`, and only a dry run carries `committed: false` with a null `entry_seq` | fact 5, and the receipt reads `committed` as present-and-false rather than as a boolean with a default |
-| 21 | the commit route's budget was given as 300 seconds with the other three. `MergeBudget` is 300 and covers merge, cherry-pick and revert; the commit route runs under the 30 second budget the reads have | Configuration gives `origo commit` the 60 second client timeout of a read, and 330 to the other three |
+| 20 | the author variable was `Name <email>` on both sides. Spec 020's `author` is `{"name", "email"}` and `validateCommon` refuses an email with no `@`, so the whole string would have travelled as a name with an empty address and been refused on the wire | Configuration says the variable is one string here and two fields there, the command splits at the angle brackets, and the start-up refusal catches a missing `@` before a round trip |
+| 21 | the write receipt was read as five fields with `committed` a boolean. A real write answers 201 with `committed` absent, never `true`, and only a dry run carries `committed: false` with a null `entry_seq` | fact 5, and the receipt reads `committed` as present-and-false rather than as a boolean with a default |
+| 19 | spec 026's directory was read as making `origo repos` work for an agent. It does not: a repository-bound token's `list` is refused on its scope by `internal/auth`'s guard before the authorizer is asked, whatever directory the authorizer has, so the recommended credential answers `forbidden` and not `directory_unsupported`. Found by running the end-to-end test against a node rather than against a stand-in | Authentication states it as a property of the model, the command surface marks `repos` as the one command a bound token does not have, `directoryHint` explains both refusals, and the two end-to-end criteria assert the bound-token refusal and the issuer-token listing separately |
+| 22 | the commit route's budget was given as 300 seconds with the other three. `MergeBudget` is 300 and covers merge, cherry-pick and revert; the commit route runs under the 30 second budget the reads have | Configuration gives `origo commit` the 60 second client timeout of a read, and 330 to the other three |
+| 23 | the file read windowed the fetch by `-max-bytes`, so `-offset` past that cap answered nothing and the line count was of the fetched fragment. The acceptance criterion's own "no overlap and no gap" would have failed under the default flags, which is the configuration every caller uses. Found by testing at the default rather than with the cap turned off | the `Range` is for the node's 50 MiB rule alone, the cap bounds what is printed, and a line longer than the cap is printed whole with a line saying why |
+| 24 | `origo repos -n 1` bounded the answer but not the request, so it fetched the node's default page of fifty rows to print one | the loop asks for what is still wanted, up to spec 026's 200 |
 
 **The dependency ordering, stated rather than assumed.** Spec 026 is at
 `drafted` while the route it specifies, `GET /v1/repos`, is built,
@@ -788,13 +830,34 @@ exactly as What must land first says.
   `ORIGO_AUTHOR` whose address has no `@`, each with one sentence on
   stderr and exit status 2 (proposed: `internal/origocli`,
   `TestStartupRefusals`).
-- `-repo <owner>/<slug>` resolves once through
-  the name mode of `GET /v1/repos`, `?owner=&slug=`, and every later
-  call in the same process
-  uses the id it returned; an installation answering 501
+- `-repo <owner>/<slug>` resolves once through the name mode of
+  `GET /v1/repos`, `?owner=&slug=`, and every later call in the same
+  process uses the id it returned; an installation answering 501
   `directory_unsupported` to `origo repos` prints one line saying a
   repository must be named directly and exits 1 (proposed:
-  `internal/origocli`, `TestNameResolvesOnceAndDirectoryMayBeUnsupported`).
+  `internal/origocli`, `TestNameResolvesOnceAndTheIdIsUsedAsItStands`,
+  `TestReposPagesAndSaysWhenThereIsNoDirectory`).
+- `origo commit` reads only files under the working directory: a
+  positional path, a `-file` mapping, and an absolute path each pointing
+  outside it are refused with one sentence and exit 2, and no request
+  leaves the process; a directory is named rather than walked (proposed:
+  `internal/origocli`, `TestLocalReadsStayUnderTheWorkingDirectory`).
+- Each code of the error table becomes one line `<code>: <message>` with
+  that row's details and nothing else, over a stand-in that answers each
+  envelope; a code with no row adds nothing beyond its sentence, a 429
+  names the wait and the `RateLimit-Limit` in force, and a 401 with
+  `details.reason: "expired"` adds the instruction to mint again
+  (proposed: `internal/origocli`, `TestOrigoErrorsBecomeOneLine`).
+- The skill's `name` and `description` together are at most 256 bytes,
+  its body is the five things the section above names, and every flag
+  either document mentions is one the binary accepts (proposed:
+  `internal/origocli`, `TestTheSkillsResidentCostIsItsFrontmatter`,
+  `TestDocumentedFlagsMatchTheBinary`).
+- `make release-archives` writes eight archives, `origo` and `origod` for
+  the four platforms of `RELEASE_PLATFORMS`, and one `checksums.txt`
+  naming all eight; `release-verify` downloads by a pattern for each, so
+  no sum is checked against a file that was not fetched, and no image is
+  added (proposed: `cmd/origo`, `TestTheReleaseCarriesBothBinaries`).
 - With `ORIGO_TOKEN` set to a distinctive string, a run of every command
   writes it to no stdout byte, no stderr byte, and no request the
   stand-in received other than the `Authorization` header, mirroring
@@ -815,9 +878,11 @@ exactly as What must land first says.
   new head in a second `origo info`, reverts that commit with
   `origo revert`, and is refused `non_fast_forward` on a third write
   carrying the stale head; `origo ls -r -n 0 | grep` finds a file by name
-  and `origo log -n 200 | grep` finds a commit by author, with no clone
-  and no `git` process (proposed: `test/e2e`,
-  `TestE2EOrigoReadsCommitsAndReverts`, a plain test of the one-node run:
+  and `origo log -n 200 | grep` finds a commit by author; `merge`,
+  `cherry-pick`, `show` and `refs` are each called at least once in the
+  same run, and the working directory holds no `.git` and nothing the
+  test did not write, with no clone and no `git` process (proposed:
+  `test/e2e`, `TestE2EOrigoReadsCommitsAndReverts`, a plain test of the one-node run:
   `requireStack` and `startNode` of `test/e2e/harness_test.go`, under the
   `TestE2E` prefix `make test-tiers` selects, and not `requireNodes`,
   which is the cluster stack `ORIGO_TEST_URL` names).
@@ -825,6 +890,11 @@ exactly as What must land first says.
   on the first write and leaves the branch where it was, which is the
   proof that the credential is the write gate (proposed: `test/e2e`,
   `TestE2EOrigoReadTokenCannotWrite`, the one-node run as above).
+- Against a node whose authorizer has no directory, `origo repos` answers
+  `directory_unsupported` and says a repository must be named, and
+  `origo info` with that repository named is served (proposed:
+  `test/e2e`, `TestE2EOrigoDirectoryUnsupported`, the one-node run as
+  above).
 - Every `sh` block of `docs/cli.md` runs against the one-node run under
   `tools/docs/run-blocks.sh`, with `ORIGO_TEST_URL` and
   `ORIGO_TEST_ADMIN_TOKEN` pointed at that node, from minting the

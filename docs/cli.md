@@ -141,21 +141,21 @@ and no request was made.
 
 ## Pipelines
 
-Find a file by name, without a clone. These blocks run under the
-repository-bound token minted above, so every one of them names a repository:
-
-```sh
-origo ls -r -n 0 | grep -i 'readme' || echo "no match yet"
-```
-
-Commit a file, reading the head first so the write is a statement about a
-branch you have read:
+These blocks run under the repository-bound token minted above, so every one
+of them names a repository. First a commit, so there is something to read.
+`-create` starts the branch; on an empty repository it needs no `-from`:
 
 ```sh
 mkdir -p /tmp/origo-cli-docs && cd /tmp/origo-cli-docs
 printf 'hello from the docs\n' > README.md
 origo commit -m 'the first commit' -create -branch main README.md
 origo info | grep '^head'
+```
+
+Find a file by name, without a clone:
+
+```sh
+origo ls -r -n 0 | grep -i 'readme'
 ```
 
 Read the head, change the file against it, and see the new commit:

@@ -80,9 +80,48 @@ func (c Change) MarshalJSON() ([]byte, error) {
 // CommitRequest is POST /v1/repos/{id}/commits.
 type CommitRequest struct {
 	Common
-	CreateBranch bool     `json:"create_branch,omitempty"`
-	From         string   `json:"from,omitempty"`
-	Changes      []Change `json:"changes"`
+	CreateBranch bool
+	// From is the revision a created branch starts at. It is meaningful
+	// only with CreateBranch, and empty there means the branch has no
+	// starting point, which is the first commit of an empty repository.
+	From    string
+	Changes []Change
+}
+
+// MarshalJSON writes the request the way spec 020 takes it.
+//
+// `from` is three-state on the wire and a plain string cannot say so. The
+// node reads presence, not value: `create_branch` and `from` must be given
+// together or neither, and it counts a literal `null` as given
+// (operations.go, `hasFrom := len(req.From) > 0` over a json.RawMessage).
+// So creating the first branch of an empty repository is create_branch true
+// with `"from": null`, which an omitempty string would have dropped, and a
+// commit onto an existing branch omits the key entirely, which a plain null
+// would have broken. Both cases are refused as
+// "create_branch and from are given together" if this is got wrong, which is
+// a confusing sentence for a caller that named neither.
+func (r CommitRequest) MarshalJSON() ([]byte, error) {
+	out := map[string]any{
+		"branch":        r.Branch,
+		"expected_head": r.ExpectedHead,
+		"author":        r.Author,
+		"changes":       r.Changes,
+	}
+	if r.Message != "" {
+		out["message"] = r.Message
+	}
+	if r.DryRun {
+		out["dry_run"] = true
+	}
+	if r.CreateBranch {
+		out["create_branch"] = true
+		if r.From == "" {
+			out["from"] = nil
+		} else {
+			out["from"] = r.From
+		}
+	}
+	return json.Marshal(out)
 }
 
 // MergeRequest is POST /v1/repos/{id}/merge.

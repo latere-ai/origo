@@ -908,3 +908,74 @@ func TestAServedAnswerThatCannotBeDecodedIsNotReadAsAWrite(t *testing.T) {
 		t.Fatalf("receipt: %+v", got)
 	}
 }
+
+// TestCreateBranchSaysWhetherItHasAStartingPoint pins the three states of
+// `from`. The node reads presence, not value: create_branch and from are
+// given together or neither, and a literal null counts as given. An
+// omitempty string would drop the null and refuse the first commit of an
+// empty repository; a plain null would send the key on every commit and
+// refuse them all.
+func TestCreateBranchSaysWhetherItHasAStartingPoint(t *testing.T) {
+	head := "abcdef0123456789abcdef0123456789abcdef01"
+	author := &origoclient.Author{Name: "N", Email: "n@e.com"}
+	cases := []struct {
+		name    string
+		req     origoclient.CommitRequest
+		present bool
+		want    any
+	}{
+		{
+			name: "onto an existing branch, no key at all",
+			req: origoclient.CommitRequest{
+				Common:  origoclient.Common{Branch: "main", ExpectedHead: &head, Author: author},
+				Changes: []origoclient.Change{{Path: "a", Content: []byte("x")}},
+			},
+			present: false,
+		},
+		{
+			name: "a new branch off a revision",
+			req: origoclient.CommitRequest{
+				Common:       origoclient.Common{Branch: "topic", Author: author},
+				CreateBranch: true, From: "main",
+				Changes: []origoclient.Change{{Path: "a", Content: []byte("x")}},
+			},
+			present: true, want: "main",
+		},
+		{
+			name: "the first commit of an empty repository, an explicit null",
+			req: origoclient.CommitRequest{
+				Common:       origoclient.Common{Branch: "main", Author: author},
+				CreateBranch: true,
+				Changes:      []origoclient.Change{{Path: "a", Content: []byte("x")}},
+			},
+			present: true, want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			value, present := got["from"]
+			if present != tc.present {
+				t.Fatalf("from present = %v, want %v: %s", present, tc.present, raw)
+			}
+			if present && value != tc.want {
+				t.Fatalf("from = %v, want %v", value, tc.want)
+			}
+			if got["create_branch"] != nil && got["create_branch"] != tc.req.CreateBranch {
+				t.Fatalf("create_branch = %v", got["create_branch"])
+			}
+			// expected_head is always present, because null is what says a
+			// created branch has no head yet.
+			if _, ok := got["expected_head"]; !ok {
+				t.Fatalf("expected_head was dropped: %s", raw)
+			}
+		})
+	}
+}

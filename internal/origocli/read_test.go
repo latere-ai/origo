@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -190,29 +191,91 @@ func TestCatWindowsAndRefusesBinary(t *testing.T) {
 	}
 }
 
-// TestCatRangesAPastTheByteCap: a file larger than the byte cap is fetched
-// with a Range, so blob_too_large is never provoked.
-func TestCatRangesPastTheByteCap(t *testing.T) {
+// TestCatHoldsTheByteCapExceptAcrossOneLine: the cap bounds a window of
+// lines, and a line is atomic, so a single line longer than the cap is
+// printed whole and the answer says why.
+func TestCatHoldsTheByteCapExceptAcrossOneLine(t *testing.T) {
 	f := newFake()
-	text := strings.Repeat("x", 100000) + "\n"
-	f.entries = []map[string]any{entryJSON("big.txt", "100644", "blob", int64(len(text)))}
-	f.blobs["sha-big.txt"] = []byte(text)
+	// Many ordinary lines: the cap bounds the window.
+	many := strings.Repeat("a line of text\n", 4000)
+	f.entries = []map[string]any{entryJSON("many.txt", "100644", "blob", int64(len(many)))}
+	f.blobs["sha-many.txt"] = []byte(many)
+	// One enormous line: the cap yields to it and says so.
+	one := strings.Repeat("x", 100000) + "\n"
+	f.entries = append(f.entries, entryJSON("one.txt", "100644", "blob", int64(len(one))))
+	f.blobs["sha-one.txt"] = []byte(one)
 	env := envFor(f.start(t))
-	got := run(t, env, "cat", "-max-bytes", "1024", "big.txt")
+
+	got := run(t, env, "cat", "-max-bytes", "1024", "many.txt")
 	if got.code != origocli.CodeOK {
 		t.Fatalf("exit %d: %s", got.code, got.stderr)
 	}
-	var ranged bool
-	for _, c := range f.seen() {
-		if strings.Contains(c, "/blob/") {
-			ranged = true
-		}
-	}
-	if !ranged {
-		t.Fatal("no blob call was made")
-	}
-	if len(got.stdout) > 1100 {
+	if len(got.stdout) > 1024 {
 		t.Fatalf("%d bytes printed, want at most the cap", len(got.stdout))
+	}
+	if !strings.Contains(got.stderr, "-offset") {
+		t.Fatalf("the cut did not name -offset: %q", got.stderr)
+	}
+
+	got = run(t, env, "cat", "-max-bytes", "1024", "one.txt")
+	if got.code != origocli.CodeOK {
+		t.Fatalf("exit %d: %s", got.code, got.stderr)
+	}
+	if len(got.stdout) != len(one) {
+		t.Fatalf("%d bytes printed, want the whole line", len(got.stdout))
+	}
+	if !strings.Contains(got.stderr, "longer than -max-bytes") {
+		t.Fatalf("the answer did not say why the cap was exceeded: %q", got.stderr)
+	}
+}
+
+// TestCatWindowsAtTheDefaultCap is the criterion under the flags a caller
+// actually uses. The byte cap bounds what is printed and not what is
+// fetched, so -offset reaches past it and the line count is the file's.
+func TestCatWindowsAtTheDefaultCap(t *testing.T) {
+	f := newFake()
+	var b strings.Builder
+	for i := range 3120 {
+		fmt.Fprintf(&b, "line %d is padded so the file is far larger than the byte cap\n", i)
+	}
+	text := b.String()
+	if len(text) < 64*1024 {
+		t.Fatalf("the fixture is %d bytes; it must exceed the 32 KiB default", len(text))
+	}
+	f.entries = []map[string]any{entryJSON("big.go", "100644", "blob", int64(len(text)))}
+	f.blobs["sha-big.go"] = []byte(text)
+	env := envFor(f.start(t))
+
+	// Walk the whole file at the default cap, following each -offset the
+	// answer names, and rebuild it exactly.
+	var got []string
+	offset := 0
+	for range 20 {
+		out := run(t, env, "cat", "-offset", strconv.Itoa(offset), "big.go")
+		if out.code != origocli.CodeOK {
+			t.Fatalf("offset %d exited %d: %s", offset, out.code, out.stderr)
+		}
+		if !strings.Contains(out.stderr, "3120 lines") {
+			t.Fatalf("the line count is of a fragment, not of the file: %q", out.stderr)
+		}
+		got = append(got, lines(out.stdout)...)
+		if !strings.Contains(out.stderr, "add -offset ") {
+			break
+		}
+		next := strings.TrimSpace(strings.Split(strings.SplitN(out.stderr, "add -offset ", 2)[1], "]")[0])
+		n, err := strconv.Atoi(next)
+		if err != nil || n <= offset {
+			t.Fatalf("the answer named -offset %q after %d", next, offset)
+		}
+		offset = n
+	}
+	if len(got) != 3120 {
+		t.Fatalf("the windows rebuilt %d lines of 3120", len(got))
+	}
+	for i, l := range got {
+		if l != fmt.Sprintf("line %d is padded so the file is far larger than the byte cap", i) {
+			t.Fatalf("line %d is %q; the windows overlap or leave a gap", i, l)
+		}
 	}
 }
 
