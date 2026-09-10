@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.1.2 - 2026-09-10
+
 - Git over SSH, beside the HTTPS you already have. People clone with
   `git@your-host:owner/slug.git` and carry a key pair instead of a token,
   and what they push is the same durable write: one log entry in your
