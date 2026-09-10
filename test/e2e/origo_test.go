@@ -292,13 +292,24 @@ func TestE2EOrigoReadsCommitsAndReverts(t *testing.T) {
 
 	// merge and cherry-pick reach their routes on a real node, so every
 	// command of the surface is exercised in this run.
+	//
+	// The branch name carries a slash on purpose. The fixture already holds
+	// refs/heads/topic/x, so a branch plainly named topic would be a git
+	// directory-file conflict rather than a test of anything; and a name with
+	// a slash is what fact 1 of the spec exists for, since it can only reach
+	// the read routes through the placeholder segment.
 	tip := c.head()
-	c.ok("commit", "-m", "a branch to merge", "-create", "-branch", "topic", "-from", tip, "short.md")
-	topicTip := c.ok("refs", "-prefix", "refs/heads/topic")
-	if !strings.Contains(topicTip.stdout, "refs/heads/topic") {
-		t.Fatalf("the branch was not created:\n%s", topicTip.stdout)
+	const branch = "agent/work"
+	c.ok("commit", "-m", "a branch to merge", "-create", "-branch", branch, "-from", tip, "short.md")
+	made := c.ok("refs", "-prefix", "refs/heads/"+branch)
+	if !strings.Contains(made.stdout, "refs/heads/"+branch) {
+		t.Fatalf("the branch was not created:\n%s", made.stdout)
 	}
-	c.ok("merge", "-expect", tip, "-strategy", "fast_forward_if_possible", "topic")
+	// Reading that branch by name proves the placeholder segment end to end.
+	if got := c.ok("ls", "-ref", branch, "-n", "1"); got.stdout == "" {
+		t.Fatalf("a branch whose name holds a slash could not be read: %q", got.stderr)
+	}
+	c.ok("merge", "-expect", tip, "-strategy", "fast_forward_if_possible", branch)
 	picked := c.head()
 	c.ok("cherry-pick", "-expect", picked, "-dry-run", picked)
 

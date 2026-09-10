@@ -751,6 +751,24 @@ and its receipt is the five fields `commit`, `branch`, `entry_seq`,
 `--pattern 'origod_*.tar.gz'` and the upload beside it is glob-driven,
 exactly as What must land first says.
 
+## Open
+
+One thing this spec found and does not own.
+
+**A reference name that collides with an existing one answers
+`storage_unavailable`.** Creating `refs/heads/topic` in a repository that
+already holds `refs/heads/topic/x` is a git directory-file conflict: git
+cannot hold a file and a directory at one path. The node surfaces it as
+503 `storage_unavailable`, "The repository is temporarily unavailable.
+Nothing was lost. Try again in a few minutes.", which tells a caller to
+wait for something that will never change. The right answer is a 409 of
+its own, or `invalid_request` with the conflicting name, and it belongs
+to spec 020 with the rest of the operation refusals rather than here.
+Found while writing this spec's end-to-end test, which had picked a
+colliding name; the test now names a branch that does not collide and
+says why. This client adds no refusal Origo does not send, so it reports
+what it is told.
+
 ## Acceptance criteria
 
 - Every read route `origoclient` calls sends the placeholder segment `-`
@@ -796,6 +814,19 @@ exactly as What must land first says.
   a NUL byte in its first 8 KiB prints the binary refusal with no file
   bytes on stdout (proposed: `internal/origocli`,
   `TestCatWindowsAndRefusesBinary`).
+- The same walk **at the default `-max-bytes`**, following each `-offset`
+  the answer names, rebuilds a file larger than the cap line for line and
+  reports the file's own line count at every step, not a fragment's; and
+  a single line longer than `-max-bytes` is printed whole with one line
+  saying why, because a fragment is not a line and two windows must
+  compose (proposed: `internal/origocli`, `TestCatWindowsAtTheDefaultCap`,
+  `TestCatHoldsTheByteCapExceptAcrossOneLine`).
+- `create_branch` sends `from` when and only when it is set: absent on a
+  commit onto an existing branch, the named revision on a branch off one,
+  and an explicit `null` for the first commit of an empty repository,
+  which is the shape spec 020 reads by presence rather than by value
+  (proposed: `internal/origoclient`,
+  `TestCreateBranchSaysWhetherItHasAStartingPoint`).
 - `origo diff` over a fixture with 12 changed files prints 12 stat lines
   and a totals line and no patch; `-path` with two of them prints those
   two patches and fetches `compare` twice with `?path=`; against a
