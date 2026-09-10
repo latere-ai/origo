@@ -365,6 +365,11 @@ release published: the `conformance` job of the tag run 34461460766 of
 e2e tier` job of the tag's `verify` run 34461461220 names its four
 subtests, `commits`, `merge`, `cherry-pick`, and `revert`.
 
+Unlike specs 003 and 019, this spec loses nothing to the group rule
+spec 021's Outcome states: none of the four cases carries a group, so
+a live target supplies everything they need and one live run closes
+all four. What this spec waits on is that run and nothing else.
+
 The first release ran on 2026-09-10 and did not produce the live run.
 The `live` job of the tag run 34461460766 of `v0.1.0` executed and its
 `TestContract` skipped, because the repository carries neither
