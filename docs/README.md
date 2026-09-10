@@ -18,7 +18,7 @@ Read these in order the first time.
 
 | Page | |
 |---|---|
-| [API](api.md) | the endpoints, headers, and error codes a client relies on |
+| [API](api.md) | the endpoints, headers, and error codes a client relies on, and the authorization endpoint an operator writes |
 
 Trying Origo out before installing it takes one command: see the quick start
 in the [README](../README.md).

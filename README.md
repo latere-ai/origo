@@ -100,7 +100,7 @@ questions rather than deciding them itself.
 |---|---|
 | [Install](docs/install.md) | from a cluster and a bucket to a first push |
 | [Configuration](docs/configuration.md) | every environment variable with its default |
-| [API](docs/api.md) | endpoints, headers, and error codes a client relies on |
+| [API](docs/api.md) | endpoints, headers, and error codes a client relies on, and the authorization endpoint an operator writes |
 | [Operations](docs/operations.md) | backup, restore, scaling, and what to do during an outage |
 | [Upgrades](docs/upgrades/README.md) | what a version number promises, and how to verify what you install |
 | [Migration](docs/migration.md) | moving repositories in from another git host |
