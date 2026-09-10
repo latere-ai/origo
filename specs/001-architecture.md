@@ -6,7 +6,7 @@ depends_on: []
 affects: [cmd/origod/, internal/, deploy/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -26,8 +26,8 @@ The intended operators are platforms that need a git remote per unit of
 work: a hosting product with a repository per project, a sandbox service
 with a repository per session, an agent runtime that commits on behalf of a
 person. One Origo installation serves one trust domain; every consumer in
-it speaks to Origo through the contract in spec 003. Latere runs one per
-cluster at `git.latere.ai`; the hostname is the operator's.
+it speaks to Origo through the contract in spec 003. The hostname is the
+operator's: Origo is the component's name, not an endpoint's.
 
 ## Current state
 
