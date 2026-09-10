@@ -256,7 +256,7 @@ func hunkStarts(line string) (old, new_ int) {
 	if i := strings.Index(body, "@@"); i >= 0 {
 		body = body[:i]
 	}
-	for _, f := range strings.Fields(body) {
+	for f := range strings.FieldsSeq(body) {
 		n := number(strings.TrimLeft(f, "+-"))
 		switch {
 		case strings.HasPrefix(f, "-"):

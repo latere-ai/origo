@@ -244,7 +244,7 @@ func (c *Client) Compare(ctx context.Context, tok, id, base, head, path string) 
 	if err != nil {
 		return nil, meta, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes))
 	if err != nil {
 		return nil, meta, fmt.Errorf("read compare: %w", err)
@@ -299,7 +299,7 @@ func (c *Client) BlobRange(ctx context.Context, tok, id, sha string, limit int64
 	if err != nil {
 		return Blob{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	read := limit
 	if read <= 0 {
 		read = maxBlobBytes
@@ -364,7 +364,7 @@ func (c *Client) getJSON(ctx context.Context, tok, path string, q url.Values, ou
 	if err != nil {
 		return meta, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(out); err != nil {
 		return meta, fmt.Errorf("decode %s: %w", path, err)
 	}
@@ -407,7 +407,7 @@ func (c *Client) do(ctx context.Context, tok, path string, q url.Values, hdr htt
 	}
 	meta := readMeta(resp.Header)
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, meta, readError(resp)
 	}
 	return resp, meta, nil

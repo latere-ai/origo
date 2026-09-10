@@ -5,6 +5,7 @@ package web
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -160,9 +161,7 @@ func (f *fakeOrigo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 
 	f.mu.Lock()
-	for k, v := range f.headers[p] {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), f.headers[p])
 	code := f.status[p]
 	f.mu.Unlock()
 	if code != 0 {

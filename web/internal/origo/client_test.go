@@ -5,6 +5,7 @@ package origo
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -258,7 +259,7 @@ func TestListDegradesRatherThanFails(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "invalid_request"}})
 		})
 		_, err := s.client(t).List(t.Context(), "t", "", 50)
-		if err != ErrNoDirectory {
+		if !errors.Is(err, ErrNoDirectory) {
 			t.Errorf("an installation answering %d reads as %v, want no directory", status, err)
 		}
 	}

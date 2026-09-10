@@ -1,0 +1,24 @@
+# One hostname for the interface and another for Origo, one certificate each.
+# One hostname cannot serve both: Origo's git surface claims
+# /{owner}/{slug}/... for smart HTTP, and a rule that split the two would be
+# wrong the first time a repository was named like a route.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: origoweb
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+spec:
+  rules:
+    - host: code.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: origoweb
+                port: {name: http}
+  tls:
+    - hosts: [code.example.com]
+      secretName: origoweb-tls

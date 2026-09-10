@@ -1,0 +1,16 @@
+# The base holds every resource the interface needs in any target. It is not
+# applied directly; each target overlay names it and supplies the namespace,
+# the hostname, and the Secret below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/name: origoweb

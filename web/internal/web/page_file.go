@@ -327,7 +327,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		s.readFailed(w, r, rc.req, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	h := w.Header()
 	h.Set("Content-Type", firstNonEmpty(resp.Header.Get("Content-Type"), "application/octet-stream"))

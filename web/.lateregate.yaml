@@ -1,0 +1,58 @@
+# The shared quality bar, read by `go tool lateregate`. The gates live in
+# latere.ai/x/ci-gate, pinned in go.mod; only the values of this module are
+# here.
+#
+# This module is the browsing interface of Origo's spec 023. It lives beside
+# Origo until latere-ai/origo-web exists, with its own module, its own gate
+# and its own dependencies, so the boundary the spec draws is one Go itself
+# enforces: nothing here can import origo/internal.
+
+cover:
+  trim_prefix: github.com/latere-ai/origo-web/
+  exempt: {}
+
+hermetic:
+  # The suite runs with only the Go toolchain on PATH. This service runs no
+  # subprocess: it holds no repository and never runs git.
+  allow: []
+
+tempdir:
+  allow: {}
+
+otel_client:
+  skip: [test]
+
+modernize:
+  disable: []
+
+# The interface is a pure client of a published HTTP API. Its build list
+# reaches the shared library, the OpenTelemetry SDK that library exports
+# through, the Markdown renderer it renders a readme with, and the standard
+# library. No git, no cloud SDK, no Kubernetes client, no framework.
+depcheck:
+  packages:
+    github.com/latere-ai/origo-web/cmd/origoweb:
+      decision: >-
+        the interface reaches latere.ai/x/pkg, the OpenTelemetry SDK it
+        exports telemetry through, the Markdown renderer of pkg/md, and
+        the standard library, so the binary carries no git, no cloud SDK
+        and no Kubernetes client (spec 023)
+      allow:
+        latere.ai/x/pkg: the shared library every Latere service is built on
+        github.com/google/uuid: reached through latere.ai/x/pkg
+        github.com/yuin/goldmark: the Markdown renderer pkg/md renders a readme with
+        github.com/goccy/go-yaml: pkg/md's frontmatter parser
+        golang.org/x/oauth2: the authorization-code flow authkit/oidc runs
+        golang.org/x/net: the HTML parser the readme's headings are nested with, and HTTP/2
+        go.opentelemetry.io: the OpenTelemetry SDK the traced HTTP client exports through
+        google.golang.org: protobuf and gRPC, the wire format of the OTLP exporters
+        golang.org/x: net, sys, text and time, reached by the OTLP exporters
+        github.com/cenkalti/backoff: the OTLP exporters' retry schedule
+        github.com/cespare/xxhash: the metric SDK's aggregation keys
+        github.com/felixge/httpsnoop: otelhttp's response recorder
+        github.com/go-logr: the OpenTelemetry SDK's internal logging interface
+        github.com/grpc-ecosystem/grpc-gateway: the OTLP status marshalling
+
+license:
+  spdx: MIT
+  holder: Latere AI

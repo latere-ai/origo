@@ -148,7 +148,7 @@ func Recent(r *http.Request) []string {
 		return nil
 	}
 	var out []string
-	for _, part := range strings.Split(c.Value, " ") {
+	for part := range strings.SplitSeq(c.Value, " ") {
 		id, err := url.QueryUnescape(part)
 		if err != nil || id == "" || !plausibleID(id) {
 			continue

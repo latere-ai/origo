@@ -1,0 +1,80 @@
+# The interface is stateless: no database, no volume, no queue, no migration.
+# Everything it knows is in the request and the cookie, so replicas need
+# nothing from each other and a rollout needs no order.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origoweb
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: origoweb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: origoweb
+    spec:
+      serviceAccountName: origoweb
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: origoweb
+          image: ghcr.io/latere-ai/origoweb:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The one address it talks to. In a cluster that also runs
+            # Origo this is the in-cluster Service; anywhere else it is
+            # the installation's public address.
+            - name: ORIGOWEB_ORIGO_URL
+              value: http://origod.origo.svc.cluster.local
+            # Its own address, which the redirect URI is built from. The
+            # interface runs on its own hostname, never on Origo's: the git
+            # surface claims /{owner}/{slug} for smart HTTP, which is the
+            # shape a browsing interface wants.
+            - name: ORIGOWEB_PUBLIC_URL
+              value: https://code.example.com
+            # What the clone lines on the overview name, for an
+            # installation whose git host differs from its API address.
+            - name: ORIGOWEB_CLONE_HOST
+              value: https://git.example.com
+            # Unset means the overview shows the HTTPS form alone, which
+            # is what an installation without the SSH surface gets.
+            # - name: ORIGOWEB_SSH_CLONE_HOST
+            #   value: git.example.com
+            - name: ORIGOWEB_AUTH_URL
+              valueFrom:
+                secretKeyRef: {name: origoweb, key: auth-url}
+            - name: ORIGOWEB_AUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef: {name: origoweb, key: auth-client-id}
+            - name: ORIGOWEB_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: origoweb, key: auth-client-secret}
+            # The audience Origo verifies, so the token this interface
+            # sends on is one the installation accepts (spec 007).
+            - name: ORIGOWEB_AUTH_AUDIENCE
+              value: origo
+            - name: ORIGOWEB_AUTH_COOKIE_KEY
+              valueFrom:
+                secretKeyRef: {name: origoweb, key: cookie-key}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

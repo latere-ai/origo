@@ -6,6 +6,7 @@ package session
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -157,7 +158,7 @@ func TestSignInRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m2.Load(httptest.NewRecorder(), req); err != ErrNoSession {
+	if _, err := m2.Load(httptest.NewRecorder(), req); !errors.Is(err, ErrNoSession) {
 		t.Errorf("a cookie read with another key answered %v", err)
 	}
 }
@@ -220,7 +221,7 @@ func TestRefreshAndSessionLifetime(t *testing.T) {
 			Expiry:       time.Now().Add(10 * time.Second),
 		})
 		rec := httptest.NewRecorder()
-		if _, err := m.Load(rec, req); err != ErrNoSession {
+		if _, err := m.Load(rec, req); !errors.Is(err, ErrNoSession) {
 			t.Fatalf("a failed refresh answered %v", err)
 		}
 		cleared := cookieNamed(t, rec, CookieName)
@@ -236,7 +237,7 @@ func TestRefreshAndSessionLifetime(t *testing.T) {
 			Expiry:        time.Now().Add(time.Hour),
 			SessionExpiry: time.Now().Add(-time.Minute),
 		})
-		if _, err := m.Load(httptest.NewRecorder(), req); err != ErrNoSession {
+		if _, err := m.Load(httptest.NewRecorder(), req); !errors.Is(err, ErrNoSession) {
 			t.Errorf("an elapsed session answered %v", err)
 		}
 	})
@@ -260,7 +261,7 @@ func TestRefreshAndSessionLifetime(t *testing.T) {
 
 	t.Run("a request with no cookie has no session", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		if _, err := m.Load(httptest.NewRecorder(), req); err != ErrNoSession {
+		if _, err := m.Load(httptest.NewRecorder(), req); !errors.Is(err, ErrNoSession) {
 			t.Errorf("a request with no cookie answered %v", err)
 		}
 		if got := m.Token(httptest.NewRecorder(), req); got != "" {
