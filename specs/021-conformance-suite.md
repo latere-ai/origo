@@ -518,7 +518,8 @@ Divergences and interpretations, each kept, with the reason:
   response's own subject, and the bucket runs in front of the
   authorizer, so a subject the authorizer names a rate for reads the
   node's figure once before its own. It then sends `limit + 1`, and
-  where nothing refused, on to `2 * limit`. With `Issuer` set it runs
+  where nothing refused, on to `2 * limit + 1`, the two responses it
+  read counted in. With `Issuer` set it runs
   under a subject of its own; on a live target it runs last, under the
   run's token, and the cleanup waits out `Retry-After`.
 
@@ -529,17 +530,18 @@ Divergences and interpretations, each kept, with the reason:
   $$N > \frac{L}{1 - r}, \qquad r = \frac{L/60}{\rho}$$
 
   so `2L` holds for every runner that sends at least twice as fast as
-  one node refills, `r <= 1/2`. Where the case must converge the margin
-  is an order of magnitude: the `kind` stack runs at 6000 a minute, 100
-  tokens a second, against 32 workers over the loopback, which puts `r`
-  near 0.01 and the refusal near 6060. Where the case cannot converge no
-  bound helps: a balancer gives one subject `k` buckets refilling at
-  `k*L/60` together, which drives `r` past 1 at the replica counts
-  `deploy/base/hpa.yaml` scales to. `2L` is therefore the smallest bound
-  carrying that condition, and it is what a live run spends before it
-  reports the case unverified: 12001 requests at the service figure of
-  6000. A runner slower than one node's refill stops after the first
-  pass rather than spending the rest to learn it.
+  one node refills, `r <= 1/2`. One node is where the case must
+  converge, and the condition it puts on the runner there is modest: the
+  `kind` stack runs at 6000 a minute, 100 tokens a second, so a runner
+  that sends 200 a second clears it, and the stack proof below names
+  what 32 workers against a NodePort actually measured. Where the case
+  cannot converge no bound helps: a balancer gives one subject `k`
+  buckets refilling at `k*L/60` together, which drives `r` past 1 at the
+  replica counts `deploy/base/hpa.yaml` scales to. `2L + 1` is therefore
+  the smallest bound carrying that condition, and it is what a live run
+  spends before it reports the case unverified: 12001 requests at the
+  service figure of 6000. A runner slower than one node's refill stops
+  after the first pass rather than spending the rest to learn it.
 
   What this replaces: the case sent one more than the figure and then on
   to four times it, on the reading that the stack's three nodes each

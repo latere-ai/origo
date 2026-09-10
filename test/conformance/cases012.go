@@ -53,17 +53,17 @@ func case012OverQuota(t *testing.T, s *session) {
 // tokens left after N are L - N(1 - r) and r = (L/60)/rho is the share
 // of each request the node gives back. A refusal needs N > L/(1 - r),
 // so a bound of 2L holds for every runner that sends at least twice as
-// fast as one node refills (r <= 1/2). The margin is wide where the
-// case must converge: the kind stack runs at 6000 a minute, 100 tokens
-// a second, against 32 workers over the loopback, so r is about 0.01
-// and the refusal falls near 6060, an order of magnitude inside the
-// bound. It is unreachable where the case cannot converge: a balanced
-// installation of k nodes gives the subject k buckets and refills at
-// k*L/60, which drives r past 1 at the replica counts deploy/base/hpa
-// scales to, and no bound converges there. 2L+1 is therefore the
-// smallest bound with that condition, and it is what a live run spends
+// fast as one node refills (r <= 1/2). One node is where the case must
+// converge and 32 workers clear that condition by a wide margin: the
+// kind stack runs at 6000 a minute, 100 tokens a second, and asks the
+// runner for 200. Where the case cannot converge no bound helps: a
+// balanced installation of k nodes gives one subject k buckets
+// refilling at k*L/60 together, which drives r past 1 at the replica
+// counts deploy/base/hpa.yaml scales to. 2L+1 is therefore the smallest
+// bound carrying that condition, and it is what a live run spends
 // before it reports the case unverified: 12001 requests at the service
 // figure of 6000, where four times the figure would have spent 24001.
+// Spec 021 records the measured margin on the stack.
 const rateBudgetFactor = 2
 
 // case012RateLimited reads RateLimit-Limit off a response under the
@@ -98,10 +98,13 @@ func case012RateLimited(t *testing.T, s *session) {
 	}
 	limit, err := strconv.Atoi(raw)
 	failIf(t, err != nil || limit <= 0, "%s %q", contract.HeaderRateLimit, raw)
+	budget := rateBudgetFactor*limit + 1
 	var refused atomic.Int64
 	var first sync.Once
 	var refusal response
-	sent := 0
+	// The two responses read above cost a token each and count against
+	// the bound, so what a run reports as spent is what it sent.
+	sent := 2
 	send := func(n int) time.Duration {
 		start := time.Now()
 		var wg sync.WaitGroup
@@ -130,7 +133,7 @@ func case012RateLimited(t *testing.T, s *session) {
 		// spends, so it stops here rather than spending the rest of the
 		// bound to learn it.
 		if rho := float64(limit+1) / took.Seconds(); rho > float64(limit)/60 {
-			send(rateBudgetFactor*limit - sent)
+			send(budget - sent)
 		}
 	}
 	if refused.Load() == 0 {
