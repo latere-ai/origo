@@ -1,6 +1,6 @@
 ---
 title: "SSH access: git over SSH beside smart HTTP"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -704,6 +704,26 @@ the stack and a first installation until it exists.
 
 ### The stack proof
 
-The three cluster criteria and the install document's step ran in the
-`e2e` and `install` jobs of the `verify` run on `main`; the run id is
-recorded here when it is green, and is not refreshed afterwards.
+The dispatched `verify` run 34526886417 on `main` at commit `3f5bea6`,
+every job green or deliberately skipped. Its `cluster e2e tier` job
+names `--- PASS: TestClusterSSHPushIsReadableOverHTTPS`,
+`--- PASS: TestClusterSSHHostKeyIsTheSameOnEveryNode`, and
+`--- PASS: TestClusterSSHRefusesAShell`, against the stack `up.sh`
+built with the SSH host key Secret and the four host ports of spec
+013's table; its `install from the documentation` job walked
+`docs/install.md` on a bare cluster through the SSH step and block 13,
+ending in `the installation serves a clone over SSH`; and its
+`up.sh creates and down.sh removes a stack` job proved the same at port
+offset 1000, where `up.sh` waits for all four SSH host ports before it
+reports ready.
+
+Two things the first attempt at those jobs found, both recorded because
+the next person writing a document that reaches a `kind` host port will
+meet them. `ssh-keyscan` takes the first address a name resolves to and
+does not fall back the way `curl` does, so a block that asked
+`localhost` on a runner answering `::1` first reached nothing, while
+`kind` binds the mapping on IPv4; the document asks `127.0.0.1`.  And
+OpenSSH gives up on a refused `shell` request without draining the
+session's stderr, so the shell case reads the client's own message and
+the code's line is asserted on the `exec` beside it, which the client
+does read.
