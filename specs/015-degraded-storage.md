@@ -505,3 +505,23 @@ class each method passed. `internal/wal`,
 `TestClassOfIsTheOperationsClass`; `internal/api`,
 `TestWriteRefusedByTheWriteBreakerCarriesRetryAfter`;
 `internal/httpgit`, `TestStorageErrorTakesTheClassOfTheFailedOperation`.
+
+Two defects found by the `v0.1.0` tag's run 34416522013, where
+`TestClusterDegradedStorage/unreachable` failed at
+`degraded_cluster_test.go:224` with `metrics on 30190: nothing
+answered`. The cause is the test's: its wait for node 1's return read
+one answered request on the public host port, which kube-proxy serves
+for a second after the kubelet flips `Ready` to false, so the run's own
+log shows the internal port answering while `origod-0` reported
+`Ready=False`, and every assertion after the wait ran inside that
+withdrawal lag. The wait now reads the pod's `Ready` condition and both
+host ports (`inRotation`), and `nodeMetric` waits for a node out of
+rotation instead of failing at once, which is the rule `tryNodeMetric`
+already stated. Beside it, readiness keyed on `wal.ErrStorageOpen`
+rather than on the read breaker's state, so of the three ways a listing
+fails under a tripped breaker it answered ready to one: a half-open
+probe's own failure and a probe whose budget ended while the shared
+listing ran both took a replica serving stale out of the endpoint list,
+once every open window for as long as the outage lasted. The verdict
+now reads `BreakerStore.Tripped(ClassRead)`; `cmd/origod`,
+`TestReadinessFollowsTheReadBreakerAndNotTheListingsError`.
