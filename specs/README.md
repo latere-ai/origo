@@ -917,8 +917,8 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_INSTALL_MANIFESTS` | [018](018-installation.md) | 002, 017 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
-| variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 017, 021 |
-| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 017, 018, 019, 020, 021 |
+| variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 003, 017, 019, 020, 021 |
+| variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 003, 017, 018, 019, 020, 021 |
 | variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
@@ -947,12 +947,12 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 012, 013, 014, 021 |
 | variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 013, 021 |
 | variable | `ORIGO_TEST_S3_BUCKET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 008, 013, 015, 017, 021 |
+| variable | `ORIGO_TEST_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 008, 009, 013, 014, 015, 017, 021 |
 | variable | `ORIGO_TEST_S3_KEY` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_REGION` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 010, 013, 014, 019, 021 |
+| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021 |
 | variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018 |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
