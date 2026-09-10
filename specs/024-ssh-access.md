@@ -1,6 +1,6 @@
 ---
 title: "SSH access: git over SSH beside smart HTTP"
-status: in-progress
+status: testing
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -626,3 +626,84 @@ stub of `test/stubs/sshkeys` satisfies it for the test stack and for a
 first installation, and Latere's own is the task above, in auth's deck
 beside its spec 072. A self-hoster needs neither: a file of fingerprints
 behind a bearer is the whole requirement.
+
+## Outcome
+
+Built on 2026-09-10. `git clone git@host:owner/slug.git` works beside
+the HTTPS form on the same write path, and a node without
+`ORIGO_SSH_ADDR` opens no socket and behaves exactly as it did.
+
+`internal/sshd` terminates the transport, resolves the offered key to a
+subject through the operator's endpoint, and hands the two services to
+`internal/httpgit`, which spools the body, runs the subprocess, takes
+the hook's transaction, and commits the entry. A push over SSH is the
+same log entry, under the same create-if-absent, with the same `push`
+event.
+
+### Criterion to test
+
+| Criterion | Test |
+|---|---|
+| the real git client clones, fetches, and pushes in both URL forms, and the entry carries the resolved subject and an empty actor | `internal/sshd`, `TestSSHCloneFetchPushWithRealGit` |
+| a hostile client is refused every request that is not one of the two services, and no refusal starts a subprocess, reads the repository, or calls the authorizer | `internal/sshd`, `TestSSHRefusesEverythingButTheTwoServices` |
+| the first key of each algorithm is presented, every key is announced, and each one answers the proof | `internal/sshd`, `TestSSHHostKeysArePresentedAndAnnounced` |
+| an unknown fingerprint, a resolver answering 500 or not at all, a `{"found": false}` not held past its window, and a revoked key stopping within `ttl` | `internal/sshd`, `TestSSHKeyResolverFailsClosedAndRecovers`, `TestSSHRevokedKeyStopsWithinTTL` |
+| the authorizer decides the operation, the call carries the empty actor, and a deny happens before any store read | `internal/sshd`, `TestSSHAuthorizerDecidesTheOperation`, `TestSSHDenyBeforeLookup` |
+| `rate_limited`, `over_quota`, and `storage_unavailable` reach the client as `contract.Line` of the code, and a stale read carries `Origo-Stale` | `internal/sshd`, `TestSSHRefusalsAreTheTableSentences` |
+| the path parser accepts every form of decision 8 and refuses the rest, and the fuzz finds nothing the log's own validators refuse | `internal/sshd`, `TestSSHPathForms`, `TestSSHCommandForms`, `FuzzSSHPath` |
+| the unauthenticated connection is bounded: the deadline, the attempt cap, and no password or keyboard-interactive method | `internal/sshd`, `TestSSHUnauthenticatedConnectionIsBounded` |
+| the start-up is all or nothing, a host key that does not parse and one of the wrong algorithm are problems of the one message, and `ORIGO_SSH_ADDR` unset opens no listener | `internal/config`, `TestSSHConfigurationIsAllOrNothing`; `cmd/origod`, `TestSSHListenerIsOptional` |
+| stack: a push over SSH through the balanced host port is readable by a clone over HTTP through one named node | `test/e2e`, `TestClusterSSHPushIsReadableOverHTTPS`, in the `e2e` job |
+| stack: the host key on each of the three per-node SSH host ports is byte-identical | `test/e2e`, `TestClusterSSHHostKeyIsTheSameOnEveryNode`, in the `e2e` job |
+| stack: a shell, a command that is not a service, and both forwarding directions are refused by the deployed node | `test/e2e`, `TestClusterSSHRefusesAShell`, in the `e2e` job |
+| the install document's SSH step runs against the `kind` overlay and ends in a clone over SSH | `docs/install.md` blocks 12 and 13, run by `tools/docs/run-blocks.sh` in the `install` job |
+
+Beside them, the pieces the criteria do not name: the host key parser
+and its refusals (`TestHostKeysAreRefusedByAlgorithmAndSize`), the
+resolver's cache and every answer shape it may read
+(`TestResolverAnswersAreCachedByFingerprint`), the exec payload's bound
+(`TestExecPayloadIsBounded`), the stub key resolver's own contract
+(`test/stubs/sshkeys`), and the two bounds spec 012 lends this transport
+(`internal/limits`, `TestSSHTakesTheSameSlotAndTheSameToken`).
+
+### Divergences
+
+| What the spec says | What was built, and why |
+|---|---|
+| decision 1: `internal/sshd` "calls the same package-level service `internal/httpgit` calls" | `internal/httpgit` gained two exported stream entry points, `UploadPack` and `ReceivePack`, which `internal/sshd` calls; no service object was extracted. Smart HTTP runs `--stateless-rpc` with one negotiation round per request body and a stream runs the same negotiation in one subprocess, so the framing is genuinely per transport and only the write path below it is shared. Extracting the spool, the hook, and the commit into a third package would have moved `internal/httpgit`'s own coverage with them for no gain, and the shared code is the same code either way. The package name now serves a transport that is not HTTP, which is the cost |
+| decision 12: the base Deployment carries `ORIGO_SSH_ADDR=:2222` | `deploy/base` declares the container port, the `origod-ssh` Service, and the NetworkPolicy, and sets none of the four variables. A base that set the address would need the host key Secret to exist, and a pod whose Secret is absent does not start, so the release carrying this would break every installation that applied the base without first generating keys, which decision 1 says must not happen. The install document's step 5 is what turns SSH on, and the kind overlay carries all four |
+| decision 9: the size limits of spec 012 are "unchanged" and measured before git runs | the repository quota is measured when the pre-receive hook hands the transaction over, not before the subprocess starts. A stream carries no length, so the pack's size is not known until the client has sent it. The refusal is still the hook's verdict, so no entry is written and the client reads the code and the sentence in the sideband, which is the behaviour the HTTP path has. The single-push bound is enforced as the bytes pass, before the pack is indexed |
+| decision 7: a refusal is "byte for byte `contract.Line` of the code", and decision 9: a `rate_limited` refusal "names its wait in the stderr line" | the first line of stderr is `contract.Line` of the code, byte for byte, and a refusal that has a wait carries `retry after <n> seconds` on a second line. The two sentences cannot both hold of one line; keeping the code's line exact is what spec 021's rule protects, and a second line is where a header would have gone |
+| decision 9: "the same advertisement" and every capability of spec 003's table | SSH negotiates protocol v0, because the `env` request is refused and `GIT_PROTOCOL` is how a client asks for v2 over SSH. Nothing in spec 003's capability table is v2-only: `filter`, `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`, `shallow`, `deepen-since`, `deepen-not`, `atomic`, `push-options`, and `report-status-v2` are all v0 capabilities, so the table holds. Accepting one environment variable would break spec 016's environment rule for the sake of a negotiation shape |
+| decision 9: a stale read is "served, with `Origo-Stale: <seconds>` written to the session's stderr" | a stale read is served in the id form only. The name form resolves `origo/names/<owner>/<slug>` against the bucket before anything else, and an open read breaker refuses that call before any local copy is reached. It is the same on the HTTP path and spec 015's own criterion uses the id form; the row is narrower than it reads, and `docs/install.md` says a consumer that must not read stale uses HTTPS |
+| decision 14: `depcheck` "gains an allow row naming `golang.org/x/crypto`" | the row was added, and the existing `golang.org/x` row was split into `net`, `sys`, `text`, and `time` first. `depcheck` matches an import against the allow list in map order and fails an allowance the build does not reach, so two prefixes that both admit `golang.org/x/crypto/ssh` would mark one of them stale at random. Overlapping prefixes are the thing to avoid, not the extra rows |
+
+### Open
+
+- **The wait's second line.** `retry after <n> seconds` is this
+  implementation's wording, not a form any spec fixes. Nothing reads it
+  but a person, and no test outside `internal/sshd` asserts on it.
+- **`ORIGO_SSH_ADDR` unset with the other three set** is accepted and
+  the three are unread, the way `ORIGO_GOSSIP_SECRET` is read and unused
+  without peers. The spec states the two ends of the rule and not this
+  middle; refusing it would fail a start-up that is merely untidy.
+- **Host key algorithms are narrower than client key algorithms.**
+  Decision 10 names `ssh-ed25519`, `ecdsa-sha2-nistp256`, and `ssh-rsa`
+  at 2048 bits for a host key, and five algorithms for a client key, so
+  `ecdsa-sha2-nistp384` authenticates a person and cannot be a host key.
+  That is what the sentence says and it may not be what it meant.
+
+### Deferred
+
+Nothing of this spec is deferred. The two things it names as somebody
+else's stay there: `git-lfs-authenticate` and LFS over an SSH remote,
+which is a spec of its own, and certificate authentication, which is a
+smaller design and a different contract. Latere's key store is auth's,
+in the task above, and the stub of `test/stubs/sshkeys` is what serves
+the stack and a first installation until it exists.
+
+### The stack proof
+
+The three cluster criteria and the install document's step ran in the
+`e2e` and `install` jobs of the `verify` run on `main`; the run id is
+recorded here when it is green, and is not refreshed afterwards.

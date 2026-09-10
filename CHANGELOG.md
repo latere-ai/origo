@@ -10,6 +10,32 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Git over SSH, beside the HTTPS you already have. People clone with
+  `git@your-host:owner/slug.git` and carry a key pair instead of a token,
+  and what they push is the same durable write: one log entry in your
+  bucket, acknowledged only when it is there. It is off until you turn it
+  on, so this release changes nothing for an installation that does not
+  want it. Turning it on is four environment variables, a host key you
+  generate once with `ssh-keygen`, and a decision about how port 22
+  reaches your cluster; `docs/install.md` has the step, and it ends in a
+  clone over SSH.
+- Origo stores no SSH public key. It asks an endpoint you run which
+  subject an offered key belongs to, shaped like the authorization
+  endpoint you already run and behind its own bearer, so adding, naming,
+  listing, and removing keys stays your product's. A file of fingerprints
+  served behind a bearer satisfies it; the five rules an endpoint must
+  keep are in the install page beside the authorizer's five, and
+  `test/stubs/sshkeys` is a working one to read.
+- An SSH connection carries `git clone`, `git fetch`, and `git push` and
+  nothing else. A shell, a second command, a forwarded port, an agent
+  socket, sftp: each is refused before anything opens. The JSON API and
+  Git LFS stay HTTPS, and so does a read that must never be behind.
+- Replacing a host key is an overlap rather than a flag day: every key
+  you configure is announced to clients, so a client that reconnects
+  learns the new one by itself and no one sees the warning that a host
+  key changed. `docs/operations.md` has the four steps and what to wait
+  between them.
+
 ## v0.1.1 - 2026-09-10
 
 - The install page now gets you from nothing to a pushed commit on your own
