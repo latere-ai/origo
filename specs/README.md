@@ -77,13 +77,14 @@ each says which spec owns each deferred criterion), so waiting for
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing | 003, 004, 006, 007, 008, 010, 016 |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing | 004, 007, 008, 009, 012, 019 |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
+| [022](022-landing-page.md) | Landing page: what a person sees at the root | small | drafted | 002, 003, 007, 016 |
 
 ## Dependency graph
 
 Arrows point from a spec to the specs it builds on, so spec 001 sits at
 the top and the leaves at the bottom. The picture is the transitive
-reduction of the deck's 71 `depends_on` edges: an arrow is drawn only
-where no other path already carries it, which leaves 29. Reachability is
+reduction of the deck's 75 `depends_on` edges: an arrow is drawn only
+where no other path already carries it, which leaves 30. Reachability is
 unchanged, so every dependency the deck states is still a path here, but
 an arrow that is not drawn is not an absent dependency. Spec 018 lists
 seven and only its arrow to 017 is drawn; 002 is one of the other six,
@@ -113,6 +114,7 @@ flowchart BT
   S019[019 administration]
   S020[020 server-side ops]
   S021[021 conformance suite]
+  S022[022 landing page]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -142,6 +144,7 @@ flowchart BT
   S021 --> S009
   S021 --> S015
   S021 --> S019
+  S022 --> S016
 ```
 
 ## Build order
@@ -156,6 +159,7 @@ flowchart BT
 | 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the first release ran on 2026-09-10: tag `v0.1.0` at commit `2b2468d`, Release run 34461460766 with every job green or deliberately skipped, and the tag's `verify` run 34461461220 green over the cluster tiers, the up-script check, and the mutation job. All three specs stay at `testing`. 021: the suite is green whole against the stack and against the image the release published, named case by case in both runs; what remains is the live run of the 51 cases a live target can carry, which the release did not produce, and 014's `verify` case of the source group, which is in no file. 017: the tag closed every row a tag can close, the artifacts and signatures and body through `release-verify`, the three SPDX assets, the conformance run against the published image, the deploy-less tag, and `install-release`; what remains is the attestations, which need a public repository, the `live` job, which needs the two secrets and an installation, the N-1 fixture, which needs a second tag, and the fork tag in both halves, which needs a maintainer and is the only path by which `deploy and smoke` has ever been asked to run. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | 014 complete: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; the `cluster e2e tier` job of the tag run 34461461220 names `--- PASS: TestClusterMigrationCatchesALateWrite` and `--- PASS: TestClusterMigrationDocCommandsRun`, which was the last item |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
+| 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | drafted; the root and the favicon are the only unauthenticated paths added since 007, and the page depends on nothing outside the process |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
 replaces the phase 1 bearer, and the overlay and the CI jobs are what
@@ -830,7 +834,7 @@ name, or when a spec names something no spec defines.
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
@@ -953,11 +957,13 @@ name, or when a spec names something no spec defines.
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
 | event | `verified` | [014](014-repository-migration.md) | 008 |
 | endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
-| endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 005, 016 |
+| endpoint | `GET /` | [022](022-landing-page.md) | 002 |
+| endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 005, 016, 022 |
+| endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
-| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
-| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021 |
+| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
+| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/commits` | [009](009-read-api-and-archive.md) | - |
@@ -968,8 +974,8 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010 |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | - |
-| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017 |
-| endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | - |
+| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
+| endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 019 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
@@ -990,7 +996,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
 | header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003 |
-| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017 |
+| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006 |

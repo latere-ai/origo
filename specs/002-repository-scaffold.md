@@ -100,7 +100,7 @@ service container.
 
 | Listener | Default address | Serves |
 |---|---|---|
-| public | `:8080` (`ORIGO_PUBLIC_ADDR`) | `/r/{id}.git/*` and `/{owner}/{slug}.git/*` smart HTTP, `/v1/*`, LFS, plus `GET /readyz` and `GET /version` so the release smoke reaches them through the ingress |
+| public | `:8080` (`ORIGO_PUBLIC_ADDR`) | `/r/{id}.git/*` and `/{owner}/{slug}.git/*` smart HTTP, `/v1/*`, LFS, plus `GET /readyz` and `GET /version` so the release smoke reaches them through the ingress, and the landing page `GET /` with `GET /favicon.ico` beside it (spec 022) |
 | internal | `:8081` (`ORIGO_INTERNAL_ADDR`) | the four probes below |
 | gossip | `:7946/udp` (`ORIGO_GOSSIP_ADDR`) | node to node sequence announcements (spec 005); until then datagrams are read and discarded |
 

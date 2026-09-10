@@ -101,6 +101,13 @@ Defined by [020 server side git operations](../specs/020-server-side-git-operati
 | POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
 | POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
 
+Defined by [022 landing page](../specs/022-landing-page.md).
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/` | 200, the landing page; `text/html; charset=utf-8` when `Accept` contains `text/html`, `text/plain; charset=utf-8` otherwise, `Vary: Accept` on both; no token, no `WWW-Authenticate` |
+| GET | `/favicon.ico` | 204, empty, no token; so a browser rendering the page is never asked for credentials it cannot supply |
+
 ## Headers
 
 Headers Origo sets on its responses. A consumer reads them; none is sent by a client.
