@@ -198,11 +198,11 @@ func TestResolverAnswersAreCachedByFingerprint(t *testing.T) {
 // restores it (spec 015).
 func TestStorageCodeNamesTheRepositoryWhenTheLogIsBroken(t *testing.T) {
 	integrity := &wal.IntegrityError{Key: "origo/repos/x/entry", Err: errors.New("missing")}
-	if got := storageCode(integrity); got != contract.CodeRepositoryUnavailable {
-		t.Errorf("an integrity error is %q", got)
+	if got := storageCode(integrity); got.Code != contract.CodeRepositoryUnavailable {
+		t.Errorf("an integrity error is %q", got.Code)
 	}
-	if got := storageCode(errors.New("unreachable")); got != contract.CodeStorageUnavailable {
-		t.Errorf("a transient failure is %q", got)
+	if got := storageCode(errors.New("unreachable")); got.Code != contract.CodeStorageUnavailable {
+		t.Errorf("a transient failure is %q", got.Code)
 	}
 }
 

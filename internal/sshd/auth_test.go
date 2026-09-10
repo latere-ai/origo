@@ -40,6 +40,14 @@ func TestSSHKeyResolverFailsClosedAndRecovers(t *testing.T) {
 		if n := f.keyCalls("not_found"); n == 0 {
 			t.Error("the resolve call was not recorded as not found")
 		}
+		// The other side of the histogram: a key that resolves is one
+		// call recorded as found.
+		if _, err := f.dial(); err != nil {
+			t.Fatalf("the registered key was refused: %v", err)
+		}
+		if n := f.keyCalls("found"); n == 0 {
+			t.Error("a resolve that found a subject was not recorded")
+		}
 	})
 
 	t.Run("a not-found answer is not held past its window", func(t *testing.T) {
@@ -269,6 +277,37 @@ func TestSSHRefusalsAreTheTableSentences(t *testing.T) {
 		}
 	})
 
+	t.Run("over_quota on the repository's size", func(t *testing.T) {
+		requireSSH(t)
+		f := newFixture(t)
+		f.create(repoA, "acme", "app")
+		// The authorizer names a quota this push crosses, which is spec
+		// 012's repository bound. The refusal is the hook's verdict, so
+		// the client reads the code and the sentence in the sideband and
+		// no entry is written.
+		f.authz.SetRules(authorizer.Rule{Subject: "u_7f3c", Allow: true, QuotaBytes: 1024})
+		sshCommand := f.sshClient(t)
+		host, port, err := splitAddr(f.addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		work := f.workingCopy(t, sshCommand, host, port)
+		writeBlob(t, work, 64<<10)
+		f.mustGit(t, work, sshCommand, "add", "big.bin")
+		f.mustGit(t, work, sshCommand, "commit", "-q", "-m", "big")
+		out, err := f.runGit(t, work, sshCommand, "push", "origin", "HEAD:refs/heads/main")
+		if err == nil {
+			t.Fatal("a push past the repository quota was accepted")
+		}
+		if !strings.Contains(out, contract.Line(contract.CodeOverQuota)) {
+			t.Errorf("the push output does not carry the over_quota line:\n%s", out)
+		}
+		ix, _, err := f.log.Newest(t.Context(), repoA, 0, false)
+		if err != nil || ix.Seq != 0 {
+			t.Errorf("a refused push moved the log to %+v, %v", ix, err)
+		}
+	})
+
 	t.Run("storage_unavailable when the write breaker is open", func(t *testing.T) {
 		f := newFixture(t, withBreakers(5*time.Minute))
 		f.create(repoA, "acme", "app")
@@ -328,32 +367,46 @@ func TestSSHUnauthenticatedConnectionIsBounded(t *testing.T) {
 		}
 		buf := make([]byte, 256)
 		// The server sends its version and then waits; the read ends when
-		// the deadline closes the connection.
+		// the deadline closes the connection. The bound asserted is the
+		// configured deadline and a margin, not the socket's own.
 		start := time.Now()
 		for {
 			if _, err := conn.Read(buf); err != nil {
 				break
 			}
 		}
-		if waited := time.Since(start); waited > 10*time.Second {
-			t.Errorf("the connection was held %s", waited)
+		if waited := time.Since(start); waited > 3*time.Second {
+			t.Errorf("the connection was held %s, want the 500ms deadline and a margin", waited)
 		}
 	})
 
 	t.Run("a fourth public key attempt is refused", func(t *testing.T) {
+		// Every key the client offers is registered, so the only thing
+		// that can refuse the connection is the attempt cap: the server
+		// resolves at most MaxAuthTries of them and stops.
 		var offers []ssh.Signer
-		for range 6 {
+		for range 7 {
 			signer, err := ssh.NewSignerFromKey(generateKey(t))
 			if err != nil {
 				t.Fatal(err)
 			}
+			f.keys.Register(sshkeys.Key{Fingerprint: ssh.FingerprintSHA256(signer.PublicKey()), Subject: "u_many"})
 			offers = append(offers, signer)
 		}
-		// The last key is the registered one; the server never reaches it
-		// because MaxAuthTries stops the connection first.
-		offers = append(offers, f.client)
+		// With every key registered the first one would authenticate, so
+		// the cap is proved on a connection whose keys are all unknown:
+		// the server resolves at most three of the seven and stops.
+		f.keys.SetKeys()
+		before := len(f.keys.Requests())
 		if _, err := f.dial(offers...); err == nil {
-			t.Fatal("a connection offering seven keys authenticated")
+			t.Fatal("a connection offering seven unknown keys authenticated")
+		}
+		got := len(f.keys.Requests()) - before
+		if got == 0 {
+			t.Fatal("the server resolved none of the keys offered")
+		}
+		if got > MaxAuthTries {
+			t.Errorf("the server resolved %d keys of the seven offered, want at most %d", got, MaxAuthTries)
 		}
 	})
 

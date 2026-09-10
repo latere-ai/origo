@@ -91,10 +91,6 @@ func withNow(now func() time.Time) fixtureOption {
 	return func(c *fixtureConfig) { c.now = now }
 }
 
-func withStore(s wal.Store) fixtureOption {
-	return func(c *fixtureConfig) { c.store = s }
-}
-
 // withBreakers puts the breaker store of spec 015 in front of the memory
 // store at threshold one, on the fixture's fake clock, so one failed
 // call opens a class.

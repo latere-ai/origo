@@ -15,20 +15,20 @@ import (
 	"github.com/latere-ai/origo/internal/wal"
 )
 
-// refusal is a push spec 012 refuses on size: which bound it crossed,
+// sizeRefusal is a push spec 012 refuses on size: which bound it crossed,
 // what the push would leave behind, and the limit. It travels to the
 // client as the hook's verdict, `over_quota: <sentence>` exactly (spec
 // 021's rule for a line that carries a code), and the figures go to the
 // handler's info log line, which is the one place a refused push's
 // numbers are written.
-type refusal struct {
+type sizeRefusal struct {
 	limit string
 	bytes int64
 	max   int64
 }
 
 // log writes the one line a refused push leaves.
-func (f *refusal) log(ctx context.Context, logger *slog.Logger, id, subject string) {
+func (f *sizeRefusal) log(ctx context.Context, logger *slog.Logger, id, subject string) {
 	logger.InfoContext(ctx, "push refused", "repo", id, "limit", f.limit,
 		"bytes", f.bytes, "max", f.max, "subject", subject)
 }
@@ -38,9 +38,9 @@ func (f *refusal) log(ctx context.Context, logger *slog.Logger, id, subject stri
 // authorizer's quota_bytes, and the references the index would hold
 // after it, against the reference cap. It answers nil when the push
 // fits, and an error only when the lfs/ sum could not be read.
-func (h *Handler) overQuota(ctx context.Context, id string, rp *repo.Repo, req *receiveRequest, quota int64) (*refusal, error) {
+func (h *Handler) overQuota(ctx context.Context, id string, rp *repo.Repo, req *receiveRequest, quota int64) (*sizeRefusal, error) {
 	if refs := refsAfter(rp.Index, req.Commands); refs > limits.MaxRefs {
-		return &refusal{limit: limits.LimitRefs, bytes: int64(refs), max: limits.MaxRefs}, nil
+		return &sizeRefusal{limit: limits.LimitRefs, bytes: int64(refs), max: limits.MaxRefs}, nil
 	}
 	var held int64
 	if rp.Index != nil {
@@ -53,7 +53,7 @@ func (h *Handler) overQuota(ctx context.Context, id string, rp *repo.Repo, req *
 	if !q.Over() {
 		return nil, nil
 	}
-	return &refusal{limit: limits.LimitRepository, bytes: q.Bytes, max: q.Max}, nil
+	return &sizeRefusal{limit: limits.LimitRepository, bytes: q.Bytes, max: q.Max}, nil
 }
 
 // refsAfter is how many references the index holds once the commands
@@ -81,7 +81,7 @@ func refsAfter(ix *wal.Index, commands []wal.RefUpdate) int {
 // tooLarge answers a push body past the single-push bound: 413
 // over_quota with the push limit, before git ever runs.
 func (h *Handler) tooLarge(w http.ResponseWriter, r *http.Request, id string, bytes, max int64) {
-	f := &refusal{limit: limits.LimitPush, bytes: bytes, max: max}
+	f := &sizeRefusal{limit: limits.LimitPush, bytes: bytes, max: max}
 	f.log(r.Context(), h.logger, id, auth.Subject(r.Context()))
 	contract.Write(w, http.StatusRequestEntityTooLarge, contract.CodeOverQuota, map[string]any{
 		"limit": f.limit, "bytes": f.bytes, "max": f.max,

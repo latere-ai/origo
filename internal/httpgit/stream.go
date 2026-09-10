@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"sync"
@@ -59,12 +60,12 @@ func (s Stream) errWriter() io.Writer {
 }
 
 // UploadPack serves a fetch or clone over a stream. It returns the
-// contract code of a refusal, or "" when git ran, and an error only
-// when the node failed at something the caller must log.
-func (h *Handler) UploadPack(ctx context.Context, id string, rp *repo.Repo, s Stream) (string, error) {
+// refusal the caller renders, the zero Refusal when git ran, and an
+// error only when the node failed at something the caller must log.
+func (h *Handler) UploadPack(ctx context.Context, id string, rp *repo.Repo, s Stream) (contract.Refusal, error) {
 	release, _, ok := h.limits.Acquire(ctx)
 	if !ok {
-		return contract.CodeRateLimited, nil
+		return refuseRateLimited, nil
 	}
 	defer release()
 	cmd, cancel := h.streamCommand(ctx, rp, "upload-pack", rp.Dir)
@@ -72,10 +73,10 @@ func (h *Handler) UploadPack(ctx context.Context, id string, rp *repo.Repo, s St
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.In, s.Out, s.errWriter()
 	if err := cmd.Run(); err != nil {
 		h.logger.WarnContext(ctx, "upload-pack ended with an error", "repo", id, "transport", "stream", "error", err)
-		return "", err
+		return contract.Refusal{}, err
 	}
 	h.fetches.Inc(nil)
-	return "", nil
+	return contract.Refusal{}, nil
 }
 
 // ReceivePack serves a push over a stream: the client's bytes are
@@ -85,11 +86,11 @@ func (h *Handler) UploadPack(ctx context.Context, id string, rp *repo.Repo, s St
 // stream's framing, so a push over SSH is the same log entry as a push
 // over HTTP.
 //
-// It returns the contract code of a refusal that never reached git, or
-// "" when git ran; a push git or the log refused travels to the client
-// in the sideband as the hook's verdict, which is where a git client
-// reads a refusal.
-func (h *Handler) ReceivePack(ctx context.Context, id string, rp *repo.Repo, quota int64, s Stream) (string, error) {
+// It returns the refusal that never reached git, or the zero Refusal
+// when git ran; a push git or the log refused travels to the client in
+// the sideband as the hook's verdict, which is where a git client reads
+// a refusal.
+func (h *Handler) ReceivePack(ctx context.Context, id string, rp *repo.Repo, quota int64, s Stream) (contract.Refusal, error) {
 	// The repository's own state (spec 019) and the write breaker (spec
 	// 015) are read before git starts, so a frozen repository and an
 	// unreachable bucket refuse the push before the client uploads a
@@ -99,33 +100,33 @@ func (h *Handler) ReceivePack(ctx context.Context, id string, rp *repo.Repo, quo
 	case errors.Is(err, wal.ErrNotFound):
 	case err != nil:
 		h.logger.ErrorContext(ctx, "repository unavailable", "repo", id, "transport", "stream", "error", err)
-		return contract.CodeStorageUnavailable, nil
+		return refuseStorage, nil
 	default:
 		if refusal, refused := stateRefusal(m); refused {
 			h.logger.InfoContext(ctx, "push refused", "repo", id, "code", refusal.Code, "subject", auth.Subject(ctx))
-			return refusal.Code, nil
+			return refusal, nil
 		}
 	}
 	if bs := h.log.Breakers(); bs != nil && !bs.Admits(wal.ClassWrite) {
-		return contract.CodeStorageUnavailable, nil
+		return refuseStorage, nil
 	}
 	if err := installHook(rp.Dir); err != nil {
-		return contract.CodeStorageUnavailable, err
+		return refuseStorage, err
 	}
 	ch, err := newHookChannel(h.cache.SpoolDir())
 	if err != nil {
-		return contract.CodeStorageUnavailable, err
+		return refuseStorage, err
 	}
 	defer ch.close()
 	release, _, ok := h.limits.Acquire(ctx)
 	if !ok {
-		return contract.CodeRateLimited, nil
+		return refuseRateLimited, nil
 	}
 	defer release()
 
 	spool, err := os.CreateTemp(h.cache.SpoolDir(), "receive-*.body")
 	if err != nil {
-		return contract.CodeStorageUnavailable, err
+		return refuseStorage, err
 	}
 	defer func() { _ = spool.Close(); _ = os.Remove(spool.Name()) }()
 
@@ -134,24 +135,34 @@ func (h *Handler) ReceivePack(ctx context.Context, id string, rp *repo.Repo, quo
 	cmd.Env = append(cmd.Env, "ORIGO_HOOK_DIR="+ch.dir)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return contract.CodeStorageUnavailable, err
+		return refuseStorage, err
 	}
 	cmd.Stdout, cmd.Stderr = s.Out, s.errWriter()
 	if err := cmd.Start(); err != nil {
-		return contract.CodeStorageUnavailable, err
+		return refuseStorage, err
 	}
 	t := newSpoolTee(spool, stdin, s.In, h.limits.MaxPush())
 	go t.run()
-	code := h.receiveStream(ctx, id, rp, quota, t, ch, cmd.Wait, spool.Name())
+	refusal := h.receiveStream(ctx, id, rp, quota, t, ch, cmd.Wait, spool.Name())
 	<-t.stopped
-	return code, nil
+	return refusal, nil
 }
+
+// The refusals a stream answers before git runs, each built where its
+// code is chosen, so the code table's test reads one call site per code
+// (spec 021).
+var (
+	refuseStorage     = contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil)
+	refuseRateLimited = contract.Refuse(http.StatusTooManyRequests, contract.CodeRateLimited, nil)
+	refuseOverQuota   = contract.Refuse(http.StatusRequestEntityTooLarge, contract.CodeOverQuota, nil)
+	refuseInvalid     = contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil)
+)
 
 // receiveStream is the half of ReceivePack that runs while git does:
 // it waits for the hook or for git's exit, decides the verdict, and
 // commits. It mirrors receivePack's select, with the spool measured at
 // the moment the hook fired rather than at the end of a request body.
-func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, quota int64, t *spoolTee, ch *hookChannel, wait func() error, spoolPath string) string {
+func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, quota int64, t *spoolTee, ch *hookChannel, wait func() error, spoolPath string) contract.Refusal {
 	started := time.Now()
 	_, endReceive := tracing.Start(ctx, "receive", tracing.Repo(id))
 	receiveEnded := false
@@ -181,7 +192,7 @@ func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, q
 	var refs []wal.RefUpdate
 	var forced map[string]bool
 	var runErr error
-	code := ""
+	var refusal contract.Refusal
 	select {
 	case u := <-fromHook:
 		h.observe(phaseReceive, started)
@@ -198,7 +209,7 @@ func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, q
 			verdict = "reject origo: " + u.err.Error()
 		case !u.ok:
 		case parseErr != nil:
-			code, verdict = h.streamParseRefusal(ctx, id, parseErr)
+			refusal, verdict = h.streamParseRefusal(ctx, id, parseErr)
 		default:
 			verdict = h.streamVerdict(ctx, id, rp, quota, u.refs, req, spoolPath, &committed)
 		}
@@ -220,10 +231,10 @@ func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, q
 			h.logger.WarnContext(ctx, "hook channel not released", "repo", id, "error", err)
 		}
 		<-fromHook
-		if over := t.tooLarge(); over {
-			f := &refusal{limit: limits.LimitPush, bytes: t.size(), max: t.max}
+		if t.tooLarge() {
+			f := &sizeRefusal{limit: limits.LimitPush, bytes: t.size(), max: t.max}
 			f.log(ctx, h.logger, id, auth.Subject(ctx))
-			code = contract.CodeOverQuota
+			refusal = refuseOverQuota
 		}
 	}
 	if runErr != nil {
@@ -245,21 +256,21 @@ func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, q
 			h.compact.After(id, committed.Index)
 		}
 	}
-	return code
+	return refusal
 }
 
 // streamParseRefusal maps a body this package could not read to the
 // verdict the client sees. A body past the reference cap is the same
 // over_quota the HTTP path answers; anything else is a malformed
 // request.
-func (h *Handler) streamParseRefusal(ctx context.Context, id string, err error) (code, verdict string) {
+func (h *Handler) streamParseRefusal(ctx context.Context, id string, err error) (contract.Refusal, string) {
 	if errors.Is(err, errTooManyCommands) {
-		f := &refusal{limit: limits.LimitRefs, bytes: limits.MaxRefs + 1, max: limits.MaxRefs}
+		f := &sizeRefusal{limit: limits.LimitRefs, bytes: limits.MaxRefs + 1, max: limits.MaxRefs}
 		f.log(ctx, h.logger, id, auth.Subject(ctx))
-		return contract.CodeOverQuota, "reject " + contract.Line(contract.CodeOverQuota)
+		return refuseOverQuota, "reject " + refuseOverQuota.Line()
 	}
 	h.logger.InfoContext(ctx, "push refused", "repo", id, "code", contract.CodeInvalid, "error", err, "subject", auth.Subject(ctx))
-	return contract.CodeInvalid, "reject " + contract.Line(contract.CodeInvalid)
+	return refuseInvalid, "reject " + refuseInvalid.Line()
 }
 
 // streamVerdict measures the push against spec 012's bounds and commits

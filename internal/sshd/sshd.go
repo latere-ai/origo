@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,13 +121,18 @@ type Server struct {
 	live  map[*connState]struct{}
 }
 
-// connState is one authenticated connection during a drain. A push is
-// as long as its pack and is never cut short, so a drain closes the
-// connections that are running nothing and lets the rest end by
-// themselves; a connection whose operation finishes after the drain
-// began is closed then.
+// connState is one connection during a drain. A push is as long as its
+// pack and is never cut short, so a drain closes the connections that
+// are running nothing and lets the rest end by themselves; a connection
+// whose operation finishes after the drain began is closed then.
+//
+// It is registered before the handshake, not after: a connection whose
+// key resolution is waiting on the operator's endpoint is doing no I/O
+// on the socket, so the handshake deadline cannot fire and only a close
+// ends it. What it closes is the socket, because that is what exists
+// before there is an SSH connection over it.
 type connState struct {
-	conn ssh.Conn
+	conn net.Conn
 
 	mu       sync.Mutex
 	busy     int
@@ -239,7 +245,9 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 			s.drain()
 			s.conns.Wait()
 			if ctx.Err() != nil {
-				return nil
+				// The listener was closed by the drain, which is the
+				// stop this loop ends on and not a failure.
+				return nil //nolint:nilerr // a closed listener during a drain is the stop
 			}
 			return fmt.Errorf("ssh listener: %w", err)
 		}
@@ -295,6 +303,9 @@ var errKeyRefused = errors.New("permission denied")
 // announcement, the global requests, and the one session.
 func (s *Server) handle(ctx context.Context, nc net.Conn) {
 	defer func() { _ = nc.Close() }()
+	state := &connState{conn: nc}
+	s.track(state)
+	defer s.untrack(state)
 	// The deadline covers the handshake and authentication together,
 	// before anything about the caller is known. It is cleared once the
 	// connection is authenticated, because a clone is as long as the
@@ -316,9 +327,6 @@ func (s *Server) handle(ctx context.Context, nc net.Conn) {
 	if _, _, err := conn.SendRequest(hostKeysRequest, false, s.hostKeys.announcement()); err != nil {
 		s.logger.DebugContext(ctx, "host keys not announced", "error", err)
 	}
-	state := &connState{conn: conn}
-	s.track(state)
-	defer s.untrack(state)
 	go s.globalRequests(ctx, conn, reqs)
 	s.channels(ctx, chans, subject, state)
 }
@@ -416,7 +424,7 @@ func (s *Server) session(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.R
 			line, err := execCommand(req.Payload)
 			if err != nil {
 				_ = req.Reply(false, nil)
-				s.refuse(ch, contract.CodeInvalid, 0)
+				s.refuse(ch, refuseInvalid, 0)
 				finish()
 				return
 			}
@@ -429,7 +437,7 @@ func (s *Server) session(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.R
 			// A second exec on one session: refused without disturbing
 			// the operation the first one started.
 			_ = req.Reply(false, nil)
-			_, _ = fmt.Fprintln(ch.Stderr(), contract.Line(contract.CodeInvalid))
+			_, _ = fmt.Fprintln(ch.Stderr(), refuseInvalid.Line())
 		case requestsAnsweredNo[req.Type]:
 			if req.WantReply {
 				_ = req.Reply(false, nil)
@@ -440,7 +448,7 @@ func (s *Server) session(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.R
 				_ = req.Reply(false, nil)
 			}
 			if !started {
-				s.refuse(ch, contract.CodeInvalid, 0)
+				s.refuse(ch, refuseInvalid, 0)
 				finish()
 				return
 			}
@@ -469,7 +477,7 @@ func execCommand(payload []byte) (string, error) {
 func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) {
 	service, arg, err := ParseCommand(line)
 	if err != nil {
-		s.refuse(ch, contract.CodeInvalid, 0)
+		s.refuse(ch, refuseInvalid, 0)
 		return
 	}
 	action, label := auth.ActionRead, "upload-pack"
@@ -482,12 +490,12 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 	// One session costs one token of the subject's bucket (spec 012): an
 	// SSH clone is one connection where an HTTP clone is two requests.
 	if ok, retry := s.limits.Take(ctx, subject); !ok {
-		s.refuse(ch, contract.CodeRateLimited, retry)
+		s.refuse(ch, refuseRateLimited, retry)
 		return
 	}
 	ref, err := ParsePath(arg)
 	if err != nil {
-		s.refuse(ch, contract.CodeInvalid, 0)
+		s.refuse(ch, refuseInvalid, 0)
 		return
 	}
 	// Delegation does not exist over SSH: a public key signs nothing but
@@ -513,15 +521,15 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 	if err != nil {
 		if denied, ok := errors.AsType[*auth.Denied](err); ok {
 			s.logger.InfoContext(ctx, "ssh refused", "repo", ref.ID, "action", action, "subject", subject, "reason", denied.Reason)
-			s.refuse(ch, contract.CodeForbidden, 0)
+			s.refuse(ch, refuseForbidden, 0)
 			return
 		}
 		s.logger.ErrorContext(ctx, "authorizer unavailable", "repo", ref.ID, "subject", subject, "error", err)
-		s.refuse(ch, contract.CodeAuthorizerUnavailable, 0)
+		s.refuse(ch, refuseNoAuthz, 0)
 		return
 	}
 	if ref.ID == "" {
-		s.refuse(ch, contract.CodeRepoNotFound, 0)
+		s.refuse(ch, refuseNotFound, 0)
 		return
 	}
 	s.limits.SetSubjectRate(subject, decision.RequestsPerMinute)
@@ -530,7 +538,7 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 	if err != nil {
 		switch {
 		case errors.Is(err, repo.ErrNotFound), errors.Is(err, repo.ErrDeleted):
-			s.refuse(ch, contract.CodeRepoNotFound, 0)
+			s.refuse(ch, refuseNotFound, 0)
 		default:
 			s.logger.ErrorContext(ctx, "repository unavailable", "repo", ref.ID, "error", err)
 			s.refuse(ch, storageCode(err), 0)
@@ -545,22 +553,22 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 		// cannot act on it, so a consumer that must not read stale uses
 		// HTTPS.
 		if action == auth.ActionWrite {
-			s.refuse(ch, contract.CodeStorageUnavailable, 0)
+			s.refuse(ch, refuseStorage, 0)
 			return
 		}
 		_, _ = fmt.Fprintf(ch.Stderr(), "%s: %d\n", contract.HeaderStale, int(lease.StaleFor/time.Second))
 	}
 
 	stream := httpgit.Stream{In: ch, Out: ch, Err: ch.Stderr()}
-	var code string
+	var refusal contract.Refusal
 	if action == auth.ActionWrite {
-		code, err = s.git.ReceivePack(ctx, ref.ID, lease.Repo, decision.QuotaBytes, stream)
+		refusal, err = s.git.ReceivePack(ctx, ref.ID, lease.Repo, decision.QuotaBytes, stream)
 	} else {
-		code, err = s.git.UploadPack(ctx, ref.ID, lease.Repo, stream)
+		refusal, err = s.git.UploadPack(ctx, ref.ID, lease.Repo, stream)
 	}
 	switch {
-	case code != "":
-		s.refuse(ch, code, 0)
+	case refusal.Code != "":
+		s.refuse(ch, refusal, 0)
 	case err != nil:
 		result = "error"
 		exit(ch, 1)
@@ -574,12 +582,26 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 // repository the log names objects for that are missing or fail their
 // digest is unavailable until an operator restores it, and every other
 // storage failure is temporary (spec 015).
-func storageCode(err error) string {
+func storageCode(err error) contract.Refusal {
 	if _, ok := errors.AsType[*wal.IntegrityError](err); ok {
-		return contract.CodeRepositoryUnavailable
+		return refuseBroken
 	}
-	return contract.CodeStorageUnavailable
+	return refuseStorage
 }
+
+// The refusals this listener answers with, each built where its code is
+// chosen, so the code table's test reads one call site per code (spec
+// 021). The status is the code's own row; SSH sends none, and naming it
+// here keeps the two surfaces on one table.
+var (
+	refuseInvalid     = contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, nil)
+	refuseForbidden   = contract.Refuse(http.StatusForbidden, contract.CodeForbidden, nil)
+	refuseNoAuthz     = contract.Refuse(http.StatusServiceUnavailable, contract.CodeAuthorizerUnavailable, nil)
+	refuseNotFound    = contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil)
+	refuseRateLimited = contract.Refuse(http.StatusTooManyRequests, contract.CodeRateLimited, nil)
+	refuseStorage     = contract.Refuse(http.StatusServiceUnavailable, contract.CodeStorageUnavailable, nil)
+	refuseBroken      = contract.Refuse(http.StatusServiceUnavailable, contract.CodeRepositoryUnavailable, nil)
+)
 
 // refuse writes a refusal to the session's stderr and ends it with exit
 // status 1. The first line is contract.Line of the code, byte for byte
@@ -587,8 +609,8 @@ func storageCode(err error) string {
 // sentence they would read in a JSON envelope. A refusal that has a wait
 // carries it on a line of its own, because SSH has no header to put it
 // on and the code's line is not rewritten to hold it.
-func (s *Server) refuse(ch ssh.Channel, code string, retry time.Duration) {
-	_, _ = fmt.Fprintln(ch.Stderr(), contract.Line(code))
+func (s *Server) refuse(ch ssh.Channel, refusal contract.Refusal, retry time.Duration) {
+	_, _ = fmt.Fprintln(ch.Stderr(), refusal.Line())
 	if retry > 0 {
 		_, _ = fmt.Fprintln(ch.Stderr(), "retry after "+strconv.Itoa(limits.RetryAfterSeconds(retry))+" seconds")
 	}
