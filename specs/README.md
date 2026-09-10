@@ -985,7 +985,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
-| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 019 |
+| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | - |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |

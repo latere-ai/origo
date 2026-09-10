@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -54,7 +54,7 @@ table describes, with `check` as its first subcommand; spec 014's
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
-| authorizer | an HTTP endpoint the operator runs (spec 007), which must deny the probe id spec 007's authorizer contract reserves; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay, with the image `ghcr.io/latere-ai/origo-stubs:<version>` of the same release as `origod` (spec 017's artifact table), which the archive pins |
+| authorizer | an HTTP endpoint the operator runs (spec 007), held to the five rules of that spec's authorization endpoint contract, of which the operator-facing consequence is that the endpoint learns of a repository before Origo does, so a registration precedes every `POST /v1/repos`; a single-tenant installation satisfies the contract with a static allow-list that denies the probe id; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay, with the image `ghcr.io/latere-ai/origo-stubs:<version>` of the same release as `origod` (spec 017's artifact table), which the archive pins |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
 
 ### Manifests
@@ -182,7 +182,13 @@ The install document links to it and never restates a value.
 
 `docs/api.md`, the page `docs/README.md` lists for a consumer, is the
 second output of `make docs` and this spec's: the endpoint table, the
-header table, and the code table with each code's status and sentence,
+header table, the code table with each code's status and sentence, and
+the authorization endpoint, which is the one call Origo makes rather
+than serves and therefore no definition table's row. That section is the
+passage spec 007 writes under its own heading, carried verbatim through
+`specs.Index.Section`, a reader of one spec heading this spec adds to
+the shared parser, so the contract an operator's endpoint is held to has
+one source and the page cannot drift from it. The rest is
 rendered by `tools/apidoc`, a Go program in its own module beside
 `tools/specindex`, from the same cross-reference data `specindex`
 parses out of the specs (the tables whose first header is `Method` and
@@ -208,7 +214,18 @@ number of spec 003 at its top and nothing a spec does not state.
 `docs/install.md`: requirements, the five steps (create the bucket,
 register the issuer clients, write the overlay, apply, run the check),
 the first clone and push, how to point a consumer at the authorizer, and
-where to look when something fails (the check's output, the alerts of
+where to look when something fails. It serves two readers at once, the
+`install` job walking it against the `kind` overlay and an operator
+walking it against their own cluster, and it separates them by naming
+the example stack at every point where it is what an unset variable
+falls back to: the address, the token, and the repository the walkthrough
+creates each read an `ORIGO_*` variable an operator sets, and the prose
+beside each block says what the fallback is and that no real installation
+has it. The token an operator's issuer mints and the registration their
+authorization endpoint needs are sketches in unfenced-as-`sh` blocks,
+which neither `run-blocks.sh` nor `TestInstallDocumentIsWellFormed`
+executes, because their shape is the operator's provider's and not
+Origo's (the check's output, the alerts of
 spec 011, `docs/operations.md`). The apply step carries the block that
 generates `ORIGO_TOKEN_KEY` into the Secret `origod-token-key` with
 `openssl ecparam` before `kubectl apply -k`; the install jobs run that
@@ -259,10 +276,15 @@ binary artifact of spec 017.
 - `make docs` regenerates `docs/configuration.md` and `docs/api.md`
   byte-identical in the `specindex` job of `verify.yml`, and `docs/api.md` carries
   every endpoint, header, and code the cross-reference of
-  `specs/README.md` lists and no other (proposed: `internal/config`,
+  `specs/README.md` lists and no other, and the authorization endpoint
+  section is the passage spec 007 writes and not a restatement of it, so
+  a deck that states no such contract renders no page (proposed:
+  `internal/config`,
   `TestConfigurationDocIsCurrent`; `tools/apidoc`,
-  `TestAPIDocIsCurrent`, which reads the specs and the page through a
-  test-only constant resolved from its own source file).
+  `TestAPIDocIsCurrent` and `TestAuthorizationSectionComesFromTheSpec`,
+  which read the specs and the page through a
+  test-only constant resolved from its own source file;
+  `tools/specindex/specs`, `TestSectionCarriesOneSpecPassage`).
 - A maintainer following `docs/install.md` on a fresh kind cluster
   reaches a successful push without consulting any other document: a
   release checklist item of spec 017, done once per release by hand and
@@ -286,6 +308,8 @@ published release are listed below with what closes each.
 | `origod check` runs the check, `origod` and `origod serve` serve, `origod -version` prints the identity, and `origod nosuch` exits 2 with a usage line | `cmd/origod`, `TestSubcommandDispatch` | passing |
 | `origod check` prints a `fail` line naming the requirement for each of the eight failures and exits 1, and seven `ok` lines and 0 when everything is in place | `cmd/origod`, `TestCheckReportsEachRequirement`, with `TestGitVersionParsesTheThreeNumbers` on the version floor and `TestCheckInitContainerSharesTheNodesEnvironment` on the init container that runs it | passing |
 | `make docs` regenerates `docs/configuration.md` and `docs/api.md` byte-identical, and `docs/api.md` carries every endpoint, header, and code the cross-reference lists and no other | `internal/config`, `TestConfigurationDocIsCurrent`, `TestReferenceRowsAreComplete`, `TestDefaultsOnThePageAreTheDefaultsInTheCode`; `tools/apidoc`, `TestAPIDocIsCurrent` and `TestPageStatesTheContractAndNothingElse`; the `specindex` job of `verify.yml` runs `make docs` and `git diff --exit-code docs/` | passing |
+| `docs/api.md` carries the authorization endpoint as the passage spec 007 writes, and a deck that states none renders no page | `tools/apidoc`, `TestAuthorizationSectionComesFromTheSpec`; `tools/specindex/specs`, `TestSectionCarriesOneSpecPassage` on the reader it uses | passing |
+| the document's blocks run with nothing set and with an operator's variables set, and the second path never reaches the example stack's issuer | walked by hand on 2026-09-10 against a local node with the stubs of spec 013, once with nothing set and once with the token, the repository id, the owner, and the slug set through the document's own variables, which are the page's and not the node's; the `install` job walks the first path on every push | passing by hand; the job is the standing proof of the first path |
 | every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
 | `ORIGO_TOKEN_KEY` comes from the Secret `origod-token-key` and from nowhere else, in every workload that runs `origod` | `cmd/origod`, `TestSigningKeyHasOneSource` | passing |
 | a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | pending the first release |
@@ -331,6 +355,18 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
   field for the key, and the second paragraph is the one that stands,
   because it is the one written for this spec. The decisions table row
   is amended.
+
+- The install document and `docs/api.md` gained the authorization
+  contract on 2026-09-10, after a walk of the document against a real
+  installation found two holes the `kind` overlay hides: the walkthrough
+  minted its token at the example stack's stub issuer, which no real
+  issuer serves, and it never said that an authorization endpoint has to
+  know a repository before Origo creates one, so a reader with a real
+  endpoint met a 403 the page did not explain. Both are now in the
+  document, the five rules and the single-tenant case are in step 2, and
+  spec 007 gained the contract section `docs/api.md` renders. The
+  additions were asked for by a spec of another deck, which owns none of
+  this tree and made no change in it.
 
 - `tools/docs/TestInstallDocumentIsWellFormed` is not in the Acceptance
   criteria. The `install` job is the document's proof and needs a
