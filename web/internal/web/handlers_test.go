@@ -210,7 +210,7 @@ func TestSignOutClearsTheSession(t *testing.T) {
 	page := h.get("/", c)
 	var csrf *http.Cookie
 	for _, ck := range page.Result().Cookies() {
-		if ck.Name == session.CSRFCookieName {
+		if ck.Name == session.CSRFCookieName || ck.Name == "origoweb-csrf" {
 			csrf = ck
 		}
 	}

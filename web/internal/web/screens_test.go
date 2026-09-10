@@ -296,6 +296,35 @@ func TestRoutesAreReadOnly(t *testing.T) {
 			t.Errorf("POST %s with no token: %d, want 403", path, rec.Code)
 		}
 	}
+
+	// The list above is what the server registered, and the server is what
+	// answers: every address of the interface is driven with every method
+	// that changes something, and the only two that answer are the two
+	// forms. A handler added straight onto the mux would fail here.
+	c := h.signedIn("alice")
+	addresses := []string{
+		"/", "/sign-in", "/open", "/auth/start", "/auth/callback", "/sign-out",
+		"/keys", "/assets/app.css", h.repoPath(""), h.repoPath("/refs"),
+		h.repoPath("/log"), h.repoPath("/commit/9f3c1abf20d4e7c8b5a1930fe6d2c4471be08a3d"),
+		h.repoPath("/patch/9f3c1abf20d4e7c8b5a1930fe6d2c4471be08a3d"), h.repoPath("/compare"),
+		h.repoPath("/tree/internal"), h.repoPath("/blob/README.md"), h.repoPath("/raw/README.md"),
+		"/livez", "/readyz", "/version",
+	}
+	for _, address := range addresses {
+		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+			if method == http.MethodPost && (address == "/sign-out" || address == "/keys") {
+				continue
+			}
+			req := httptest.NewRequest(method, address, nil)
+			req.AddCookie(c)
+			rec := httptest.NewRecorder()
+			h.server.ServeHTTP(rec, req)
+			if rec.Code < 400 {
+				t.Errorf("%s %s answered %d; nothing but the two forms may change anything",
+					method, address, rec.Code)
+			}
+		}
+	}
 }
 
 // TestKeyScreenIsOptional asserts that the one screen with no contract behind
