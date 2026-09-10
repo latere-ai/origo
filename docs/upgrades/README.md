@@ -66,8 +66,7 @@ the upgrade document the log line names.
 ## Verifying what you install
 
 Every release is signed with the release workflow's own identity, with
-no key held by Latere, and carries a bill of materials and build
-provenance.
+no key held by Latere, and carries a bill of materials.
 
 ```sh
 cosign verify \
@@ -75,7 +74,21 @@ cosign verify \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/latere-ai/origod:v1.2.3
 
-gh attestation verify oci://ghcr.io/latere-ai/origod:v1.2.3 --repo latere-ai/origo
-
 sha256sum -c checksums.txt
 ```
+
+The bill of materials is a release asset: `sbom-origod.spdx.json`,
+`sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json`, one per
+image and one for the module graph.
+
+While the repository is private, no SBOM or provenance attestation is
+attached to the images, because GitHub's attestation API refuses a
+private repository on this organization's plan, so
+
+```
+gh attestation verify oci://ghcr.io/latere-ai/origod:v1.2.3 --repo latere-ai/origo
+```
+
+finds nothing to verify. The signature, the checksums, and the bills
+of materials above are what a release carries today. The command
+becomes the fourth check when the repository is public.

@@ -8,7 +8,10 @@
 #
 #   build           the four binary archives, checksums.txt, the two
 #                   multi-arch images, the signatures, the bills of
-#                   materials, the provenance, and the deploy archive
+#                   materials, and the deploy archive; the SBOM and
+#                   provenance attestations are attached only when the
+#                   repository is public, because GitHub's attestation
+#                   API refuses a private repository on this plan
 #   conformance     the kind stack of spec 013 from the published images:
 #                   the release fixture, spec 021's TestContract, and the
 #                   fixture the previous release attached
@@ -163,13 +166,38 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
+      # The four steps below call GitHub's attestation API, which
+      # refuses a private repository on this organization's plan:
+      # "Feature not available for the latere-ai organization. To enable
+      # this feature, please upgrade the billing plan, or make this
+      # repository public." The first tag, v0.1.0, failed here after the
+      # images were already pushed. They are conditional on the
+      # repository being public, which the push event's payload carries,
+      # so they run again by themselves the day the repository is made
+      # public and no operator has to set anything. The condition reads
+      # `private`, not the plan: an upgraded plan on a repository that
+      # stays private leaves these skipped and this condition is what
+      # changes then.
+      #
+      # Skipping them defers only the GitHub-API attachment. The three
+      # SPDX documents are still built above and still uploaded as
+      # release assets, and cosign keyless signing below calls sigstore,
+      # not GitHub, so every image and checksums.txt is still signed and
+      # still verifiable by an outside operator.
+      - name: Attestations are skipped on a private repository
+        if: ${{ github.event.repository.private }}
+        run: |
+          echo "::notice::the repository is private, so the SBOM and provenance attestations are not attached; GitHub's attestation API refuses a private repository on this plan. The SPDX documents ship as release assets and the images are signed with cosign."
+
       - uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4.1.0
+        if: ${{ !github.event.repository.private }}
         with:
           subject-name: ${{ env.ORIGOD_IMAGE }}
           subject-digest: ${{ steps.origod.outputs.digest }}
           sbom-path: out/release/sbom-origod.spdx.json
           push-to-registry: true
       - uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4.1.0
+        if: ${{ !github.event.repository.private }}
         with:
           subject-name: ${{ env.STUBS_IMAGE }}
           subject-digest: ${{ steps.stubs.outputs.digest }}
@@ -177,11 +205,13 @@ jobs:
           push-to-registry: true
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !github.event.repository.private }}
         with:
           subject-name: ${{ env.ORIGOD_IMAGE }}
           subject-digest: ${{ steps.origod.outputs.digest }}
           push-to-registry: true
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !github.event.repository.private }}
         with:
           subject-name: ${{ env.STUBS_IMAGE }}
           subject-digest: ${{ steps.stubs.outputs.digest }}
@@ -586,9 +616,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Verify the signatures and the attestations
+      - name: Verify the signatures
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -597,9 +626,29 @@ jobs:
           for image in "${ORIGOD_IMAGE}:${TAG}" "${STUBS_IMAGE}:${TAG}"; do
             cosign verify --certificate-identity-regexp "$identity" \
               --certificate-oidc-issuer "$issuer" "$image" > /dev/null
-            gh attestation verify "oci://$image" --repo "$GITHUB_REPOSITORY"
-            echo "$image: signature and attestations verified"
+            echo "$image: signature verified"
           done
+
+      # The other half of the build job's condition: nothing was
+      # attached while the repository is private, so there is nothing to
+      # verify and a `gh attestation verify` here would fail a release
+      # that is already published. The step reappears with the
+      # attestations when the repository is made public.
+      - name: Verify the attestations
+        if: ${{ !github.event.repository.private }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for image in "${ORIGOD_IMAGE}:${TAG}" "${STUBS_IMAGE}:${TAG}"; do
+            gh attestation verify "oci://$image" --repo "$GITHUB_REPOSITORY"
+            echo "$image: attestations verified"
+          done
+      - name: Attestation verification is skipped on a private repository
+        if: ${{ github.event.repository.private }}
+        run: |
+          echo "::notice::no attestation was attached to this release, so none is verified; the repository is private. The signatures, the checksums, the SPDX documents, and the release body are checked by the steps around this one."
       - name: Prove verification rejects a foreign identity
         env:
           TAG: ${{ github.ref_name }}
