@@ -9,8 +9,8 @@
 // the push is durable (spec 001, invariant 1).
 //
 // The subprocess plumbing, the body spooling, and the write-before-ack
-// ordering follow Latere's data plane product's git handler, adapted to
-// the log.
+// ordering follow a proven smart HTTP handler this package was adapted
+// from, reworked around the log.
 package httpgit
 
 import (

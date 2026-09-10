@@ -32,10 +32,9 @@ produces, so each commits through `Log.Commit` of spec 004 as a `push`
 entry and looks like a push everywhere else: in the index, in events, in
 history.
 
-The consumer that needs this first is Latere's hosting product, whose
-spec 026 states that a later tool walks every project's history and
-applies a change by pushing a branch; this spec is what makes that a
-request rather than a clone.
+The consumer that needs this first is a hosting product that walks every
+project's history and applies a change by pushing a branch; this spec is
+what makes that a request rather than a clone.
 
 ## Current state
 

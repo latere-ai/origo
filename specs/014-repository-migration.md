@@ -30,11 +30,11 @@ host keeps serving old URLs, how writes are cut over, and how the result
 is verified. What the prior host does with its own records is its own
 spec; this one names only what it must call.
 
-At Latere the prior host is the data plane product, which holds each
-repository as a workspace with a `.git` directory in its file plane,
-served over smart HTTP with a single-writer lock shared with sandbox
-mounts. The design below is written for any prior host and uses that one
-as the worked example.
+The worked example throughout is a prior host that keeps each repository
+as a bare `.git` directory on a shared filesystem, serves it over smart
+HTTP, and serializes writes with a single-writer lock. The design below
+is written for any prior host and uses that one only to make the steps
+concrete.
 
 ## Current state
 
@@ -205,16 +205,16 @@ own record without polling. `verify` calls `Emit` after it wrote
 |---|---|
 | `verified` | `equal`, `refs`, `objects`, `checked_at` as in the `verify` response |
 
-### Worked example: the Latere data plane
+### Worked example: a filesystem-backed prior host
 
-The data plane registers every repository-kind workspace on Origo with
-the workspace's id, mints a read bearer for Origo per repository, and
-lets `origod migrate` run against a manifest it generates. After
-`mirrored`, it flips its workspace to a pointer: its `/git/{owner}/{slug}`
-routes answer 308 to `https://git.latere.ai/{owner}/{slug}.git`, its
-sandbox mounts clone from Origo through the same delegation the product
-already uses, and its single-writer lock is retired because Origo's
-commit is the serialization point. Its own spec owns those three changes.
+The prior host registers every repository on Origo under the id it
+already uses, mints a read bearer for Origo per repository, and lets
+`origod migrate` run against a manifest it generates. After `mirrored`,
+it turns its own repository into a pointer: its `/git/{owner}/{slug}`
+routes answer 308 to `https://<origo-host>/{owner}/{slug}.git`, its
+existing clients clone from Origo through the same delegation, and its
+single-writer lock is retired because Origo's commit is the
+serialization point. Those three changes are the prior host's to make.
 
 ## Not in this spec
 
