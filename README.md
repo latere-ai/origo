@@ -4,6 +4,8 @@
 write-ahead log in S3 compatible object storage. Repositories on disk are
 only a cache. There is no database, no leader, and no consensus cluster.
 
+Origo runs where you install it. There is no hosted Origo to sign up for.
+
 [![CI](https://github.com/latere-ai/origo/actions/workflows/verify.yml/badge.svg)](https://github.com/latere-ai/origo/actions/workflows/verify.yml)
 [![Release](https://img.shields.io/github/v/release/latere-ai/origo)](https://github.com/latere-ai/origo/releases)
 [![Go](https://img.shields.io/github/go-mod/go-version/latere-ai/origo)](go.mod)
@@ -112,25 +114,6 @@ questions rather than deciding them itself.
 
 [`docs/README.md`](docs/README.md) is the index. The design, and the
 reasoning behind it, is in [`specs/`](specs/README.md).
-
-## Status
-
-v0.1.0 shipped on 2026-09-10. A release carries `origod` for Linux and
-macOS on amd64 and arm64, container images for both architectures,
-Kubernetes manifests pinned to the release, three SPDX bills of materials,
-and cosign signatures over the images and the checksums. On every tag the
-pipeline installs that release onto a fresh cluster and runs the
-conformance suite against the published image.
-
-There is no public Origo installation yet. Origo runs where you install it,
-and this paragraph will name a hosted endpoint when one exists. The
-conformance suite has been run against a cluster built from the published
-release, and not yet against a long-lived one.
-
-The release tag is a semantic version, and it covers the API contract, the
-log format, the configuration variables, and the event payloads. See
-[Upgrades](docs/upgrades/README.md) for what each bump means and how long a
-previous contract stays served.
 
 ## Contributing
 
