@@ -455,14 +455,19 @@ jobs:
       # installation's issuer and a client credential are configured the
       # job mints its own; an operator who has a long-lived token instead
       # sets ORIGO_LIVE_TOKEN and this step does nothing.
+      # The `secrets` context is not available to a step's `if`, so the
+      # step always runs and decides from its own environment.
       - name: Mint a token for the live run
-        if: ${{ secrets.ORIGO_LIVE_CLIENT_SECRET != '' }}
         env:
           TOKEN_URL: ${{ vars.ORIGO_LIVE_TOKEN_URL }}
           CLIENT_ID: ${{ vars.ORIGO_LIVE_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.ORIGO_LIVE_CLIENT_SECRET }}
         run: |
           set -euo pipefail
+          if [ -z "$CLIENT_SECRET" ]; then
+            echo "no client credential configured; the run uses ORIGO_LIVE_TOKEN if it is set"
+            exit 0
+          fi
           test -n "$TOKEN_URL" && test -n "$CLIENT_ID"
           tok=$(curl -sS --fail-with-body -X POST "$TOKEN_URL" \
             -d grant_type=client_credentials \
