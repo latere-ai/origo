@@ -71,6 +71,19 @@ func TestFileViewLimits(t *testing.T) {
 			t.Errorf("the page does not say it was cut:\n%s", body[:min(600, len(body))])
 		}
 	})
+
+	t.Run("a file cut without a partial status still says it was cut", func(t *testing.T) {
+		// A proxy that strips the Range header leaves the installation
+		// answering 200 with the whole file, and one that answers 200
+		// with part of it has still cut it. The notice follows the
+		// bytes on the page, not the status of the response.
+		h.fake.ignoreRange = true
+		defer func() { h.fake.ignoreRange = false }()
+		body := h.get(h.repoPath("/blob/big.txt"), c).Body.String()
+		if !strings.Contains(body, "Only the first part of this file is shown") {
+			t.Error("a file cut by the reader's own limit did not say so")
+		}
+	})
 }
 
 // TestLargeDiffRenderBudget asserts the two budgets a commit screen applies

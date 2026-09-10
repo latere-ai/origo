@@ -217,7 +217,10 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusOK, "blob", data)
 		return
 	}
-	data.Truncated = blob.Partial && int64(len(blob.Body)) < entry.Size
+	// The notice follows the bytes and not the status: an installation
+	// that ignored the Range would send the whole file, and one that
+	// answered 200 with part of it would still have cut it.
+	data.Truncated = int64(len(blob.Body)) < entry.Size
 	data.Lines = sourceLines(string(blob.Body))
 	data.LineCount = len(data.Lines)
 	s.render(w, r, http.StatusOK, "blob", data)

@@ -45,6 +45,9 @@ type fakeOrigo struct {
 	ranges []string
 	// nextCursor is returned by every paging read when set.
 	nextCursor string
+	// ignoreRange makes the installation answer 200 to a ranged read, the
+	// way a proxy that strips the header would.
+	ignoreRange bool
 }
 
 type fakeBlob struct {
@@ -200,7 +203,7 @@ func (f *fakeOrigo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", b.contentType)
-		if r.Header.Get("Range") != "" {
+		if r.Header.Get("Range") != "" && !f.ignoreRange {
 			w.WriteHeader(http.StatusPartialContent)
 		}
 		_, _ = w.Write([]byte(b.body))
