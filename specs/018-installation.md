@@ -288,7 +288,9 @@ binary artifact of spec 017.
   configuration page is required to carry every variable of a spec that
   has started and is free of a variable a spec has only designed,
   because the page is generated from `internal/config` and a spec at
-  `drafted` reaches no code; the reverse direction is unscoped, so a row
+  `drafted` reaches no code, and a row whose spec file is not in the
+  tree is skipped the same way, because the deck's own lint is what
+  reports a missing file; the reverse direction is unscoped, so a row
   no spec defines still fails
   (`internal/config`, `TestUnstartedSpecsDoNotNeedAReferenceRow`).
 - A maintainer following `docs/install.md` on a fresh kind cluster

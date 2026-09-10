@@ -44,7 +44,10 @@ var crossReferenceRow = regexp.MustCompile("(?m)^\\| variable \\| `([^`]+)` \\| 
 
 // specStatus reads the status: line of the frontmatter of
 // specs/<nnn>-*.md under dir, or of specs/.archive/<nnn>-*.md where a
-// terminal spec sits.
+// terminal spec sits. A number no file matches answers the empty
+// string, which no started status equals: a row for a spec that is not
+// in the tree obliges the reference no more than a drafted one does,
+// and the deck's own lint is what reports the missing file.
 func specStatus(t *testing.T, dir, number string) string {
 	t.Helper()
 	var matches []string
@@ -52,7 +55,10 @@ func specStatus(t *testing.T, dir, number string) string {
 		found, _ := filepath.Glob(filepath.Join(dir, d, number+"-*.md"))
 		matches = append(matches, found...)
 	}
-	if len(matches) != 1 {
+	if len(matches) == 0 {
+		return ""
+	}
+	if len(matches) > 1 {
 		t.Fatalf("spec %s: %d files match under specs/ and specs/.archive/", number, len(matches))
 	}
 	raw, err := os.ReadFile(matches[0])
@@ -99,7 +105,8 @@ func crossReference(t *testing.T) []string {
 
 // TestUnstartedSpecsDoNotNeedAReferenceRow holds the scoping rule on a
 // fixture of its own: a variable of a spec at complete is required of
-// the reference and one of a spec at drafted is not.
+// the reference, one of a spec at drafted is not, and one whose spec
+// file is not in the tree is not either.
 func TestUnstartedSpecsDoNotNeedAReferenceRow(t *testing.T) {
 	dir := t.TempDir()
 	specs := filepath.Join(dir, "specs")
@@ -117,7 +124,8 @@ func TestUnstartedSpecsDoNotNeedAReferenceRow(t *testing.T) {
 	write("README.md", "| Kind | Name | Owner | Also named in |\n"+
 		"|---|---|---|---|\n"+
 		"| variable | `ORIGO_BUILT` | [900](900-built.md) | - |\n"+
-		"| variable | `ORIGO_DESIGNED` | [901](901-designed.md) | - |\n")
+		"| variable | `ORIGO_DESIGNED` | [901](901-designed.md) | - |\n"+
+		"| variable | `ORIGO_ABSENT` | [902](902-absent.md) | - |\n")
 
 	if got := definedVariables(t, dir); !slices.Equal(got, []string{"ORIGO_BUILT"}) {
 		t.Errorf("definedVariables = %v, want the started spec's variable alone", got)
