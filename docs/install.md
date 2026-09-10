@@ -30,7 +30,8 @@ their shape is your provider's and not Origo's.
 | An OIDC issuer | discovery and a key set over HTTPS | it mints the tokens people and services present. Register one client for people and one for each service that acts on their behalf. |
 | An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. It has to know your repositories before Origo does, and with one tenant it can be a static list of subjects behind an HTTP handler. |
 | Disk | a default storage class, or nodes with local disk | the cache. Sized for the repositories in active use, not for all of them. |
-| On your machine | `kubectl`, `openssl`, `curl`, `uuidgen`, `git` | nothing is installed in the cluster beyond the manifests. |
+| A key resolution endpoint | one HTTP endpoint you run | only if you want git over SSH. It answers which subject an offered public key belongs to; Origo stores no key. A file of fingerprints behind a bearer satisfies it. |
+| On your machine | `kubectl`, `openssl`, `curl`, `uuidgen`, `git`, `ssh-keygen` | nothing is installed in the cluster beyond the manifests. |
 
 Two of these are yours to write and have no default: the issuer and the
 authorization endpoint. Origo authenticates every request and authorizes
@@ -168,9 +169,52 @@ Everything else is yours: your own permission model, your own answer
 caching through `ttl`. The full request, the action Origo sends per
 operation, and the optional figures are in [`api.md`](api.md).
 
-If you are trying Origo out, the example overlay runs a stub issuer and a
-stub authorizer for you and you can skip this step until you have seen it
-work.
+**The key resolution endpoint, if you want SSH.** Origo stores no SSH
+public key. It asks a second endpoint of yours which subject an offered
+key belongs to, shaped like the one above and behind its own bearer:
+
+```
+POST <your key endpoint>
+Authorization: Bearer <the value you put in ORIGO_SSH_KEYS_TOKEN>
+{"fingerprint": "SHA256:HxK…", "type": "ssh-ed25519", "public_key": "ssh-ed25519 AAAAC3Nz…"}
+
+200 {"found": true, "subject": "user_42", "key_id": "k_19", "ttl": 60}
+200 {"found": false}
+```
+
+Five rules again, and they are the same shape as the five above.
+
+1. **Answer `200` for both verdicts.** A 500, a timeout, or a body that
+   does not parse refuses the connection. Authentication fails closed.
+2. **Resolve by fingerprint, not by user name.** The SSH user name is
+   always `git` and Origo does not read it.
+3. **One subject per fingerprint, across the whole installation.** A
+   store that lets two people register one key lets the second be
+   credited with the first's pushes. Refuse a fingerprint that is
+   already registered.
+4. **Answer `{"found": false}` without saying why.** Unknown, revoked,
+   expired, and registered to someone else look alike on the wire; the
+   person sees `Permission denied (publickey)` either way.
+5. **Treat its availability as Origo's.** It is on the path of every SSH
+   connection that is not answered from a node's cache.
+
+`subject` is the same string your issuer puts in `sub` for the same
+person, so one identity crosses both transports and your authorization
+endpoint needs no second table. Adding, naming, listing, and removing
+keys is your product surface; Origo has no opinion about it, and the
+call itself is how your store learns when a key was last used.
+
+**Where to start reading.** `test/stubs/sshkeys` in this repository is a
+working endpoint of about thirty lines of logic, and it is what the
+example stack runs. Read it as a reference and do not run it in front of
+anything you care about: it holds its table in memory, expires nothing,
+and has an unauthenticated control API a test drives. For a single team,
+a file of fingerprints served behind the bearer is the whole
+requirement; `authorized_keys` is already that table.
+
+If you are trying Origo out, the example overlay runs a stub issuer, a
+stub authorizer, and a stub key resolver for you and you can skip this
+step until you have seen it work.
 
 ## 3. Your overlay
 
@@ -292,7 +336,83 @@ no repository data is encrypted with it.
 Do this before the next step. Every pod reads `origod-token-key` by
 name, so a rollout that starts without it waits instead of serving.
 
-## 5. Apply
+## 5. Git over SSH
+
+Origo speaks git over HTTPS out of the box. SSH is a second transport in
+front of the same repositories and the same durability: people clone
+with `git@your-host:owner/slug.git` and carry a key pair instead of a
+token. It is off until you turn it on, and an installation that never
+sets `ORIGO_SSH_ADDR` runs exactly as it does without this step.
+
+What SSH carries is clone, fetch, and push, and nothing else. The JSON
+API and Git LFS are HTTPS. So is a read that must not be stale: over
+SSH a node that is serving from its local copy while the bucket is
+unreachable says so on the session's error stream, which a git client
+cannot act on, so a consumer that must never read a repository that may
+be behind uses HTTPS, where the answer carries a header it can refuse.
+
+First the host keys. They are the identity of your installation, the
+thing a client remembers in `known_hosts`, and every node must present
+the same ones or the second node a person reaches looks like an
+impostor. Generate them once, keep a copy where you keep secrets, and
+never put them in your bucket.
+
+```sh
+SSHKEYS=$(mktemp -d)
+ssh-keygen -q -t ed25519 -N "" -C "" -f "$SSHKEYS/ssh_host_ed25519_key"
+ssh-keygen -q -t ecdsa -b 256 -N "" -C "" -f "$SSHKEYS/ssh_host_ecdsa_key"
+kubectl -n "$NAMESPACE" create secret generic origod-ssh-host-key \
+	--from-file=ssh_host_ed25519_key="$SSHKEYS/ssh_host_ed25519_key" \
+	--from-file=ssh_host_ecdsa_key="$SSHKEYS/ssh_host_ecdsa_key" \
+	--dry-run=client -o yaml | kubectl apply -f -
+ssh-keygen -lf "$SSHKEYS/ssh_host_ed25519_key.pub"
+```
+
+Publish that fingerprint where your users will look. It is what they
+check the first time they connect, and it is what you publish again
+before you replace a key; the four-step rotation is in
+[`operations.md`](operations.md).
+
+Then four variables on the pods, in your overlay beside the rest:
+
+```yaml
+- name: ORIGO_SSH_ADDR
+  value: :2222
+- name: ORIGO_SSH_HOST_KEYS
+  value: /etc/origo/ssh/ssh_host_ed25519_key,/etc/origo/ssh/ssh_host_ecdsa_key
+- name: ORIGO_SSH_KEYS_URL
+  value: https://auth.example.com/internal/origo/ssh-keys
+- name: ORIGO_SSH_KEYS_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: origod-ssh-keys
+      key: ORIGO_SSH_KEYS_TOKEN
+```
+
+with the Secret mounted at `/etc/origo/ssh`. All four go together: a
+node with `ORIGO_SSH_ADDR` set and any of the other three missing
+refuses to start and says which. The example overlay carries all of it,
+so on a throwaway cluster there is nothing to add.
+
+Last, the address people clone from. The container listens on 2222 and
+never on 22, because the pod runs as an unprivileged user with every
+capability dropped and one clone URL is not worth giving it the right
+to bind a privileged port. The Service `origod-ssh` publishes 22 in
+front of it, and how it reaches the internet is the one choice here:
+
+| What you have | What to do | What people clone |
+|---|---|---|
+| an L4 load balancer, which every managed Kubernetes has | patch `origod-ssh` to `type: LoadBalancer` with your provider's annotations; the `digitalocean` and `aws` example overlays carry the patch | `git@git.example.com:owner/slug.git` |
+| an ingress controller with TCP passthrough | map external 22 to `origod-ssh:22` in its TCP services configuration; ingress-nginx has a `tcp-services` ConfigMap for exactly this | the same |
+| neither | `type: NodePort`, or a load balancer on another port | `ssh://git@git.example.com:2222/owner/slug.git` |
+
+The third row works and is not equivalent. `git@host:path` is scp
+syntax and has no place to put a port, so any port but 22 puts the
+`ssh://` form with the port in it into every user's remote and every CI
+configuration you have. Port 22 is what buys the short URL, and that is
+the whole trade-off.
+
+## 6. Apply
 
 Apply your overlay, pin the release you are installing, and wait for the
 rollout.
@@ -314,7 +434,7 @@ comes up ready has already reached your bucket, your issuer, and your
 authorization endpoint. A pod stuck in `Init:` failed one of them, and
 `kubectl -n "$NAMESPACE" logs <pod> -c check` says which.
 
-## 6. Check
+## 7. Check
 
 Run the same check by hand and read all seven lines. It runs against
 your configuration, so this is the first thing that proves your bucket,
@@ -476,6 +596,51 @@ echo "the installation serves a clone and a push"
 
 That push is durable: it was written to object storage and acknowledged
 only then. You can delete every node and the repository is unchanged.
+
+**And over SSH.** If you did step 5, the same repository clones with a
+key pair and no token. Three things have to line up: the person's public
+key is registered at your key resolution endpoint under a subject your
+authorization endpoint allows, their client trusts the host key you
+published, and the address is the one your Service publishes.
+
+Register the key wherever your key store lives. The block below
+registers at the example stack's stub, which is not an endpoint any real
+installation has; on your own installation this is a call into your own
+product and Origo never sees it.
+
+```sh
+CLIENTKEY=$(mktemp -d)/id_ed25519
+ssh-keygen -q -t ed25519 -N "" -C "" -f "$CLIENTKEY"
+FINGERPRINT=$(ssh-keygen -lf "$CLIENTKEY.pub" | awk '{print $2}')
+curl -sf -X PUT "${ORIGO_EXAMPLE_SSHKEYS:-http://localhost:30086}/keys" \
+	-d "{\"keys\":[{\"fingerprint\":\"$FINGERPRINT\",\"subject\":\"install-doc\"}]}"
+echo "registered $FINGERPRINT"
+```
+
+Then trust the host key and clone. `ORIGO_SSH_URL` is the address your
+Service publishes; the default is the example stack's, whose kind
+cluster maps SSH to a host port rather than to 22.
+
+```sh
+SSH_URL="${ORIGO_SSH_URL:-ssh://git@localhost:30022}"
+SSH_HOST=$(echo "$SSH_URL" | sed 's|.*@||; s|/.*||')
+SSH_PORT=$(echo "$SSH_HOST" | sed 's|.*:||')
+case "$SSH_HOST" in *:*) SSH_HOST=${SSH_HOST%:*} ;; *) SSH_PORT=22 ;; esac
+KNOWN="$CLIENTKEY.known_hosts"
+ssh-keyscan -T 20 -p "$SSH_PORT" "$SSH_HOST" > "$KNOWN" 2>/dev/null
+test -s "$KNOWN"
+GIT_SSH_COMMAND="ssh -i $CLIENTKEY -o IdentitiesOnly=yes \
+	-o UserKnownHostsFile=$KNOWN -o GlobalKnownHostsFile=/dev/null \
+	-o StrictHostKeyChecking=yes -o BatchMode=yes" \
+	git clone -q "$SSH_URL/r/$ID.git" "$CLIENTKEY.clone"
+test "$(cat "$CLIENTKEY.clone/README.md")" = hello
+echo "the installation serves a clone over SSH"
+```
+
+`ssh-keyscan` here reads the key the installation presents, which is
+what a person does once before their first clone; compare what it prints
+against the fingerprint you published in step 5 rather than trusting it
+blind.
 
 ## Pointing your platform at Origo
 

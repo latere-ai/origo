@@ -113,6 +113,57 @@ After it the objects are gone and every endpoint answers 410 `gone`:
 the id stays taken forever, so it can never name another repository,
 while the owner and slug are free to be used again.
 
+## Replacing an SSH host key
+
+The host keys are the identity of your installation. Every node
+presents the same set, and a client that has seen one and then meets
+another prints `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED`, which
+is a security warning arriving for a maintenance reason and teaches
+people to click past it. So a replacement is an overlap, not a switch.
+
+`ORIGO_SSH_HOST_KEYS` is an ordered list. The first key of each
+algorithm is the one presented; every key in the list is announced to
+clients through OpenSSH's `hostkeys-00@openssh.com`, and a client with
+`UpdateHostKeys` on writes the ones it does not hold into its
+`known_hosts` by itself. That is what makes the overlap work.
+
+| Step | The list | What clients hold |
+|---|---|---|
+| 1 | `old` | old |
+| 2 | `old,new` | old presented; `new` announced, and written into `known_hosts` by every client that reconnects |
+| 3 | `new,old` | new presented, and already trusted by the clients of step 2; `old` still announced and still accepted |
+| 4 | `new` | new only |
+
+Steps 2 and 3 each wait longer than the reconnect tail of your client
+population. Measure it rather than guessing: the tail is how long it
+takes for every client that will reconnect to have reconnected, which
+for a CI fleet is minutes and for people's laptops is days. A week
+between steps is a safe figure for a team; a month is safer for a
+population you do not control.
+
+Publish the new fingerprint before step 3, where you published the
+first one. `ssh-keygen -lf <key>.pub` prints it, and the node's
+start-up line carries the fingerprint of every key it holds. Not every
+client learns a key by itself: `UpdateHostKeys` is on by default only
+in recent OpenSSH, and JGit, libssh2, and old clients never learn one,
+so those people edit `known_hosts` by hand from the fingerprint you
+published. The extension shortens the tail; it does not remove it.
+
+Between steps, replace the Secret and restart the pods:
+
+```sh
+kubectl -n origo create secret generic origod-ssh-host-key \
+	--from-file=ssh_host_ed25519_key=old_key \
+	--from-file=ssh_host_ed25519_key_new=new_key \
+	--dry-run=client -o yaml | kubectl apply -f -
+kubectl -n origo rollout restart statefulset/origod
+```
+
+with `ORIGO_SSH_HOST_KEYS` naming the two paths in the order the step
+above wants. A key is read once at start-up, so a rollout is what puts
+a change in force; nothing reads a host key from the bucket, and
+nothing ever will.
+
 ## Storage
 
 Storage per repository is bounded by compaction: after any compaction
