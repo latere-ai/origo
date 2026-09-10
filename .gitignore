@@ -19,6 +19,13 @@ coverage.out
 # stub for that cluster (spec 013).
 test/e2e/testdata/stub-ca.pem
 
+# `go build ./cmd/<name>` writes a binary named after the package into the
+# working directory rather than out/. `make build` writes out/origod; a
+# binary at the repository root is always a stray from a bare `go build`.
+/origo
+/origod
+/origo-stubs
+
 # `go build` in a tool directory writes a binary named after the directory.
 # The tools run with `go run` and `go test`; a compiled tool is never
 # committed, and one was, so every tool main package is named here.

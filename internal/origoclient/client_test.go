@@ -61,9 +61,46 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// sentenceOf holds every code these tests refuse with, beside its sentence.
+//
+// It exists because spec 021's code table is checked at the call site: every
+// contract.Sentence call names a contract.Code* constant, so a sentence keeps
+// exactly one owner and a call passing a variable could name any of them. A
+// stand-in that answered contract.Sentence(code) for whatever code it was
+// handed would be that call.
+var sentenceOf = map[string]string{
+	contract.CodeInvalid:               contract.Sentence(contract.CodeInvalid),
+	contract.CodeUnauthenticated:       contract.Sentence(contract.CodeUnauthenticated),
+	contract.CodeForbidden:             contract.Sentence(contract.CodeForbidden),
+	contract.CodeRepoNotFound:          contract.Sentence(contract.CodeRepoNotFound),
+	contract.CodeRefNotFound:           contract.Sentence(contract.CodeRefNotFound),
+	contract.CodeNonFastForward:        contract.Sentence(contract.CodeNonFastForward),
+	contract.CodeMergeConflict:         contract.Sentence(contract.CodeMergeConflict),
+	contract.CodeInvalidChange:         contract.Sentence(contract.CodeInvalidChange),
+	contract.CodeOverQuota:             contract.Sentence(contract.CodeOverQuota),
+	contract.CodeRateLimited:           contract.Sentence(contract.CodeRateLimited),
+	contract.CodeStorageUnavailable:    contract.Sentence(contract.CodeStorageUnavailable),
+	contract.CodeRepositoryUnavailable: contract.Sentence(contract.CodeRepositoryUnavailable),
+	contract.CodeAuthorizerUnavailable: contract.Sentence(contract.CodeAuthorizerUnavailable),
+	contract.CodeBlobTooLarge:          contract.Sentence(contract.CodeBlobTooLarge),
+	contract.CodeOperationTimeout:      contract.Sentence(contract.CodeOperationTimeout),
+	contract.CodeDirectoryUnsupported:  contract.Sentence(contract.CodeDirectoryUnsupported),
+	contract.CodeRepoFrozen:            contract.Sentence(contract.CodeRepoFrozen),
+	contract.CodeGone:                  contract.Sentence(contract.CodeGone),
+}
+
+func sentence(t *testing.T, code string) string {
+	t.Helper()
+	s, ok := sentenceOf[code]
+	if !ok {
+		t.Fatalf("%s is not in sentenceOf; add it with its constant", code)
+	}
+	return s
+}
+
 func refuse(w http.ResponseWriter, status int, code string, details map[string]any) {
 	body := map[string]any{"error": map[string]any{
-		"code": code, "message": contract.Sentence(code), "details": details,
+		"code": code, "message": sentenceOf[code], "details": details,
 	}}
 	writeJSON(w, status, body)
 }
@@ -419,7 +456,7 @@ func TestRefusalsDecodeWithTheirDetails(t *testing.T) {
 			if !ok {
 				t.Fatalf("err = %v", err)
 			}
-			if ref.Code != tc.code || ref.Status != tc.status || ref.Message != contract.Sentence(tc.code) {
+			if ref.Code != tc.code || ref.Status != tc.status || ref.Message != sentence(t, tc.code) {
 				t.Fatalf("refusal: %+v", ref)
 			}
 			for k, want := range tc.details {
