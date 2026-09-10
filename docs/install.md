@@ -304,7 +304,8 @@ moment before the Service, the ingress, or the load balancer in front of
 it routes to the new pods, and a request in that moment is refused or
 reset; the loop below is what waits it out, and it gives up rather than
 hanging when the address is wrong. `/version` answers the release the
-node runs. The fallbacks below are the example stack's stub issuer, so
+node runs, and opening the same address in a browser shows a small page
+naming it; there is no web interface beyond that page. The fallbacks below are the example stack's stub issuer, so
 this section runs against a trial installation with nothing set.
 
 ```sh

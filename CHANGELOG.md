@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Opening an installation in a browser now shows a small page instead of a
+  username and password box that nothing could satisfy. It says what Origo
+  is, that the address is a git remote rather than a website, how to clone,
+  that git wants a bearer token as the password, where the documentation
+  is, and which version is running. `curl` gets the same page as plain
+  text. There is no web interface beyond it and it needs no token.
 - The README is a front door: what Origo is, the problem it solves, how the
   design works, a local quick start, and where the install and API pages
   are. It no longer claims a hosted installation, because there is none.
