@@ -13,6 +13,7 @@ Read these in order the first time.
 | [Operations](operations.md) | backup, restore, scaling, and what to do during an outage |
 | [Upgrades](upgrades/README.md) | what a version number promises, how to upgrade and roll back, and how to verify what you install |
 | [Migration](migration.md) | moving repositories in from another git host |
+| [origo-web](https://github.com/latere-ai/origo-web) | an optional browsing interface, in its own repository |
 
 ## Building against it
 

@@ -93,6 +93,11 @@ questions rather than deciding them itself.
 - **Delegation.** A service acts on behalf of a user or an organization
   under an auditable claim, so it commits for its users without holding
   their credentials.
+- **A browsing interface, if you want one.** Origo itself serves git and
+  JSON and has no web pages. [origo-web](https://github.com/latere-ai/origo-web)
+  is a separate, optional program that reads this API and renders
+  repositories, history, diffs and files in a browser. Run it or don't;
+  Origo neither needs it nor knows about it.
 
 ## Documentation
 
