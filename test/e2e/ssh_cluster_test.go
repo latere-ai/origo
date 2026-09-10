@@ -251,16 +251,21 @@ func TestClusterSSHRefusesAShell(t *testing.T) {
 	}
 	target := fmt.Sprintf("-p%d", portSSH)
 
-	// A shell: the session is refused with the code's line and exit 1.
+	// A shell: the request is refused, so the client reports that the
+	// channel would not open one. Its own message is what a person sees
+	// here, because OpenSSH gives up on a refused shell request without
+	// draining the session's stderr; the code's line is asserted on the
+	// exec below, which the client does read.
 	out, err := dial(target, "git@127.0.0.1")
 	if err == nil {
 		t.Fatalf("the deployed node opened a shell:\n%s", out)
 	}
-	if !strings.Contains(out, "invalid_request: ") {
+	if !strings.Contains(out, "shell request failed") {
 		t.Fatalf("a shell was refused with %q", out)
 	}
 
-	// A command that is not one of the two services: the same refusal.
+	// A command that is not one of the two services: refused with the
+	// code's line on stderr and exit 1.
 	out, err = dial(target, "git@127.0.0.1", "ls")
 	if err == nil || !strings.Contains(out, "invalid_request: ") {
 		t.Fatalf("`ls` answered %v:\n%s", err, out)

@@ -619,10 +619,14 @@ echo "registered $FINGERPRINT"
 
 Then trust the host key and clone. `ORIGO_SSH_URL` is the address your
 Service publishes; the default is the example stack's, whose kind
-cluster maps SSH to a host port rather than to 22.
+cluster maps SSH to a host port rather than to 22, written as the
+loopback address rather than as `localhost` because `ssh-keyscan` takes
+the first address a name resolves to and a machine that answers
+`localhost` with `::1` first would be asked for a port nothing there
+binds.
 
 ```sh
-SSH_URL="${ORIGO_SSH_URL:-ssh://git@localhost:30022}"
+SSH_URL="${ORIGO_SSH_URL:-ssh://git@127.0.0.1:30022}"
 SSH_HOST=$(echo "$SSH_URL" | sed 's|.*@||; s|/.*||')
 SSH_PORT=$(echo "$SSH_HOST" | sed 's|.*:||')
 case "$SSH_HOST" in *:*) SSH_HOST=${SSH_HOST%:*} ;; *) SSH_PORT=22 ;; esac
