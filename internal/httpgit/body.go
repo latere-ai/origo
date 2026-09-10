@@ -80,12 +80,32 @@ func spoolBody(r *http.Request, dir string, max int64) (*os.File, error) {
 	return f, nil
 }
 
-// parseReceive reads the command section of a receive-pack body off r,
-// which is positioned at its start, and reports where the pack begins.
+// parseReceive reads a receive-pack body that ends where r ends, which
+// is every body arriving over HTTP: the request carried its length and
+// nothing writes to the spool after it was copied.
+func parseReceive(r io.ReadSeeker) (*receiveRequest, error) {
+	end, err := r.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return parseReceiveTo(r, end)
+}
+
+// parseReceiveTo reads the command section of a receive-pack body off r,
+// which is positioned at its start, and reports where the pack begins
+// and how long it is, given where the body ends. The end is a parameter
+// rather than a seek because a body arriving over a stream is spooled
+// by a writer still running (spec 024): the caller snapshots how much it
+// wrote and the pack is measured against that, never against a length
+// another goroutine can change.
+//
 // The format: pkt-lines "<old> <new> <ref>", the first one followed by
 // NUL and the capability list, then a flush; with push-options among
 // the capabilities, option pkt-lines and a second flush; then the pack.
-func parseReceive(r io.ReadSeeker) (*receiveRequest, error) {
+func parseReceiveTo(r io.ReadSeeker, end int64) (*receiveRequest, error) {
 	br := bufio.NewReader(r)
 	req := &receiveRequest{}
 	for {
@@ -145,11 +165,10 @@ func parseReceive(r io.ReadSeeker) (*receiveRequest, error) {
 		return nil, err
 	}
 	req.PackOffset = pos - int64(br.Buffered())
-	end, err := r.Seek(0, io.SeekEnd)
-	if err != nil {
-		return nil, err
-	}
 	req.PackSize = end - req.PackOffset
+	if req.PackSize < 0 {
+		return nil, errors.New("receive-pack: the commands run past the body")
+	}
 	if req.PackSize > 0 && req.PackSize < 12 {
 		return nil, errors.New("receive-pack: truncated pack")
 	}
