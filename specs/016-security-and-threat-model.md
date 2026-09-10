@@ -423,8 +423,13 @@ GitHub OIDC issuer and refused a foreign identity. The attachment
 half, the bill of materials and the provenance verifiable as
 attestations on the image, is closed by the repository becoming
 public, or by the plan being upgraded and spec 017's condition changed
-with it, and by no tag before then. That half is the one thing holding
-this spec at `testing`. The dialer's
+with it, and by no tag before then. That half is what holds this spec
+at `testing`, and it is a user's decision rather than work. Beside it
+one thing is unproved rather than open: the 40 second `make fuzz`
+search of the validator row above has never run, because the weekly
+`fuzz` job has never fired. It closes on Sunday 2026-09-13 at 03:00 UTC
+with no decision from anyone, so it moves no status; if that run finds
+a case the row reopens. The dialer's
 half is done: spec 019 asserted `import` and spec 014 asserted `verify`
 on 2026-09-09, `TestSourceTokenIsNeverLogged` in `internal/api` holding
 the bearer of both, and `cmd/origod` reaches `AllowLoopback` only
