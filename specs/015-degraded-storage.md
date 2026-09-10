@@ -525,3 +525,19 @@ listing ran both took a replica serving stale out of the endpoint list,
 once every open window for as long as the outage lasted. The verdict
 now reads `BreakerStore.Tripped(ClassRead)`; `cmd/origod`,
 `TestReadinessFollowsTheReadBreakerAndNotTheListingsError`.
+
+A third, found by the dispatched run 34430866983 where the first two
+made `unreachable` pass: the slow scenario read one node's failed head
+operations before and after its slow check and required the delta to be
+one, which no delta of that counter can prove. Every `Head` the process
+makes lands on it, the marker of an event delivered after the push that
+precedes the scenario and the events repair sweep included, and a 30
+second cut leaves node 1 with recovery work a 7 second one did not. The
+assertion is now on `origo_wal_head_check_seconds_count{result="error"}`,
+which only `Log.HasIndex` records, so it counts the currency check the
+request made and nothing else; the operations delta is logged beside it.
+That one call of three attempts counts one failure stays the
+`internal/wal` criterion it always was. The partial scenario's delta of
+`origo_log_integrity_errors_total` has the same shape and is left as it
+is: nothing on a node writes that counter but the refusal the scenario
+causes.
