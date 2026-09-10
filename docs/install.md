@@ -271,18 +271,27 @@ exits non-zero. Fix that one thing and run it again.
 
 ## First clone and push
 
-Get a token from your issuer for a subject your authorization endpoint
-allows, and point git at your hostname. The fallbacks below are the
-example stack's stub issuer, so this section runs against a trial
-installation with nothing set.
+Wait for your hostname to answer, then get a token from your issuer for a
+subject your authorization endpoint allows. A rollout reports ready a
+moment before the Service, the ingress, or the load balancer in front of
+it routes to the new pods, and a request in that moment is refused or
+reset; the loop below is what waits it out, and it gives up rather than
+hanging when the address is wrong. `/version` answers the release the
+node runs. The fallbacks below are the example stack's stub issuer, so
+this section runs against a trial installation with nothing set.
 
 ```sh
 ORIGO_URL="${ORIGO_URL:-${ORIGO_TEST_URL:-http://localhost:30080}}"
+n=0
+until curl -sf "$ORIGO_URL/version"; do
+	n=$((n + 1))
+	[ "$n" -lt 60 ] || { echo "$ORIGO_URL does not answer" >&2; exit 1; }
+	sleep 1
+done
 TOKEN="${ORIGO_TOKEN:-$(curl -sf -X POST \
 	"${ORIGO_EXAMPLE_ISSUER:-http://localhost:30081}/mint" \
 	-d '{"sub":"install-doc"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')}"
 test -n "$TOKEN"
-curl -sf "$ORIGO_URL/version"
 ```
 
 Create a repository. The id is a UUID you choose, so your own records can

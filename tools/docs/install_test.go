@@ -96,3 +96,29 @@ func TestInstallDocumentIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+// TestInstallWaitsForTheAddress holds the rule the install job's failure
+// on run 34452566717 fixed: a rollout reports ready a moment before the
+// datapath routes to the new pods, so the first request the document
+// makes through $ORIGO_URL is reset. The block that names the address
+// first retries until it answers, and the retry is bounded, so a wrong
+// hostname fails the walk instead of hanging until the job's timeout.
+func TestInstallWaitsForTheAddress(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(root(t), "docs", "install.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, b := range blocks(string(body)) {
+		if !strings.Contains(b, "$ORIGO_URL") {
+			continue
+		}
+		if !strings.Contains(b, `until curl -sf "$ORIGO_URL/version"`) {
+			t.Errorf("block %d reaches $ORIGO_URL without waiting for it to answer:\n%s", i+1, b)
+		}
+		if !strings.Contains(b, "exit 1") {
+			t.Errorf("block %d waits for $ORIGO_URL without a bound:\n%s", i+1, b)
+		}
+		return
+	}
+	t.Fatal("no block of docs/install.md names $ORIGO_URL")
+}
