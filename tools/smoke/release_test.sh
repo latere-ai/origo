@@ -11,6 +11,7 @@ set -eu
 
 dir=$(cd "$(dirname "$0")" && pwd)
 : "${STUB_URL:?STUB_URL names the stub server}"
+: "${SHARED_STUB_URL:?SHARED_STUB_URL names the shared-hostname stub}"
 # release.sh is a bash script; under the hermetic gate PATH holds no
 # /bin, where macOS keeps bash, so the interpreter is resolved here.
 bash=$(command -v bash 2>/dev/null || echo /bin/bash)
@@ -47,5 +48,30 @@ case "$out" in
   *"served version recorded (v1.2.3)"*) ;;
   *) echo "FAIL the served version is not recorded:"; echo "$out"; exit 1 ;;
 esac
+
+# 4. A root that is not Origo's fails while the landing check is on, so
+#    case 5 proves LANDING=0 skipped it rather than passing anyway.
+if out=$(BASE_URL="$SHARED_STUB_URL" "$bash" "$dir/release.sh" 0<&- 2>&1); then
+  echo "FAIL release.sh passed with a root that does not name the version:"
+  echo "$out"
+  exit 1
+fi
+case "$out" in
+  *"the page does not name the served version v1.2.3"*) ;;
+  *) echo "FAIL the landing failure is not named:"; echo "$out"; exit 1 ;;
+esac
+
+# 5. LANDING=0 is the installation that shares its hostname with the
+#    browsing interface: the probes are still Origo's, / is not checked,
+#    and the evidence says so.
+out=$(BASE_URL="$SHARED_STUB_URL" LANDING=0 OUTPUT_MD="$evidence" "$bash" "$dir/release.sh" 0<&- 2>&1) \
+  || { echo "FAIL release.sh failed with LANDING=0:"; echo "$out"; exit 1; }
+case "$out" in
+  *"/ is served by the browsing interface on this hostname (LANDING=0)"*) ;;
+  *) echo "FAIL LANDING=0 is not reported:"; echo "$out"; exit 1 ;;
+esac
+grep -q 'was not checked: the browsing interface serves it' "$evidence" \
+  || { echo "FAIL the evidence does not record the skipped landing check"; cat "$evidence"; exit 1; }
+rm -f "$evidence" 2>/dev/null || :
 
 echo "release_test.sh passed"

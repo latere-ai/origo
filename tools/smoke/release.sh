@@ -60,9 +60,20 @@ fi
 # The landing page (spec 022). A browser that opens the installation must
 # read a page, not a credential dialog: the 200 without an Authorization
 # header is that proof, and the version on it is the one just rolled out.
-check_status "GET /" "/" "200" "$tmp/root"
-grep -q "$served" "$tmp/root" || fail "GET /: the page does not name the served version $served"
-pass "the landing page names the served version"
+#
+# An installation that shares its hostname with the browsing interface
+# (latere-ai/origo-web) serves / from that interface instead, and there is
+# no landing page of Origo's to check. Such an installation sets LANDING=0
+# and keeps the proof the check was for: a browser still reads a page.
+if [ "${LANDING:-1}" = "1" ]; then
+  check_status "GET /" "/" "200" "$tmp/root"
+  grep -q "$served" "$tmp/root" || fail "GET /: the page does not name the served version $served"
+  pass "the landing page names the served version"
+  root_note="\`GET /\` returned 200"
+else
+  pass "/ is served by the browsing interface on this hostname (LANDING=0)"
+  root_note="\`GET /\` was not checked: the browsing interface serves it"
+fi
 
 if [ -n "$OUTPUT_MD" ]; then
   {
@@ -74,7 +85,7 @@ if [ -n "$OUTPUT_MD" ]; then
     echo "- Commit: \`${COMMIT}\`"
     [ -n "$DEPLOY_URL" ] && echo "- Deploy: ${DEPLOY_URL}"
     echo "- Served version: \`${served}\`"
-    echo "- Smoke: \`GET /readyz\`, \`GET /version\`, and \`GET /\` returned 200"
+    echo "- Smoke: \`GET /readyz\` and \`GET /version\` returned 200; ${root_note}"
   } > "$OUTPUT_MD"
 fi
 
