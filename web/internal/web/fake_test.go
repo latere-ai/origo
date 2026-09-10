@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authkit/oidc"
 
 	"github.com/latere-ai/origo-web/internal/config"
@@ -45,6 +47,13 @@ type fakeOrigo struct {
 	ranges []string
 	// nextCursor is returned by every paging read when set.
 	nextCursor string
+	// mintStatus overrides the answer of the mint route, and minted counts
+	// the tokens it signed.
+	mintStatus int
+	minted     []mintCall
+	// registry is what a GET of the token route answers. Nil is what every
+	// installation answers today: the route is not there.
+	registry []origo.TokenRecord
 	// ignoreRange makes the installation answer 200 to a ranged read, the
 	// way a proxy that strips the header would.
 	ignoreRange bool
@@ -53,6 +62,14 @@ type fakeOrigo struct {
 type fakeBlob struct {
 	body        string
 	contentType string
+}
+
+// mintCall is one request to the mint route, recorded so a test can assert
+// that the screen sent what the person chose.
+type mintCall struct {
+	Repo  string
+	Scope string
+	TTL   int
 }
 
 func newFakeOrigo() *fakeOrigo {
@@ -174,6 +191,8 @@ func (f *fakeOrigo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case strings.HasSuffix(p, "/tokens"):
+		f.tokenRoute(w, r, p)
 	case p == "/v1/repos":
 		w.WriteHeader(http.StatusNotImplemented)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "no_directory"}})
@@ -213,6 +232,50 @@ func (f *fakeOrigo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// tokenRoute is the one route of the installation that is not a read: a
+// POST mints, and a GET is not served at all, which is what every
+// installation answers today.
+func (f *fakeOrigo) tokenRoute(w http.ResponseWriter, r *http.Request, p string) {
+	if r.Method != http.MethodPost {
+		f.mu.Lock()
+		records := f.registry
+		f.mu.Unlock()
+		if records == nil {
+			w.WriteHeader(http.StatusNotImplemented)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "not_implemented"}})
+			return
+		}
+		writeJSON(w, map[string]any{"tokens": records})
+		return
+	}
+	var body struct {
+		Scope string `json:"scope"`
+		TTL   int    `json:"ttl"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	id := strings.TrimSuffix(strings.TrimPrefix(p, "/v1/repos/"), "/tokens")
+	f.mu.Lock()
+	f.minted = append(f.minted, mintCall{Repo: id, Scope: body.Scope, TTL: body.TTL})
+	code := f.mintStatus
+	f.mu.Unlock()
+	if code != 0 {
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "forbidden"}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"token":      "orig.a.signed.token." + body.Scope,
+		"expires_at": time.Now().Add(time.Duration(body.TTL) * time.Second).UTC(),
+	})
+}
+
+// Minted is every mint request the installation received.
+func (f *fakeOrigo) Minted() []mintCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]mintCall(nil), f.minted...)
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
@@ -226,6 +289,9 @@ type harness struct {
 	oidc    *oidc.Client
 	cfg     config.Config
 	backend *httptest.Server
+
+	// csrfCookies is what the last rendered form left behind.
+	csrfCookies []*http.Cookie
 }
 
 const testCookieKey = "0123456789abcdef0123456789abcdef"
@@ -305,6 +371,39 @@ func (h *harness) get(path string, cookies ...*http.Cookie) *httptest.ResponseRe
 	h.server.ServeHTTP(rec, req)
 	return rec
 }
+
+// post submits one form, with a valid token for the session given.
+func (h *harness) post(path string, form url.Values, c *http.Cookie) *httptest.ResponseRecorder {
+	h.t.Helper()
+	if form == nil {
+		form = url.Values{}
+	}
+	form.Set(authkit.CSRFFieldName(), h.csrf(path, c))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(c)
+	for _, ck := range h.csrfCookies {
+		req.AddCookie(ck)
+	}
+	rec := httptest.NewRecorder()
+	h.server.ServeHTTP(rec, req)
+	return rec
+}
+
+// csrf reads a token out of a rendered form, together with the cookie that
+// half of it lives in, so a submission is the one the browser would send.
+func (h *harness) csrf(path string, c *http.Cookie) string {
+	h.t.Helper()
+	rec := h.get(path, c)
+	h.csrfCookies = rec.Result().Cookies()
+	m := csrfValue.FindStringSubmatch(rec.Body.String())
+	if m == nil {
+		h.t.Fatalf("no form token on %s", path)
+	}
+	return m[1]
+}
+
+var csrfValue = regexp.MustCompile(`name="` + regexp.QuoteMeta(authkit.CSRFFieldName()) + `" value="([^"]+)"`)
 
 // repoPath is the address of the fixture repository in this interface.
 func (h *harness) repoPath(suffix string) string {

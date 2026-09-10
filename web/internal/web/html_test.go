@@ -52,6 +52,17 @@ func attr(n *html.Node, name string) string {
 	return ""
 }
 
+// hasAttr reports whether an attribute is present, which is the only
+// question worth asking of a boolean one: readonly, checked, open.
+func hasAttr(n *html.Node, name string) bool {
+	for _, a := range n.Attr {
+		if a.Key == name {
+			return true
+		}
+	}
+	return false
+}
+
 // text is the element's text with its descendants' text, whitespace
 // collapsed.
 func text(n *html.Node) string {

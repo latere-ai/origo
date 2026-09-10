@@ -25,6 +25,8 @@ func TestEveryScreenRenders(t *testing.T) {
 		h.repoPath("/blob/README.md"),
 		h.repoPath("/blob/logo.png"),
 		h.repoPath("/blob/huge.json"),
+		"/tokens",
+		"/docs/agents",
 	} {
 		rec := h.get(path, c)
 		if rec.Code != http.StatusOK {

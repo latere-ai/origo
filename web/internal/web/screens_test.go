@@ -26,6 +26,8 @@ func (h *harness) screens() map[string]string {
 		"compare":  h.repoPath("/compare?base=main&head=next"),
 		"tree":     h.repoPath("/tree/internal"),
 		"file":     h.repoPath("/blob/README.md"),
+		"tokens":   "/tokens",
+		"docs":     "/docs/agents",
 	}
 }
 
@@ -58,6 +60,11 @@ func TestScreenCallsAreExact(t *testing.T) {
 		"compare": {repo, repo + "/compare/main...next"},
 		"tree":    {repo, repo + "/tree/main?path"},
 		"file":    {repo, repo + "/tree/main", repo + "/blob/b1"},
+		// The token screen asks the one question the home screen asks,
+		// and asks nothing about a repository until one is named.
+		"tokens": {"/v1/repos?limit"},
+		// The documentation page is written from configuration alone.
+		"docs": nil,
 	}
 
 	h := newHarness(t)
@@ -81,7 +88,7 @@ func TestScreenCallsAreExact(t *testing.T) {
 	h.fake.trees["internal"] = manyEntries(500)
 	h.fake.commits = manyCommits(200)
 	for name, path := range h.screens() {
-		if name == "home" || name == "overview" || name == "commit" {
+		if name == "home" || name == "overview" || name == "commit" || name == "docs" {
 			continue
 		}
 		h.fake.Reset()
@@ -267,6 +274,7 @@ func TestRoutesAreReadOnly(t *testing.T) {
 	want := []string{
 		"GET /{$}", "GET /sign-in", "GET /open", "GET /auth/start", "GET /auth/callback",
 		"POST /sign-out", "GET /assets/{file}",
+		"GET /tokens", "POST /tokens", "GET /docs/agents",
 		"GET /r/{id}", "GET /r/{id}/refs", "GET /r/{id}/log", "GET /r/{id}/commit/{sha}",
 		"GET /r/{id}/patch/{sha}", "GET /r/{id}/compare", "GET /r/{id}/tree/{path...}",
 		"GET /r/{id}/blob/{path...}", "GET /r/{id}/raw/{path...}",
@@ -285,9 +293,9 @@ func TestRoutesAreReadOnly(t *testing.T) {
 		}
 	}
 
-	// Both forms refuse a submission with no token.
+	// Every form refuses a submission with no token.
 	h := newHarness(t, func(c *config.Config) { c.KeysURL = "https://keys.example" })
-	for _, path := range []string{"/sign-out", "/keys"} {
+	for _, path := range []string{"/sign-out", "/keys", "/tokens"} {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
 		req.AddCookie(h.signedIn("alice"))
 		rec := httptest.NewRecorder()
@@ -299,12 +307,12 @@ func TestRoutesAreReadOnly(t *testing.T) {
 
 	// The list above is what the server registered, and the server is what
 	// answers: every address of the interface is driven with every method
-	// that changes something, and the only two that answer are the two
+	// that changes something, and the only three that answer are the three
 	// forms. A handler added straight onto the mux would fail here.
 	c := h.signedIn("alice")
 	addresses := []string{
 		"/", "/sign-in", "/open", "/auth/start", "/auth/callback", "/sign-out",
-		"/keys", "/assets/app.css", h.repoPath(""), h.repoPath("/refs"),
+		"/keys", "/tokens", "/docs/agents", "/assets/app.css", h.repoPath(""), h.repoPath("/refs"),
 		h.repoPath("/log"), h.repoPath("/commit/9f3c1abf20d4e7c8b5a1930fe6d2c4471be08a3d"),
 		h.repoPath("/patch/9f3c1abf20d4e7c8b5a1930fe6d2c4471be08a3d"), h.repoPath("/compare"),
 		h.repoPath("/tree/internal"), h.repoPath("/blob/README.md"), h.repoPath("/raw/README.md"),
@@ -312,7 +320,7 @@ func TestRoutesAreReadOnly(t *testing.T) {
 	}
 	for _, address := range addresses {
 		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
-			if method == http.MethodPost && (address == "/sign-out" || address == "/keys") {
+			if method == http.MethodPost && (address == "/sign-out" || address == "/keys" || address == "/tokens") {
 				continue
 			}
 			req := httptest.NewRequest(method, address, nil)
