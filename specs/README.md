@@ -54,140 +54,92 @@ each says which spec owns each deferred criterion), so waiting for
 
 ## Index
 
-| # | Spec | Effort | Status |
-|---|---|---|---|
-| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | complete |
-| [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | complete |
-| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | testing |
-| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing |
-| [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | complete |
-| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | complete |
-| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete |
-| [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete |
-| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing |
-| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | complete |
-| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete |
-| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | complete |
-| [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete |
-| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | complete |
-| [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete |
-| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing |
-| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing |
-| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | testing |
-| [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing |
-| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing |
-| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing |
+| # | Spec | Effort | Status | Builds on |
+|---|---|---|---|---|
+| [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | complete | - |
+| [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | complete | 001 |
+| [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | testing | 001 |
+| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing | 002 |
+| [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | complete | 004, 007, 013 |
+| [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | complete | 004, 005 |
+| [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete | 002, 003 |
+| [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete | 004, 005, 007 |
+| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing | 004, 007 |
+| [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | complete | 004, 007 |
+| [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete | 004, 005 |
+| [012](012-limits-and-abuse.md) | Limits and abuse controls | small | complete | 004, 006, 007 |
+| [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete | 002, 007 |
+| [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | complete | 002, 003, 007, 008, 016, 019 |
+| [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete | 004, 005, 011, 013 |
+| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing | 001, 007, 012, 013 |
+| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing | 002, 003, 013, 021 |
+| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | testing | 002, 005, 007, 011, 013, 017, 021 |
+| [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing | 003, 004, 006, 007, 008, 010, 016 |
+| [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing | 004, 007, 008, 009, 012, 019 |
+| [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 
 ## Dependency graph
 
-Edges point from a spec to the specs it builds on.
+Arrows point from a spec to the specs it builds on, so spec 001 sits at
+the top and the leaves at the bottom. The picture is the transitive
+reduction of the deck's 71 `depends_on` edges: an arrow is drawn only
+where no other path already carries it, which leaves 29. Reachability is
+unchanged, so every dependency the deck states is still a path here, but
+an arrow that is not drawn is not an absent dependency. Spec 018 lists
+seven and only its arrow to 017 is drawn; 002 is one of the other six,
+reached along 018 → 017 → 021 → 009 → 004 → 002. The Builds on column of
+the index above carries each spec's literal `depends_on`.
 
 ```mermaid
-flowchart LR
-  subgraph F[Foundation]
-    S001[001 architecture]
-    S002[002 scaffold]
-    S003[003 contract]
-  end
-  subgraph S[Storage]
-    S004[004 write-ahead log]
-    S005[005 placement + replication]
-    S006[006 compaction]
-  end
-  subgraph A[Access]
-    S007[007 auth + delegation]
-    S008[008 push events]
-    S009[009 read API + archive]
-    S010[010 LFS]
-  end
-  subgraph H[Hardening]
-    S011[011 observability]
-    S012[012 limits]
-    S013[013 stubs + kind overlay]
-    S015[015 degraded storage]
-  end
-  subgraph O[Open source readiness]
-    S016[016 security]
-    S017[017 release]
-    S018[018 installation]
-    S019[019 administration]
-    S021[021 conformance suite]
-  end
-  subgraph M[Adoption]
-    S014[014 repository migration]
-  end
-  subgraph T[Tooling]
-    S020[020 server-side ops]
-  end
+flowchart BT
+  S001[001 architecture]
+  S002[002 scaffold]
+  S003[003 contract]
+  S004[004 write-ahead log]
+  S005[005 placement + replication]
+  S006[006 compaction]
+  S007[007 auth + delegation]
+  S008[008 push events]
+  S009[009 read API + archive]
+  S010[010 LFS]
+  S011[011 observability]
+  S012[012 limits]
+  S013[013 stubs + kind overlay]
+  S014[014 migration]
+  S015[015 degraded storage]
+  S016[016 security]
+  S017[017 release]
+  S018[018 installation]
+  S019[019 administration]
+  S020[020 server-side ops]
+  S021[021 conformance suite]
   S002 --> S001
   S003 --> S001
   S004 --> S002
   S005 --> S004
-  S005 --> S007
   S005 --> S013
-  S006 --> S004
   S006 --> S005
   S007 --> S002
   S007 --> S003
-  S008 --> S004
   S008 --> S005
-  S008 --> S007
   S009 --> S004
   S009 --> S007
   S010 --> S004
   S010 --> S007
-  S011 --> S004
   S011 --> S005
-  S012 --> S007
-  S012 --> S004
   S012 --> S006
-  S013 --> S002
   S013 --> S007
-  S014 --> S003
-  S014 --> S007
-  S014 --> S008
   S014 --> S019
-  S014 --> S002
-  S014 --> S016
-  S015 --> S004
-  S015 --> S005
   S015 --> S011
-  S015 --> S013
-  S016 --> S001
-  S016 --> S007
   S016 --> S012
-  S016 --> S013
-  S017 --> S002
-  S017 --> S003
-  S017 --> S013
   S017 --> S021
-  S018 --> S002
-  S018 --> S005
-  S018 --> S007
-  S018 --> S011
-  S018 --> S013
   S018 --> S017
-  S018 --> S021
-  S019 --> S003
-  S019 --> S004
-  S019 --> S006
-  S019 --> S007
   S019 --> S008
   S019 --> S010
   S019 --> S016
-  S020 --> S004
-  S020 --> S007
-  S020 --> S008
   S020 --> S009
-  S020 --> S012
   S020 --> S019
-  S021 --> S003
-  S021 --> S007
-  S021 --> S008
   S021 --> S009
-  S021 --> S010
-  S021 --> S012
-  S021 --> S013
   S021 --> S015
   S021 --> S019
 ```
