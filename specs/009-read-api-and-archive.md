@@ -300,8 +300,14 @@ over the `TestE2E` selection together with the test's one way out:
 `requireStack` skips when `ORIGO_TEST_S3_ENDPOINT` is unset, and the
 job's step sets it from the MinIO service it starts. Two remain and the first release closed
 neither: `TestReadTrace` is not in the tree, and the 40 second
-`FuzzValidPath` run belongs to the weekly `fuzz` job, which is on a
-schedule and has not run. This spec's read cases are green against the
+`FuzzValidPath` run belongs to the weekly `fuzz` job, which has never
+run. `gh run list --repo latere-ai/origo --event=schedule` returns
+nothing, and the job carries `if: github.event_name == 'schedule'`, so
+no `workflow_dispatch` reaches it either: the cron `0 3 * * 0` is the
+only path. The first fire is Sunday 2026-09-13 at 03:00 UTC, and that
+run is what closes this half. `FuzzValidPath`'s seed corpus does run in
+the `test` gate, so the seeds are proved and the 40 second search is
+not. This spec's read cases are green against the
 release's own image, the `conformance` job of the tag run 34461460766
 naming `--- PASS: TestContract/009 (1.68s)`, but that is not what the
 spec waits on.
