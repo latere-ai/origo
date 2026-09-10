@@ -26,6 +26,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/limits"
+	"github.com/latere-ai/origo/internal/sshd"
 )
 
 // Defaults for the optional variables.
@@ -153,6 +154,18 @@ type Config struct {
 	EgressPinned map[string]netip.Addr
 	ClusterCIDRs []netip.Prefix
 	EgressCA     *x509.CertPool
+
+	// SSH (spec 024). SSHAddr is ORIGO_SSH_ADDR, the address the SSH
+	// listener binds; empty turns SSH off and the node runs as it does
+	// without it. The other three are required with it: SSHHostKeys is
+	// the ordered set of ORIGO_SSH_HOST_KEYS, read from files at
+	// start-up and never from the bucket, and SSHKeysURL with
+	// SSHKeysToken is the operator's key resolution endpoint and the
+	// bearer Origo presents it.
+	SSHAddr      string
+	SSHHostKeys  *sshd.HostKeys
+	SSHKeysURL   string
+	SSHKeysToken string
 
 	// Failpoint names an injected failure for the end-to-end suite, for
 	// example "commit.before-index". Empty in every deployment.
@@ -288,6 +301,7 @@ func Load(getenv Getenv) (*Config, error) {
 	if cfg.EventsURL != "" && cfg.EventsSecret == "" {
 		problems = append(problems, "ORIGO_EVENTS_SECRET is required with ORIGO_EVENTS_URL")
 	}
+	sshConfig(getenv, cfg, &problems)
 	cfg.EgressAllow, cfg.EgressPinned = egressAllow(getenv("ORIGO_EGRESS_ALLOW"), &problems)
 	for _, raw := range list(getenv("ORIGO_CLUSTER_CIDRS")) {
 		p, err := netip.ParsePrefix(raw)
@@ -312,6 +326,39 @@ func Load(getenv Getenv) (*Config, error) {
 		return nil, errors.New("configuration: " + strings.Join(problems, "; "))
 	}
 	return cfg, nil
+}
+
+// sshConfig reads the four variables of spec 024. They are all or
+// nothing: ORIGO_SSH_ADDR unset opens no listener and the other three
+// are not read, and ORIGO_SSH_ADDR set requires all three, because a
+// listener with no host key or no key resolver serves nobody and would
+// fail on its first connection rather than at start-up.
+func sshConfig(getenv Getenv, cfg *Config, problems *[]string) {
+	cfg.SSHAddr = getenv("ORIGO_SSH_ADDR")
+	if cfg.SSHAddr == "" {
+		return
+	}
+	paths := list(getenv("ORIGO_SSH_HOST_KEYS"))
+	switch {
+	case len(paths) == 0:
+		*problems = append(*problems, "missing ORIGO_SSH_HOST_KEYS")
+	default:
+		keys, err := sshd.ParseHostKeys(paths)
+		if err != nil {
+			*problems = append(*problems, "ORIGO_SSH_HOST_KEYS: "+err.Error())
+		}
+		cfg.SSHHostKeys = keys
+	}
+	if raw := getenv("ORIGO_SSH_KEYS_URL"); raw == "" {
+		*problems = append(*problems, "missing ORIGO_SSH_KEYS_URL")
+	} else if u, err := url.Parse(raw); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		*problems = append(*problems, "ORIGO_SSH_KEYS_URL must be an absolute http or https URL")
+	} else {
+		cfg.SSHKeysURL = raw
+	}
+	if cfg.SSHKeysToken = getenv("ORIGO_SSH_KEYS_TOKEN"); cfg.SSHKeysToken == "" {
+		*problems = append(*problems, "missing ORIGO_SSH_KEYS_TOKEN")
+	}
 }
 
 // list splits a comma separated variable, trimming each entry and a

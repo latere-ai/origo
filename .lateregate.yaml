@@ -55,16 +55,18 @@ depcheck:
     github.com/latere-ai/origo/cmd/origod:
       decision: >-
         the node reaches latere.ai/x/pkg, the OpenTelemetry SDK that
-        pkg/otel and internal/tracing export through (spec 011), and the
-        standard library, so the binary carries no cloud SDK and no
-        Kubernetes client (spec 001)
+        pkg/otel and internal/tracing export through (spec 011),
+        golang.org/x/crypto/ssh, which internal/sshd terminates the SSH
+        transport with (spec 024), and the standard library, so the
+        binary carries no cloud SDK and no Kubernetes client (spec 001)
       allow:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002)
         github.com/google/uuid: reached through latere.ai/x/pkg, which names events and deliveries with it; not a cloud SDK
         go.opentelemetry.io: the OpenTelemetry SDK, exporters, and instrumentation the traces, metrics, and log bridge of spec 011 go out through
         google.golang.org: protobuf and gRPC, the wire format and the transport of the OTLP exporters
+        golang.org/x/crypto: the SSH transport of internal/sshd (spec 024), the fourth direct dependency of the module, confined to that package and reaching golang.org/x/sys and nothing else
         golang.org/x/net: reached by the OTLP exporters
-        golang.org/x/sys: reached by the OTLP exporters
+        golang.org/x/sys: reached by the OTLP exporters and by golang.org/x/crypto
         golang.org/x/text: reached by the OTLP exporters
         golang.org/x/time: reached by the OTLP exporters
         github.com/cenkalti/backoff: the OTLP exporters' retry schedule

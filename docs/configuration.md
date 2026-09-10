@@ -96,6 +96,17 @@ Two ceilings protect a node from one caller and from itself. Both are per node, 
 | `ORIGO_MAX_GIT_PROCS` | no | `64` | git subprocesses this node runs at once. A positive integer. Requests wait for a slot rather than failing. |
 | `ORIGO_REQUESTS_PER_MINUTE` | no | `600` | the requests one subject may send this node in a minute, and the burst it may spend at once. Every response carries the figure in force. `0` turns the limit off. Raise it for a fleet of tooling that shares one token. |
 
+## Git over SSH
+
+SSH is off until you set an address for it. It carries `git clone`, `git fetch`, and `git push` and nothing else: the JSON API, Git LFS, and reads that must not be stale are HTTPS. Origo stores no public key. It asks an endpoint you run which subject an offered key belongs to, the way it asks your authorization endpoint what that subject may do, so adding, naming, and removing keys stays yours. A file of fingerprints served behind a bearer is the whole requirement.
+
+| Variable | Required | Default | What it is |
+|---|---|---|---|
+| `ORIGO_SSH_ADDR` | no | unset | the address the SSH listener binds, such as `:2222`. Unset opens no SSH listener and the node runs exactly as it does without it. Bind an unprivileged port and publish 22 in front of it. |
+| `ORIGO_SSH_HOST_KEYS` | with `ORIGO_SSH_ADDR` | none | an ordered comma separated list of paths to OpenSSH private host key files, the same list on every node. `ssh-keygen -t ed25519` writes one. The first key of each algorithm is the one presented and every key in the list is announced, which is what makes replacing a key an overlap rather than a warning every client sees. Keep them in a Secret, never in the bucket, and never in a manifest. |
+| `ORIGO_SSH_KEYS_URL` | with `ORIGO_SSH_ADDR` | none | your key resolution endpoint, an absolute `http` or `https` URL. Origo posts the offered key's fingerprint to it before every connection it cannot answer from its cache, and a reply it cannot read refuses the connection. |
+| `ORIGO_SSH_KEYS_TOKEN` | with `ORIGO_SSH_ADDR` | none | the bearer Origo presents to that endpoint, so it can tell Origo from anything else that reaches it. |
+
 ## Fetching from another host
 
 Importing a repository, or verifying one against its prior host, makes the node fetch from a URL a caller supplies. Nothing is fetched from a host you have not listed, so these three are what open that door and how wide.
