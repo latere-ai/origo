@@ -81,14 +81,16 @@ The bill of materials is a release asset: `sbom-origod.spdx.json`,
 `sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json`, one per
 image and one for the module graph.
 
-While the repository is private, no SBOM or provenance attestation is
-attached to the images, because GitHub's attestation API refuses a
-private repository on this organization's plan, so
+Each image also carries an SBOM attestation and a build provenance
+attestation, attached to the image in the registry, so the fourth check
+is
 
 ```
 gh attestation verify oci://ghcr.io/latere-ai/origod:v1.2.3 --repo latere-ai/origo
 ```
 
-finds nothing to verify. The signature, the checksums, and the bills
-of materials above are what a release carries today. The command
-becomes the fourth check when the repository is public.
+which names the workflow and the commit the image was built from.
+v0.1.0 was built while the repository was private and carries neither
+attestation, because GitHub's attestation API refuses a private
+repository on this organization's plan. Its signature, checksums, and
+bills of materials are unaffected.
