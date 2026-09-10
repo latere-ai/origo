@@ -1,6 +1,6 @@
 ---
 title: "Landing page: what a person sees at the root"
-status: drafted
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -219,3 +219,44 @@ suite of spec 021 does not ask for it.
 - The post-deploy smoke checks the root: `GET /` answers 200 and its
   body names the released version, so a release proves the page on the
   installation it deployed (`tools/smoke`, `TestReleaseSmoke`).
+
+## Outcome
+
+Built on 2026-09-10, as the Design states it. `cmd/origod/landing.go`
+holds both bodies and the two handlers; `publicHandler` in
+`cmd/origod/node.go` registers `/{$}` and `/favicon.ico` on the public
+listener's outer mux, beside the probes and the key set.
+
+Four notes on what the build settled:
+
+- The shadowing argument is structural and was checked, not asserted.
+  Every git, API, and LFS pattern is on the application mux, which the
+  outer mux reaches through one `/` entry, so the page is not a
+  candidate against any of them; and `/{$}` matches one path while the
+  shortest of those patterns needs two segments.
+  `TestLandingPageShadowsNoRoute` was run against a deliberately
+  shadowing registration, `GET /` in place of `/{$}`, which makes every
+  `GET` of the listener answer the page: the test failed on the label
+  form `/{owner}/{slug}` of the git route, which is the pattern spec 009
+  warns about, so the test measures what it claims to.
+- The unauthenticated half of the route sweep is now a table of the path
+  and the status it answers, because the favicon answers 204 where the
+  other four answer 200, and it asserts that none of the five carries
+  `WWW-Authenticate`. That header on the root is the defect this spec
+  removes, so it is checked rather than inferred from the status.
+- The page carries no host. The clone line is a shape,
+  `https://{host}/{owner}/{slug}.git`, and not the address the request
+  arrived on, so no part of a request reaches the body and the document
+  is one constant with the version interpolated.
+  `TestLandingPageAnswersTheRoot` asserts a second request with another
+  `Host` and a query answers the same bytes, and
+  `TestLandingPageLeaksNoConfiguration` asserts that no configured value
+  of the node appears in either form.
+- The release smoke gained the root check, so the first release after
+  this one proves the page on the installation it deployed; its evidence
+  line names three paths. The stub in `tools/smoke` serves a root that
+  names the version, and removing it fails `TestReleaseSmoke`.
+
+No cluster criterion. The page reads no bucket, no issuer, no
+authorizer, and no disk, so a node in a cluster can prove nothing about
+it that a node in a test does not, and the tier tests carry it whole.
