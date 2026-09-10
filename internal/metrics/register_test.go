@@ -14,48 +14,55 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 )
 
-// specPath is the spec whose table this package is. It is resolved from
-// this file's own path, never from the working directory, so the suite
-// finds it when it runs from an empty temporary directory (the tempdir
-// gate of spec 002) and under the hermetic gate.
-func specPath(t *testing.T) string {
+// specPaths are the specs whose tables this package is: spec 011 owns
+// every metric of the node and spec 024 the three of its SSH listener,
+// in a table of its own. They are resolved from this file's own path,
+// never from the working directory, so the suite finds them when it
+// runs from an empty temporary directory (the tempdir gate of spec 002)
+// and under the hermetic gate.
+func specPaths(t *testing.T) []string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("the test's own source file is unknown")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "specs", "011-observability.md")
+	dir := filepath.Join(filepath.Dir(file), "..", "..", "specs")
+	return []string{filepath.Join(dir, "011-observability.md"), filepath.Join(dir, "024-ssh-access.md")}
 }
 
 var backtick = regexp.MustCompile("`([^`]+)`")
 
-// specMetrics reads the Metric table of spec 011: every backticked name
-// of the first cell against the type word of the second.
+// specMetrics reads every Metric table of the owning specs: each
+// backticked name of the first cell against the type word of the second.
 func specMetrics(t *testing.T) map[string]string {
 	t.Helper()
-	data, err := os.ReadFile(specPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
 	out := map[string]string{}
-	lines := strings.Split(string(data), "\n")
-	for i, line := range lines {
-		if cells(line)[0] != "Metric" {
-			continue
+	for _, path := range specPaths(t) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for j := i + 2; j < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[j]), "|"); j++ {
-			row := cells(lines[j])
-			if len(row) < 2 {
+		found := 0
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if cells(line)[0] != "Metric" {
 				continue
 			}
-			kind, _, _ := strings.Cut(row[1], ",")
-			for _, m := range backtick.FindAllStringSubmatch(row[0], -1) {
-				out[m[1]] = strings.TrimSpace(kind)
+			for j := i + 2; j < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[j]), "|"); j++ {
+				row := cells(lines[j])
+				if len(row) < 2 {
+					continue
+				}
+				kind, _, _ := strings.Cut(row[1], ",")
+				for _, m := range backtick.FindAllStringSubmatch(row[0], -1) {
+					out[m[1]] = strings.TrimSpace(kind)
+					found++
+				}
 			}
 		}
-	}
-	if len(out) == 0 {
-		t.Fatalf("%s: no Metric table found", specPath(t))
+		if found == 0 {
+			t.Fatalf("%s: no Metric table found", path)
+		}
 	}
 	return out
 }

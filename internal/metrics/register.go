@@ -4,7 +4,9 @@
 // Package metrics is the list of every metric Origo exposes and the one
 // place they are registered.
 //
-// Spec 011 owns the names. The table below is that spec's table in code:
+// Spec 011 owns the names, with one exception it states: spec 024 owns
+// the three series of the SSH listener in a table of its own. The table
+// below is both tables in code:
 // one row per metric with its type, its label vocabularies, and its
 // buckets. Register walks it once at start-up, so GET /metrics carries
 // every name from the first scrape, including the names of a spec that
@@ -73,6 +75,10 @@ var (
 	storageOps        = []string{"get", "put", "create", "head", "delete", "list"}
 	storageResults    = []string{"ok", "not_found", "exists", "error"}
 	breakerClasses    = []string{"read", "write"}
+	sshServices       = []string{"upload-pack", "receive-pack"}
+	sshResults        = []string{"ok", "refused", "error"}
+	sshAuthResults    = []string{"ok", "unknown_key", "resolver_error", "timeout"}
+	sshKeyResults     = []string{"found", "not_found", "error"}
 )
 
 // table is spec 011's metric table. The order is the spec's.
@@ -122,6 +128,12 @@ var table = []metric{
 	{Name: "origo_log_integrity_errors_total", Kind: counter, Help: "packs or entries the log names that are missing or fail their digest"},
 	{Name: "origo_orphan_objects", Kind: gauge, Help: "objects under the prefix no index names"},
 	{Name: "origo_storage_bytes", Kind: gauge, Help: "bytes under the prefix"},
+	{Name: "origo_ssh_sessions_total", Kind: counter, Help: "SSH sessions by service and result",
+		Labels: []label{{Name: "service", Values: sshServices}, {Name: "result", Values: sshResults}}},
+	{Name: "origo_ssh_auth_total", Kind: counter, Help: "SSH authentication attempts by result",
+		Labels: []label{{Name: "result", Values: sshAuthResults}}},
+	{Name: "origo_ssh_keys_seconds", Kind: histogram, Help: "key resolver calls by result",
+		Buckets: pkgmetrics.DefaultDurationBuckets, Labels: []label{{Name: "result", Values: sshKeyResults}}},
 }
 
 // Names reports every metric name of the table, in the table's order. It
@@ -247,6 +259,12 @@ type Set struct {
 	// The weekly sweep (spec 019).
 	OrphanObjects *Gauge
 	StorageBytes  *Gauge
+
+	// The SSH listener (spec 024), whose three series that spec owns in
+	// a table of its own.
+	SSHSessions *pkgmetrics.Counter
+	SSHAuth     *pkgmetrics.Counter
+	SSHKeys     *pkgmetrics.Histogram
 }
 
 // Register registers every metric of the table on reg and returns the
@@ -323,6 +341,10 @@ func Register(reg *pkgmetrics.Registry) *Set {
 
 		OrphanObjects: r.gauge("origo_orphan_objects"),
 		StorageBytes:  r.gauge("origo_storage_bytes"),
+
+		SSHSessions: r.counter("origo_ssh_sessions_total"),
+		SSHAuth:     r.counter("origo_ssh_auth_total"),
+		SSHKeys:     r.histogram("origo_ssh_keys_seconds"),
 	}
 }
 
