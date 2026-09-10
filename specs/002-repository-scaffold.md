@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -213,6 +213,10 @@ one page:
 | spec 018 | `ORIGO_INSTALL_IMAGE` | the image reference the install document's blocks apply, set by the `install` job of `verify.yml` and the `install-release` job of `release.yml` |
 | spec 018 | `ORIGO_INSTALL_MANIFESTS` | the path of the manifests those blocks apply, set by the same two jobs |
 | spec 017 | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | the path of the previous release's fixture archive `TestPreviousReleaseFixture` uploads and reads, set by the `e2e` job and the release pipeline; unset skips the test |
+| spec 024 | `ORIGO_SSH_ADDR` | the SSH listener's address, `:2222` in the deployment; unset turns SSH off and is the default, so a node that sets none of this spec's four SSH variables runs as it does today |
+| spec 024 | `ORIGO_SSH_HOST_KEYS` | the ordered list of host key files the SSH listener presents and announces, the same list on every node of one installation |
+| spec 024 | `ORIGO_SSH_KEYS_URL` | the operator's endpoint that resolves an offered public key to a subject |
+| spec 024 | `ORIGO_SSH_KEYS_TOKEN` | the bearer Origo sends that endpoint |
 
 ### Failpoints
 

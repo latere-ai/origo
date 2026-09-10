@@ -284,7 +284,13 @@ binary artifact of spec 017.
   `TestAPIDocIsCurrent` and `TestAuthorizationSectionComesFromTheSpec`,
   which read the specs and the page through a
   test-only constant resolved from its own source file;
-  `tools/specindex/specs`, `TestSectionCarriesOneSpecPassage`).
+  `tools/specindex/specs`, `TestSectionCarriesOneSpecPassage`). The
+  configuration page is required to carry every variable of a spec that
+  has started and is free of a variable a spec has only designed,
+  because the page is generated from `internal/config` and a spec at
+  `drafted` reaches no code; the reverse direction is unscoped, so a row
+  no spec defines still fails
+  (`internal/config`, `TestUnstartedSpecsDoNotNeedAReferenceRow`).
 - A maintainer following `docs/install.md` on a fresh kind cluster
   reaches a successful push without consulting any other document: a
   release checklist item of spec 017, done once per release by hand and

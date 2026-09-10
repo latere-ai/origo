@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -86,6 +86,7 @@ flowchart LR
     S[(bucket)]
     I[OIDC issuer]
     A[consumer authorizer]
+    KR[consumer key resolver]
     E[events sink]
   end
   subgraph external
@@ -99,6 +100,7 @@ flowchart LR
   H --> W --> S
   H -->|JWKS| I
   H -->|service token| A
+  H -->|service token, SSH only| KR
   H -->|HMAC| E
   G -->|https, egress allow-list| X
   P -.->|UDP, HMAC| H
@@ -149,6 +151,12 @@ deadline, and under the pod's security context.
 | Cross-repository leakage on a node | one bare repository per id under `repos/`, `GIT_DIR` per request, no shared object store, no alternates | 004 |
 | Supply chain | the image is built from a pinned Go toolchain and a pinned Debian base with git, signed with cosign keyless against the release workflow's identity, with an SPDX bill of materials shipped as a release asset; dependencies are the standard library and `latere.ai/x/pkg`. Attaching the bill of materials and the build provenance to the image as attestations is pending the repository becoming public, or the organization plan being upgraded and spec 017's condition changed with it: GitHub's attestation API refuses a private repository on this plan, which is what failed the v0.1.0 tag of 2026-09-10 | 002, 017 |
 | A compromised node | the node holds the bucket credentials and the signing key; the blast radius is every repository the credentials reach, which is why one installation serves one trust domain and the bucket prefix is dedicated | 001 |
+| SSH host key theft giving a machine in the middle | one host key set for the whole installation, in the Secret `origod-ssh-host-key`, read at start-up, never in the bucket and never in the log; rotation is the four-step overlap of spec 024, where the new key is announced through `hostkeys-00@openssh.com` before it is presented, so it is a procedure an operator can run rather than a flag day; a stolen key is a machine in the middle for every client until rotation completes | 024 |
+| A public key bound to the wrong subject | Origo stores no key: it asks the operator's key resolution endpoint, whose contract requires one subject per fingerprint installation-wide and refuses a fingerprint already registered, because a store that binds one key to two subjects lets pushes be attributed to the wrong person; a resolver that does not answer refuses the connection and never allows it | 024, 007 |
+| A key that outlives its person | the resolve answer's `ttl` bounds it, 60 seconds by default and capped at 600, and a not-found answer is cached 5 seconds, so a revocation at the store stops the key inside the window Origo already uses for an authorizer deny | 024 |
+| More than git over an SSH connection | only `session` channels, one per connection, only `exec`, and only `git-upload-pack` and `git-receive-pack`; shell, subsystem, pty, env, X11, agent forwarding, and every port-forwarding channel and global request are refused before a channel is opened, no subprocess starts and no repository is read on a refusal, and the surface is a maintained list a hostile-client test walks, the way the route sweep above is a maintained list | 024 |
+| Unauthenticated cost on an SSH connection | the handshake is work before any identity is known: a 30 second deadline over handshake and authentication together, at most 3 public key attempts, no password and no keyboard-interactive method, no banner naming the installation, and nothing that touches the bucket or the authorizer before authentication succeeds | 024, 012 |
+| Delegation over a transport that cannot carry it | a public key carries no claims, so `act` is never derived on the SSH path and the key store cannot assert a pair; the actor is empty on every SSH-originated authorizer call and on every entry an SSH push commits, and a service that must act for a person uses HTTPS with a token the issuer signed | 024, 007 |
 
 ### Process and pod hardening
 

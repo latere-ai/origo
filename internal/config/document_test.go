@@ -25,23 +25,103 @@ func root(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(filepath.Dir(file)))
 }
 
-// crossReference is every variable the spec deck defines, read from the
-// generated table in specs/README.md.
-func crossReference(t *testing.T) []string {
+// started is the set of statuses at which a spec's design is in the
+// tree, the started list of .lateregate.yaml. The reference below is
+// generated from this package, so a variable of a spec before that is a
+// name the deck has written and no code reads yet; requiring a row for
+// it would leave a drafted spec unable to name its own configuration.
+// Spec 021's code-table test scopes its call-site rule the same way.
+var started = map[string]bool{
+	"dispatched":  true,
+	"in-progress": true,
+	"testing":     true,
+	"complete":    true,
+}
+
+// crossReferenceRow matches one row of the generated cross-reference of
+// specs/README.md: the name, and the number of the spec that defines it.
+var crossReferenceRow = regexp.MustCompile("(?m)^\\| variable \\| `([^`]+)` \\| \\[([0-9]+)\\]")
+
+// specStatus reads the status: line of the frontmatter of
+// specs/<nnn>-*.md under dir, or of specs/.archive/<nnn>-*.md where a
+// terminal spec sits.
+func specStatus(t *testing.T, dir, number string) string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(root(t), "specs", "README.md"))
+	var matches []string
+	for _, d := range []string{"specs", filepath.Join("specs", ".archive")} {
+		found, _ := filepath.Glob(filepath.Join(dir, d, number+"-*.md"))
+		matches = append(matches, found...)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("spec %s: %d files match under specs/ and specs/.archive/", number, len(matches))
+	}
+	raw, err := os.ReadFile(matches[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := regexp.MustCompile("(?m)^\\| variable \\| `([^`]+)` \\|")
+	m := regexp.MustCompile(`(?m)^status:\s*(\S+)\s*$`).FindStringSubmatch(string(raw))
+	if m == nil {
+		t.Fatalf("spec %s has no status: line", number)
+	}
+	return m[1]
+}
+
+// definedVariables is every variable the deck defines whose owning spec
+// has started, read from the generated table in specs/README.md under
+// dir. It takes the directory rather than resolving it, so the scoping
+// rule above is testable on a fixture.
+func definedVariables(t *testing.T, dir string) []string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(dir, "specs", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out []string
-	for _, m := range row.FindAllStringSubmatch(string(body), -1) {
+	for _, m := range crossReferenceRow.FindAllStringSubmatch(string(body), -1) {
+		if !started[specStatus(t, dir, m[2])] {
+			continue
+		}
 		out = append(out, m[1])
 	}
+	return out
+}
+
+// crossReference is every variable the deck defines that a started spec
+// owns.
+func crossReference(t *testing.T) []string {
+	t.Helper()
+	out := definedVariables(t, root(t))
 	if len(out) == 0 {
-		t.Fatal("specs/README.md carries no variable in its cross-reference")
+		t.Fatal("specs/README.md carries no variable of a started spec in its cross-reference")
 	}
 	return out
+}
+
+// TestUnstartedSpecsDoNotNeedAReferenceRow holds the scoping rule on a
+// fixture of its own: a variable of a spec at complete is required of
+// the reference and one of a spec at drafted is not.
+func TestUnstartedSpecsDoNotNeedAReferenceRow(t *testing.T) {
+	dir := t.TempDir()
+	specs := filepath.Join(dir, "specs")
+	if err := os.MkdirAll(specs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(specs, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("900-built.md", "---\ntitle: \"built\"\nstatus: complete\n---\n")
+	write("901-designed.md", "---\ntitle: \"designed\"\nstatus: drafted\n---\n")
+	write("README.md", "| Kind | Name | Owner | Also named in |\n"+
+		"|---|---|---|---|\n"+
+		"| variable | `ORIGO_BUILT` | [900](900-built.md) | - |\n"+
+		"| variable | `ORIGO_DESIGNED` | [901](901-designed.md) | - |\n")
+
+	if got := definedVariables(t, dir); !slices.Equal(got, []string{"ORIGO_BUILT"}) {
+		t.Errorf("definedVariables = %v, want the started spec's variable alone", got)
+	}
 }
 
 // TestConfigurationDocIsCurrent is spec 018's criterion: the page in the
