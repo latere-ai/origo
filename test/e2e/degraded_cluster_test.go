@@ -48,13 +48,18 @@ func gitGet(t *testing.T, base, token, path string, timeout time.Duration) (int,
 }
 
 // nodeMetric reads one series from a node's internal host port over a
-// fresh connection.
+// fresh connection. Every fault this file injects takes the node out of
+// the endpoint list for a few seconds and puts it back, so nothing
+// answering right now is a reason to wait, the same reason
+// tryNodeMetric exists; a node that never returns fails the wait.
 func nodeMetric(t *testing.T, internalPort int, name, labels string) float64 {
 	t.Helper()
-	v, ok := tryNodeMetric(t, internalPort, name, labels)
-	if !ok {
-		t.Fatalf("metrics on %d: nothing answered", internalPort)
-	}
+	var v float64
+	waitUntil(t, fmt.Sprintf("node %d back on its internal host port", internalPort), time.Minute, func() bool {
+		var ok bool
+		v, ok = tryNodeMetric(t, internalPort, name, labels)
+		return ok
+	})
 	return v
 }
 
@@ -74,21 +79,61 @@ func tryNodeMetric(t *testing.T, internalPort int, name, labels string) (float64
 // of a failure that looks like a pod leaving the endpoint list.
 func podConditions(t *testing.T, name string) string {
 	t.Helper()
-	var pod struct {
-		Status struct {
-			Conditions []struct {
-				Type   string `json:"type"`
-				Status string `json:"status"`
-				Reason string `json:"reason"`
-			} `json:"conditions"`
-		} `json:"status"`
-	}
-	_ = json.Unmarshal(cluster.Get(t, "pod", name), &pod)
 	var out []string
-	for _, c := range pod.Status.Conditions {
+	for _, c := range conditions(t, name) {
 		out = append(out, fmt.Sprintf("%s=%s %s", c.Type, c.Status, c.Reason))
 	}
 	return strings.Join(out, ", ")
+}
+
+// podCondition is one entry of a pod's status conditions.
+type podCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+func conditions(t *testing.T, name string) []podCondition {
+	t.Helper()
+	var pod struct {
+		Status struct {
+			Conditions []podCondition `json:"conditions"`
+		} `json:"status"`
+	}
+	_ = json.Unmarshal(cluster.Get(t, "pod", name), &pod)
+	return pod.Status.Conditions
+}
+
+// podReady reports whether a pod's Ready condition is true, which is
+// what puts it back in every Service's endpoint list.
+func podReady(t *testing.T, name string) bool {
+	t.Helper()
+	for _, c := range conditions(t, name) {
+		if c.Type == "Ready" {
+			return c.Status == "True"
+		}
+	}
+	return false
+}
+
+// inRotation reports whether a node is back in the rotation of both of
+// its Services: its pod reports Ready and both host ports answer. One
+// answered request is not that proof. kube-proxy withdraws a pod's
+// endpoints after the kubelet flips the Ready condition, not with it,
+// so a request served during that lag comes from a pod that is already
+// leaving, and the next request on either port is refused. The unreachable
+// scenario runs inside exactly that lag: the failing listings take node 1
+// out of rotation a moment before the breaker opens and puts it back.
+func inRotation(t *testing.T, pod string, public, internal int) bool {
+	t.Helper()
+	if !podReady(t, pod) {
+		return false
+	}
+	if status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/readyz", internal)); status != 200 {
+		return false
+	}
+	status, _ := httpGet(freshClient, fmt.Sprintf("http://localhost:%d/version", public))
+	return status == 200
 }
 
 // TestClusterDegradedStorage is spec 015's cluster criterion, through
@@ -179,11 +224,20 @@ func TestClusterDegradedStorage(t *testing.T) {
 		t.Logf("breaker open; origod-0: %s", podConditions(t, "origod-0"))
 		// Node 1 left the rotation between its second failed readiness
 		// listing and the breaker opening; the next probe the breaker
-		// refuses brings it back. The warm repository is then served
-		// stale with the header and clones.
+		// refuses brings it back. The wait is for the return itself,
+		// not for one answered request: inRotation reads the pod's Ready
+		// condition and both host ports, because a request answered
+		// inside kube-proxy's withdrawal lag proves neither, and every
+		// assertion below reads node 1's counters on the internal port.
+		// The return takes a kubelet probe period and the endpoint
+		// programming after it, so the wait is a minute and not the 30
+		// seconds one request took.
 		var status int
 		var header http.Header
-		waitUntil(t, "node 1 back in rotation with the stale advertisement", 30*time.Second, func() bool {
+		waitUntil(t, "node 1 back in rotation with the stale advertisement", time.Minute, func() bool {
+			if !inRotation(t, "origod-0", portNode1, node1Int) {
+				return false
+			}
 			status, header, _ = gitGet(t, node1, token, "/r/"+warm+".git/info/refs?service=git-upload-pack", 30*time.Second)
 			return status == 200
 		})
