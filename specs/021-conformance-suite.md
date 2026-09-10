@@ -690,10 +690,12 @@ The `install from the release artifacts` job of the same run did run
 `TestContract` in live mode, and it passed: `contract_test.go:133: live
 run against http://localhost:30180: 51 passed`, with exactly the six
 groups skipped. Its target is a kind cluster the job had just built
-from the published artifacts, not an installation, so that run closes
-spec 018's job row and no criterion here.
+from the published artifacts, so it closes spec 018's job row. It does
+show the live branch working, its six-group assertion included, on a
+target other than the stub or the stack. What the first criterion above
+waits on is that branch against the installation `ORIGO_LIVE_URL`
+names, which is a deployed Origo and not a cluster a job made.
 
 Spec 017's Outcome records the limit. What closes this: the two secrets
 set on the repository with an installation behind the URL, and a tag or
 a re-run of that job.
-
