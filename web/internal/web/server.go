@@ -47,9 +47,11 @@ type Route struct {
 }
 
 // Routes is the whole route table, in one place so it can be asserted
-// against. Everything here is a GET except sign-out and the key screen, the
-// two routes that change anything, and neither of them touches repository
-// content: this interface has no write path to a repository of any kind.
+// against. Everything here is a GET except sign-out, the key screen and the
+// mint form, the three routes that change anything, and none of them touches
+// repository content: this interface has no write path to a repository of
+// any kind. Minting writes nothing either: the token it asks for is signed
+// and kept nowhere.
 func Routes(keys bool) []Route {
 	rs := []Route{
 		{"GET", "/{$}"},
@@ -59,6 +61,8 @@ func Routes(keys bool) []Route {
 		{"GET", "/auth/callback"},
 		{"POST", "/sign-out"},
 		{"GET", "/assets/{file}"},
+		{"GET", "/tokens"},
+		{"POST", "/tokens"},
 		{"GET", "/r/{id}"},
 		{"GET", "/r/{id}/refs"},
 		{"GET", "/r/{id}/log"},
@@ -87,6 +91,8 @@ func New(o Options) *Server {
 		"GET /auth/callback":         s.handleAuthCallback,
 		"POST /sign-out":             s.handleSignOut,
 		"GET /assets/{file}":         s.handleAsset,
+		"GET /tokens":                s.handleTokens,
+		"POST /tokens":               s.handleTokensPost,
 		"GET /r/{id}":                s.handleOverview,
 		"GET /r/{id}/refs":           s.handleRefs,
 		"GET /r/{id}/log":            s.handleLog,

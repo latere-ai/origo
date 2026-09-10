@@ -13,8 +13,10 @@
   <header class="masthead">
     <a class="brand" href="/">origo</a>
     <nav aria-label="Site">
-      <a href="/">repositories</a>
+      <a href="/"{{if eq .View.Section "home"}} aria-current="page"{{end}}>repositories</a>
       {{- if .View.KeysEnabled}}<a href="/keys">ssh keys</a>{{end}}
+      <a href="/tokens"{{if eq .View.Section "tokens"}} aria-current="page"{{end}}>agent tokens</a>
+      <a href="/docs/agents"{{if eq .View.Section "docs"}} aria-current="page"{{end}}>docs</a>
       {{- if .View.SignedIn}}
       <form method="post" action="/sign-out">
         <input type="hidden" name="{{.View.CSRFField}}" value="{{.View.CSRF}}">

@@ -439,12 +439,87 @@ dl.facts dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere;
 .pager { display: flex; gap: var(--s-5); align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: var(--t-12); }
 .pager .inert { color: var(--fg-3); }
 
+/* ---- agent screens ---- */
+
+/* The masthead marks where you are the way the repository sections do:
+ * weight and an ink rule, never a hue. */
+.masthead nav a[aria-current='page'] {
+  color: var(--fg-1);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 1px;
+}
+
+.lead { margin: 0; color: var(--fg-2); font-size: var(--t-13); line-height: 1.6; max-width: 68ch; }
+
+.fields { display: flex; gap: var(--s-6); flex-wrap: wrap; align-items: flex-start; }
+.fields > .field { width: 300px; max-width: 100%; }
+fieldset.field { border: none; margin: 0; padding: 0; min-width: 0; }
+fieldset.field legend { padding: 0; font-size: var(--t-12); color: var(--fg-2); }
+.choice { display: flex; gap: var(--s-3); align-items: baseline; }
+.choice input { min-height: 0; }
+.choice label strong { color: var(--fg-1); font-family: var(--font-mono); font-size: var(--t-12); }
+
+/* The one inverted block in the interface. A secret on a screen must not
+ * read as an ornament, and inverted ink is the strongest mark available
+ * that borrows no colour: full ink, edge to edge, no card. */
+.secret {
+  background: var(--fg-1);
+  color: var(--bg);
+  padding: var(--s-6);
+  border-radius: var(--radius-md);
+}
+.secret h1 { font-size: var(--t-19); margin: 0; }
+.secret p { margin: 0; font-size: var(--t-12); line-height: 1.6; }
+.secret .meta, .secret label { color: var(--bg-raised); }
+.secret input {
+  background: var(--bg-surface);
+  color: var(--fg-1);
+  border-color: var(--fg-1);
+  width: 100%;
+}
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-5); margin: 0; }
+.facts dt { color: var(--fg-3); font-size: var(--t-11); letter-spacing: 0.08em; text-transform: uppercase; }
+.facts dd { margin: 0; }
+
+.sample {
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  line-height: 1.6;
+}
+
+/* ---- documentation ---- */
+
+.doc { max-width: 78ch; }
+.doc h2 { font-size: var(--t-19); margin: var(--s-5) 0 0; padding-top: var(--s-5); border-top: 1px solid var(--border); }
+.doc p { margin: 0; font-size: var(--t-13); line-height: 1.65; color: var(--fg-2); }
+.doc p strong { color: var(--fg-1); }
+.doc code {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  background: var(--bg-code);
+  padding: 1px var(--s-1);
+  border-radius: var(--radius-xs);
+}
+.toc { display: flex; gap: var(--s-4); flex-wrap: wrap; align-items: baseline; font-size: var(--t-12); }
+.toc a { color: var(--fg-2); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+.toc a:hover { color: var(--fg-1); border-bottom-color: var(--accent); }
+
 /* ---- narrow ---- */
 
 @media (max-width: 640px) {
   .page { padding: var(--s-5) var(--s-4) var(--s-8); gap: var(--s-5); }
   .panel { padding: var(--s-5); border-radius: var(--radius-md); }
   h1 { font-size: var(--t-19); }
+  .fields { gap: var(--s-5); }
+  .fields > .field { width: 100%; }
+  .facts { grid-template-columns: 1fr; gap: var(--s-1); }
+  .facts dd { margin-bottom: var(--s-3); }
 
   /* Data tables restack into label-and-value blocks. Nothing is removed.
    * Code and diffs never reflow: they scroll inside their own box, because

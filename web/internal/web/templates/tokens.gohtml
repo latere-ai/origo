@@ -1,0 +1,103 @@
+{{define "title"}}Agent tokens{{end}}
+{{define "main"}}
+<main class="stack">
+  <h1>Agent tokens</h1>
+  <p class="lead">A token lets an agent act as you inside one repository until it expires. It reaches no other repository, it cannot mint another token, and it cannot open these screens: they need a browser sign-in, not a token.</p>
+
+  {{- if .Error}}
+  <p class="notice" role="alert"><strong>That did not work.</strong> {{.Error}}</p>
+  {{- end}}
+
+  <form class="panel stack" action="/tokens" method="post">
+    <input type="hidden" name="{{.View.CSRFField}}" value="{{.View.CSRF}}">
+    <h2>Mint a token</h2>
+    <div class="fields">
+      <div class="field">
+        <label for="repo">Repository</label>
+        {{- if .Directory}}
+        <select id="repo" name="repo" class="mono" required>
+          {{- range .Repos}}
+          <option value="{{.ID}}"{{if eq .ID $.Form.Repo}} selected{{end}}>{{.Owner}}/{{.Name}}</option>
+          {{- end}}
+        </select>
+        {{- else}}
+        <input id="repo" name="repo" class="mono" size="36" value="{{.Form.Repo}}" placeholder="the identifier your administrator gave you" required>
+        {{- end}}
+        <span class="meta">Exactly one. Two repositories means two tokens.</span>
+      </div>
+
+      <fieldset class="field">
+        <legend>Scope</legend>
+        <div class="choice"><input id="scope-read" type="radio" name="scope" value="read"{{if ne .Form.Scope "write"}} checked{{end}}><label for="scope-read"><strong>read</strong> — clone, log, tree, file</label></div>
+        <div class="choice"><input id="scope-write" type="radio" name="scope" value="write"{{if eq .Form.Scope "write"}} checked{{end}}><label for="scope-write"><strong>write</strong> — also push</label></div>
+        <span class="meta">Neither scope may administer the repository, which is why a token cannot mint another.</span>
+      </fieldset>
+
+      <div class="field">
+        <label for="ttl">Lifetime</label>
+        <select id="ttl" name="ttl" required>
+          {{- range .Lifetimes}}
+          <option value="{{.Seconds}}"{{if eq .Seconds $.Form.TTL}} selected{{end}}>{{.Label}}</option>
+          {{- end}}
+        </select>
+        <span class="meta">There is no “never”. A token cannot be withdrawn, so its lifetime is the only thing that ends it: choose the shortest that covers the job.</span>
+      </div>
+    </div>
+    <div class="row">
+      <button class="button-primary" type="submit">Mint token</button>
+      <span class="meta">Shown once, on the page that follows.</span>
+    </div>
+  </form>
+
+  {{- if .Registry}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Tokens minted for {{if .Repo}}{{.Repo.Owner}}/{{.Repo.Slug}}{{else}}this repository{{end}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Token</th>
+            <th scope="col">Scope</th>
+            <th scope="col">Minted</th>
+            <th scope="col">Expires</th>
+            <th scope="col">Last used</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{- range .Tokens}}
+          <tr>
+            <th scope="row" class="sha">{{.ID}}{{if .Revoked}} <span class="meta">withdrawn {{.Withdrawn}}</span>{{end}}</th>
+            <td data-label="Scope" class="refname">{{.Scope}}</td>
+            <td data-label="Minted" class="when">{{.Issued}}</td>
+            <td data-label="Expires" class="when">{{.Expires}}</td>
+            <td data-label="Last used" class="when">{{if .LastUsed}}{{.LastUsed}}{{else}}never used{{end}}</td>
+          </tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{- else}}
+  <div class="panel stack">
+    <p class="notice"><strong>This installation keeps no list of tokens.</strong>
+    A token is signed rather than recorded, so nothing is written when you mint one. That is why nothing can be listed here, why a token cannot be withdrawn once it is out, and why the lifetimes above are short: the expiry is what ends a token, and it is the only thing that does. If a token reaches somebody it should not, mint nothing new for that agent and wait out the clock — or ask whoever administers this installation to change the repository's access.</p>
+  </div>
+  {{- end}}
+
+  {{- if .Recent}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Opened in this session</caption>
+        <thead><tr><th scope="col">Repository</th></tr></thead>
+        <tbody>
+        {{- range .Recent}}
+          <tr><th scope="row" class="path"><a href="{{.URL}}">{{.Name}}</a></th></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{- end}}
+</main>
+{{end}}
