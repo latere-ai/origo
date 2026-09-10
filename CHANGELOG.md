@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Your installation can now list the repositories a person may see. Until
+  now it could only answer about one repository at a time, so anything
+  browsing it had to ask you for an identifier before it could show you
+  anything. An installation whose permission service does not answer that
+  question keeps working exactly as before and says plainly that it has no
+  directory, rather than looking broken.
+- A repository can be addressed by its owner and name, not only by its
+  identifier, so a link written by hand keeps working.
+
 ## v0.1.2 - 2026-09-10
 
 - Git over SSH, beside the HTTPS you already have. People clone with
