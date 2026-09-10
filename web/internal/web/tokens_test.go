@@ -15,6 +15,7 @@ import (
 
 	"github.com/latere-ai/origo-web/internal/config"
 	"github.com/latere-ai/origo-web/internal/origo"
+	"github.com/latere-ai/origo-web/internal/session"
 )
 
 // mintForm is a submission of the token form with everything filled in.
@@ -282,6 +283,30 @@ func TestAnUnreachableInstallationDoesNotMint(t *testing.T) {
 	}
 }
 
+// TestAStaleSessionIsSignedOutOnTheTokenScreen asserts the screen answers a
+// refused credential the way the home screen does: sign the reader out once
+// and offer the way back in, rather than draw a form that cannot submit.
+func TestAStaleSessionIsSignedOutOnTheTokenScreen(t *testing.T) {
+	h := newHarness(t)
+	h.fake.status["/v1/repos"] = http.StatusUnauthorized
+	rec := h.get("/tokens", h.signedIn("alice"))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("a refused credential gave %d, want 401 with the sign-in page", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "/auth/start") {
+		t.Error("the page offers no way to sign in again")
+	}
+	var cleared bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == session.CookieName && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Error("the stale session was left in the browser")
+	}
+}
+
 // TestTheTokenScreenNeedsASession asserts a signed-out visitor is shown the
 // front door and not a form that could not work.
 func TestTheTokenScreenNeedsASession(t *testing.T) {
@@ -328,6 +353,11 @@ func TestTheSecretPanelCarriesNoControlThatNeedsAScript(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "no copy button") {
 		t.Error("the page does not say why there is no copy button")
+	}
+	// The one page that renders a secret is the one page no cache in front
+	// of this service may keep.
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Errorf("the token page says %q, want private, no-store", got)
 	}
 	// The clone and read lines are the installation's own addresses.
 	for _, want := range []string{"x-access-token:$ORIGO_TOKEN@git.example/infra/origo.git", "/v1/repos/1f2e3d"} {

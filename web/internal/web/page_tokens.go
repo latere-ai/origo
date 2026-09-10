@@ -122,12 +122,20 @@ func (s *Server) renderTokens(w http.ResponseWriter, r *http.Request, rq req, st
 
 	// The same question the home screen asks, answered the same way: a
 	// directory when the installation has one, and a box to name a
-	// repository when it does not.
-	if page, err := s.api.List(r.Context(), rq.tok, "", 200); err == nil {
+	// repository when it does not. A credential the installation refuses
+	// is the home screen's answer too: sign out once and say so, rather
+	// than render a form that could not have worked.
+	page, err := s.api.List(r.Context(), rq.tok, "", 200)
+	switch {
+	case err == nil:
 		data.Directory = true
 		for _, repo := range page.Items {
 			data.Repos = append(data.Repos, s.listRow(repo))
 		}
+	case origo.Unauthenticated(err):
+		s.sessions.Clear(w)
+		s.signIn(w, r, rq.v, true)
+		return
 	}
 	for _, id := range s.sessions.Recent(r) {
 		data.Recent = append(data.Recent, listRow{ID: id, Name: id, URL: "/tokens?repo=" + url.QueryEscape(id)})
