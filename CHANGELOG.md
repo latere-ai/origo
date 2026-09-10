@@ -41,10 +41,9 @@ committed: the commit log already holds that.
 - A code of conduct, issue templates, and a pull request template.
 - The documentation index is grouped by what the reader is doing: running
   Origo, building against it, or changing it.
-- A checkout no longer carries a compiled tool binary or the name of a
-  real storage bucket: `tools/specindex/specindex` is gone, the default
-  build output of every tool is ignored, and the conditional-write spike
-  names its provider and region instead of the bucket it ran against.
+- The source tree carries source and nothing else. A compiled binary had
+  been committed by mistake, so a clone is now smaller and holds only what
+  you can read.
 
 ## v0.1.0 - 2026-09-10
 
