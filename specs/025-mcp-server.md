@@ -543,7 +543,7 @@ Three items outside this spec's own directory:
 
 | Item | Owner | What it is |
 |---|---|---|
-| `release-archives` builds `origo-mcp` for the four platforms of `RELEASE_PLATFORMS` and sums it into `checksums.txt` beside `origod` | 017 | one loop in the Makefile and one line in the release notes; without it the binary exists and nothing ships it |
+| `release-archives` builds `origo-mcp` for the four platforms of `RELEASE_PLATFORMS` and sums it into `checksums.txt` beside `origod`, spec 017's artifact table gains the `origo-mcp_<version>_<os>_<arch>.tar.gz` row, and the `release-verify` job of `release.yml` gains `--pattern 'origo-mcp_*.tar.gz'` on its `gh release download` | 017 | the upload is glob-driven (`out/release/*.tar.gz`), so the archives reach the release on their own, but `release-verify` downloads by an explicit pattern and then runs `sha256sum -c checksums.txt` over what it fetched. Four sums in that file with no files beside them fails the next tag, so the pattern is not optional and is the one line a builder would otherwise miss |
 | a `depcheck` row for `github.com/latere-ai/origo/cmd/origo-mcp` in `.lateregate.yaml` | 002 | the same allow list as the node, `latere.ai/x/pkg` and the standard library, with the reason that a newline-delimited JSON-RPC loop over `encoding/json` needs no upstream root at all, unlike spec 024's `golang.org/x/crypto/ssh` |
 | `docs/mcp.md` and its row in `docs/README.md` | this spec | below |
 
@@ -561,7 +561,8 @@ first three are where the design is, and each is testable against a
   agent host configuration as one JSON block, the four variables and
   the flag, the eleven tools with one line each, the truncation
   vocabulary, and what it cannot do. Its `sh` blocks are its test under
-  `tools/docs/run-blocks.sh` the way `docs/migration.md`'s are.
+  `tools/docs/run-blocks.sh` the way `docs/migration.md`'s are, which the
+  last acceptance criterion names.
 - **`docs/README.md`** gains its row, and the repository `README.md`
   one sentence naming the binary.
 - **`docs/api.md` is unchanged.** This spec defines no endpoint, no
@@ -667,3 +668,10 @@ first three are where the design is, and each is testable against a
   where it was, which is the proof that the two write gates are
   independent (proposed: `test/e2e`,
   `TestE2EMCPReadTokenCannotWrite`).
+- Every `sh` block of `docs/mcp.md` runs against the one-node run under
+  `tools/docs/run-blocks.sh`, from minting the repository-bound token
+  to a `tools/list` and a `tools/call` written to the process on its
+  standard input, so the document cannot document a command that does
+  not work; the test mirrors spec 014's
+  `TestClusterMigrationDocCommandsRun` (proposed: `test/e2e`,
+  `TestE2EMCPDocCommandsRun`).
