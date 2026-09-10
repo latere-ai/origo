@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -785,6 +786,56 @@ func TestAuthorizerRateBucketsTheSubject(t *testing.T) {
 	}
 	if h.limits.SubjectRate("carol") != limits.RequestsPerMinute {
 		t.Fatalf("carol is at %d", h.limits.SubjectRate("carol"))
+	}
+	h.as(auth.Principal{Subject: "alice"})
+}
+
+// TestAuthorizerRateIsWhatRateLimitLimitReports is spec 012's header
+// row through a real decision: with the bucket middleware in front of
+// the mux, the figure on a response is the one the authorizer named for
+// that subject, not the node's ORIGO_REQUESTS_PER_MINUTE. Reporting the
+// node's figure to a subject on an override is what let spec 021's
+// rate_limited case send 2401 requests against a budget of 6000 in the
+// v0.1.2 release run.
+func TestAuthorizerRateIsWhatRateLimitLimitReports(t *testing.T) {
+	h := newHarness(t, withLimits(limits.Options{}), withBucketed())
+	o := seedOps(t, h, repoA)
+
+	// A subject the authorizer names no figure for reads the node's
+	// figure. dave rather than alice, because the guard caches a
+	// decision per subject, action and repository, and alice's read is
+	// the one that must carry the rate below.
+	node := strconv.Itoa(limits.RequestsPerMinute)
+	h.as(auth.Principal{Subject: "dave"})
+	for range 2 {
+		status, _, header := h.doHeader("GET", "/v1/repos/"+o.id, "")
+		if status != 200 || header.Get(contract.HeaderRateLimit) != node {
+			t.Fatalf("without an override: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+		}
+	}
+	h.as(auth.Principal{Subject: "alice"})
+
+	// The authorizer names alice a rate. The handler records it after
+	// the middleware has answered, so the response that carries the
+	// decision still reports the node's figure and the next one reports
+	// the override; spec 012 records that one-response window.
+	h.authz.Allow(authorizer.Rule{Subject: "alice", RequestsPerMinute: 6000})
+	status, _, header := h.doHeader("GET", "/v1/repos/"+o.id, "")
+	if status != 200 || header.Get(contract.HeaderRateLimit) != node {
+		t.Fatalf("the response that carries the decision: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+	}
+	if status, _, header = h.doHeader("GET", "/v1/repos/"+o.id, ""); status != 200 || header.Get(contract.HeaderRateLimit) != "6000" {
+		t.Fatalf("after the decision: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
+	}
+	if h.limits.SubjectRate("alice") != 6000 {
+		t.Fatalf("alice is bucketed at %d", h.limits.SubjectRate("alice"))
+	}
+
+	// dave still reads the node's figure with alice's override beside
+	// it: the header is the subject's, not the table's last answer.
+	h.as(auth.Principal{Subject: "dave"})
+	if status, _, header = h.doHeader("GET", "/v1/repos/"+o.id, ""); status != 200 || header.Get(contract.HeaderRateLimit) != node {
+		t.Fatalf("dave beside the override: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))
 	}
 	h.as(auth.Principal{Subject: "alice"})
 }

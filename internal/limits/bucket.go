@@ -61,10 +61,15 @@ func NewBuckets(perMinute, burst int, idle time.Duration, now func() time.Time) 
 }
 
 // Allow takes one token for the subject. It reports whether the request
-// goes on and, when it does not, how long until the next token.
-func (b *Buckets) Allow(subject string) (bool, time.Duration) {
+// goes on, when it does not how long until the next token, and the
+// figure in force for this subject: the rate the authorizer named for
+// it when it has one, the table's own otherwise, and zero when the
+// limit is off. The figure travels back from here because Allow has
+// already read it under the lock, so RateLimit-Limit on every response
+// costs no second acquisition.
+func (b *Buckets) Allow(subject string) (bool, time.Duration, int) {
 	if b == nil || b.perMinute <= 0 {
-		return true, 0
+		return true, 0, 0
 	}
 	now := b.now()
 	b.mu.Lock()
@@ -82,10 +87,10 @@ func (b *Buckets) Allow(subject string) (bool, time.Duration) {
 	}
 	if e.tokens < 1 {
 		// The wait until one whole token has accrued.
-		return false, time.Duration((1 - e.tokens) / float64(perMinute) * float64(time.Minute))
+		return false, time.Duration((1 - e.tokens) / float64(perMinute) * float64(time.Minute)), perMinute
 	}
 	e.tokens--
-	return true, 0
+	return true, 0, perMinute
 }
 
 // SetRate records the rate the authorizer named for one subject (spec
@@ -165,18 +170,29 @@ func (b *Buckets) Len() int {
 // no route of the public listener.
 //
 // Every response it passes carries RateLimit-Limit, the figure in
-// force, so a client and the conformance suite of spec 021 read the
-// limit before they meet it rather than guessing at the default.
+// force for the effective subject of that request: the rate the
+// authorizer named for it where it named one, the node's
+// ORIGO_REQUESTS_PER_MINUTE otherwise, and no header at all when the
+// limit is off. Allow reads that figure under the lock it already
+// takes, so the header costs nothing extra. A client and the
+// conformance suite of spec 021 read the limit before they meet it
+// rather than guessing at the default.
+//
+// The bucket runs in front of the authorizer, so the first response of
+// a subject the authorizer names a rate for still reports the node's
+// figure: SetSubjectRate is called by the handler, after this
+// middleware has answered. Spec 012 records that window, which the
+// bucket itself has always had.
 func (l *Limits) Middleware(next http.Handler) http.Handler {
 	if l == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if l.buckets.perMinute > 0 {
-			w.Header().Set(contract.HeaderRateLimit, itoa(l.buckets.perMinute))
-		}
 		subject := auth.Subject(r.Context())
-		ok, retry := l.buckets.Allow(subject)
+		ok, retry, perMinute := l.buckets.Allow(subject)
+		if perMinute > 0 {
+			w.Header().Set(contract.HeaderRateLimit, itoa(perMinute))
+		}
 		if !ok {
 			l.Refused(LimitSubject)
 			l.logger.WarnContext(r.Context(), "subject rate limited", "path", r.URL.Path, "subject", subject, "retry_after_ms", retry.Milliseconds())

@@ -301,7 +301,7 @@ func (h *Handler) begin(w http.ResponseWriter, r *http.Request, name string, bud
 		contract.Write(w, http.StatusForbidden, contract.CodeRepoFrozen, map[string]any{"frozen_at": m.FrozenAt})
 		return nil, false
 	}
-	if allowed, retry := h.operations.Allow(m.ID); !allowed {
+	if allowed, retry, _ := h.operations.Allow(m.ID); !allowed {
 		h.limits.Refused(limits.LimitRepository)
 		h.logger.WarnContext(r.Context(), "repository rate limited", "repo", m.ID, "path", r.URL.Path,
 			"retry_after_ms", retry.Milliseconds())

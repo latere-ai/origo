@@ -79,6 +79,7 @@ type harnessConfig struct {
 	members       Members
 	sweepTick     time.Duration
 	logger        *slog.Logger
+	bucketed      bool
 }
 
 // withLogger sends the handler's lines to a logger of the test's own,
@@ -118,6 +119,15 @@ func withWrap(wrap func(wal.Store) wal.Store) harnessOption {
 // withGit runs every subprocess through the binary at path.
 func withGit(path string) harnessOption {
 	return func(c *harnessConfig) { c.gitBin = path }
+}
+
+// withBucketed puts limits.Middleware in front of the mux, the chain
+// cmd/origod builds behind the verifier, so a test reads what a real
+// response of the public listener carries: the per-subject token bucket
+// and RateLimit-Limit. It is off by default because every other test
+// would then spend a token per request.
+func withBucketed() harnessOption {
+	return func(c *harnessConfig) { c.bucketed = true }
 }
 
 // withReadTimeout lowers the read API's budget.
@@ -277,11 +287,15 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	httpgit.New(httpgit.Options{Cache: cache, Logger: logger, Guard: h.guard, Limits: h.limits}).Register(mux)
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
+	var app http.Handler = mux
+	if cfg.bucketed {
+		app = h.limits.Middleware(mux)
+	}
 	h.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		p := h.principal
 		h.mu.Unlock()
-		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+		app.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	}))
 	t.Cleanup(h.srv.Close)
 	return h
