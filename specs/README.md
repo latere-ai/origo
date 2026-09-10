@@ -83,7 +83,6 @@ each says which spec owns each deferred criterion), so waiting for
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing | 004, 007, 008, 009, 012, 019 |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
-| [023](023-web-interface.md) | Web interface: a separate service that browses an Origo installation | large | drafted | 003, 007, 009, 018 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | drafted | 002, 003, 007, 012, 013, 015, 016, 018 |
 | [025](025-mcp-server.md) | MCP server: Origo as tools an agent can drive | large | drafted | 003, 007, 009, 012, 020 |
 
@@ -123,7 +122,6 @@ flowchart BT
   S020[020 server-side ops]
   S021[021 conformance suite]
   S022[022 landing page]
-  S023[023 web interface]
   S024[024 SSH access]
   S025[025 MCP server]
   S002 --> S001
@@ -156,8 +154,6 @@ flowchart BT
   S021 --> S015
   S021 --> S019
   S022 --> S016
-  S023 --> S009
-  S023 --> S018
   S024 --> S018
   S025 --> S020
 ```
@@ -176,7 +172,6 @@ flowchart BT
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 built and at testing: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553, whose two remaining failures are 019's and 012's cases; both closed, and the suite passed whole in the dispatched run 34358421294, so what holds 020 at testing is 021's live run |
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
 | 10 | 024 | `git clone git@git.example.com:owner/slug.git` works beside the HTTPS form, on the same write path, with the keys held by the operator | drafted; every dependency is at `testing` or later, the surface is additive, and a node without `ORIGO_SSH_ADDR` is unchanged. What it needs outside Origo is a key resolution endpoint, which the stub of its own table serves for the stack and a file of fingerprints behind a bearer serves for a self-hoster |
-| 11 | 023 | A person browses the repositories they may see, the log, a diff, and a file, in a browser, without a second access-control model anywhere | drafted; the one spec of this deck built in another repository. It is a pure client of spec 009 and moves to `latere-ai/origo-web` on that repository's first commit. Two Origo additions it names are not in it and are not built: resolving `<owner>/<slug>` to an id on the JSON surface, without which the interface addresses repositories by id alone, and a directory question on the authorizer contract, which is where the list of repositories a subject may see actually lives |
 | 12 | 025 | An agent reads a file, searches history, opens a change, and pushes a commit through eleven tools instead of a clone or a hand-written HTTP call | drafted; every dependency is at `testing` or later and nothing in Origo changes for it. `cmd/origo-mcp` is a second binary of this repository, run over the protocol's stdio transport beside the agent; what it needs outside its own directory is a `release-archives` loop for a second binary (017) and a `depcheck` row (002) |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
@@ -870,12 +865,12 @@ name, or when a spec names something no spec defines.
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025 |
-| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 023, 025 |
+| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 023, 024 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
@@ -926,7 +921,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 013, 019 |
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
-| variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013, 023 |
+| variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | [017](017-release-and-versioning.md) | 002, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 010, 013, 018 |
@@ -1047,14 +1042,14 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | - |
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
-| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 023, 025 |
+| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 025 |
 | header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024 |
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
-| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 023, 024, 025 |
-| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 023, 025 |
+| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 024, 025 |
+| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 025 |
 | header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021, 024, 025 |
 | header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021, 024, 025 |
 | failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
