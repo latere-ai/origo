@@ -1,11 +1,22 @@
 # A voluntary disruption, such as a node drain, may never take the last
 # ready replica.
+#
+# A replica that is running and not ready is not one of them. Readiness
+# reports object storage and the disk, so an unreachable bucket (spec
+# 015) takes every replica out of the endpoint list while they all keep
+# running, and the default eviction policy, IfHealthyBudget, then refuses
+# to evict any of them, because it evicts a running unready pod only
+# while the budget is already met. A drain of those nodes would block on
+# the outage instead of proceeding through it. A node holds no state a
+# request cannot rebuild from the log (spec 001, invariant 3), so an
+# unready replica protects nothing and is always safe to evict.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: origod
 spec:
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app.kubernetes.io/name: origod
