@@ -71,14 +71,34 @@ changed by this spec's text.
 
 | Artifact | Where | Notes |
 |---|---|---|
-| `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.ci` over the shared runtime stage of spec 002: `debian:trixie-slim` pinned by digest, which ships git 2.47, above the 2.40 floor `origod check` (spec 018) enforces; signed with cosign keyless; an SPDX bill of materials and SLSA provenance attached as referrers |
-| `ghcr.io/latere-ai/origo-stubs:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.stubs` of spec 013, the stub issuer, authorizer, sink, and source in one image, published beside `origod` under the same tag and signed the same way, with the same bill of materials and provenance; pinned in the `kind` overlay of `deploy-<version>.tar.gz` beside `origod`, so spec 018's `install-release` job and an operator's first installation run the stub authorizer from a released, signed image and not from a checkout |
+| `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.ci` over the shared runtime stage of spec 002: `debian:trixie-slim` pinned by digest, which ships git 2.47, above the 2.40 floor `origod check` (spec 018) enforces; signed with cosign keyless; an SPDX bill of materials, which ships as a release asset and is attached to the image as a referrer only when the repository is public (see the attestation note below) |
+| `ghcr.io/latere-ai/origo-stubs:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.stubs` of spec 013, the stub issuer, authorizer, sink, and source in one image, published beside `origod` under the same tag and signed the same way, with its own bill of materials under the same attestation rule; pinned in the `kind` overlay of `deploy-<version>.tar.gz` beside `origod`, so spec 018's `install-release` job and an operator's first installation run the stub authorizer from a released, signed image and not from a checkout |
 | `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
 | `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository the harness pushes through the candidate image in the `kind` stack before `TestContract` and keeps, so the next release can prove it reads what this one wrote |
 | release notes | the GitHub release | the `CHANGELOG.md` section for the version, the smoke evidence, and the conformance run's timings (spec 021) |
 
 `GET /version` on a released node serves the tag as `version`.
+
+**The attestation rule.** `actions/attest-sbom` and
+`actions/attest-build-provenance` call GitHub's attestation API, which
+refuses a private repository on Latere's organization plan: "Feature
+not available for the latere-ai organization. To enable this feature,
+please upgrade the billing plan, or make this repository public." The
+four steps are therefore conditional on
+`!github.event.repository.private`, the field the push event's payload
+carries, and `release-verify`'s `gh attestation verify` on the same
+condition. No operator sets anything: the steps return by themselves
+the day the repository is made public. The condition reads `private`,
+not the plan, so upgrading the plan while the repository stays private
+leaves them skipped and this condition is what changes then.
+
+What is deferred is only the attachment of the two attestations to the
+image and their verification. The three SPDX documents are still built
+and still shipped as release assets, signed together with everything
+else through `checksums.txt`; cosign keyless signing calls sigstore
+rather than GitHub, so every image and `checksums.txt` still carries a
+signature an outside operator verifies against the workflow identity.
 
 ### The pipeline
 
@@ -96,7 +116,8 @@ makes. On a `v*` tag:
    as one multi-arch image; `cosign sign` keyless with the workflow's
    OIDC identity on both images and on `checksums.txt`; an SPDX bill of
    materials from the module graph and each image, attached with
-   `attest-sbom`; provenance with `attest-build-provenance`; the deploy
+   `attest-sbom` and provenance with `attest-build-provenance` when
+   the repository is public, by the attestation rule above; the deploy
    archive from `deploy/base` and `deploy/examples` with both images
    pinned; and the two `linux/amd64` images as `docker save` tarballs
    in the artifact `candidate-images`, the shape spec 013's `build`
@@ -225,10 +246,14 @@ workflow identity, which is what an outside operator can verify.
 ## Acceptance criteria
 
 - A tag produces every artifact in the table for both architectures,
-  `cosign verify` and `gh attestation verify` accept the image,
-  `sha256sum -c checksums.txt` passes on the binaries, and the release
-  body equals the `CHANGELOG.md` section (proposed: the
-  `release-verify` job in `release.yml`).
+  `cosign verify` accepts the images, `sha256sum -c checksums.txt`
+  passes on the binaries, and the release body equals the
+  `CHANGELOG.md` section (proposed: the `release-verify` job in
+  `release.yml`). `gh attestation verify` accepts the images on a tag
+  cut from a public repository; while the repository is private the
+  attestation rule above skips both the attachment and this check, and
+  this clause of the criterion is the one part a private release does
+  not prove.
 - A tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every
   artifact and skips the deploy and smoke step, and the same tag with
   the variable set runs it: a release checklist item above, done by a
@@ -284,7 +309,8 @@ runs, so its status is not a claim about artifacts that do not exist.
 | `tools/smoke/release.sh` passes against a stub whose `/readyz` answers `ok` and `/version` serves `TAG`, with standard input closed, and fails naming the mismatch | `tools/smoke/release_test.sh`, run by the `test` gate through `TestReleaseSmoke` | passing |
 | `main.version` no longer exists and a binary linked with `internal/version.Version` serves and prints it | `cmd/origod`, `TestVersionHasOneSource` | passing |
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
-| a tag produces every artifact for both architectures, `cosign verify` and `gh attestation verify` accept the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | pending the first tag |
+| a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | pending the first tag |
+| `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | deferred while the repository is private: GitHub's attestation API refuses a private repository on this plan, so nothing is attached and nothing is verified. The repository going public, or the condition being changed after a plan upgrade, is what closes it |
 | a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step | the release checklist, done by a maintainer and recorded in the release notes | pending the first tag |
 
 ### What only a real release proves
@@ -292,7 +318,8 @@ runs, so its status is not a claim about artifacts that do not exist.
 | Pending | Closed by |
 |---|---|
 | every artifact of the table for `linux/amd64` and `linux/arm64`, the signatures, the checksums, and the body against the changelog | the `release-verify` job of the first tag |
-| the bill of materials and the provenance of a published image, spec 016's supply-chain row | the `build` job of the first tag, verified by `release-verify` in the same run |
+| the bill of materials as a release asset, spec 016's supply-chain row in its shipping half | the `build` job of the first tag: the three SPDX documents are uploaded with the other assets |
+| the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on; no tag closes it while the repository is private |
 | the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set |
 | the fork tag with `ORIGO_RELEASE_DEPLOY` unset | a maintainer, recorded in the release notes |
 | `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag |
@@ -300,10 +327,25 @@ runs, so its status is not a claim about artifacts that do not exist.
 
 ### Divergences
 
-- Step 6 of the pipeline, `install-release`, is not in `release.yml`.
-  The Design says spec 018 owns it, 018 is `validated` and unbuilt, and
-  a job that applies a document that does not exist would fail every
-  tag. `release.yml` names the gap in the comment where the job goes.
+- Step 6 of the pipeline, `install-release`, was left out of
+  `release.yml` at first: the Design says spec 018 owns it, 018 was
+  `validated` and unbuilt, and a job that applies a document that does
+  not exist would fail every tag. Spec 018 built `docs/install.md` and
+  added the job on 2026-09-09, so `release.yml` now carries all seven
+  steps and the gap comment is gone.
+
+- The four `attest-*` steps and `release-verify`'s
+  `gh attestation verify` are conditional on
+  `!github.event.repository.private`, which the Design's attestation
+  rule states. The v0.1.0 tag of 2026-09-10 failed in the `build` job
+  at the first `attest-sbom` step with "Feature not available for the
+  latere-ai organization", after both images were already pushed and
+  before the signing step, so no later job ran and no release was
+  published. The condition is the fix the user chose over making the
+  repository public or upgrading the plan; both remaining options stay
+  open and either one turns the steps back on, the first by itself.
+  Each half logs a `::notice::` naming the reason, so a run of a
+  private release says in its own log which check did not run.
 - The images the `conformance` job runs are pulled back from the
   registry rather than built a second time, so the stack tests the
   published bytes. The spec's step 1 says the `build` job uploads the
