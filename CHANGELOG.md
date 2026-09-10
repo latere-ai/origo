@@ -10,8 +10,6 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
-## v0.1.1 - 2026-09-10
-
 - The install page now gets you from nothing to a pushed commit on your own
   cluster, not only on the throwaway one: it says how to obtain a token from
   your own OIDC issuer and what claims Origo reads, and it says that your
