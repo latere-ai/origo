@@ -1,6 +1,6 @@
 self-hosted-runner:
-  # Declared so actionlint accepts the label if a workflow ever asks for the
-  # organization's own runner. Every job in this repository runs on
-  # ubuntu-latest, so a fork needs nothing set up.
+  # Declared so actionlint accepts the label where a job asks for the
+  # organization's own Linux runner. Every job defined in this repository
+  # runs on ubuntu-latest, so a fork needs no runner set up.
   labels:
     - linux-vm
