@@ -264,7 +264,10 @@ func TestAdministrationEvents(t *testing.T) {
 
 	// A repeated DELETE of a deleted repository is one event, because
 	// the id is derived from the repository, the kind, and at, and a
-	// second DELETE does not move deleted_at.
+	// second DELETE does not move deleted_at. Delivery is at least
+	// once (spec 008), so the count to assert on is the number of
+	// distinct ids, not the number of deliveries: a third DELETE that
+	// moved deleted_at would show up here as a third id.
 	now.Add(time.Minute)
 	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
 		t.Fatal("second delete")
@@ -276,7 +279,11 @@ func TestAdministrationEvents(t *testing.T) {
 		t.Fatal("third delete")
 	}
 	time.Sleep(100 * time.Millisecond)
-	if n := len(s.Deliveries(repoA, KindDeleted)); n != 2 {
-		t.Fatalf("%d deleted events, want 2", n)
+	ids := map[string]bool{}
+	for _, d := range s.Deliveries(repoA, KindDeleted) {
+		ids[d.ID] = true
+	}
+	if len(ids) != 2 {
+		t.Fatalf("%d deleted events, want 2", len(ids))
 	}
 }
