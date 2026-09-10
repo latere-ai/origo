@@ -5,7 +5,7 @@ for one. You will hear back within three business days, and a fix for a
 high severity issue ships within thirty days. Credit in the release notes
 on request.
 
-Fixes go to the two most recent minor release series. v0.1.1 is the
+Fixes go to the two most recent minor release series. v0.1.2 is the
 current release.
 
 What Origo protects, against whom, and how each threat is answered is
