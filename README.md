@@ -4,7 +4,9 @@
 write-ahead log in S3 compatible object storage. Repositories on disk are
 only a cache. There is no database, no leader, and no consensus cluster.
 
-Origo runs where you install it. There is no hosted Origo to sign up for.
+Latere runs Origo at [git.latere.ai](https://git.latere.ai) for its own
+platform. Anyone with a Kubernetes cluster and an S3 compatible bucket can
+run their own.
 
 [![CI](https://github.com/latere-ai/origo/actions/workflows/verify.yml/badge.svg)](https://github.com/latere-ai/origo/actions/workflows/verify.yml)
 [![Release](https://img.shields.io/github/v/release/latere-ai/origo)](https://github.com/latere-ai/origo/releases)
