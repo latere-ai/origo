@@ -1,0 +1,132 @@
+{{define "title"}}Driving this git server from an agent{{end}}
+{{define "main"}}
+<main class="doc stack">
+  <p class="crumbs"><a href="/">origo</a> / <span class="here">docs / agents</span></p>
+
+  <nav class="toc" aria-label="On this page">
+    <span class="label">On this page</span>
+    <a href="#token">1 · Get a token</a>
+    <a href="#base">2 · Address and credential</a>
+    <a href="#read">3 · What an agent can read</a>
+    <a href="#limits">4 · Rate limits</a>
+    <a href="#errors">5 · Errors</a>
+    <a href="#mcp">6 · A tool server for agents</a>
+  </nav>
+
+  <div class="stack">
+    <h1>Driving this git server from an agent</h1>
+    <p class="lead">There is no SDK. An agent talks to this server with git and HTTP, using a token you mint by hand. Everything it needs fits on this page.</p>
+
+    <section id="token" class="stack">
+      <h2>1 · Get a token</h2>
+      <p>Go to <a href="/tokens">agent tokens</a>, name the one repository the agent works in, choose <strong>read</strong> unless it must push, and take the shortest lifetime that covers the job. The token is shown once and is stored nowhere, so copy it there and then.</p>
+      <p>Put it in the agent's environment as <code>ORIGO_TOKEN</code>. Never in a repository, never in a prompt.</p>
+      <p>Minting a token needs administrative access to that repository, and it is something a person does on a screen. An agent cannot mint one: its own token carries no authority to, and there is no API that would let it.</p>
+      <p>A token cannot be withdrawn. Nothing is written when one is minted, so there is nothing to delete and no list to show you. The lifetime is the whole of the protection, and the longest this server will sign is {{.MaxTTL}}.</p>
+    </section>
+
+    <section id="base" class="stack">
+      <h2>2 · Address and credential</h2>
+      <p>Two addresses, and they are not the same one. <strong>These screens are for a browser</strong> and need a browser sign-in; a token opens none of them. <strong>The git server is what an agent talks to</strong>, and it is where the token works.</p>
+      <pre class="scroller sample"># the git server
+{{.APIBase}}
+
+# clone, with the token as the password
+git clone https://x-access-token:$ORIGO_TOKEN@{{.CloneHost}}/&lt;owner&gt;/&lt;name&gt;.git
+
+# read
+curl -H "Authorization: Bearer $ORIGO_TOKEN" \
+  {{.RepoRead}}</pre>
+      <p>Every API address starts with <code>/v1/repos/</code> and names a repository by its <strong>identifier</strong>, not by owner and name. The identifier is what survives a rename; it is what these screens put in their own addresses, and it is what your administrator hands you. Owner and name work for cloning and fetching over git, and nowhere else.</p>
+      <p>Both credential forms are accepted: <code>Authorization: Bearer &lt;token&gt;</code>, and ordinary HTTP basic auth with the token as the password and any username, which is the form git itself sends.</p>
+    </section>
+
+    <section id="read" class="stack">
+      <h2>3 · What an agent can read</h2>
+      <p>Reads are JSON, except three that are the bytes themselves: a comparison is a unified diff, a file is its own content, and an archive is a gzipped tar.</p>
+      <div class="scroller">
+        <table class="stackable">
+          <caption>Every read an agent can make</caption>
+          <thead>
+            <tr>
+              <th scope="col">What you want</th>
+              <th scope="col">Address, after <code>/v1/repos/&lt;id&gt;</code></th>
+              <th scope="col">What comes back</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">the repository</th><td data-label="Address" class="path">(nothing)</td><td data-label="Answer">owner, name, default branch, head, size, when it was last pushed</td></tr>
+            <tr><th scope="row">branches and tags</th><td data-label="Address" class="path">/refs?prefix=refs/heads/</td><td data-label="Answer">name, object id, and a tag's target; at most 10,000</td></tr>
+            <tr><th scope="row">the commit log</th><td data-label="Address" class="path">/commits?ref=&amp;path=&amp;limit=&amp;cursor=</td><td data-label="Answer">newest first, 50 a page and at most 200; page on with the cursor</td></tr>
+            <tr><th scope="row">one commit</th><td data-label="Address" class="path">/commits/&lt;sha&gt;</td><td data-label="Answer">its message, parents, trailers, and file and line counts</td></tr>
+            <tr><th scope="row">a comparison</th><td data-label="Address" class="path">/compare/&lt;base&gt;...&lt;head&gt;?path=</td><td data-label="Answer">a unified diff, cut at 1 MiB on a file boundary</td></tr>
+            <tr><th scope="row">a directory</th><td data-label="Address" class="path">/tree/&lt;sha&gt;?path=&amp;cursor=</td><td data-label="Answer">one level, 5,000 entries a page</td></tr>
+            <tr><th scope="row">a file</th><td data-label="Address" class="path">/blob/&lt;sha&gt;</td><td data-label="Answer">the bytes; ask for a range, and you must past 50 MiB</td></tr>
+            <tr><th scope="row">a snapshot</th><td data-label="Address" class="path">/archive/&lt;sha&gt;.tar.gz</td><td data-label="Answer">the whole tree at that commit</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A file and a directory are addressed by <strong>object id</strong>, not by path: resolve a path through the directory listing first. Every answer names the commit it resolved to in <code>Origo-Commit</code>, so an agent quoting a file can always produce an exact reference rather than a branch name. An answer the server had to cut says so in <code>Origo-Truncated</code>, and it is the only truncation an agent will meet: the line budget that collapses a large file on the commit screens here is this interface's, for a reader, and it never touches what the API sends.</p>
+      <p>Reads are questions about one repository at a time. There is no way to list the repositories you may see, no search across files, and no blame.</p>
+    </section>
+
+    <section id="limits" class="stack">
+      <h2>4 · Rate limits</h2>
+      <p>One figure, in requests a minute, for each person or agent, counted per server. It is 600 by default, and an installation can set a different figure for a particular caller. There are no tiers: a token is held to the figure of whoever minted it.</p>
+      <p>Every answer carries the figure in force, so an agent can pace itself rather than discover the limit by hitting it:</p>
+      <pre class="scroller sample">RateLimit-Limit: 600</pre>
+      <p>Past it the answer is <code>429</code> with <code>Retry-After</code> in whole seconds. It is a real number: retrying sooner is refused again and buys nothing. Waiting exactly that long is the whole of the correct behaviour, with no backoff on top.</p>
+      <p>Two other refusals an agent can meet under load, both also <code>429</code>: the server bounds how much git work it runs at once, and a request waits a few seconds for a slot before it is turned away. Retry that one too.</p>
+    </section>
+
+    <section id="errors" class="stack">
+      <h2>5 · Errors</h2>
+      <p>Every refusal is the same object. <code>code</code> is stable and safe to branch on; <code>message</code> is one sentence for a person; <code>details</code> varies by code and says which reference, which limit, or which reason.</p>
+      <pre class="scroller sample">{
+  "error": {
+    "code": "forbidden",
+    "message": "You do not have permission to do this.",
+    "details": { "reason": "token scope does not allow this action" }
+  }
+}</pre>
+      <div class="scroller">
+        <table class="stackable">
+          <caption>The refusals an agent meets, and what to do about each</caption>
+          <thead>
+            <tr>
+              <th scope="col">Status</th>
+              <th scope="col">code</th>
+              <th scope="col">Does waiting help?</th>
+              <th scope="col">What the agent should do</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">400</th><td data-label="code" class="refname">invalid_request</td><td data-label="Waiting">no</td><td data-label="Do">The request is wrong. Fix it or stop; do not repeat it.</td></tr>
+            <tr><th scope="row">401</th><td data-label="code" class="refname">unauthenticated</td><td data-label="Waiting">no</td><td data-label="Do">The token is missing, malformed, or past its expiry. Stop and tell the person: only a person can mint another.</td></tr>
+            <tr><th scope="row">403</th><td data-label="code" class="refname">forbidden</td><td data-label="Waiting">no</td><td data-label="Do">Stop. Report the reason in <code>details</code>; a scope too narrow and another repository both land here.</td></tr>
+            <tr><th scope="row">404</th><td data-label="code" class="refname">repo_not_found</td><td data-label="Waiting">no</td><td data-label="Do">The repository is not there, or you may not see it. The server will not say which.</td></tr>
+            <tr><th scope="row">404</th><td data-label="code" class="refname">ref_not_found</td><td data-label="Waiting">no</td><td data-label="Do">The reference or object id is wrong, or it has been collected.</td></tr>
+            <tr><th scope="row">409</th><td data-label="code" class="refname">non_fast_forward</td><td data-label="Waiting">once</td><td data-label="Do">Fetch, rebase, push once more. Then stop.</td></tr>
+            <tr><th scope="row">413</th><td data-label="code" class="refname">over_quota</td><td data-label="Waiting">no</td><td data-label="Do">The repository is at its storage limit. Stop and tell the person.</td></tr>
+            <tr><th scope="row">413</th><td data-label="code" class="refname">blob_too_large</td><td data-label="Waiting">no</td><td data-label="Do">Ask for the file in ranges of at most 50 MiB.</td></tr>
+            <tr><th scope="row">429</th><td data-label="code" class="refname">rate_limited</td><td data-label="Waiting">yes</td><td data-label="Do">Sleep exactly <code>Retry-After</code>. No backoff needed.</td></tr>
+            <tr><th scope="row">503</th><td data-label="code" class="refname">storage_unavailable</td><td data-label="Waiting">yes</td><td data-label="Do">Nothing was lost. Retry after the header, or in a few minutes.</td></tr>
+            <tr><th scope="row">503</th><td data-label="code" class="refname">authorizer_unavailable</td><td data-label="Waiting">yes</td><td data-label="Do">Permissions cannot be checked right now. Retry in a few minutes.</td></tr>
+            <tr><th scope="row">504</th><td data-label="code" class="refname">operation_timeout</td><td data-label="Waiting">no</td><td data-label="Do">The operation took too long and changed nothing. Ask for less.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Most of these are terminal, and that is the point. An agent that retries an expired token learns nothing and spends the budget its replacement will need. No field in the document says whether waiting helps; the table above is the rule, and the refusals worth waiting on carry <code>Retry-After</code>.</p>
+      <p>Every answer, refusal or not, carries <code>Origo-Contract</code>. Its value is the version of everything on this page; it changes only when something here stops being true.</p>
+    </section>
+
+    <section id="mcp" class="stack">
+      <h2>6 · A tool server for agents</h2>
+      <p class="notice"><strong>Planned, not built.</strong> There is nothing to install and nothing to configure yet. This section says what is intended so you can tell it apart from what works today, which is everything above it.</p>
+      <p>The intention is a small separate program you run beside an agent, which speaks the Model Context Protocol over standard input and output and turns the reads above into tools an agent can call by name. It would take a token of exactly the kind you mint on this site, hold to the same rate limit, and return the same refusals, so it can do nothing a plain HTTP agent cannot. It is a shape, not a capability.</p>
+      <p>One thing about it is settled: there is no tool for minting a token, and there will not be one. Creating a credential stays a decision a person makes.</p>
+      <p>Until it exists, an agent uses git and the reads in section 3, which are the same thing without the wrapper.</p>
+    </section>
+  </div>
+</main>
+{{end}}

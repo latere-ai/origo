@@ -21,7 +21,7 @@ var assetFS embed.FS
 // file defines "title" and "main" and nothing else.
 var pageNames = []string{
 	"home", "signin", "overview", "refs", "log", "commit",
-	"tree", "blob", "keys", "message", "compare", "tokens", "token",
+	"tree", "blob", "keys", "message", "compare", "tokens", "token", "agents",
 }
 
 var pages = func() map[string]*template.Template {
