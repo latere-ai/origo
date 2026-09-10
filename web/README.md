@@ -7,6 +7,10 @@ tree, a file. In the spirit of cgit and sourcehut.
 No comments, no reviews, no stars, no forks, no issues. It is a window onto a
 git repository for people who already know which repository they want.
 
+It has one screen that is not a read: a form that asks the installation for
+a token bound to one repository, which is how an agent gets a credential.
+The token is shown once and kept nowhere.
+
 ## What it is
 
 One binary. It serves HTML, and it is a client of Origo's read API and
@@ -33,6 +37,8 @@ follow your system setting.
 | the file tree | `/r/{id}/tree/{path}` |
 | a file, with line anchors | `/r/{id}/blob/{path}` |
 | the bytes of a file | `/r/{id}/raw/{path}` |
+| agent tokens: mint one, and see it once | `/tokens` |
+| how to drive the installation from an agent | `/docs/agents` |
 
 A branch or a tag is chosen with `?ref=`, which is what the selector on the
 overview submits, so any screen at any revision is a URL you can send to
@@ -104,7 +110,7 @@ that is a difference Origo deliberately refuses to make.
 
 ## Limits
 
-Three things are missing because no component can answer them yet, not
+Four things are missing because no component can answer them yet, not
 because they were left out.
 
 - **A list of your repositories.** Origo answers questions about one
@@ -119,6 +125,14 @@ because they were left out.
   only reads, and no component owns a place to add or remove one. The screen
   and its navigation entry appear only when `ORIGOWEB_KEYS_URL` names a
   surface, which is never by default.
+
+- **A list of your agent tokens, and a way to revoke one.** Origo signs a
+  token rather than recording it, so nothing is written when one is minted:
+  there is nothing to list and nothing to withdraw, and a short lifetime is
+  what bounds a leak instead. The token screen says so in the reader's own
+  words and offers the form that works. The table is written against a
+  capability, so an installation that grows a record of its tokens shows it
+  here with no change to this interface.
 
 Two more, on purpose: there is no syntax highlighting, and no blame. Neither
 is needed to read a diff, and both are a large dependency over file content
