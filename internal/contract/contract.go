@@ -66,6 +66,7 @@ const (
 	CodeImportNotFound        = "import_not_found"       // spec 019
 	CodeMergeConflict         = "merge_conflict"         // spec 020
 	CodeInvalidChange         = "invalid_change"         // spec 020
+	CodeDirectoryUnsupported  = "directory_unsupported"  // spec 026
 )
 
 // sentences is the code table: one user sentence per code, the text of
@@ -96,6 +97,7 @@ var sentences = map[string]string{
 	CodeImportNotFound:        "No import has been started for this repository.",
 	CodeMergeConflict:         "The change conflicts with the branch. Resolve it in a clone and push.",
 	CodeInvalidChange:         "A change in the request is not valid.",
+	CodeDirectoryUnsupported:  "This installation does not list repositories.",
 }
 
 // statuses is the other half of the code table: every HTTP status the
@@ -132,6 +134,7 @@ var statuses = map[string][]int{
 	CodeImportNotFound:        {http.StatusNotFound},
 	CodeMergeConflict:         {http.StatusConflict},
 	CodeInvalidChange:         {http.StatusBadRequest},
+	CodeDirectoryUnsupported:  {http.StatusNotImplemented},
 }
 
 // Sentence is the one user sentence of a code. A code without a sentence

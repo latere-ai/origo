@@ -504,6 +504,9 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 		{"POST", "/acme/app.git/git-upload-pack"},
 		{"POST", "/acme/app.git/git-receive-pack"},
 		{"POST", "/v1/repos"},
+		// The collection route of spec 026, in both modes.
+		{"GET", "/v1/repos"},
+		{"GET", "/v1/repos?owner=acme&slug=app"},
 		{"GET", "/v1/repos/" + repoA},
 		{"PATCH", "/v1/repos/" + repoA},
 		{"DELETE", "/v1/repos/" + repoA},

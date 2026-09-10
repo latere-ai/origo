@@ -51,6 +51,7 @@ var producers = map[string]string{
 	CodeImportNotFound:        "019",
 	CodeMergeConflict:         "020",
 	CodeInvalidChange:         "020",
+	CodeDirectoryUnsupported:  "026",
 }
 
 // moduleRoot is the checkout, resolved from this file with
@@ -383,8 +384,8 @@ func TestEveryCodeHasOneSentence(t *testing.T) {
 			t.Errorf("producers names %s, which Codes does not list", code)
 		}
 	}
-	if len(codes) != 24 {
-		t.Errorf("the table holds %d codes, spec 021 counts 24", len(codes))
+	if len(codes) != 25 {
+		t.Errorf("the table holds %d codes, spec 021 counts 25", len(codes))
 	}
 	if got := Statuses(CodeRepoFrozen); !slices.Equal(got, []int{403, 409}) {
 		t.Errorf("repo_frozen statuses %v", got)

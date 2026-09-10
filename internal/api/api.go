@@ -187,6 +187,7 @@ func (h *Handler) Egress() *Egress { return h.egress }
 // Register mounts the routes.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/repos", h.create)
+	mux.HandleFunc("GET /v1/repos", h.collection)
 	mux.HandleFunc("GET /v1/repos/{id}", h.get)
 	mux.HandleFunc("PATCH /v1/repos/{id}", h.patch)
 	mux.HandleFunc("DELETE /v1/repos/{id}", h.delete)
@@ -339,6 +340,19 @@ func (h *Handler) loadDecision(w http.ResponseWriter, r *http.Request, action au
 	if !ok {
 		return nil, nil, auth.Decision{}, false
 	}
+	m, ix, ok := h.read(w, r, id, allowDeleted)
+	if !ok {
+		return nil, nil, auth.Decision{}, false
+	}
+	return m, ix, d, true
+}
+
+// read is the metadata and the newest index of an authorized id, with
+// the refusals of spec 019 and spec 003 written. It is the half of
+// loadDecision after the allow, shared with the name mode of the
+// collection route (spec 026), whose id came from the name index rather
+// than from the path.
+func (h *Handler) read(w http.ResponseWriter, r *http.Request, id string, allowDeleted bool) (*wal.Meta, *wal.Index, bool) {
 	m, err := h.log.ReadMeta(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
@@ -346,14 +360,14 @@ func (h *Handler) loadDecision(w http.ResponseWriter, r *http.Request, action au
 		} else {
 			h.storageError(w, r, err)
 		}
-		return nil, nil, auth.Decision{}, false
+		return nil, nil, false
 	}
 	// The purge left this meta as a tombstone (spec 019): every object
 	// under the prefix is gone, so the answer is 410 rather than the
 	// 404 the missing index would otherwise produce.
 	if m.PurgedAt != nil {
 		gone(w, m)
-		return nil, nil, auth.Decision{}, false
+		return nil, nil, false
 	}
 	ix, _, err := h.log.Newest(r.Context(), id, 0, false)
 	if err != nil {
@@ -362,13 +376,13 @@ func (h *Handler) loadDecision(w http.ResponseWriter, r *http.Request, action au
 		} else {
 			h.storageError(w, r, err)
 		}
-		return nil, nil, auth.Decision{}, false
+		return nil, nil, false
 	}
 	if ix.DeletedAt != nil && !allowDeleted {
 		notFound(w, id)
-		return nil, nil, auth.Decision{}, false
+		return nil, nil, false
 	}
-	return m, ix, d, true
+	return m, ix, true
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
