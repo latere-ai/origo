@@ -834,7 +834,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_wal_commit_retries_total` | [011](011-observability.md) | 004 |
 | metric | `origo_wal_commits_total` | [011](011-observability.md) | 004 |
 | metric | `origo_wal_entry_bytes_total` | [011](011-observability.md) | - |
-| metric | `origo_wal_head_check_seconds` | [011](011-observability.md) | 004, 005 |
+| metric | `origo_wal_head_check_seconds` | [011](011-observability.md) | 004, 005, 015 |
 | event | `compacted` | [019](019-repository-administration.md) | 006 |
 | event | `deleted` | [019](019-repository-administration.md) | - |
 | event | `frozen` | [019](019-repository-administration.md) | - |

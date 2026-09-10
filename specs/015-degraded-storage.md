@@ -533,9 +533,10 @@ one, which no delta of that counter can prove. Every `Head` the process
 makes lands on it, the marker of an event delivered after the push that
 precedes the scenario and the events repair sweep included, and a 30
 second cut leaves node 1 with recovery work a 7 second one did not. The
-assertion is now on `origo_wal_head_check_seconds_count{result="error"}`,
-which only `Log.HasIndex` records, so it counts the currency check the
-request made and nothing else; the operations delta is logged beside it.
+assertion is now on the count of `origo_wal_head_check_seconds` under
+`result="error"`, which only `Log.HasIndex` records, so it counts the
+currency check the request made and nothing else; the operations delta
+is logged beside it.
 That one call of three attempts counts one failure stays the
 `internal/wal` criterion it always was. The partial scenario's delta of
 `origo_log_integrity_errors_total` has the same shape and is left as it
