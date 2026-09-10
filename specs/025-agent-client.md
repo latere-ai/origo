@@ -140,6 +140,15 @@ inherits the routes, the paging and the refusals without inheriting a
 single formatting decision. That is the whole reason the boundary is
 drawn where it is.
 
+`origoclient`'s transport is the standard one, cloned so the command's
+connection settings are its own, and it carries no OpenTelemetry
+transport. That is a decision and is recorded here rather than left to
+be read as an omission: nothing upstream of a command on a laptop holds
+a trace to continue, no exporter is configured in that process, and
+`otelhttp` would pull `go.opentelemetry.io` into a binary whose
+`depcheck` row states it reaches no OpenTelemetry package. The node's own
+outbound calls are instrumented and unaffected.
+
 ### Configuration
 
 Four variables and no configuration file. `origod` reads none of them,
