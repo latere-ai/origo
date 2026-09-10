@@ -526,6 +526,11 @@ jobs:
   install-release:
     name: install from the release artifacts
     needs: publish
+    # publish runs under always(), so its own gate is explicit here too: a
+    # job that leans on the implicit success() is skipped whenever any job
+    # above it in the graph is, and deploy is skipped on every repository
+    # that sets no ORIGO_RELEASE_DEPLOY.
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The repository is private, so pulling the published images needs a
@@ -596,6 +601,8 @@ jobs:
   release-verify:
     name: verify the published release
     needs: publish
+    # Explicit for the same reason as install-release above.
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Reads only. The repository is private, so the registry and the
