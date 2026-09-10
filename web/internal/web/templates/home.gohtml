@@ -1,0 +1,68 @@
+{{define "title"}}Repositories{{end}}
+{{define "main"}}
+<main class="stack">
+  <h1>Repositories</h1>
+  {{template "stale" .Stale}}
+  {{- if .Directory}}
+    {{- if .Repos}}
+    <div class="panel flush">
+      <div class="scroller">
+        <table class="stackable">
+          <caption>Repositories you can read</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Owner</th>
+              <th scope="col">Last pushed</th>
+              <th scope="col">Size</th>
+              <th scope="col">Default branch</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{- range .Repos}}
+            <tr>
+              <th scope="row" class="path"><a href="{{.URL}}">{{.Name}}</a></th>
+              <td data-label="Owner" class="path">{{.Owner}}</td>
+              <td data-label="Last pushed" class="when"><span title="{{.PushedExact}}">{{.Pushed}}</span></td>
+              <td data-label="Size" class="size">{{.Size}}</td>
+              <td data-label="Default branch" class="refname">{{.DefaultBranch}}</td>
+            </tr>
+          {{- end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{- if .Next}}<nav class="pager" aria-label="Pages"><span class="inert">Newer</span><a href="/?cursor={{.Next}}">More repositories</a></nav>{{end}}
+    {{- else}}
+    <div class="panel"><p class="empty">There is nothing here you can read yet.</p></div>
+    {{- end}}
+  {{- else}}
+  <div class="panel stack">
+    <p class="notice"><strong>This installation does not list repositories.</strong>
+    The git server answers questions about one repository at a time and has no way to enumerate the ones you may see, so this page cannot show you a directory. Open a repository by its identifier, and the ones you open are kept below for this session.</p>
+    <form class="inline-form" action="/open" method="get">
+      <div class="field">
+        <label for="id">Repository identifier</label>
+        <input id="id" name="id" class="mono" size="40" placeholder="the identifier your administrator gave you" required>
+      </div>
+      <button type="submit">Open</button>
+    </form>
+  </div>
+  {{- end}}
+  {{- if .Recent}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Opened in this session</caption>
+        <thead><tr><th scope="col">Repository</th></tr></thead>
+        <tbody>
+        {{- range .Recent}}
+          <tr><th scope="row" class="path"><a href="{{.URL}}">{{.Name}}</a></th></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{- end}}
+</main>
+{{end}}

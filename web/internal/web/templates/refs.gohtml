@@ -1,0 +1,49 @@
+{{define "title"}}References{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <h1>Branches and tags</h1>
+  {{template "stale" .Stale}}
+  {{- if .Truncated}}
+  <p class="notice"><strong>This list is cut short.</strong> The repository has more references than the installation returns in one answer.</p>
+  {{- end}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Branches</caption>
+        <thead><tr><th scope="col">Branch</th><th scope="col">Target</th><th scope="col">Browse</th></tr></thead>
+        <tbody>
+        {{- range .Branches}}
+          <tr>
+            <th scope="row" class="refname">{{.Short}}</th>
+            <td data-label="Target" class="sha"><a href="{{.Commit}}">{{.Target}}</a></td>
+            <td data-label="Browse"><a href="{{.Tree}}">tree</a> · <a href="{{.Log}}">log</a></td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="3" class="empty">This repository has no branches.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel flush" id="tags">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Tags</caption>
+        <thead><tr><th scope="col">Tag</th><th scope="col">Target</th><th scope="col">Browse</th></tr></thead>
+        <tbody>
+        {{- range .Tags}}
+          <tr>
+            <th scope="row" class="refname">{{.Short}}</th>
+            <td data-label="Target" class="sha"><a href="{{.Commit}}">{{.Target}}</a></td>
+            <td data-label="Browse"><a href="{{.Tree}}">tree</a> · <a href="{{.Log}}">log</a></td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="3" class="empty">This repository has no tags.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+{{end}}

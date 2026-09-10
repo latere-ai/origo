@@ -1,0 +1,116 @@
+{{define "title"}}{{.Repo.Owner}}/{{.Repo.Slug}}{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <div class="spread">
+    <div class="stack">
+      <h1 class="path">{{.Repo.Owner}} <span class="muted">/</span> {{.Repo.Slug}}</h1>
+      <p class="meta">
+        <a href="{{.Repo.URL}}/log{{.Repo.RefQuery}}">commit log</a> ·
+        <a href="{{.Repo.URL}}/refs">{{.Branches}} branches</a> ·
+        <a href="{{.Repo.URL}}/refs#tags">{{.Tags}} tags</a> ·
+        <span class="size">{{.Repo.Size}}</span>
+        {{- if .Repo.Pushed}} · last pushed <span title="{{.Repo.PushedExact}}">{{.Repo.Pushed}}</span>{{end}}
+        {{- if .Repo.Frozen}} · <strong>frozen: this repository accepts no pushes</strong>{{end}}
+      </p>
+    </div>
+  </div>
+  {{template "stale" .Stale}}
+
+  <div class="panel stack">
+    <h2>Clone</h2>
+    <div class="field">
+      <label for="clone-https">HTTPS</label>
+      <input id="clone-https" class="mono" readonly size="52" value="{{.CloneHTTPS}}">
+    </div>
+    {{- if .CloneSSH}}
+    <div class="field">
+      <label for="clone-ssh">SSH</label>
+      <input id="clone-ssh" class="mono" readonly size="52" value="{{.CloneSSH}}">
+    </div>
+    {{- end}}
+    {{- if .ArchiveURL}}
+    <p class="meta"><a href="{{.ArchiveURL}}">Download this revision as a tar.gz</a></p>
+    {{- end}}
+  </div>
+
+  {{- if .Empty}}
+  <div class="panel">
+    <p class="empty">This repository has no commits yet. Push one with the clone address above and it will appear here.</p>
+  </div>
+  {{- else}}
+
+  <div class="panel stack">
+    <h2>Reference</h2>
+    {{- if .Selector.Empty}}
+    <p class="meta">This repository has no branches or tags.</p>
+    {{- else}}
+    <form class="inline-form" action="{{.Selector.Action}}" method="get">
+      <div class="field">
+        <label for="ref">Branch or tag</label>
+        <select id="ref" name="ref">
+          {{- range .Selector.Branches}}<option value="{{.Short}}"{{if eq .Short $.Selector.Ref}} selected{{end}}>{{.Short}}</option>{{end}}
+          {{- range .Selector.Tags}}<option value="{{.Short}}"{{if eq .Short $.Selector.Ref}} selected{{end}}>{{.Short}} (tag)</option>{{end}}
+        </select>
+      </div>
+      <button type="submit">Go</button>
+      <a href="{{.Repo.URL}}/refs">all references</a>
+    </form>
+    {{- end}}
+  </div>
+
+  {{- with .Last}}
+  <div class="panel stack">
+    <h2>Last commit</h2>
+    <p><a class="sha" href="{{.URL}}">{{.Short}}</a> {{.Subject}}</p>
+    <p class="meta">{{.Author}} · <span title="{{.WhenExact}}">{{.When}}</span></p>
+  </div>
+  {{- end}}
+
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Files at {{.Repo.Ref}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Type</th>
+            <th scope="col" class="num">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{- range .Entries}}
+          <tr>
+            <th scope="row" class="path"><a href="{{.URL}}">{{.Name}}</a></th>
+            <td data-label="Type" class="meta">{{.Type}}</td>
+            <td data-label="Size" class="num size">{{.Size}}</td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="3" class="empty">This revision holds no files.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{- if .TreeCursor}}
+  <nav class="pager" aria-label="Pages"><span class="inert">More files in this directory</span><a href="{{.Repo.URL}}/tree/?cursor={{.TreeCursor}}">Next page</a></nav>
+  {{- end}}
+
+  {{- with .Readme}}
+  <div class="panel flush">
+    <div class="panel-head">
+      <span class="path">{{.Name}}</span>
+      <a href="{{.URL}}">view file</a>
+    </div>
+    {{- if .HTML}}
+    <div class="readme">{{.HTML}}</div>
+    {{- else if .Text}}
+    <div class="readme"><pre>{{.Text}}</pre></div>
+    {{- else}}
+    <div class="readme"><p class="meta">This readme is too large to show here. <a href="{{.URL}}">Open it as a file</a>.</p></div>
+    {{- end}}
+  </div>
+  {{- end}}
+  {{- end}}
+</main>
+{{end}}

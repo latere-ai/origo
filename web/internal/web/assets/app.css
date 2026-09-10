@@ -1,0 +1,475 @@
+/* SPDX-FileCopyrightText: 2026 Latere AI
+ * SPDX-License-Identifier: MIT
+ *
+ * One stylesheet, served from this binary, fetched from no other host.
+ *
+ * The tokens are Latere's, transcribed from latere-ui's tokens.css. Latere's
+ * accent is the ink itself, so emphasis here is weight, underline, surface
+ * and border, never hue. The single exception is the diff, where the two
+ * tints below sit under text that keeps its literal + or - sign, so the
+ * meaning survives greyscale and a copy into a terminal.
+ *
+ * Themes follow prefers-color-scheme alone. There is no switch and no
+ * cookie, so there is no script and nothing to flash. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --bg: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-raised: #f5f5f5;
+  --bg-code: rgba(0, 0, 0, 0.05);
+
+  /* Ink accent */
+  --accent: #0a0a0a;
+  --accent-hover: #404040;
+  --accent-subtle: rgba(0, 0, 0, 0.04);
+
+  /* Foreground ramp */
+  --fg-1: #0a0a0a;
+  --fg-2: #666666;
+  --fg-3: #a0a0a0;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --focus-outline: 2px solid var(--accent);
+
+  /* Radii */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* Diff tints: decoration over the sign column, never the only signal. */
+  --diff-add-bg: rgba(22, 101, 52, 0.10);
+  --diff-add-line: rgba(22, 101, 52, 0.28);
+  --diff-del-bg: rgba(153, 27, 27, 0.09);
+  --diff-del-line: rgba(153, 27, 27, 0.26);
+
+  /* Type */
+  --font-sans: 'Inter', -apple-system, system-ui, 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Fira Code', Menlo, monospace;
+  --t-30: 30px;
+  --t-24: 24px;
+  --t-19: 19px;
+  --t-15: 15px;
+  --t-13: 13px;
+  --t-12: 12.5px;
+  --t-11: 11px;
+
+  /* Spacing, 4px base */
+  --s-1: 4px;
+  --s-2: 6px;
+  --s-3: 8px;
+  --s-4: 12px;
+  --s-5: 16px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 48px;
+  --s-9: 64px;
+
+  --measure: 1020px;
+  --tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #09090b;
+    --bg-surface: #111113;
+    --bg-raised: #18181b;
+    --bg-code: rgba(255, 255, 255, 0.06);
+
+    --accent: #e4e4e7;
+    --accent-hover: #a1a1aa;
+    --accent-subtle: rgba(255, 255, 255, 0.04);
+
+    --fg-1: #fafafa;
+    --fg-2: #b6b6bf;
+    --fg-3: #82828c;
+
+    --border: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.10);
+    --focus-outline: 2px solid var(--accent);
+
+    --diff-add-bg: rgba(134, 239, 172, 0.10);
+    --diff-add-line: rgba(134, 239, 172, 0.30);
+    --diff-del-bg: rgba(252, 165, 165, 0.09);
+    --diff-del-line: rgba(252, 165, 165, 0.28);
+  }
+}
+
+/* Inter, latin, variable weight 400-600. One 48 KB file for the whole
+ * range, served from this binary. The stack below it is the system, so a
+ * page is readable before the font arrives and if it never does. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/assets/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg-1);
+  font-family: var(--font-sans);
+  font-size: var(--t-13);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Links carry their meaning in the underline, because the accent is the ink
+ * and cannot separate a link from the sentence around it by colour. */
+a {
+  color: var(--fg-1);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+a:hover { text-decoration-color: var(--fg-1); }
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+code, pre, .mono, kbd, samp { font-family: var(--font-mono); font-size: var(--t-12); }
+pre { margin: 0; }
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: var(--t-24); line-height: 1.25; }
+h2 { font-size: var(--t-19); line-height: 1.3; }
+h3 { font-size: var(--t-15); }
+p { margin: 0; }
+
+/* ---- page frame ---- */
+
+.page {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--s-6) var(--s-5) var(--s-9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  padding-bottom: var(--s-4);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  font-family: var(--font-mono);
+  font-size: var(--t-15);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+.masthead nav { display: flex; gap: var(--s-5); flex-wrap: wrap; align-items: center; }
+.masthead nav a, .masthead nav button {
+  color: var(--fg-2);
+  font-size: var(--t-12);
+  text-decoration: none;
+}
+.masthead nav a:hover { color: var(--fg-1); text-decoration: underline; }
+
+.crumbs {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  color: var(--fg-3);
+  overflow-wrap: anywhere;
+}
+.crumbs a { color: var(--fg-2); text-decoration: none; }
+.crumbs a:hover { color: var(--fg-1); text-decoration: underline; }
+.crumbs .here { color: var(--fg-1); }
+
+/* The section nav marks the current screen with ink and a rule under it,
+ * so the state reads without colour and at any zoom. */
+.sections { display: flex; gap: var(--s-2); flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.sections a {
+  padding: var(--s-2) var(--s-4);
+  color: var(--fg-2);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.sections a:hover { color: var(--fg-1); }
+.sections a[aria-current='page'] { color: var(--fg-1); font-weight: 600; border-bottom-color: var(--accent); }
+
+/* ---- panels ---- */
+
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.panel.flush { padding: 0; overflow: hidden; }
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.stack { display: flex; flex-direction: column; gap: var(--s-4); }
+.row { display: flex; gap: var(--s-4); align-items: center; flex-wrap: wrap; }
+.spread { display: flex; gap: var(--s-5); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.meta { color: var(--fg-2); font-size: var(--t-12); }
+.muted { color: var(--fg-3); }
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--t-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+/* ---- controls ---- */
+
+button, .button {
+  font: inherit;
+  font-size: var(--t-12);
+  font-weight: 500;
+  padding: var(--s-2) var(--s-5);
+  min-height: var(--tap);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--fg-1);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+button:hover, .button:hover { background: var(--bg-raised); }
+.button-primary {
+  background: var(--accent);
+  color: var(--bg-surface);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.button-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+input, select, textarea {
+  font: inherit;
+  font-size: var(--t-12);
+  color: var(--fg-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--s-2) var(--s-4);
+  min-height: var(--tap);
+  max-width: 100%;
+}
+input.mono, textarea.mono { font-family: var(--font-mono); }
+label { font-size: var(--t-12); color: var(--fg-2); }
+form { margin: 0; }
+.field { display: flex; flex-direction: column; gap: var(--s-2); }
+.inline-form { display: flex; gap: var(--s-3); align-items: flex-end; flex-wrap: wrap; }
+
+/* ---- tables ---- */
+
+.scroller { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: var(--t-13); }
+caption {
+  text-align: left;
+  padding: var(--s-4) var(--s-5);
+  font-size: var(--t-12);
+  color: var(--fg-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+th, td { text-align: left; padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); }
+thead th {
+  font-family: var(--font-mono);
+  font-size: var(--t-11);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+tbody th { font-weight: 500; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--accent-subtle); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.path, .sha, .size, .when, .refname { font-family: var(--font-mono); font-size: var(--t-12); }
+.sha { color: var(--fg-2); }
+
+/* ---- notices ---- */
+
+.notice {
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  padding: var(--s-4) var(--s-5);
+  font-size: var(--t-12);
+  color: var(--fg-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.notice strong { color: var(--fg-1); }
+.empty { padding: var(--s-7) var(--s-5); text-align: center; color: var(--fg-2); }
+
+/* ---- diff ---- */
+
+.diff-file { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); overflow: hidden; }
+.diff-file + .diff-file { margin-top: var(--s-4); }
+.diff-file > summary, .diff-file > .diff-head {
+  display: flex;
+  gap: var(--s-4);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--s-3) var(--s-5);
+  background: var(--bg-raised);
+  cursor: pointer;
+  list-style: none;
+}
+.diff-file > .diff-head { cursor: default; }
+.diff-file > summary::-webkit-details-marker { display: none; }
+.diff-file > summary::before { content: '▸'; color: var(--fg-3); font-size: var(--t-11); }
+.diff-file[open] > summary::before { content: '▾'; }
+.diff-file .diff-path { font-family: var(--font-mono); font-size: var(--t-12); font-weight: 500; overflow-wrap: anywhere; }
+.count-add, .count-del { font-family: var(--font-mono); font-size: var(--t-11); }
+.count-add::before { content: '+'; }
+.count-del::before { content: '\2212'; }
+.diff-body { overflow-x: auto; }
+table.diff { font-family: var(--font-mono); font-size: var(--t-12); line-height: 1.55; }
+table.diff td { border: none; padding: 0 var(--s-3); white-space: pre; }
+table.diff td.gutter {
+  width: 1%;
+  text-align: right;
+  color: var(--fg-3);
+  user-select: none;
+  -webkit-user-select: none;
+  background: var(--bg-raised);
+  font-size: var(--t-11);
+}
+table.diff td.sign { width: 1%; user-select: none; -webkit-user-select: none; color: var(--fg-2); }
+table.diff tr.add td { background: var(--diff-add-bg); }
+table.diff tr.add td.sign { box-shadow: inset 2px 0 0 var(--diff-add-line); }
+table.diff tr.del td { background: var(--diff-del-bg); }
+table.diff tr.del td.sign { box-shadow: inset 2px 0 0 var(--diff-del-line); }
+table.diff tr.hunk td { background: var(--bg-code); color: var(--fg-2); padding-top: var(--s-2); padding-bottom: var(--s-2); }
+table.diff tr:hover td { filter: brightness(0.985); }
+
+/* ---- file view ---- */
+
+table.source { font-family: var(--font-mono); font-size: var(--t-12); line-height: 1.55; }
+table.source td { border: none; padding: 0 var(--s-3); white-space: pre; }
+table.source td.gutter {
+  width: 1%;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+  background: var(--bg-raised);
+  color: var(--fg-3);
+  font-size: var(--t-11);
+}
+table.source td.gutter a { color: inherit; text-decoration: none; }
+table.source tr:target td { background: var(--bg-code); }
+table.source tr:target td.gutter { color: var(--fg-1); font-weight: 600; }
+
+/* ---- readme ---- */
+
+.readme { padding: var(--s-6); font-size: var(--t-15); line-height: 1.6; }
+.readme > :first-child { margin-top: 0; }
+.readme h1, .readme h2, .readme h3, .readme h4 { margin: var(--s-6) 0 var(--s-3); }
+.readme h1 { font-size: var(--t-24); }
+.readme h2 { font-size: var(--t-19); }
+.readme h3 { font-size: var(--t-15); }
+.readme p, .readme ul, .readme ol, .readme blockquote { margin: 0 0 var(--s-4); }
+.readme code { background: var(--bg-code); padding: 1px var(--s-1); border-radius: var(--radius-xs); }
+.readme pre {
+  background: var(--bg-code);
+  padding: var(--s-4);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.readme pre code { background: none; padding: 0; }
+.readme img { max-width: 100%; }
+.readme table { margin-bottom: var(--s-4); }
+.readme blockquote { border-left: 3px solid var(--border-strong); padding-left: var(--s-4); color: var(--fg-2); }
+
+/* ---- commit header ---- */
+
+.commit-message { font-family: var(--font-mono); font-size: var(--t-12); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-5); margin: 0; font-size: var(--t-12); }
+dl.facts dt { color: var(--fg-3); }
+dl.facts dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.diffstat { display: flex; gap: var(--s-4); align-items: center; flex-wrap: wrap; font-size: var(--t-12); }
+
+/* ---- sign in ---- */
+
+.gate { max-width: 460px; margin: var(--s-9) auto; }
+.gate h1 { font-family: var(--font-mono); font-size: var(--t-24); }
+.clone-shape { font-family: var(--font-mono); font-size: var(--t-12); color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- pager ---- */
+
+.pager { display: flex; gap: var(--s-5); align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: var(--t-12); }
+.pager .inert { color: var(--fg-3); }
+
+/* ---- narrow ---- */
+
+@media (max-width: 640px) {
+  .page { padding: var(--s-5) var(--s-4) var(--s-8); gap: var(--s-5); }
+  .panel { padding: var(--s-5); border-radius: var(--radius-md); }
+  h1 { font-size: var(--t-19); }
+
+  /* Data tables restack into label-and-value blocks. Nothing is removed.
+   * Code and diffs never reflow: they scroll inside their own box, because
+   * a wrapped line of source is a lie about the file. */
+  table.stackable, table.stackable tbody, table.stackable tr, table.stackable th, table.stackable td { display: block; width: auto; }
+  table.stackable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  table.stackable tr { padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--border); }
+  table.stackable th, table.stackable td { border: none; padding: var(--s-1) 0; }
+  table.stackable td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--fg-3);
+    font-size: var(--t-11);
+  }
+  table.stackable td:empty { display: none; }
+}
+
+/* Text for a screen reader and not for a screen: a table caption that names
+ * what the table holds without repeating a heading a sighted reader can see. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,29 @@
+{{define "title"}}Compare{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <h1>Compare two revisions</h1>
+  {{template "stale" .Stale}}
+  <div class="panel stack">
+    <form class="inline-form" action="{{.Repo.URL}}/compare" method="get">
+      <div class="field"><label for="base">Base</label><input id="base" name="base" class="mono" size="20" value="{{.Base}}" required></div>
+      <div class="field"><label for="head">Head</label><input id="head" name="head" class="mono" size="20" value="{{.Head}}" required></div>
+      <button type="submit">Compare</button>
+    </form>
+    <p class="meta">A branch, a tag, or an object identifier on either side.</p>
+  </div>
+  {{- if .Ready}}
+  <div class="panel stack">
+    <div class="diffstat">
+      <span>{{len .Patch.Files}} files changed</span>
+      <span class="count-add">{{.Patch.Additions}}</span>
+      <span class="count-del">{{.Patch.Deletions}}</span>
+    </div>
+    {{- if .Truncated}}
+    <p class="notice"><strong>The installation cut this diff short.</strong> The files below are the ones it sent; open one on its own with the link on its row.</p>
+    {{- end}}
+  </div>
+  {{template "difffiles" .Files}}
+  {{- end}}
+</main>
+{{end}}

@@ -1,0 +1,111 @@
+{{- define "base" -}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{template "title" .}} · origo</title>
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <a class="brand" href="/">origo</a>
+    <nav aria-label="Site">
+      <a href="/">repositories</a>
+      {{- if .View.KeysEnabled}}<a href="/keys">ssh keys</a>{{end}}
+      {{- if .View.SignedIn}}
+      <form method="post" action="/sign-out">
+        <input type="hidden" name="{{.View.CSRFField}}" value="{{.View.CSRF}}">
+        <button type="submit">sign out</button>
+      </form>
+      {{- else}}
+      <a href="/sign-in">sign in</a>
+      {{- end}}
+    </nav>
+  </header>
+{{template "main" .}}
+</div>
+</body>
+</html>
+{{- end -}}
+
+{{- define "stale" -}}
+{{if .}}<p class="notice"><strong>This view may be a few minutes behind.</strong> The installation served it without checking for newer history: its last check was {{.}} before this page.</p>{{end}}
+{{- end -}}
+
+{{- define "repohead" -}}
+{{- with .Repo}}
+<p class="crumbs"><a href="/">repositories</a> / <span class="here">{{.Owner}} / {{.Slug}}</span>{{if ne .Ref .DefaultBranch}} <span class="muted">at</span> <span class="here">{{.Ref}}</span>{{end}}</p>
+<nav class="sections" aria-label="Repository sections">
+  <a href="{{.URL}}{{.RefQuery}}"{{if eq $.View.Section "overview"}} aria-current="page"{{end}}>overview</a>
+  <a href="{{.URL}}/log{{.RefQuery}}"{{if eq $.View.Section "log"}} aria-current="page"{{end}}>log</a>
+  <a href="{{.URL}}/tree/{{.RefQuery}}"{{if eq $.View.Section "tree"}} aria-current="page"{{end}}>tree</a>
+  <a href="{{.URL}}/refs"{{if eq $.View.Section "refs"}} aria-current="page"{{end}}>references</a>
+</nav>
+{{- end}}
+{{- end -}}
+
+{{- define "diffbody" -}}
+<div class="diff-body scroller">
+  <table class="diff">
+    <caption class="visually-hidden">Diff of {{.Path}}</caption>
+    <tbody>
+    {{- range .Rows}}
+      {{- if .IsHunk}}
+      <tr class="hunk"><td class="gutter"></td><td class="gutter"></td><td class="sign"></td><td>{{.Text}}</td></tr>
+      {{- else if .IsNote}}
+      <tr class="note"><td class="gutter"></td><td class="gutter"></td><td class="sign"></td><td>{{.Text}}</td></tr>
+      {{- else if .IsAdd}}
+      <tr class="add"><td class="gutter"></td><td class="gutter">{{.New}}</td><td class="sign">+</td><td>{{.Text}}</td></tr>
+      {{- else if .IsDel}}
+      <tr class="del"><td class="gutter">{{.Old}}</td><td class="gutter"></td><td class="sign">-</td><td>{{.Text}}</td></tr>
+      {{- else}}
+      <tr><td class="gutter">{{.Old}}</td><td class="gutter">{{.New}}</td><td class="sign"> </td><td>{{.Text}}</td></tr>
+      {{- end}}
+    {{- end}}
+    </tbody>
+  </table>
+</div>
+{{- end -}}
+
+{{- define "difffiles" -}}
+{{- range .}}
+<div id="{{.ID}}">
+{{- if .Binary}}
+  <div class="diff-file">
+    <div class="diff-head">
+      <span class="diff-path">{{.Path}}</span>
+      <span class="meta">binary file, changed</span>
+      <a href="{{.OnlyURL}}">only this file</a>
+      {{if .BlobURL}}<a href="{{.BlobURL}}">view file</a>{{end}}
+    </div>
+  </div>
+{{- else if .OverBudget}}
+  <div class="diff-file">
+    <div class="diff-head">
+      <span class="diff-path">{{.Path}}</span>
+      <span class="count-add">{{.Additions}}</span>
+      <span class="count-del">{{.Deletions}}</span>
+    </div>
+    <div class="notice">
+      <p>This file changed by {{.Changed}} lines, which is more than one page renders at once. Nothing is hidden: choose how to read it.</p>
+      <p><a href="{{.OnlyURL}}">Render this file on its own</a> · {{if .BlobURL}}<a href="{{.BlobURL}}">View the whole file</a> · {{end}}<a href="{{.LogURL}}">History of this file</a></p>
+    </div>
+  </div>
+{{- else}}
+  <details class="diff-file"{{if not .Collapsed}} open{{end}}>
+    <summary>
+      <span class="diff-path">{{.Path}}</span>
+      <span class="count-add">{{.Additions}}</span>
+      <span class="count-del">{{.Deletions}}</span>
+      <span class="meta">{{.Status}}</span>
+      <a href="{{.OnlyURL}}">only this file</a>
+    </summary>
+    {{template "diffbody" .}}
+  </details>
+{{- end}}
+</div>
+{{- end}}
+{{- end -}}

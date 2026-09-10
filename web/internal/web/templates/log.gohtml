@@ -1,0 +1,45 @@
+{{define "title"}}Commits on {{.Repo.Ref}}{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <div class="spread">
+    <h1>Commits on <span class="refname">{{.Repo.Ref}}</span></h1>
+    <form class="inline-form" action="{{.Repo.URL}}/log" method="get">
+      {{- if .Repo.RefQueryValue}}<input type="hidden" name="ref" value="{{.Repo.RefQueryValue}}">{{end}}
+      <div class="field">
+        <label for="path">Limit to a path</label>
+        <input id="path" name="path" class="mono" size="28" value="{{.Path}}">
+      </div>
+      <button type="submit">Apply</button>
+    </form>
+  </div>
+  {{template "stale" .Stale}}
+  {{- if .Path}}<p class="meta">Showing commits that touched <span class="path">{{.Path}}</span>. <a href="{{.Repo.URL}}/log{{.Repo.RefQuery}}">Show all</a></p>{{end}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>Commits on {{.Repo.Ref}}, newest first</caption>
+        <thead>
+          <tr><th scope="col">Commit</th><th scope="col">Subject</th><th scope="col">Author</th><th scope="col">When</th></tr>
+        </thead>
+        <tbody>
+        {{- range .Commits}}
+          <tr>
+            <th scope="row" class="sha"><a href="{{.URL}}">{{.Short}}</a></th>
+            <td data-label="Subject"><a href="{{.URL}}">{{.Subject}}</a></td>
+            <td data-label="Author" class="meta">{{.Author}}</td>
+            <td data-label="When" class="when"><span title="{{.WhenExact}}">{{.When}}</span></td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="4" class="empty">There are no commits here yet.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <nav class="pager" aria-label="Pages">
+    <span class="inert">History is a graph, so pages are named by the last commit on the screen and never by a number.</span>
+    {{- if .NextURL}}<a href="{{.NextURL}}">Older commits</a>{{end}}
+  </nav>
+</main>
+{{end}}

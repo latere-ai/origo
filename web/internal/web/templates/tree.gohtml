@@ -1,0 +1,37 @@
+{{define "title"}}{{if .Path}}{{.Path}}{{else}}Files{{end}}{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <h1 class="path">{{if .Path}}{{.Path}}{{else}}Files{{end}}</h1>
+  <p class="crumbs"><a href="{{.Repo.URL}}/tree/{{.Repo.RefQuery}}">{{.Repo.Slug}}</a>{{range .Crumbs}} / {{if .URL}}<a href="{{.URL}}">{{.Name}}</a>{{else}}<span class="here">{{.Name}}</span>{{end}}{{end}}</p>
+  {{template "stale" .Stale}}
+  <div class="panel flush">
+    <div class="scroller">
+      <table class="stackable">
+        <caption>{{if .Path}}{{.Path}}{{else}}The root{{end}} at {{.Repo.Ref}}</caption>
+        <thead>
+          <tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col" class="num">Size</th></tr>
+        </thead>
+        <tbody>
+        {{- if .Parent}}
+          <tr><th scope="row" class="path"><a href="{{.Parent}}">../</a></th><td data-label="Type" class="meta">directory</td><td class="num"></td></tr>
+        {{- end}}
+        {{- range .Entries}}
+          <tr>
+            <th scope="row" class="path"><a href="{{.URL}}">{{.Name}}</a></th>
+            <td data-label="Type" class="meta">{{.Type}}</td>
+            <td data-label="Size" class="num size">{{.Size}}</td>
+          </tr>
+        {{- else}}
+          <tr><td colspan="3" class="empty">There is nothing in this directory at {{$.Repo.Ref}}.</td></tr>
+        {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <nav class="pager" aria-label="Pages">
+    <a href="{{.History}}">History of this directory</a>
+    {{- if .NextURL}}<a href="{{.NextURL}}">More entries</a>{{end}}
+  </nav>
+</main>
+{{end}}

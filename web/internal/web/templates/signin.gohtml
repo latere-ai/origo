@@ -1,0 +1,20 @@
+{{define "title"}}Sign in{{end}}
+{{define "main"}}
+<main class="gate stack">
+  <div class="panel stack">
+    <h1>{{.Heading}}</h1>
+    <p class="meta">{{.Lead}}</p>
+    {{- if .Refused}}
+    <p class="notice"><strong>You are signed out.</strong> The installation did not accept the credential this session held. Sign in again to carry on.</p>
+    {{- end}}
+    <p><a class="button button-primary" href="/auth/start?return_to={{.ReturnTo}}">{{.ButtonLabel}}</a></p>
+    <p class="meta">There is no password and no sign-up here. Access follows the account your organisation already gave you, and what you may read is decided by the installation, not by this page.</p>
+  </div>
+  <div class="panel stack">
+    <h2>Clone address</h2>
+    <p class="clone-shape">{{.CloneHTTPS}}{{if .CloneSSH}}
+{{.CloneSSH}}{{end}}</p>
+    <p class="meta">Cloning needs the same account. Replace the two names with the repository you want.</p>
+  </div>
+</main>
+{{end}}

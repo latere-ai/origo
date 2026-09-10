@@ -1,0 +1,45 @@
+{{define "title"}}{{.Commit.Subject}}{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <h1>{{.Commit.Subject}}</h1>
+  {{template "stale" .Stale}}
+  {{- if .Commit.Body}}<pre class="commit-message">{{.Commit.Body}}</pre>{{end}}
+  <div class="panel stack">
+    <dl class="facts">
+      <dt>Author</dt><dd>{{.Commit.Author}} &lt;{{.Commit.Email}}&gt; · <span title="{{.Commit.WhenExact}}">{{.Commit.WhenExact}}</span></dd>
+      <dt>Commit</dt><dd>{{.Commit.SHA}}</dd>
+      {{- if .Parents}}
+      <dt>{{if gt (len .Parents) 1}}Parents{{else}}Parent{{end}}</dt>
+      <dd>{{range .Parents}}<a href="{{.URL}}">{{.Short}}</a> {{end}}{{if gt (len .Parents) 1}}<span class="meta">this is a merge; the diff below is against the first parent</span>{{end}}</dd>
+      {{- end}}
+      {{- range .Trailers}}
+      <dt>{{.Key}}</dt><dd>{{.Value}}</dd>
+      {{- end}}
+    </dl>
+    <p class="meta"><a href="{{.TreeURL}}">Browse the tree at this commit</a> · <a href="{{.PatchURL}}">Download the patch</a></p>
+  </div>
+
+  {{- if .Root}}
+  <div class="panel"><p class="empty">This is the first commit in the repository, so there is nothing to compare it against. <a href="{{.TreeURL}}">Browse its tree</a>.</p></div>
+  {{- else}}
+  <div class="panel stack">
+    <div class="diffstat">
+      {{- with .Stats}}
+      <span>{{.Files}} files changed</span>
+      <span class="count-add">{{.Additions}}</span>
+      <span class="count-del">{{.Deletions}}</span>
+      {{- end}}
+      {{- if .Patch.OverBudget}}<span class="meta">{{.Patch.OverBudget}} of them are too large to render here</span>{{end}}
+    </div>
+    {{- if .Single}}
+    <p class="notice"><p>Showing one file of this commit. <a href="{{.Commit.URL}}">Show the whole diff</a>.</p></p>
+    {{- end}}
+    {{- if .Truncated}}
+    <p class="notice"><strong>The installation cut this diff short.</strong> The files below are the ones it sent, in order; the rest are not on this page. Open a file on its own with the link on its row, or download the patch.</p>
+    {{- end}}
+  </div>
+  {{template "difffiles" .Files}}
+  {{- end}}
+</main>
+{{end}}

@@ -1,0 +1,11 @@
+{{define "title"}}{{.Heading}}{{end}}
+{{define "main"}}
+{{- if .Repo}}{{template "repohead" .}}{{end}}
+<main class="panel stack">
+  <h1>{{.Heading}}</h1>
+  <p class="meta">{{.Body}}</p>
+  {{- if .Links}}
+  <p>{{range .Links}}<a href="{{.URL}}">{{.Name}}</a> {{end}}</p>
+  {{- end}}
+</main>
+{{end}}

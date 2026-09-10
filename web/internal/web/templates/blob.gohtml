@@ -1,0 +1,47 @@
+{{define "title"}}{{.Name}}{{end}}
+{{define "main"}}
+{{template "repohead" .}}
+<main class="stack">
+  <h1 class="path">{{.Name}}</h1>
+  <p class="crumbs"><a href="{{.Repo.URL}}/tree/{{.Repo.RefQuery}}">{{.Repo.Slug}}</a>{{range .Crumbs}} / {{if .URL}}<a href="{{.URL}}">{{.Name}}</a>{{else}}<span class="here">{{.Name}}</span>{{end}}{{end}}</p>
+  {{template "stale" .Stale}}
+  <div class="panel flush">
+    <div class="panel-head">
+      <span class="meta"><span class="size">{{.Size}}</span>{{if .LineCount}} · {{.LineCount}} lines{{end}} · {{.Type}} · mode <span class="mono">{{.Mode}}</span></span>
+      <span><a href="{{.RawURL}}">raw</a> · <a href="{{.HistoryURL}}">history</a></span>
+    </div>
+    {{- if .TooLarge}}
+    <div class="notice">
+      <p><strong>This file is too large to show here.</strong> It is {{.Size}}, and a browser is not where a file that size is read.</p>
+      <p><a href="{{.RawURL}}">Download the bytes</a>, or clone the repository: <span class="mono">git clone {{.CloneHTTPS}}</span></p>
+    </div>
+    {{- else if .Binary}}
+    <div class="notice">
+      <p><strong>This is not a text file.</strong> It is {{.Size}} of {{.Type}}, so it is not shown as text.</p>
+      <p><a href="{{.RawURL}}">Download it</a> · <a href="{{.HistoryURL}}">History of this file</a></p>
+    </div>
+    {{- else}}
+      {{- if .Truncated}}
+      <div class="notice">
+        <p><strong>Only the first part of this file is shown.</strong> It is {{.Size}}, and the rest was not requested and not sent.</p>
+        <p><a href="{{.RawURL}}">Download the whole file</a>, or clone the repository: <span class="mono">git clone {{.CloneHTTPS}}</span></p>
+      </div>
+      {{- end}}
+      {{- if .Lines}}
+      <div class="scroller">
+        <table class="source">
+          <caption class="visually-hidden">Source of {{.Path}}</caption>
+          <tbody>
+          {{- range .Lines}}
+            <tr id="L{{.N}}"><td class="gutter"><a href="#L{{.N}}">{{.N}}</a></td><td>{{.Text}}</td></tr>
+          {{- end}}
+          </tbody>
+        </table>
+      </div>
+      {{- else}}
+      <p class="empty">This file is empty.</p>
+      {{- end}}
+    {{- end}}
+  </div>
+</main>
+{{end}}
