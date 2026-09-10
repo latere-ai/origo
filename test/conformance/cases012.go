@@ -45,43 +45,57 @@ func case012OverQuota(t *testing.T, s *session) {
 	lfsError(t, s.lfsCall(t, id, "objects/batch", `{"operation":"upload","objects":[{"oid":"`+oidOf([]byte("x"))+`","size":4096}]}`), http.StatusRequestEntityTooLarge, contract.CodeOverQuota)
 }
 
-// rateBudgetFactor bounds the rate_limited case: it sends at most
-// rateBudgetFactor times the figure the header names, one request more.
-//
-// Draining a bucket of depth L that refills at L/60 tokens a second
-// while the runner sends rho a second takes N requests, where the
-// tokens left after N are L - N(1 - r) and r = (L/60)/rho is the share
-// of each request the node gives back. A refusal needs N > L/(1 - r),
-// so a bound of 2L holds for every runner that sends at least twice as
-// fast as one node refills (r <= 1/2). One node is where the case must
-// converge and 32 workers clear that condition by a wide margin: the
-// kind stack runs at 6000 a minute, 100 tokens a second, and asks the
-// runner for 200. Where the case cannot converge no bound helps: a
-// balanced installation of k nodes gives one subject k buckets
-// refilling at k*L/60 together, which drives r past 1 at the replica
-// counts deploy/base/hpa.yaml scales to. 2L+1 is therefore the smallest
-// bound carrying that condition, and it is what a live run spends
-// before it reports the case unverified: 12001 requests at the service
-// figure of 6000, where four times the figure would have spent 24001.
-// Spec 021 records the measured margin on the stack.
-const rateBudgetFactor = 2
+// The rate_limited case's two figures.
+const (
+	// rateBurst is the requests the case spends to watch
+	// RateLimit-Remaining fall. It is twice the largest replica count
+	// deploy/base/hpa.yaml scales to, so every bucket behind a balancer
+	// is hit at least twice however wide the installation has scaled.
+	// The burst is sent by rateWorkers at once, because a bucket refills
+	// while the burst runs and only requests that arrive faster than
+	// L/60 a second move the counter down.
+	rateBurst   = 64
+	rateWorkers = 32
+	// rateBudgetFactor bounds the exhaustion half, which runs only where
+	// the burst showed one bucket. Draining a bucket of depth L that
+	// refills at L/60 tokens a second while the runner sends rho a
+	// second leaves L - N(1 - r) tokens after N requests, r = (L/60)/rho,
+	// so a refusal needs N > L/(1 - r) and 2L holds for every runner
+	// that sends at least twice as fast as one node refills. The kind
+	// stack runs at 6000 a minute, 100 tokens a second, and so asks the
+	// runner for 200 a second, which rateWorkers against a NodePort
+	// clear by a wide margin.
+	rateBudgetFactor = 2
+)
 
-// case012RateLimited reads RateLimit-Limit off a response under the
-// token it will spend and sends past the figure the header names, under
-// a subject of its own when the target can mint one, else under the
-// run's token. The header is the figure in force for that subject
-// (spec 012), so the case reads the second response and not the first:
-// the bucket runs in front of the authorizer, so a subject the
-// authorizer names a rate for reads the node's figure once before its
-// own.
+// case012RateLimited proves the per-subject limit of spec 012 against
+// any target, balanced or not.
 //
-// A load balancer spreads a subject over several nodes, each with a
-// bucket of its own, so the case goes on past the figure to the bound
-// above. Reaching the bound with no refusal is not a failure of the
-// installation, it is a shape the case cannot observe: it is recorded
-// in Report.Unverified, which the stub run and the stack run require
-// empty and the live run logs. A target with the limit off sends no
-// header and the case is skipped.
+// It reads RateLimit-Limit and RateLimit-Remaining off responses under
+// the token it will spend, and off the second response and not the
+// first: the two figures are the effective subject's own, and the
+// bucket runs in front of the authorizer, so a subject the authorizer
+// names a rate for reads the node's figure once before its own.
+//
+// The limit is then proved by the counter rather than by exhaustion.
+// Every response of a burst must carry both figures, the limit must not
+// move under one subject, and what is left must be inside it: that is a
+// real assertion on any installation and it costs a few dozen requests.
+// The counter must also fall, which holds on one node and behind a
+// balancer alike, where the subject has a bucket a node and the
+// responses carry several interleaved descending sequences rather than
+// one. How far it fell is how the case reads the shape of the target
+// without a header naming the node: one bucket falls by the burst less
+// what refilled, and k buckets cut the fall to about the burst over k.
+//
+// Exhaustion, the 429, its Retry-After and its details.limit are
+// asserted where they converge, which is a target answering from one
+// bucket. Where the burst showed several, no bound converges, because
+// the balancer's total refill outruns the runner, and spending L
+// requests to learn it buys nothing: the refusal is recorded in
+// Report.Unverified, which the stub run and the stack run require empty
+// and the live run logs. A target with the limit off sends no header
+// and the case is skipped.
 func case012RateLimited(t *testing.T, s *session) {
 	f := s.fixture
 	token := s.target.Token
@@ -98,19 +112,61 @@ func case012RateLimited(t *testing.T, s *session) {
 	}
 	limit, err := strconv.Atoi(raw)
 	failIf(t, err != nil || limit <= 0, "%s %q", contract.HeaderRateLimit, raw)
-	budget := rateBudgetFactor*limit + 1
+
+	// The burst never spends more than half the figure, so a target with
+	// a small limit meets the counter rather than the refusal here.
+	burst := min(rateBurst, max(4, limit/2))
+	var mu sync.Mutex
+	high, low := -1, limit+1
+	var wg sync.WaitGroup
+	start := time.Now()
+	for w := range rateWorkers {
+		wg.Go(func() {
+			for i := w; i < burst; i += rateWorkers {
+				resp := s.as(t, token, "GET", "/v1/repos/"+f.id, "")
+				expectStatus(t, resp, http.StatusOK)
+				failIf(t, resp.header.Get(contract.HeaderRateLimit) != raw,
+					"%s moved from %q to %q under one subject", contract.HeaderRateLimit, raw, resp.header.Get(contract.HeaderRateLimit))
+				left, err := strconv.Atoi(resp.header.Get(contract.HeaderRateRemaining))
+				failIf(t, err != nil || left < 0 || left >= limit,
+					"%s %q against a limit of %d", contract.HeaderRateRemaining, resp.header.Get(contract.HeaderRateRemaining), limit)
+				mu.Lock()
+				high, low = max(high, left), min(low, left)
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	fall := high - low
+	t.Logf("%s over %d requests in %s: %d down to %d", contract.HeaderRateRemaining, burst, time.Since(start).Round(time.Millisecond), high, low)
+	if fall <= 0 {
+		// Every bucket gave back more than the burst took from it. The
+		// counter is in force and inside the figure, which the loop
+		// asserted, but nothing here or below can watch it fall.
+		s.unverifiable(t, "a falling "+contract.HeaderRateRemaining+" and a 429 rate_limited refusal past "+raw+" requests a minute",
+			"the target answered the burst from buckets that refill faster than the runner sends")
+		return
+	}
+
+	// The shape of the target, and with it whether exhaustion converges.
+	buckets := (burst - 1 + fall - 1) / fall
+	if buckets > 1 {
+		s.unverifiable(t, "a 429 rate_limited refusal past "+raw+" requests a minute",
+			"the target answered "+strconv.Itoa(burst)+" requests from about "+strconv.Itoa(buckets)+" buckets, each with a budget of its own, so no bounded run exhausts one")
+		return
+	}
+
+	budget := rateBudgetFactor * limit
 	var refused atomic.Int64
 	var first sync.Once
 	var refusal response
-	// The two responses read above cost a token each and count against
-	// the bound, so what a run reports as spent is what it sent.
-	sent := 2
+	sent := 0
 	send := func(n int) time.Duration {
 		start := time.Now()
 		var wg sync.WaitGroup
-		for w := range 32 {
+		for w := range rateWorkers {
 			wg.Go(func() {
-				for i := w; i < n; i += 32 {
+				for i := w; i < n; i += rateWorkers {
 					if refused.Load() > 0 {
 						return
 					}
@@ -137,11 +193,12 @@ func case012RateLimited(t *testing.T, s *session) {
 		}
 	}
 	if refused.Load() == 0 {
-		s.unverifiable(t, "a refusal past "+strconv.Itoa(limit)+" requests a minute",
-			"no node refused within "+strconv.Itoa(sent)+" requests: the figure is one node's and this target spreads the subject or refills faster than the runner sends")
+		s.unverifiable(t, "a 429 rate_limited refusal past "+raw+" requests a minute",
+			"one bucket answered the burst but nothing refused within "+strconv.Itoa(sent)+" requests, so this target refills faster than the runner sends")
 		return
 	}
 	d := expectError(t, refusal, http.StatusTooManyRequests, contract.CodeRateLimited)
 	after, err := strconv.Atoi(refusal.header.Get("Retry-After"))
 	failIf(t, err != nil || after < 1 || d["limit"] != "subject" || d["retry_after"] != float64(after), "Retry-After %q, details %v", refusal.header.Get("Retry-After"), d)
+	failIf(t, refusal.header.Get(contract.HeaderRateRemaining) != "0", "%s on the refusal is %q", contract.HeaderRateRemaining, refusal.header.Get(contract.HeaderRateRemaining))
 }
