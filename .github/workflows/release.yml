@@ -450,10 +450,31 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # A token good at Origo is short lived by design, so a stored one
+      # would be expired before any release used it. When the
+      # installation's issuer and a client credential are configured the
+      # job mints its own; an operator who has a long-lived token instead
+      # sets ORIGO_LIVE_TOKEN and this step does nothing.
+      - name: Mint a token for the live run
+        if: ${{ secrets.ORIGO_LIVE_CLIENT_SECRET != '' }}
+        env:
+          TOKEN_URL: ${{ vars.ORIGO_LIVE_TOKEN_URL }}
+          CLIENT_ID: ${{ vars.ORIGO_LIVE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.ORIGO_LIVE_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$TOKEN_URL" && test -n "$CLIENT_ID"
+          tok=$(curl -sS --fail-with-body -X POST "$TOKEN_URL" \
+            -d grant_type=client_credentials \
+            -d "client_id=$CLIENT_ID" \
+            --data-urlencode "client_secret=$CLIENT_SECRET" \
+            -d audience=origo | jq -re .access_token)
+          echo "::add-mask::$tok"
+          echo "ORIGO_LIVE_TOKEN=$tok" >> "$GITHUB_ENV"
       - name: Run the conformance suite against ORIGO_LIVE_URL
         env:
           ORIGO_LIVE_URL: ${{ secrets.ORIGO_LIVE_URL }}
-          ORIGO_LIVE_TOKEN: ${{ secrets.ORIGO_LIVE_TOKEN }}
+          ORIGO_LIVE_TOKEN: ${{ env.ORIGO_LIVE_TOKEN || secrets.ORIGO_LIVE_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p release-evidence
