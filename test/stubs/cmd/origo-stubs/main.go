@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 // Command origo-stubs runs the test stubs of spec 013 from flags: the
-// issuer, the authorizer, the sink, the source when -source-token is
-// set, and the slow proxy of spec 015 when -slowproxy-target is set.
+// issuer, the authorizer, the sink, the key resolver of spec 024, the
+// source when -source-token is set, and the slow proxy of spec 015 when
+// -slowproxy-target is set.
 // `make dev` runs it on the loopback interface beside MinIO and the kind
 // overlay runs it as a pod; each listen flag defaults to the stub's
 // fixed port in the stack on every interface.
@@ -32,6 +33,7 @@ import (
 	"github.com/latere-ai/origo/test/stubs/sink"
 	"github.com/latere-ai/origo/test/stubs/slowproxy"
 	"github.com/latere-ai/origo/test/stubs/source"
+	"github.com/latere-ai/origo/test/stubs/sshkeys"
 )
 
 func main() {
@@ -44,6 +46,7 @@ func main() {
 type options struct {
 	issuerListen, authorizerListen, sinkListen, sourceListen string
 	slowproxyListen, slowproxyData, slowproxyTarget          string
+	sshkeysListen, sshkeysToken                              string
 	issuerURL, authorizerToken, sourceToken                  string
 	allow, secret, key, ca, caKey                            string
 	fail                                                     int
@@ -88,6 +91,8 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&o.slowproxyListen, "slowproxy-listen", "0.0.0.0:8085", "the slow proxy's control listen address; the proxy starts only with -slowproxy-target")
 	fs.StringVar(&o.slowproxyData, "slowproxy-data", "0.0.0.0:8086", "the slow proxy's data listen address, what ORIGO_S3_ENDPOINT points at")
 	fs.StringVar(&o.slowproxyTarget, "slowproxy-target", "", "the host:port the slow proxy forwards to, MinIO's Service in the stack")
+	fs.StringVar(&o.sshkeysListen, "sshkeys-listen", "0.0.0.0:8087", "the key resolver's listen address (spec 024)")
+	fs.StringVar(&o.sshkeysToken, "sshkeys-token", sshkeys.DefaultToken, "the bearer the key resolver requires")
 	fs.StringVar(&o.issuerURL, "issuer-url", "", "the iss of every token and the issuer of the discovery document; http://<issuer-listen> by default")
 	fs.StringVar(&o.authorizerToken, "authorizer-token", "", "the bearer the authorizer requires (required)")
 	fs.StringVar(&o.sourceToken, "source-token", "", "the bearer the source requires; unset runs no source")
@@ -127,6 +132,7 @@ type stubs struct {
 	issuer     *issuer.Server
 	authz      *authorizer.Server
 	sink       *sink.Server
+	sshkeys    *sshkeys.Server
 	source     *source.Server
 	sourceRoot string
 	proxy      *slowproxy.Proxy
@@ -155,10 +161,12 @@ func build(ctx context.Context, o options) (*stubs, error) {
 		s.authz.Hang()
 	}
 	s.sink = sink.NewHandler(sink.WithSecret(o.secret))
+	s.sshkeys = sshkeys.NewHandler(sshkeys.WithToken(o.sshkeysToken))
 	s.listeners = []listener{
 		{name: "issuer", addr: o.issuerListen, handler: s.issuer.Handler()},
 		{name: "authorizer", addr: o.authorizerListen, handler: s.authz.Handler()},
 		{name: "sink", addr: o.sinkListen, handler: s.sink.Handler()},
+		{name: "sshkeys", addr: o.sshkeysListen, handler: s.sshkeys.Handler()},
 	}
 	if o.sourceToken != "" {
 		sourceOpts := []source.Option{source.WithToken(o.sourceToken)}
@@ -201,6 +209,9 @@ func (s *stubs) close() {
 	}
 	if s.authz != nil {
 		s.authz.Close()
+	}
+	if s.sshkeys != nil {
+		s.sshkeys.Close()
 	}
 	if s.sourceRoot != "" {
 		_ = os.RemoveAll(s.sourceRoot)
