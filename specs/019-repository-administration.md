@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -536,3 +536,14 @@ spec 018's job row and no criterion here.
 Spec 017's Outcome records the limit. What closes this: the two secrets
 set on the repository with an installation behind the URL, and a tag or
 a re-run of that job.
+
+`TestAdministrationEvents` asserted the wrong quantity for the repeated
+DELETE. It counted deliveries and required two, while the property is
+that a DELETE of an already deleted repository emits no new event,
+which spec 008 holds by the id and not by the delivery count: a third
+DELETE re-queues the second event's object once a delivery has removed
+it, so the sink sees three deliveries carrying two ids. The assertion
+now counts distinct ids, and a third DELETE that moved `deleted_at`
+would still fail it as a third id. The criterion is unchanged; only
+what the test measures is. Spec 008's storage table says the same rule
+in one place now.

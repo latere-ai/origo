@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/events/, internal/httpgit/, internal/api/, internal/wal/, internal/config/, cmd/origod/, test/e2e/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-10
 author: changkun
 ---
 
@@ -60,7 +60,7 @@ spec 014, which have no sequence:
 | Key | Content |
 |---|---|
 | `origo/events/<repo>/<seq>.json` | a `push` event: `{"event": <payload>, "attempts": 0, "next_at": "<RFC 3339>"}`; rewritten unconditionally after each failed delivery; deleted after a 2xx |
-| `origo/events/<repo>/a-<id>.json` | an event without a sequence, the same content; `<id>` is the event's id, the UUID v5 of `<repo>:<kind>:<occurred_at>` under the namespace of the payload table, `<occurred_at>` the payload's `at` in RFC 3339 with second precision in UTC, so a repeated `Emit` of one operation writes the same key and is idempotent; a `PUT` of an existing key is a no-op rather than a second event |
+| `origo/events/<repo>/a-<id>.json` | an event without a sequence, the same content; `<id>` is the event's id, the UUID v5 of `<repo>:<kind>:<occurred_at>` under the namespace of the payload table, `<occurred_at>` the payload's `at` in RFC 3339 with second precision in UTC, so a repeated `Emit` of one operation writes the same key and produces no second event. The `PUT` overwrites the pending object and queues it again, and once a delivery has removed the object a later `Emit` of the same operation recreates it, so delivery is at least once and a consumer deduplicates on `id` exactly as it does for `push` |
 | `origo/events/<repo>/cursor` | `{"seq": n, "delivered": [{"id", "at"}]}`: `seq` is the highest `push` sequence delivered, monotonic per writer; `delivered` is the set of administration event ids delivered in the last 24 hours with their `at`, older entries dropped on every rewrite, so a delivery loop or a repair that finds an `a-<id>.json` whose id is in the set deletes it without delivering; written unconditionally |
 | `origo/events/dead/<repo>/<seq>.json`, `origo/events/dead/<repo>/a-<id>.json` | an event that exhausted the window, under the key it had |
 | `origo/events/nodes/<node>/<date>.log` | the node's journal for one UTC day, `<date>` in Go's `2006-01-02` layout: one line `<repo> <seq>` per `push` entry the node enqueued, in enqueue order; rewritten whole by the node from its in-memory copy, which is seeded at start-up from the node's own objects of today and yesterday so a restart under the same name keeps the lines an earlier process wrote; read by the repair sweep |

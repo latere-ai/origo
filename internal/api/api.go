@@ -453,7 +453,8 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	purgeAfter := ix.DeletedAt.Add(wal.DeleteHold)
 	// The id of an emit is derived from the repository, the kind, and
 	// at (spec 008), so a repeated DELETE of a deleted repository, whose
-	// deleted_at does not move, is one event.
+	// deleted_at does not move, is one event. It is not one delivery:
+	// delivery is at least once, and a consumer deduplicates on the id.
 	h.emit(r, m.ID, KindDeleted, *ix.DeletedAt, map[string]any{"purge_after": purgeAfter})
 	httpjson.Write(w, http.StatusAccepted, map[string]any{
 		"id": m.ID, "deleted_at": ix.DeletedAt, "purge_after": purgeAfter,
