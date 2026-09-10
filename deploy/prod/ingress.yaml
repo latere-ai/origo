@@ -2,6 +2,30 @@
 # class, the certificate issued by cert-manager, and the four settings a
 # git remote needs from that controller. An operator's overlay is this
 # file with their own names in it.
+#
+# The hostname is shared with the browsing interface, latere-ai/origo-web,
+# whose own Ingress takes everything not listed below, `/` included. So the
+# paths here are Origo's browser-facing surface written out in full, and
+# nothing here may be a guess: a git request that reached the wrong backend
+# fails with a protocol error, not a clean 404.
+#
+# Smart HTTP is always exactly two path segments followed by one of three
+# fixed names, in both URL forms of spec 003 (/{owner}/{slug}/... and
+# /r/{id}/..., with or without .git), so the two regular expressions below
+# cover every git request and nothing else. They are written as segment
+# counts rather than suffixes because a suffix alone would also catch a
+# file named info/refs on the interface's /r/{id}/raw/{path...}.
+#
+# The /r/ prefix is deliberately NOT here. Origo serves only the three git
+# endpoints and the LFS paths under /r/{id}; /r/{id} itself and everything
+# else under it is the interface's browsing surface, and claiming the
+# prefix would swallow all of it.
+#
+# The key set is exact rather than a /.well-known/ prefix: use-regex turns
+# every path in this Ingress into a regular expression, nginx tries those
+# before any prefix, and a /.well-known/ regular expression would take the
+# ACME challenge away from cert-manager's own solver Ingress and stop the
+# certificate renewing.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,6 +36,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   tls:
@@ -22,8 +47,56 @@ spec:
     - host: code.latere.ai
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          # Smart HTTP, both URL forms.
+          - path: /[^/]+/[^/]+/(info/refs|git-upload-pack|git-receive-pack)$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          # LFS (spec 010), both URL forms: the batch, the verify, and the
+          # lock paths.
+          - path: /[^/]+/[^/]+/info/lfs(/.*)?$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          # The repository API of specs 003, 009, 019 and 020.
+          - path: /v1/
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          # The two probes the release smoke reaches through the ingress.
+          - path: /readyz$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          - path: /version$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          # The key set of spec 007.
+          - path: /\.well-known/jwks\.json$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
+          - path: /favicon\.ico$
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: origod
