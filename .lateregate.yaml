@@ -63,7 +63,10 @@ depcheck:
         github.com/google/uuid: reached through latere.ai/x/pkg, which names events and deliveries with it; not a cloud SDK
         go.opentelemetry.io: the OpenTelemetry SDK, exporters, and instrumentation the traces, metrics, and log bridge of spec 011 go out through
         google.golang.org: protobuf and gRPC, the wire format and the transport of the OTLP exporters
-        golang.org/x: net, sys, text, and time, reached by the OTLP exporters
+        golang.org/x/net: reached by the OTLP exporters
+        golang.org/x/sys: reached by the OTLP exporters
+        golang.org/x/text: reached by the OTLP exporters
+        golang.org/x/time: reached by the OTLP exporters
         github.com/cenkalti/backoff: the OTLP exporters' retry schedule
         github.com/cespare/xxhash: the metric SDK's aggregation keys
         github.com/felixge/httpsnoop: otelhttp's response recorder

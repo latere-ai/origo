@@ -182,18 +182,19 @@ on gossip arriving.
    caller's identity as input.
 7. Everything Origo depends on is an S3 endpoint, an OIDC issuer, and a
    disk. No database, no custom resource, no cloud SDK: the module's
-   direct dependencies are the standard library, `latere.ai/x/pkg`, and
-   the OpenTelemetry SDK, which only `internal/tracing` imports (spec
-   011). The `depcheck` gate of `.lateregate.yaml` lists the whole
+   direct dependencies are the standard library, `latere.ai/x/pkg`, the
+   OpenTelemetry SDK, which only `internal/tracing` imports (spec 011),
+   and `golang.org/x/crypto/ssh`, which only `internal/sshd` imports
+   (spec 024). The `depcheck` gate of `.lateregate.yaml` lists the whole
    build list of `./cmd/origod` with a reason per upstream root, so a
-   fourth fails the gate.
+   fifth fails the gate.
 
 ## Not in this spec
 
 Multi-region replication, server-side merges and pull requests (spec 020
-when a consumer needs them), hooks that run user code, SSH transport,
-repository-level encryption keys. Mirroring from and to external hosts is
-a consumer concern; a one-time import is spec 019.
+when a consumer needs them), hooks that run user code, SSH transport
+(spec 024), repository-level encryption keys. Mirroring from and to
+external hosts is a consumer concern; a one-time import is spec 019.
 
 ## Spec map
 
@@ -259,3 +260,15 @@ upstream root it reaches carries a reason in the `depcheck` decision,
 so the invariant's point, that a reader can name everything the node
 links against, still holds. The status does not move: the amendment
 narrows one sentence and changes nothing the criteria assert.
+
+The seventh invariant is amended again on 2026-09-10, for spec 024:
+`golang.org/x/crypto/ssh` is a fourth direct dependency. The SSH
+transport terminates key exchange, cipher negotiation, and MAC
+verification, which no standard-library package and no
+`latere.ai/x/pkg` package provides, and the alternative is writing
+those by hand, which is the larger security liability by a wide margin.
+It is confined to `internal/sshd`, a rule spec 024 states, and its one
+upstream root carries a reason in the `depcheck` decision beside the
+others. The invariant's point, that a reader can name everything the
+node links against, still holds, and a node without `ORIGO_SSH_ADDR`
+opens no SSH listener.
