@@ -108,6 +108,12 @@ Defined by [022 landing page](../specs/022-landing-page.md).
 | GET | `/` | 200, the landing page; `text/html; charset=utf-8` when `Accept` contains `text/html`, `text/plain; charset=utf-8` otherwise, `Vary: Accept` on both; no token, no `WWW-Authenticate` |
 | GET | `/favicon.ico` | 204, empty, no token; so a browser rendering the page is never asked for credentials it cannot supply |
 
+Defined by [026 repository directory](../specs/026-repository-directory.md).
+
+| Method | Path | Behaviour |
+|---|---|---|
+| GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
+
 ## Headers
 
 Headers Origo sets on its responses. A consumer reads them; none is sent by a client.
@@ -214,6 +220,12 @@ Defined by [020 server side git operations](../specs/020-server-side-git-operati
 |---|---|---|---|
 | `merge_conflict` | 409 | The change conflicts with the branch. Resolve it in a clone and push. | `commit`, `paths` |
 | `invalid_change` | 400 | A change in the request is not valid. | `index`, `reason` (`path`, `mode`, `content`, `too_many`, `too_large`) |
+
+Defined by [026 repository directory](../specs/026-repository-directory.md).
+
+| Code | Status | Message | Details |
+|---|---|---|---|
+| `directory_unsupported` | 501 | This installation does not list repositories. | `reason` |
 
 ## The authorization endpoint
 

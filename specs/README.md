@@ -85,13 +85,14 @@ each says which spec owns each deferred criterion), so waiting for
 | [022](022-landing-page.md) | Landing page: what a person sees at the root | small | complete | 002, 003, 007, 016 |
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
 | [025](025-mcp-server.md) | MCP server: Origo as tools an agent can drive | large | drafted | 003, 007, 009, 012, 020 |
+| [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
 
 ## Dependency graph
 
 Arrows point from a spec to the specs it builds on, so spec 001 sits at
 the top and the leaves at the bottom. The picture is the transitive
-reduction of the deck's 92 `depends_on` edges: an arrow is drawn only
-where no other path already carries it, which leaves 34. Reachability is
+reduction of the deck's 91 `depends_on` edges: an arrow is drawn only
+where no other path already carries it, which leaves 33. Reachability is
 unchanged, so every dependency the deck states is still a path here, but
 an arrow that is not drawn is not an absent dependency. Spec 018 lists
 seven and only its arrow to 017 is drawn; 002 is one of the other six,
@@ -124,6 +125,7 @@ flowchart BT
   S022[022 landing page]
   S024[024 SSH access]
   S025[025 MCP server]
+  S026[026 repository directory]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -156,6 +158,7 @@ flowchart BT
   S022 --> S016
   S024 --> S018
   S025 --> S020
+  S026 --> S013
 ```
 
 ## Build order
@@ -173,6 +176,7 @@ flowchart BT
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
 | 10 | 024 | `git clone git@git.example.com:owner/slug.git` works beside the HTTPS form, on the same write path, with the keys held by the operator | 024 complete: `internal/sshd` as a third listener of the node with the key resolver, the host key set and its two OpenSSH extensions, the maintained command surface, the path parser and its fuzz, `internal/httpgit`'s two stream entry points in front of the same spool, hook, and commit, the four variables of spec 002's reference, the `origod-ssh` Service and its NetworkPolicy row, the kind overlay's host keys and four new host ports, the stub of spec 013's table, and the install document's SSH step and clone. The three cluster criteria and the install document's SSH step are proved by the dispatched `verify` run 34526886417 at commit `3f5bea6`, every job green, so 024 is `complete` |
 | 12 | 025 | An agent reads a file, searches history, opens a change, and pushes a commit through eleven tools instead of a clone or a hand-written HTTP call | drafted; every dependency is at `testing` or later and nothing in Origo changes for it. `cmd/origo-mcp` is a second binary of this repository, run over the protocol's stdio transport beside the agent; what it needs outside its own directory is a `release-archives` loop for a second binary (017) and a `depcheck` row (002) |
+| 13 | 026 | A browsing interface can ask which repositories a person may see, and address one by `<owner>/<slug>` instead of by identifier | drafted; the two additions spec 023 of `latere-ai/origo-web` states the shape of: a fourth action on the authorizer contract with an answer that says the authorizer has no directory, and `GET /v1/repos` in a directory mode and a name mode. Every dependency is at `testing` or later |
 
 Phase 2 is specs 007 and 013 and nothing else: the stubs are what
 replaces the phase 1 bearer, and the overlay and the CI jobs are what
@@ -191,6 +195,7 @@ deck and stated here so a reader sees them without the owning spec.
 
 | Decision | Owner | Relied on by |
 |---|---|---|
+| the authorizer contract has a fourth action, `list`, which carries no `repo` object and whose answer is a page, a deny, or `{"directory": false}`; spec 007's five rules and its three actions are unchanged, and an authorizer that implements only 007 stays correct | 026 | 007, 013 |
 | the runtime image is `debian:trixie-slim` pinned by digest, git 2.47, above the 2.40 floor `origod check` enforces; both Dockerfiles move to it under 017 | 017 | 002, 018, 020 |
 | `origod` has the subcommands `serve` (default), `check`, and `migrate`, one configuration table for all; 014 built the dispatcher with `serve` and `migrate`, `serve` being where the node's configuration is loaded, and 018 adds `check` | 002 | 014, 018 |
 | `ORIGO_TOKEN_KEY` is required in every mode and comes from the Secret `origod-token-key`, never from `origod-auth` or any template: it is generated once by `up.sh` on the test stack, by `make dev` locally, and by step 4 of `docs/install.md` on an installation, and every workload reads it by name | 002, 007, 018 | 013, 016, 018 |
@@ -864,13 +869,14 @@ name, or when a spec names something no spec defines.
 <!-- specindex:begin -->
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
-| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025 |
+| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025 |
+| error code | `directory_unsupported` | [026](026-repository-directory.md) | - |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025, 026 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 026 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
@@ -884,7 +890,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 020, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 021, 024, 025 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025 |
@@ -1010,7 +1016,8 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
-| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025 |
+| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | - |
+| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /v1/repos/{id}/commits` | [009](009-read-api-and-archive.md) | 025 |
@@ -1024,7 +1031,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
-| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019 |
+| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
@@ -1046,7 +1053,7 @@ name, or when a spec names something no spec defines.
 | header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
-| header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024 |
+| header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024, 026 |
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
 | header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 024, 025 |
 | header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 025 |
