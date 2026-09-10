@@ -313,3 +313,10 @@ func isServerClosedIdle(err error) bool {
 	}
 	return false
 }
+
+// Retryable reports whether a call to an operator's endpoint failed
+// before a response line arrived, which is the one class of failure
+// worth a second attempt. It is exported so the key resolver of spec
+// 024, which calls a second endpoint of the operator's under the same
+// rule, shares this one rather than restating it.
+func Retryable(err error) bool { return retryable(err) }
