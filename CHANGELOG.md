@@ -10,8 +10,6 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
-## v0.1.0 - 2026-09-10
-
 - The conformance suite (spec 021): `test/conformance` runs the whole
   contract against any base URL, a live Origo, the contract stub, or a
   consumer's own stub, one subtest per row of every table, and deletes
