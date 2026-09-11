@@ -298,9 +298,8 @@ workflow identity, which is what an outside operator can verify.
 Built on 2026-09-09; the first release ran on 2026-09-10. Every
 criterion a checkout can prove has a passing test in the tree, and the
 tag closed every row below that a tag on this repository can close. The
-spec stays at `testing` on one row that one cannot: the fork tag in
-both its halves, with the deploy variable set and unset, which needs a
-maintainer and a fork. Two rows that were open with it have since
+spec stays at `testing` on one row that one cannot, and that row is
+not what it was written as: the fork tag. Two rows that were open with it have since
 closed on real tags. The `live` job ran against
 `https://code.latere.ai` on the v0.1.3 run 34546335576 of 2026-09-11,
 once the two secrets were set and the installation answered. The
@@ -326,7 +325,7 @@ around.
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
 | a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | passing: the `verify the published release` job of the tag run 34461460766, 50 s, verified both signatures against `^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/` and the GitHub OIDC issuer, refused a foreign identity, checked `checksums.txt` and its cosign bundle, read the deploy archive, and matched the body against the section |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | closed by the `v0.1.1` tag run 34511419232: the repository is public, so `Verify the attestations` ran and succeeded and `Attestation verification is skipped on a private repository` was the skipped step instead. Read back on 2026-09-11, `gh attestation verify oci://ghcr.io/latere-ai/origod:v0.1.1 --repo latere-ai/origo` exits 0, and so does the same command for `origo-stubs`, for both `--predicate-type https://spdx.dev/Document` and `--predicate-type https://slsa.dev/provenance/v1`; every one names the signer `https://github.com/latere-ai/origo/.github/workflows/release.yml@refs/tags/v0.1.1` |
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step, and the same tag with the variable set runs it | the release checklist, done by a maintainer and recorded in the release notes | pending. One of the three parts ran: with no repository variable set, the tag run 34461460766 skipped `deploy and smoke` and published all eleven assets and both images anyway. The variable-set half has never run at all, on any tag, so `deploy and smoke` has never executed and `tools/smoke/release.sh` is proved against the stub of `TestReleaseSmoke` and against no deployment. It was not a fork either, and the release notes of `v0.1.0` carry no checklist entry. A maintainer tagging a fork twice, once with the variable and once without, and writing the result into the notes, is what closes the row |
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step, and the same tag with the variable set runs it | the release checklist, done by a maintainer and recorded in the release notes | the two variable states are proved on this repository, and the fork is not. Unset: the tag run 34461460766 of `v0.1.0` reports `skipped` for `deploy and smoke` and `success` for every other job, all eleven assets and both images published. Set: the tag run 34546335576 of `v0.1.3` reports `success`, and its job 103102068011 applied `deploy/prod`, rolled the image, and smoked the installation. The `if` on the variable is therefore exercised in both directions. What the fork would add is examined below, and as `release.yml` stands it cannot be run |
 
 ### What blocked the first release, and what still holds
 
@@ -362,7 +361,7 @@ up-script check, and the mutation job, all green.
 | conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
 | the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on | closed by the `v0.1.1` tag run 34511419232 on the now-public repository: `Verify the attestations` succeeded there, and four `gh attestation verify` runs on 2026-09-11, over `origod` and `origo-stubs` at `v0.1.1` for the SPDX and the SLSA predicate types, each exit 0 against the tag's workflow identity |
 | the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | closed by the v0.1.3 run 34546335576 of 2026-09-11. The two secrets are set and `https://code.latere.ai` answers, so the `live` job, id 103120952813, took its live branch: `contract_test.go:133: live run against ***: 51 passed` and `--- PASS: TestContract (173.69s)`, with the eight case names of exactly the six groups reported skipped. Run 34461460766's `live` job had run and skipped, neither secret being set then, and nothing here read that green as the run |
-| the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | open. The unset half ran on this repository and is recorded here. The set half has never run, so no tag has yet deployed or smoked a real rollout; neither half ran on a fork, and no checklist entry is in the notes. It sits beside spec 018's walk of the prose as the maintainer's work |
+| the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | the behaviour is closed and the fork is blocked. Unset ran on 34461460766 and set on 34546335576, the two run ids above. A fork tag cannot run at all today: `release.yml` fixes `ORIGOD_IMAGE` and `STUBS_IMAGE` at lines 38 and 39 as `ghcr.io/latere-ai/origod` and `ghcr.io/latere-ai/origo-stubs`, with no `vars` fallback, and reads them at sixteen sites, the `buildx` push, `cosign sign`, the `subject-name` of both attestations, `kubectl set image`, and `release-verify`'s own `grep -q "image: ghcr.io/latere-ai/origod:${TAG}"` among them. A fork's tag would push to this organization's packages, which it cannot write, so the run fails before it publishes anything |
 | `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | closed by the v0.1.3 run 34546335576. Its `conformance against the published image` job, id 103101443762, read `previous release fixture: /home/runner/work/_temp/previous/fixture-v0.1.1.tar.gz`, uploaded the copy through the S3 client, cloned it from the published image's node, and matched `rev-list --all`: `--- PASS: TestPreviousReleaseFixture (0.06s)`, `the fixture of v0.1.1 (4 commits) serves on this release`. Run 34461460766 had reported `--- SKIP`, no earlier release carrying a fixture |
 | `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
 
@@ -372,17 +371,17 @@ arriving: the repository was made public, which turned the attestation
 steps back on and closed the supply-chain row on `v0.1.1`; the two
 live secrets were set with `https://code.latere.ai` behind them, which
 closed the `live` row on `v0.1.3`; and a fourth tag gave the
-compatibility assertion a real previous fixture to read. What is left
-is a maintainer tagging a fork with `ORIGO_RELEASE_DEPLOY` set and
-unset, which is also the only way `deploy and smoke` has ever been
-asked to run. `deploy and smoke` is no longer untried, though: with
-`ORIGO_RELEASE_DEPLOY` now set, the job ran on 34546335576, id
-103102068011, applied `deploy/prod`, rolled the new image, and smoked
-the installation, `OK GET /readyz (200)`, `OK GET /version (200)`,
-`OK served version matches the tag (v0.1.3)`, `release smoke passed`.
-What the row still asks for is the fork and the two states of the
-variable, which is a maintainer's tagging and not a job this
-repository can run.
+compatibility assertion a real previous fixture to read. What is left is the fork, and it is
+worth saying exactly what a fork adds, because the two runs above
+already cover the variable. `deploy and smoke` is no longer untried: with `ORIGO_RELEASE_DEPLOY`
+set, the job ran on 34546335576, id 103102068011, applied
+`deploy/prod`, rolled the new image, and smoked the installation,
+`OK GET /readyz (200)`, `OK GET /version (200)`, `OK served version
+matches the tag (v0.1.3)`, `release smoke passed`. With the unset half
+already proved on 34461460766, where the job reports `skipped` and the
+release published all eleven assets anyway, both states of the variable
+are now exercised on this repository and the criterion's behavioural
+half is closed.
 
 ### The defect the first tag found
 
@@ -499,3 +498,36 @@ script, so they carry no statements and the gate does not measure them.
   of the release checklist, which is a maintainer's step.
 
 Waits on: a maintainer.
+
+### Why the row names a fork, and what actually blocks it
+
+The criterion reads as two states of `ORIGO_RELEASE_DEPLOY`, and both
+states are now proved here: `skipped` on 34461460766, `success` with a
+real rollout and smoke on 34546335576. Run against this repository the
+row is answered, and re-running the same two states on a fork would
+repeat them.
+
+A fork is in the criterion for a property the two runs cannot show: that
+a release publishes on a repository holding none of this one's secrets,
+variables, environment, or package namespace, which is spec 018's
+"an outside operator installs from the documentation alone" carried
+forward to releasing. That property is not merely unproved. It is false
+as `release.yml` stands. `ORIGOD_IMAGE` and `STUBS_IMAGE` are workflow
+level `env` at lines 38 and 39, fixed to `ghcr.io/latere-ai/origod` and
+`ghcr.io/latere-ai/origo-stubs` with no `vars` fallback, and sixteen
+sites read them: the `buildx` push, `cosign sign`, the `subject-name` of
+the SBOM and provenance attestations, the candidate `docker save`,
+`kubectl set image`, `install-release`'s `ORIGO_INSTALL_IMAGE`, and
+`release-verify`'s `grep -q "image: ghcr.io/latere-ai/origod:${TAG}"`.
+A fork's tag would push to this organization's packages, which a fork
+cannot write, and the run would fail in step 1 before publishing
+anything.
+
+So the row does not close on a fork tag a maintainer has not cut; a
+fork tag today would fail the criterion rather than prove it. What the
+row now waits on is a change to `release.yml`, reading the two image
+names from repository variables with `ghcr.io/${{ github.repository }}`
+as the default, after which the fork half is a tag a maintainer cuts
+and the `if` on the variable is already proved. That is a builder's
+change to this spec's own workflow, not an errand, and it is the one
+thing holding the spec at `testing`.
