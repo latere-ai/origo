@@ -69,7 +69,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | complete | 004, 005 |
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete | 002, 003 |
 | [008](008-push-events.md) | Push events: signed webhooks per reference update | small | complete | 004, 005, 007 |
-| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | testing | 004, 007 |
+| [009](009-read-api-and-archive.md) | Read API and archive: refs, log, diff, tree, blob, tarball | medium | complete | 004, 007 |
 | [010](010-lfs.md) | Git LFS: batch API and presigned object transfer | small | complete | 004, 007 |
 | [011](011-observability.md) | Observability: metrics, traces, logs, alerts | small | complete | 004, 005 |
 | [012](012-limits-and-abuse.md) | Limits and abuse controls | small | complete | 004, 006, 007 |

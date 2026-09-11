@@ -1,6 +1,6 @@
 ---
 title: "Read API and archive: refs, log, diff, tree, blob, tarball"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -323,7 +323,31 @@ names `--- PASS: TestContract/009` on the installation, which is this
 spec's read cases against a real target and is not what the spec waits
 on.
 
-Waits on: a test not yet in the tree.
+`TestReadTrace` was written on 2026-09-11, with the three spans it
+reads. `internal/tracing` existed by then, so the builder item this
+spec was left holding was buildable: the currency check runs under
+`index.check` in `repo.Cache.newest`, `repo.Cache.Apply` runs under
+`materialize`, and every git subprocess the node starts runs under
+`git.<subcommand>` from `repo.Span`, which `repo.Git.Run` wraps around
+its own and which the two streaming seams, `internal/api`'s
+`readRequest.run` and `readRequest.start`, and `internal/httpgit`'s
+`gitCommand` and `streamCommand`, end when the process is reaped rather
+than when the call that built it returns. `repo.Subcommand` names the
+span after the first argument that is not an option, so
+`--no-pager rev-parse` traces as `git.rev-parse`.
+
+The test drives a read against an in-memory OTLP receiver through a
+second node with a data directory of its own on the same bucket, which
+is the one shape that carries all three spans: the node that took the
+push already holds the copy, so a read through it would carry the
+currency check and no materialization. It asserts the repository id on
+`index.check` and on `materialize`, and at least one `git.` span. It is
+green in the `gate / test` job of run 34631054209 on main at
+`04efb39`, which reports `ok github.com/latere-ai/origo/cmd/origod
+55.527s` over the package that holds it, and `--- PASS: TestReadTrace
+(0.55s)` read back locally. Run against the tree without the spans it
+fails with `no trace carries a materialize span; 10 traces arrived`,
+so it is the spans it reads and not the receiver.
 
 The fuzz row did not close on 2026-09-11, and the run that looked like
 it closed is why this paragraph exists. `7e7b1cd` gave the `fuzz` job a
@@ -341,4 +365,29 @@ function's own name, or on a `-fuzztime` other than 40s. What closes
 this row is a `fuzz` job on the fixed recipe: a dispatch now reaches it,
 so it need not wait for the Sunday cron.
 
-Waits on: the weekly fuzz job of verify.yml.
+The fuzz row closed on 2026-09-11. The dispatched run 34599562832 of
+`verify.yml`, at commit `a1a25f4`, reports the job `fuzz`
+`completed/success`, and `c59a664`, the commit that anchored the
+`-fuzz` pattern on the function's own name, is an ancestor of
+`a1a25f4` (`git merge-base --is-ancestor c59a664 a1a25f4` exits 0), so
+the run carried the fixed recipe. It searched each of the eleven fuzz
+functions of the module for 40 seconds, this spec's among them:
+
+```
+== github.com/latere-ai/origo/internal/api FuzzValidPath
+fuzz: elapsed: 0s, gathering baseline coverage: 43/43 completed, now fuzzing with 4 workers
+fuzz: elapsed: 41s, execs: 26453 (0/sec), new interesting: 46 (total: 89)
+ok  	github.com/latere-ai/origo/internal/api	41.036s
+```
+
+Those three lines are what separate this run from 34598740040, which
+was green at the job level and fuzzed nothing: a search matching no
+function prints `testing: warning: no fuzz tests to fuzz` and
+`ok ... 0.005s`, with no baseline coverage line, no worker line, and no
+exec count. This log carries `no fuzz tests to fuzz` zero times, and
+the job took eight minutes over eleven functions rather than under one.
+
+With `TestE2EArchiveStreams` closed on run 34460223906, the 40 second
+`FuzzValidPath` search closed on 34599562832, and `TestReadTrace`
+green on 34631054209, this spec has no criterion without a passing
+test and moves to `complete`.
