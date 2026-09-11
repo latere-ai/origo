@@ -226,6 +226,12 @@ func ValidRefName(name string) bool {
 	if name == "HEAD" {
 		return true
 	}
+	// A branch named HEAD is refused the way git's own check-ref-format
+	// --branch refuses it: the symbolic reference and a branch of that
+	// name cannot both be pushed to, and spec 003 refuses a push to HEAD.
+	if name == "refs/heads/HEAD" {
+		return false
+	}
 	if !utf8.ValidString(name) {
 		return false
 	}

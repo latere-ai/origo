@@ -706,3 +706,13 @@ purpose, the Sweeper table's index row ahead of `internal/wal/sweep.go`,
 closed on 2026-09-08 when spec 006's builder removed the rule, the
 `Indexes` count of `SweepReport`, and the assertions on it; nothing in
 the spec stands open.
+
+A third defect in `ValidRefName`, found by spec 021's review and fixed
+on 2026-09-12: a branch named `HEAD`, `refs/heads/HEAD`, was accepted,
+while git's own `check-ref-format --branch` refuses the name and spec
+003 refuses a push to `HEAD`. The validator refuses it now, so a push,
+a server-side operation, a `default_branch` of `HEAD`, and an import
+naming it are all refused before anything is written; the seed is in
+`TestValidRefName` and in the corpus of `FuzzValidRefName`, whose
+oracle only requires that nothing the validator accepts is refused by
+git.

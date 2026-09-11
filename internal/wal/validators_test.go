@@ -90,7 +90,7 @@ func (o *gitOracle) pathOK(name string) bool {
 // no name it accepts is one git check-ref-format refuses. It runs its
 // seed corpus in the suite and for 40 seconds under make fuzz.
 func FuzzValidRefName(f *testing.F) {
-	for _, s := range []string{"HEAD", "refs/heads/main", "refs/tags/v1.0", "refs/heads/feature/x-y_z", "refs/heads/a.b", "refs/heads/a..b", "refs/heads/.hidden", "refs/heads/x.lock", "refs/heads/a b", "refs/heads/a~1", "refs/heads/a//b", "refs/heads/@", "refs/heads/a@{b}", "refs/heads/a\x01", "refs/heads/a\\b", "refs/heads/a:b", "refs/heads/a?b", "refs/heads/a*", "refs/heads/a[b", "refs/heads/a/", "refs/heads/-", "refs/heads/a.", "refs/heads/ä", "refs/heads/a/.b"} {
+	for _, s := range []string{"HEAD", "refs/heads/main", "refs/tags/v1.0", "refs/heads/feature/x-y_z", "refs/heads/a.b", "refs/heads/a..b", "refs/heads/.hidden", "refs/heads/x.lock", "refs/heads/a b", "refs/heads/a~1", "refs/heads/a//b", "refs/heads/@", "refs/heads/a@{b}", "refs/heads/a\x01", "refs/heads/a\\b", "refs/heads/a:b", "refs/heads/a?b", "refs/heads/a*", "refs/heads/a[b", "refs/heads/a/", "refs/heads/-", "refs/heads/a.", "refs/heads/ä", "refs/heads/a/.b", "refs/heads/HEAD"} {
 		f.Add(s)
 	}
 	oracle := newOracle(f)

@@ -695,11 +695,12 @@ Deferred, each named on its criterion:
 
 Open, for the deck:
 
-- A push of `refs/heads/HEAD` is accepted: git's `check-ref-format
+- A push of `refs/heads/HEAD` was accepted: git's `check-ref-format
   --branch` refuses a branch named `HEAD` while `receive-pack` and
-  `wal.ValidRefName` admit it, and spec 003 says a push to `HEAD` is
-  refused. The suite asserts no push to `HEAD`; the owner of the
-  reference grammar (specs 004 and 016) decides.
+  `wal.ValidRefName` admitted it, and spec 003 says a push to `HEAD` is
+  refused. Closed on 2026-09-12: `wal.ValidRefName` refuses the name,
+  with the seed in `TestValidRefName` and `FuzzValidRefName`; spec
+  004's Outcome records it.
 - `test/conformance` and `test/stubs/origo` import `internal/`
   packages, so a module outside this one cannot import them; a
   consumer runs the suite from this module's tree today. Either the
