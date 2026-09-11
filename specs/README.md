@@ -64,7 +64,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [001](001-architecture.md) | Architecture: components, storage model, flows, invariants | medium | complete | - |
 | [002](002-repository-scaffold.md) | Repository scaffold: module, binary, configuration, gate, release | small | complete | 001 |
 | [003](003-protocol-contract.md) | Protocol contract: what a consumer relies on | medium | complete | 001 |
-| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | testing | 002 |
+| [004](004-write-ahead-log.md) | Write-ahead log: entries, immutable index, create-if-absent commit, materialization | large | complete | 002 |
 | [005](005-placement-and-replication.md) | Placement and replication: rendezvous hashing, gossip, consistent reads, cache eviction | medium | complete | 004, 007, 013 |
 | [006](006-compaction.md) | Compaction: primary-only repacks, log truncation | medium | complete | 004, 005 |
 | [007](007-authentication-and-delegation.md) | Authentication and delegation: issuers, authorizer, acting on behalf | medium | complete | 002, 003 |

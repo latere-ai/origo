@@ -1,6 +1,6 @@
 ---
 title: "Write-ahead log: entries, immutable index, create-if-absent commit, materialization"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -615,5 +615,84 @@ before a tag. The live run of spec 021 that closed specs 003, 019, 020,
 and 021 on 2026-09-11 carries none of the three and moves this spec
 nowhere.
 
-Waits on: a test not yet in the tree.
-Waits on: a maintainer.
+All three deferred criteria closed on 2026-09-11.
+
+The eighth, 100 concurrent pushes from 8 clients, is
+`TestE2EHundredConcurrentPushesFromEightClients` in `test/e2e`. It
+prepares 100 branches over 8 working copies before any client starts,
+so what it measures is the commit path and not git's object writing,
+and each client pushes its own disjoint slice, so eight pushes are in
+flight throughout and the writers race for `index/<n+1>` a hundred
+times. It asserts the newest index at sequence 100 with 100 entries in
+sequence order, every branch at the commit its client pushed, and
+exactly 101 index objects named `index/000000000000` through
+`index/000000000100`, which is one winner per sequence. It runs in the
+`integration and one-node e2e tiers` job under the `TestE2E` prefix
+`make test-tiers` selects; that job reports `ok
+github.com/latere-ai/origo/test/e2e 245.642s` in run 34631054209 on
+main at `04efb39`, and `--- PASS (15.80s)` read back locally.
+
+The ninth, the materialization ceiling, is
+`TestSlowMaterializeTenThousandEntries` in `test/e2e`, in spec 013's
+`e2e-slow` job. The fixture is built in two parts. The packs come from
+compaction, which a node schedules only on the push path when the
+entries an index lists cross `compact.MaxEntries`, so each round writes
+that many entries through the log to a reference of its own and then
+pushes one commit through the node to cross the threshold; how many
+packs a run leaves is `git repack --geometric=2`'s decision, so the
+rounds run until the index lists the three the criterion names. The
+node is then stopped, so nothing compacts what follows, and the entries
+are written through `Log.Commit` by `writeEntries`, the same builder
+`TestE2EMaterializeThousandEntriesUnderBudget` uses, at ten times the
+count. A fresh node with an empty `repos` directory then serves the
+first advertisement, and the test asserts 10 000 entries and 3 packs in
+the index, 10 000 in `origo_repo_entries_applied_total` on the fresh
+node, the commit count of the clone, and `git fsck`.
+
+It is green in the `slow cluster e2e tier` job 103363974071 of the
+dispatched run 34629785911: `--- PASS: TestSlowMaterializeTenThousandEntries
+(416.83s)`, with `MEASURE wrote 9999 entries in 6m17.507s` and
+`MEASURE materialize 10000 entries and 3 packs onto an empty disk:
+3.221s`. That run's overall conclusion is `failure` on its
+cross-reference job alone, which `04efb39` fixed; the slow tier job
+itself is `success` and is what this row reads. The job took 12 m 20 s
+against 5 m 25 s before the scenario landed, inside spec 013's
+unchanged 30 minute budget.
+
+The two figures are worth keeping beside the measurements above. The
+fixture costs 38 ms per entry on the runner, because every commit
+rewrites an index object that ends at ten thousand rows: that is what a
+repository pays for ten thousand pushes without compaction, and it is
+why compaction exists. The materialization the criterion is about
+costs 3.2 s for all of it.
+
+The tenth, the conditional-write probe against DigitalOcean Spaces, was
+run on 2026-09-11 against the production bucket in fra1 with the
+current build and is recorded in
+[the spike](../docs/spikes/2026-09-06-conditional-writes.md), with spec
+017's release checklist row naming it. The three rows the criterion
+names pass: the create race applied 20 of 20 rounds, 20 x 200 and
+300 x 412 with 0 transport errors; `HEAD` on an absent key answered 404
+and on a present one 200 with the ETag `GET` agrees with; and
+`GET If-None-Match: <current>` answered 304 while a stale one answered
+200.
+
+The probe confirms two absences on Spaces, and neither is a finding
+against anything built here. `PUT If-Match` is refused on every use,
+including one carrying the ETag Spaces returned a moment earlier, so
+compare-and-swap does not exist there; and `CopyObject` ignores
+`If-None-Match: *` and a stale `If-Match` on the destination and
+overwrites, which the Rejected alternatives table above already
+predicted. Nothing in Origo reaches either: `IfMatch`, `If-Match`,
+`CopyObject` and `CopySource` appear in no file under `internal/`,
+`cmd/` or `test/` outside two comments, `latere.ai/x/pkg/s3` has no
+`If-Match` on `PUT` at all, and its fake answers 412 to one so a
+compare-and-swap cannot enter the design unnoticed. The probe proves
+what the design relies on and records what a later design cannot have.
+
+With the three closed, this spec has no criterion without a passing
+test and moves to `complete`. The one divergence left open on purpose
+stands: the Sweeper table's index row is ahead of
+`internal/wal/sweep.go`, and spec 006's builder removes the rule, the
+`Indexes` count of `SweepReport`, and the assertions on it with the
+compaction that makes them reachable.
