@@ -149,7 +149,7 @@ administrative route. A public repository that uses Git LFS can be cloned;
 its LFS files need a credential to download.`,
 	Variables: []Variable{
 		{"ORIGO_ANONYMOUS_READ", "no", "unset", "`1` admits a request with no credential on the routes above and asks your authorization endpoint about it with an empty subject. Unset admits none."},
-		{"ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE", "no", fmt.Sprintf("`%d`", limits.AnonymousRequestsPerMinute), "the requests every anonymous caller of this node shares in a minute. They share one bucket, so one scraper slows other anonymous readers and never slows a caller with a token. Read only when `ORIGO_ANONYMOUS_READ` is set."},
+		{"ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE", "no", fmt.Sprintf("`%d`", limits.AnonymousRequestsPerMinute), "the requests every anonymous caller of this node shares in a minute. They share one bucket, so one scraper slows other anonymous readers and never slows a caller with a token. Used only when `ORIGO_ANONYMOUS_READ` is set; a malformed value is a start-up problem either way."},
 	},
 }, {
 	Title: "Git over SSH",

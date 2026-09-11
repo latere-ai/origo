@@ -47,12 +47,13 @@ the sentinel `AnonymousBucket` and refills it at
 and wires them. Every criterion below has a green test, and spec 016's
 "Transport" paragraph is corrected.
 
-Not yet: a release carrying the switch, and a live installation with it
-set. The status stays `testing` until a tag ships it and the consumer
-that decides visibility (auth's spec 077) is deployed against it. Nothing
-in this spec is reachable before an operator sets the variable, so the
-release that carries it changes nothing for an installation that does
-not, and `TestTheSwitchChangesNothingForARefusedCaller` is what says so.
+The release carrying the switch is `v0.2.0`, shipped on 2026-09-11,
+and the installation runs it with the switch off, as the Outcome
+records. Nothing in this spec is reachable before an operator sets the
+variable, so the release changed nothing for an installation that does
+not, and `TestTheSwitchChangesNothingForARefusedCaller` is what says
+so. The consumer that decides visibility, auth's spec 077, is that
+deck's to deploy.
 
 ## Design
 
@@ -60,10 +61,13 @@ not, and `TestTheSwitchChangesNothingForARefusedCaller` is what says so.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ORIGO_ANONYMOUS_READ` | `false` | when true, a request with no credential on a route of the set below is admitted with an empty subject and decided by the authorizer like any other |
+| `ORIGO_ANONYMOUS_READ` | unset | `1` admits a request with no credential on a route of the set below with an empty subject, decided by the authorizer like any other; any other value, `true` included, leaves the switch off, the spelling spec 002's other switches use |
 | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | `60` | the refill of the single anonymous bucket, per node. `0` turns the limit off, which an operator should not do |
 
-`ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` is read only when the switch is on.
+`ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` is parsed at start-up like every
+variable of spec 002's table, so a malformed value is a problem in the
+one message whether or not the switch is on, and it is used only when
+the switch is on.
 
 ### Admission
 
@@ -229,3 +233,16 @@ is no anonymous read in v1 and points here instead.
 The switch is off in `deploy/prod`, so the installation carries the code
 and serves no anonymous request; the release proves the behaviour, not a
 change of what the installation admits.
+
+A review on 2026-09-11 read the Design against `internal/auth/anonymous.go`,
+the verifier, the limits, and the configuration and found the twelve
+patterns of the route set on a mux of their own with the pretty form as
+two exact patterns, the empty principal admitted only when no
+credential is present, the one 401 with `reason: "missing"` and the
+`Basic` challenge for every refusal of an empty subject, the sentinel
+bucket at 60 a minute, and every named test present. Two sentences of
+the switch table were behind the code: the switch is spelled `1` and
+not `true`, the spelling the configuration page and spec 002's other
+switches use, and its rate variable is parsed at start-up whether or
+not the switch is on. The Current state still waited on the release
+that carries the switch; `v0.2.0` carries it.
