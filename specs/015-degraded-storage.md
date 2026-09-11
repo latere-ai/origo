@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/stubs/cmd/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -28,22 +28,25 @@ a push it cannot prove durable, but it keeps serving what it can prove.
 
 ## Current state
 
-`pkg/s3` retries a 5xx, a 429, or a transport failure under
-`DefaultRetry` (3 attempts from 50 ms, capped at 2 s). The storage
-transport in `cmd/origod` has a 60 second response header timeout and a
-10 second TLS handshake timeout; there is no per-operation deadline and
-`ORIGO_STORAGE_TIMEOUT` is not read. Nothing else: a slow bucket makes
-every request slow, and an unreachable one makes every request fail
-after the retries with 503 `storage_unavailable`. `pkg/circuitbreaker`
-exists and is unused.
+Built on 2026-09-08 as the Design describes; the Outcome records the
+tests, the divergences, and the stack rounds. Before it, `pkg/s3`
+retried a 5xx, a 429, or a transport failure under `DefaultRetry` (3
+attempts from 50 ms, capped at 2 s), the storage transport in
+`cmd/origod` had a 60 second response header timeout and a 10 second
+TLS handshake timeout, there was no per-operation deadline and
+`ORIGO_STORAGE_TIMEOUT` was not read, and nothing else: a slow bucket
+made every request slow, and an unreachable one made every request
+fail after the retries with 503 `storage_unavailable`.
+`pkg/circuitbreaker` existed and was unused.
 
-One item in `latere.ai/x/pkg`, for the builder, before the wrapper
-below can be tested with a fake clock: `circuitbreaker.Breaker` reads
-`time.Now` directly and `New(threshold, openDuration)` takes no
-option, so its open window cannot be advanced in a test.
-`pkg/circuitbreaker` gains `WithClock(func() time.Time)`, an `Option`
-on `New`, defaulting to `time.Now`, the way `BackoffConfig.Now` already
-does for the other breaker; the wrapper passes its own clock through.
+One item in `latere.ai/x/pkg` stood in the way of testing the wrapper
+below with a fake clock, and still stands: `circuitbreaker.Breaker`
+reads `time.Now` directly and `New(threshold, openDuration)` takes no
+option, so its open window cannot be advanced in a test. The builder
+therefore wrote the breaker locally, in `internal/wal/breaker.go`, with
+the package's semantics and a clock of its own; a
+`WithClock(func() time.Time)` option on `New` would let the local copy
+go, which the Outcome's items for the shared library record.
 
 ## Design
 
@@ -384,8 +387,8 @@ reader finds one answer:
   and refuse the commit's own write. The sideband line for a wait that
   passes and for a probe that fails is `storage_unavailable: <the
   sentence>`; the line for a commit the log refuses for another reason
-  keeps its text until spec 021's `TestRejectLinesAreTheTableSentences`
-  lands.
+  kept its text until spec 021's `TestRejectLinesAreTheTableSentences`
+  landed on 2026-09-09 and made every such line the table's sentence.
 - A thin pack whose base is in no entry and no pack, spec 005's item,
   is `storage_unavailable` with `details.op: "index-pack"` and the
   git message in `details.error`, not `repository_unavailable`, and
@@ -542,3 +545,20 @@ That one call of three attempts counts one failure stays the
 `origo_log_integrity_errors_total` has the same shape and is left as it
 is: nothing on a node writes that counter but the refusal the scenario
 causes.
+
+A review on 2026-09-11 read the Design against `internal/wal/breaker.go`,
+the cache, the handlers, the node, and the proxy and found the two
+classes over the six operations, the threshold of 5 and the 30 second
+window, the half-open probe through `Allow` with `Admits` beside it,
+the storage deadline of 10 seconds bounding a `Get` to its headers, the
+metrics and the gauge, the whole-second `Retry-After` from the refusing
+class, the stale lease bounded by `ORIGO_STALE_MAX` with its header and
+counter in the cache, the write refused at once under an open read
+breaker, the receive-pack advertisement's `ERR` line, the 500 ms poll
+over 60 seconds through `Admits`, the integrity error and the thin-pack
+rule, readiness keyed on the read breaker's state once the bucket has
+answered, the proxy's three control paths, and every named test
+present. The Current state still described the tree before the build
+and a shared-library change as if it had been made, and a divergence
+bullet said a sideband line kept its text until spec 021 landed; all
+read as the tree stands.
