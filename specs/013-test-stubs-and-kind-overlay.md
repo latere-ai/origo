@@ -8,7 +8,7 @@ depends_on:
 affects: [test/stubs/sink/, test/stubs/origo/, test/stubs/source/, test/stubs/cmd/, Dockerfile.stubs, test/e2e/, test/e2e/cluster/, test/e2e/testdata/, deploy/examples/kind/, Makefile, .github/workflows/, .lateregate.yaml, internal/config/, tools/docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -33,27 +33,27 @@ suite that runs on this stack is spec 021.
 
 ## Current state
 
-`test/e2e` (build tag `e2e`) runs a built `origod` against MinIO with
-the real git: `TestPushThenCloneFromAnEmptyDisk`,
+Built on 2026-09-08 as the Design describes; the Outcome records what
+diverged. Before it, `test/e2e` (build tag `e2e`) ran a built `origod`
+against MinIO with the real git: `TestPushThenCloneFromAnEmptyDisk`,
 `TestConcurrentPushesToDifferentBranchesOnTwoNodes`, `TestKillMidPush`,
 and `TestMeasure`. `internal/wal`'s `TestS3Suite` (build tag
-`integration`) runs the store suite against the same MinIO. Both run
+`integration`) ran the store suite against the same MinIO. Both ran
 through `make test-integration` and not in CI: the shared
-`lateregate.yml` has no services step and Origo's `verify.yml` runs
-only the gate and the spec cross-reference test. `test/stubs/issuer`
-and `test/stubs/authorizer` exist, built by spec 007 to the table
-below; the rest of `test/stubs`, `deploy/examples/kind`, and
-`Dockerfile.stubs` do not. The unit
-suites cover every package at 90% or more on the in-process store and
-the real git. Built on 2026-09-08 as the Design describes; the Outcome
-records what diverged.
+`lateregate.yml` has no services step and Origo's `verify.yml` ran only
+the gate and the spec cross-reference test. `test/stubs/issuer` and
+`test/stubs/authorizer` existed, built by spec 007 to the table below;
+the rest of `test/stubs`, `deploy/examples/kind`, and `Dockerfile.stubs`
+did not. The unit suites covered every package at 90% or more on the
+in-process store and the real git.
 
 Three targets spec 002 assigned after it was complete are this spec's,
-for the builder: `make fuzz`, which runs every fuzz function in the
-module for 40 seconds (`go test -run=^$ -fuzz=<name> -fuzztime=40s`,
-one package at a time, the list from `go test -list '^Fuzz'`) and the
-`fuzz` job in `verify.yml` that calls it weekly from a `schedule`
-trigger; `make test-tiers`, which runs the `integration` and `e2e`
+and the builder made them: `make fuzz`, which runs every fuzz function
+in the module for 40 seconds (`go test -run=^$ -fuzz=<name>
+-fuzztime=40s`, one package at a time, the list from `go test -list
+'^Fuzz'`) and the `fuzz` job in `verify.yml` that calls it weekly from
+a `schedule` trigger and, since 2026-09-11, on a `workflow_dispatch`;
+`make test-tiers`, which runs the `integration` and `e2e`
 tiers against the test bucket variables the environment carries
 without starting compose; and the form of `make dev` that runs the
 stub issuer and authorizer beside MinIO. Every fuzz function the deck
@@ -64,21 +64,22 @@ CA of the source stub's certificate for that cluster, and is ignored
 by git: `.gitignore` gains the path with this spec, while the fault
 manifests beside it are checked in.
 
-One more item for the builder: the CI jobs below select tests by a
-name prefix, so the three phase 1 scenarios are renamed
+One more item the builder did: the CI jobs below select tests by a
+name prefix, so the three phase 1 scenarios were renamed
 `TestE2EPushThenCloneFromAnEmptyDisk`,
 `TestE2EConcurrentPushesToDifferentBranchesOnTwoNodes`, and
 `TestE2EKillMidPush`, the names specs 001 and 004 now carry;
 `TestMeasure` keeps its name because `ORIGO_E2E_MEASURE` selects it
 and no job regex does.
 
-And one gate, for the builder: spec 001's last criterion, that the
-build list of `./cmd/origod` reaches no cloud SDK and no Kubernetes
-client, is the `depcheck` gate of `latere.ai/x/ci-gate`, which this
-spec configures in `.lateregate.yaml` as part of the test tooling:
+And one gate, which the builder configured: spec 001's last criterion,
+that the build list of `./cmd/origod` reaches no cloud SDK and no
+Kubernetes client, is the `depcheck` gate of `latere.ai/x/ci-gate`,
+configured in `.lateregate.yaml` as part of the test tooling:
 `depcheck.packages` names `./cmd/origod` with an allow list of
-`latere.ai/x/pkg` and the standard library. Spec 001 stays at
-`testing` until the gate runs on every push.
+`latere.ai/x/pkg`, the standard library, and the roots specs 011 and
+024 later admitted with a reason each. The gate runs on every push,
+which is what let spec 001 leave `testing`.
 
 ## Design
 
@@ -226,9 +227,9 @@ rather than a step in a job:
 | Row | Provides | Needed by |
 |---|---|---|
 | MinIO | one in-cluster bucket, path style, on the host port of the ports table so the runner reaches it too, with fixed values: bucket `origo-test`, key `minioadmin`, secret `minioadmin`, region `us-east-1`, path style on, endpoint `http://localhost:30900` from the runner; `ORIGO_S3_PUBLIC_ENDPOINT=http://localhost:30900` on every node, which is what a presigned URL and the harness use from outside the cluster; the `e2e` and `e2e-slow` jobs export those values as `ORIGO_TEST_S3_ENDPOINT`, `ORIGO_TEST_S3_REGION`, `ORIGO_TEST_S3_BUCKET`, `ORIGO_TEST_S3_KEY`, `ORIGO_TEST_S3_SECRET`, and `ORIGO_TEST_S3_PATH_STYLE` (spec 002), which is how a test that starts its own node in a cluster job, spec 017's fixture harness, and the `Fault` of spec 021 reach the bucket | every spec; 008 and 021 for a node or a fault of their own, 010 for LFS transfers from the runner, 017 for the fixture the harness extracts |
-| three `origod` pods | the StatefulSet `origod` with 3 replicas, `origod-0`, `origod-1`, `origod-2`, replacing the base's Deployment with the same labels so the Service, the PodDisruptionBudget, the NetworkPolicy, and the HorizontalPodAutoscaler (its `scaleTargetRef` patched to the StatefulSet, spec 005) apply unchanged; the candidate image with `ORIGO_NODE_NAME` the pod name, `ORIGO_GOSSIP_PEERS` on the headless Service, `ORIGO_GOSSIP_SECRET` a fixed value (spec 005), `ORIGO_OIDC_ISSUERS=http://origo-stubs.origo.svc:8081` and `ORIGO_OIDC_INSECURE_ISSUERS` naming the same URL (spec 007), `ORIGO_AUTHORIZER_URL=http://origo-stubs.origo.svc:8082` with `ORIGO_AUTHORIZER_TOKEN=stub-authorizer-token` (spec 007), `ORIGO_EVENTS_URL=http://origo-stubs.origo.svc:8083` with `ORIGO_EVENTS_SECRET=stub-sink-secret` (spec 008), `ORIGO_STALE_MAX=30s` so spec 015's cluster scenario waits 30 seconds and not 5 minutes for stale serving to end, `ORIGO_PUBLIC_URL=http://localhost:30080` on all three pods, because the configuration requires it (spec 002) and a repository-bound token carries it as `iss` (spec 007), so a token minted through one node verifies on another only when the value is the same on every pod, and once spec 018 moves the Latere values out of the base this overlay is the only place the value is set, and `ORIGO_TOKEN_KEY` from the Secret `origod-token-key`, which `up.sh` generates with `openssl ecparam -genkey -name prime256v1` and the install document's block of spec 018 generates the same way (spec 007); `ORIGO_SSH_ADDR=:2222` with `ORIGO_SSH_HOST_KEYS` naming the two keys mounted from the Secret `origod-ssh-host-key`, which `up.sh` generates with `ssh-keygen` once for the whole stack so every pod presents the same key, and `ORIGO_SSH_KEYS_URL=http://origo-stubs.origo.svc:8087` with `ORIGO_SSH_KEYS_TOKEN=stub-sshkeys-token` (spec 024); from the `test-source` component, as a patch on the StatefulSet: `ORIGO_EGRESS_ALLOW=origo-stubs.origo.svc=10.96.0.42`, the host pinned to the stubs' Service `clusterIP` as spec 016 requires for a cluster address, `ORIGO_CLUSTER_CIDRS` naming kind's service and pod ranges, and `ORIGO_EGRESS_CA_BUNDLE=/etc/origo/stub-ca.pem`, the CA the source stub's certificate is signed by, mounted from the ConfigMap `origo-stub-ca` (spec 016), so a stack applied without the component carries none of the three and refuses every source; one balanced Service for the public listener and one for SSH, and, per pod, one public, one internal, and one SSH Service selecting on `statefulset.kubernetes.io/pod-name`, each on its host port of the ports table, so a test can push through one node, read that node's `/metrics`, clone through another, and read one named node's SSH host key | every spec; 005, 006, 015 for per-node addresses |
-| `origo-stubs` | one Deployment `origo-stubs` running the binary with the issuer (port 8081), the authorizer with `-allow *` and `-authorizer-token stub-authorizer-token` (8082), and the sink with `-secret stub-sink-secret` (8083), behind the one Service `origo-stubs` whose manifest fixes `clusterIP: 10.96.0.42` inside kind's default service range `10.96.0.0/16`, so the nodes' pinned `ORIGO_EGRESS_ALLOW` entry names an address that never changes, each control endpoint on its host port of the ports table so `TestContract` drives them from the runner (spec 021); the values are the ones the pods row sets on the nodes. The source is the kustomize component `deploy/examples/kind/test-source/`, which `up.sh` includes and spec 018's install jobs omit: it patches the Deployment to also run the source with `-source-token stub-source-token` and `-ca` and `-ca-key` from the mount of the Secret `origo-stubs-ca`, adds port 8443 to the Service, so the source serves TLS in-cluster at `https://origo-stubs.origo.svc:8443`, and patches the nodes with the three egress variables and the CA mount the pods row lists; the CA certificate and key are generated by `up.sh` with `openssl` into `origo-stubs-ca`, the certificate carrying the SANs `origo-stubs.origo.svc` and `localhost` so the same certificate verifies in-cluster and through the host port; the certificate alone is copied into the ConfigMap `origo-stub-ca` the nodes mount for `ORIGO_EGRESS_CA_BUNDLE`, and written to `test/e2e/testdata/stub-ca.pem` on the runner (ignored by git), so a test on the runner trusts the host port through the file. An installation from the overlay alone runs the issuer, the authorizer, and the sink and no source | 007, 008, 021; 014 and 019 for an in-cluster HTTPS source through the component |
-| `slowproxy` | `test/stubs/slowproxy` as a pod in front of MinIO, the `origo-stubs` binary run with `-slowproxy-target` naming MinIO's Service, `ORIGO_S3_ENDPOINT` on every node pointing at its Service on the data port 8086, delay 0 until its control endpoint, on its host port of the ports table, sets one; the proxy and this row are added by spec 015, which owns the package, so until it lands `ORIGO_S3_ENDPOINT` names MinIO's Service and the ports table's 30085 answers nothing | 015 for the slow-bucket case |
+| three `origod` pods | the StatefulSet `origod` with 3 replicas, `origod-0`, `origod-1`, `origod-2`, replacing the base's Deployment with the same labels so the Service, the PodDisruptionBudget, the NetworkPolicy, and the HorizontalPodAutoscaler (its `scaleTargetRef` patched to the StatefulSet, spec 005) apply unchanged; the candidate image with `ORIGO_NODE_NAME` the pod name, `ORIGO_GOSSIP_PEERS` on the headless Service, `ORIGO_GOSSIP_SECRET` a fixed value (spec 005), `ORIGO_OIDC_ISSUERS=http://origo-stubs.origo.svc:8081` and `ORIGO_OIDC_INSECURE_ISSUERS` naming the same URL (spec 007), `ORIGO_AUTHORIZER_URL=http://origo-stubs.origo.svc:8082` with `ORIGO_AUTHORIZER_TOKEN=stub-authorizer-token` (spec 007), `ORIGO_EVENTS_URL=http://origo-stubs.origo.svc:8083` with `ORIGO_EVENTS_SECRET=stub-sink-secret` (spec 008), `ORIGO_STALE_MAX=30s` so spec 015's cluster scenario waits 30 seconds and not 5 minutes for stale serving to end, `ORIGO_STORAGE_TIMEOUT=5s` so a cut bucket is refused within the scenarios' patience (spec 015), `ORIGO_PUBLIC_URL=http://localhost:30080` on all three pods, because the configuration requires it (spec 002) and a repository-bound token carries it as `iss` (spec 007), so a token minted through one node verifies on another only when the value is the same on every pod, and once spec 018 moves the Latere values out of the base this overlay is the only place the value is set, and `ORIGO_TOKEN_KEY` from the Secret `origod-token-key`, which `up.sh` generates with `openssl ecparam -genkey -name prime256v1` and the install document's block of spec 018 generates the same way (spec 007); `ORIGO_SSH_ADDR=:2222` with `ORIGO_SSH_HOST_KEYS` naming the two keys mounted from the Secret `origod-ssh-host-key`, which `up.sh` generates with `ssh-keygen` once for the whole stack so every pod presents the same key, and `ORIGO_SSH_KEYS_URL=http://origo-stubs.origo.svc:8087` with `ORIGO_SSH_KEYS_TOKEN=stub-sshkeys-token` (spec 024); from the `test-source` component, as a patch on the StatefulSet: `ORIGO_EGRESS_ALLOW=origo-stubs.origo.svc=10.96.0.42`, the host pinned to the stubs' Service `clusterIP` as spec 016 requires for a cluster address, `ORIGO_CLUSTER_CIDRS` naming kind's service and pod ranges, and `ORIGO_EGRESS_CA_BUNDLE=/etc/origo/stub-ca.pem`, the CA the source stub's certificate is signed by, mounted from the ConfigMap `origo-stub-ca` (spec 016), so a stack applied without the component carries none of the three and refuses every source; one balanced Service for the public listener and one for SSH, and, per pod, one public, one internal, and one SSH Service selecting on `statefulset.kubernetes.io/pod-name`, each on its host port of the ports table, so a test can push through one node, read that node's `/metrics`, clone through another, and read one named node's SSH host key | every spec; 005, 006, 015 for per-node addresses |
+| `origo-stubs` | one Deployment `origo-stubs` running the binary with the issuer (port 8081), the authorizer with `-allow *` and `-authorizer-token stub-authorizer-token` (8082), the sink with `-secret stub-sink-secret` (8083), the key resolver of spec 024 (8087), and the slow proxy of spec 015 (control 8085, data 8086 behind the Service `slowproxy` of the row below), behind the one Service `origo-stubs` whose manifest fixes `clusterIP: 10.96.0.42` inside kind's default service range `10.96.0.0/16`, so the nodes' pinned `ORIGO_EGRESS_ALLOW` entry names an address that never changes, each control endpoint on its host port of the ports table so `TestContract` drives them from the runner (spec 021); the values are the ones the pods row sets on the nodes. The source is the kustomize component `deploy/examples/kind/test-source/`, which `up.sh` includes and spec 018's install jobs omit: it patches the Deployment to also run the source with `-source-token stub-source-token` and `-ca` and `-ca-key` from the mount of the Secret `origo-stubs-ca`, adds port 8443 to the Service, so the source serves TLS in-cluster at `https://origo-stubs.origo.svc:8443`, and patches the nodes with the three egress variables and the CA mount the pods row lists; the CA certificate and key are generated by `up.sh` with `openssl` into `origo-stubs-ca`, the certificate carrying the SANs `origo-stubs.origo.svc` and `localhost` so the same certificate verifies in-cluster and through the host port; the certificate alone is copied into the ConfigMap `origo-stub-ca` the nodes mount for `ORIGO_EGRESS_CA_BUNDLE`, and written to `test/e2e/testdata/stub-ca.pem` on the runner (ignored by git), so a test on the runner trusts the host port through the file. An installation from the overlay alone runs the issuer, the authorizer, and the sink and no source | 007, 008, 021; 014 and 019 for an in-cluster HTTPS source through the component |
+| `slowproxy` | `test/stubs/slowproxy` as a pod in front of MinIO, the `origo-stubs` binary run with `-slowproxy-target` naming MinIO's Service, `ORIGO_S3_ENDPOINT` on every node pointing at its Service on the data port 8086, delay 0 until its control endpoint, on its host port of the ports table, sets one; the proxy and this row were added by spec 015, which owns the package: the `origo-stubs` Deployment runs it with `-slowproxy-target=minio.origo.svc:9000`, its data listener has the Service `slowproxy`, and `ORIGO_S3_ENDPOINT` on every node is `http://slowproxy.origo.svc:8086` | 015 for the slow-bucket case |
 | `metrics-server` | the resource metrics API a CPU-target HorizontalPodAutoscaler reads: `kubectl apply` of the release manifest `https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml`, downloaded and checked with `sha256sum -c` against the digest `versions.env` records beside the version, with the image reference rewritten to its digest form from the same file and `--kubelet-insecure-tls` added to the container arguments, the flag that accepts kind's kubelet certificates | 005 |
 | Cilium | the CNI, installed in place of kindnet (`disableDefaultCNI` in `kind.yaml`), so NetworkPolicy is enforced: the Helm chart `cilium/cilium` from `https://helm.cilium.io` at version `1.18.0`, `helm install cilium` into `kube-system` with `ipam.mode=kubernetes` (kind allocates the pod CIDRs) and the chart's default `image.useDigest=true`, which pins every Cilium image by digest; the chart version is the one `versions.env` records, and spec 018's `install` job installs Cilium from the same file | 015 for the unreachable-bucket policy, 016 for the gossip policy |
 | `versions.env` | `deploy/examples/kind/versions.env`, the one file that pins what the stack installs beyond the overlay: the Cilium chart version, the `metrics-server` version, the sha256 of its manifest, and the digest of its image; `up.sh` and spec 018's `install` job source it, so a bump is a one-line change the `up-script` and `install` jobs prove | 005, 015, 016, 018 |
@@ -323,7 +324,7 @@ conformance suite runs on the same stack.
 | `e2e-slow` | the same set-up from the same artifact, with `git-lfs` installed on the runner for spec 010, then `-run 'TestSlow'`: spec 005's `TestSlowAutoscalerScalesUp` and `TestSlowReplicasScaleReads`, spec 008's `TestSlowEventRepairAfterKill`, spec 004's `TestSlowMaterializeTenThousandEntries`, and spec 010's `TestSlowLFSRoundTripBypassesTheNode` (500 MiB through MinIO's host port), which each wait on a timer or a fixture the others do not | 30 minutes |
 | `up-script` | downloads the `candidate-images` artifact, then `-run 'TestClusterUpScript'` and nothing else: this spec's `TestClusterUpScript`, which runs `up.sh -name up-test -port-offset 1000` with the two tarballs, creating a cluster `origo-up-test` of its own whose host ports are the ports table's plus 1000, checks it, and runs `down.sh -name up-test` whatever happened; a job of its own, on no stack, because a second cluster's creation and the script's 5 minute wait do not fit beside the `e2e` job's scenarios | 15 minutes |
 | `mutation` | spec 021's job: MinIO as a service container, like `integration`, the `ORIGO_TEST_S3_ENDPOINT` family exported, and `-run 'TestMutation'` once per capability of spec 021's set with `ORIGO_TEST_DROP_CAPABILITY` set to it; `TestMutation` of `test/e2e` starts one node of its own carrying the variable, the way spec 008's repair case starts nodes, runs `conformance.Run` against it, and expects the run to fail on exactly the dropped capability; spec 021 says what it asserts, this table gives it its budget | 20 minutes |
-| `fuzz` | `make fuzz` on a weekly `schedule` trigger | 60 minutes |
+| `fuzz` | `make fuzz` on a weekly `schedule` trigger and on a `workflow_dispatch` | 60 minutes |
 
 Every test of the tier carries the build tag `e2e`; which job runs it
 is its name prefix, given to `go test -run` by the job: `TestE2E` for
@@ -458,8 +459,9 @@ authorizer packages (spec 007, to the table above). The slow proxy
   `k8s.io/`, spec 001's criterion, which this spec owns: the `depcheck`
   gate runs on every push with `depcheck.packages` in `.lateregate.yaml`
   naming `./cmd/origod` and an allow list of `latere.ai/x/pkg` and the
-  standard library (proposed: `.lateregate.yaml`, the `depcheck` gate,
-  checked by bare `make`).
+  standard library, widened since by specs 011 and 024 with a reason
+  per root (proposed: `.lateregate.yaml`, the `depcheck` gate, checked
+  by bare `make`).
 
 ## Outcome
 
@@ -527,9 +529,12 @@ Divergences and interpretations, all kept:
   `down.sh` removes both.
 - The overlay owns the Namespace `origo` with the restricted label,
   because the label is a row of its table and the production Namespace
-  stays in `deploy/bootstrap` (spec 018); the base's Deployment and
-  Ingress are removed with `$patch: delete`, and the base's Service is
-  patched to a NodePort. The autoscaler `origod` is a resource of the
+  stays in `deploy/bootstrap` (spec 018); the base's Deployment is
+  removed with `$patch: delete`, the base's Ingress is kept and given
+  the `ingress-nginx` annotations of `patches/ingress-nginx.yaml`, the
+  shape spec 018's controller-neutral base leaves to an example while
+  no controller runs on the stack, and the base's Service is patched to
+  a NodePort. The autoscaler `origod` is a resource of the
   overlay held at three replicas with the 60 second scale-down window,
   not a patch, because `deploy/base` has no autoscaler until spec 005
   adds it; `hpa-2.yaml` carries a scale-down window of 0 so the two
@@ -618,3 +623,19 @@ attempt. The overlay, `up.sh`, `down.sh`, the Cilium and
 `e2e`, and `e2e-slow` jobs of `verify.yml`, green on `main` at
 `c54c711` (run 34208209981), where `up.sh` brings the stack up in
 about 90 seconds.
+
+A review on 2026-09-11 read the Design against the tree and found the
+five stub packages with every control path of their table, the
+binary's flags at the stated defaults with `-authorizer-token`
+required, the three Makefile targets with the stub ports at base plus
+4, 5, and 6, every host port of the ports table in `kind.yaml`, the
+overlay's variables on the nodes, `up.sh` doing each step the section
+names, `versions.env` pinning the four values, the seven helper
+functions, the six fixtures with the CA file ignored, the job budgets
+of the CI table, and every named test present. Sentences behind the
+tree were in the Current state and its three builder items, the
+`slowproxy` and `origo-stubs` rows written before specs 015 and 024
+added what they run, the pods row missing spec 015's storage timeout,
+the `fuzz` row missing the dispatch trigger, and an Outcome bullet
+saying the base Ingress is deleted where the overlay keeps and
+annotates it; each reads as the tree stands.
