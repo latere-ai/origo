@@ -39,8 +39,8 @@ Built on 2026-09-09; the Outcome below records what landed. The suite
 is `test/conformance`, the code table with its statuses is
 `internal/contract`, the mutation seam is `ORIGO_TEST_DROP_CAPABILITY`
 through `internal/config` and `internal/repo`, and the stub of spec 013
-serves the whole contract in-process. The spec is at `testing` until
-the live run of a release has run once.
+serves the whole contract in-process. The spec has been `complete`
+since the live run of the v0.1.3 release on 2026-09-11.
 
 ## Design
 
@@ -267,6 +267,7 @@ enforcement.
 | 015 | `repository_unavailable` |
 | 019 | `gone`, `repo_frozen`, `repo_importing`, `repo_not_empty`, `import_not_found` |
 | 020 | `merge_conflict`, `invalid_change` |
+| 026 | `directory_unsupported` |
 
 The test proves it can fail on a negative fixture,
 `test/conformance/testdata/negative/bad.go.txt`. It sits outside
@@ -471,14 +472,15 @@ with the node's wiring; the stub's events, limits, compaction, and
 `Fault`; `test/conformance` with its four tests; `TestMutation` with
 the jobs of `verify.yml` and the `live` job of `release.yml`; and,
 once spec 020 landed beside it, the four cases of its Operations
-table, 64 cases in all.
+table, 59 cases in all, 23 of them spec 003's with one per advertised
+capability.
 
 | Criterion | Test |
 |---|---|
 | `TestContract` against the kind stack with nothing skipped, and against `ORIGO_LIVE_URL` with exactly the six groups skipped and each reported by name | `test/conformance`, `TestContract`, in the `e2e` job for the stack, which asserts an empty skip list when the `Fault` is wired; the live run is the `live` job of `release.yml`, which asserts the six groups and runs at the next release |
 | `storage_unavailable` under the cut and `repository_unavailable` with `details.key` naming the deleted object, through `Fault`; skipped and reported without one | `test/conformance`, `TestContract/003/storage_unavailable` and `TestContract/015/repository_unavailable`; on the stub through `TestStubConforms`, on the stack in the `e2e` job, skipped and reported in `TestContract`'s live run |
 | removing one capability fails `conformance.Run` on its subtests alone, an unknown value refuses start-up, five runs inside 20 minutes | `test/e2e`, `TestMutation` (about 30 seconds a run against MinIO) and `TestMutationsCoverTheSet`; `verify.yml`, the `mutation` job over the five names; `internal/config`, `TestDropCapabilityIsOneOfTheSet`; `internal/repo`, `TestDropCapabilityTurnsItsKeyOff` |
-| the contract stub passes with an empty `Skip` list, the LFS rows included | `test/stubs/origo`, `TestStubConforms`: 60 cases pass, the source group alone skips itself |
+| the contract stub passes with an empty `Skip` list, the LFS rows included | `test/stubs/origo`, `TestStubConforms`: 57 cases pass, and the source group's two alone skip themselves |
 | a consumer's tests written against the stub pass unchanged against a live node | `test/conformance`, `TestSameAnswersOnStubAndStack`, in the `e2e` job |
 | the code table walk and the negative fixture | `internal/contract`, `TestEveryCodeHasOneSentence`, `TestTableWalkFailsOnTheNegativeFixture` (findings at `bad.go.txt:16` and `:17` and no third), `TestTableWalkReportsEveryRule` |
 | `remote: <code>: <sentence>` for `non_fast_forward` and `storage_unavailable`, the reference and hashes on the `info` line | `internal/httpgit`, `TestRejectLinesAreTheTableSentences` |
