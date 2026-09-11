@@ -24,24 +24,25 @@ authorizer, `quota_bytes`.
 
 ## Current state
 
-Phase 1 bounds what its parsers accept: a JSON body of 64 KiB, at most
-100 000 commands and 1 000 push options in a receive-pack request (both
-answered 400 `invalid_request`), a 4 KiB entry header, a 64 MiB
-transaction, a 64 MiB index object. Every git subprocess has a 5 minute
-deadline. Object storage calls use `pkg/s3`'s `DefaultRetry`: 3 attempts
-from 50 ms, capped at 2 s, on a 5xx, a 429, or a transport failure.
-Nothing limits a push's size, a repository's size, a subject's request
-rate, or the number of concurrent subprocesses. `internal/limits` does
-not exist.
+Built on 2026-09-08 as `internal/limits` and the enforcement in the
+handlers the Outcome lists. Before it, phase 1 bounded what its parsers
+accepted: a JSON body of 64 KiB, at most 100 000 commands and 1 000
+push options in a receive-pack request (both answered 400
+`invalid_request`), a 4 KiB entry header, a 64 MiB transaction, a 64
+MiB index object. Every git subprocess had a 5 minute deadline. Object
+storage calls used `pkg/s3`'s `DefaultRetry`: 3 attempts from 50 ms,
+capped at 2 s, on a 5xx, a 429, or a transport failure. Nothing limited
+a push's size, a repository's size, a subject's request rate, or the
+number of concurrent subprocesses, and `internal/limits` did not exist.
 
-One item for the builder, from spec 010: `quota_bytes` for a
-repository-bound token is `auth.DefaultQuotaBytes` there, because the
+One item the builder took from spec 010: `quota_bytes` for a
+repository-bound token was `auth.DefaultQuotaBytes` there, because the
 token's claims carry no quota and the authorizer never sees the token.
 This spec asks the authorizer for the minting subject's figure when a
 bound token writes (the token's `sub`, `act` as the actor, action
 `write`, on the bound repository), cached like any allow, so a bound
 token's uploads are held to the figure its minter's pushes are, and
-spec 010's interim rule ends.
+spec 010's interim rule ended with it.
 
 ## Design
 
@@ -101,13 +102,12 @@ against, and the same outage denies every unbound write on the node, so
 riding it out under a bound token would make the token the way around
 the outage rule.
 
-This last rule is an item for spec 016's builder, who owns
-`internal/auth`: `Guard.quota` today logs the outage and falls back to
-the default, and `Guard.Decide` must propagate the `*Unavailable` on a
-write instead. `TestBoundTokenWriteFailsClosedDuringAuthorizerOutage`
-holds it, and the closing block of
-`TestBoundTokenWriteTakesTheMintersQuota`, which asserts the fallback
-today, changes with it.
+Spec 016's builder, who owns `internal/auth`, made this last rule the
+code on 2026-09-09: `Guard.quota` returns the `*Unavailable` and
+`Guard.Decide` propagates it on a write.
+`TestBoundTokenWriteFailsClosedDuringAuthorizerOutage` holds it, and
+the closing block of `TestBoundTokenWriteTakesTheMintersQuota` asserts
+the refusal in place of the first build's fallback.
 
 ### What 600 requests a minute buys
 
@@ -236,9 +236,9 @@ Divergences and interpretations, each kept and the reason:
   with no figure leave `auth.DefaultQuotaBytes` and write a warning
   rather than refusing a push the scope allows. The build also let an
   authorizer that produced no answer fall back to that default; the
-  Design now refuses the write with `authorizer_unavailable` instead,
-  which is the one item this spec leaves open in the tree and spec
-  016's builder closes. Spec 007's `TestRepositoryBoundTokenScope` now
+  Design refuses the write with `authorizer_unavailable` instead, an
+  item spec 016's builder closed on 2026-09-09, as the settled items
+  below record. Spec 007's `TestRepositoryBoundTokenScope` now
   expects the one authorizer call a bound write makes.
 - **The command cap answers 413 before git runs.** The row names the
   code and the limit but no status; 413 is spec 003's status for
@@ -427,3 +427,17 @@ and drives the counter down, is the limit in force. The 429 and its
 from one bucket. Spec 021 records the burst, how the case reads the
 number of buckets off how far the counter fell, and what a live target
 reports instead.
+
+A review on 2026-09-11 read the Design against `internal/limits` and
+the three handlers and found every figure of the table at its value,
+the five limit labels written where the Answer column puts each (the
+verdict line for the two sideband refusals, 413 for the single push
+and the command cap, 429 with `Retry-After` for the bucket and the
+semaphore, the `repository` label recorded only by the per-repository
+limits of specs 019 and 020), the 5 second slot wait, the two headers
+set from the allowance the bucket answers under its lock, the default
+table built by every handler given none, the bound token's quota path
+failing closed on an outage, the wall times per surface, and every
+named test present. Three passages still said the package did not
+exist, the bound token's item was still to take, and the fail-closed
+rule waited on spec 016's builder; all three read as the tree stands.
