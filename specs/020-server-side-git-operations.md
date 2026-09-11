@@ -38,19 +38,21 @@ what makes that a request rather than a clone.
 
 ## Current state
 
-Spec 009 serves refs, commits, trees, and blobs. Spec 004's receive path
-turns a pack and a transaction into an entry. Nothing creates a commit
-without a client.
+Built on 2026-09-09 and complete since 2026-09-11; the Outcome records
+the tests, the divergences, and the runs. Before it, spec 009 served
+refs, commits, trees, and blobs, spec 004's receive path turned a pack
+and a transaction into an entry, and nothing created a commit without a
+client.
 
-One item for the builder, from spec 012: a subject that drives many
+One item the builder took from spec 012: a subject that drives many
 repositories through these routes needs a request rate of its own. Spec
-012's per-subject bucket is one figure for the node,
+012's per-subject bucket was one figure for the node,
 `ORIGO_REQUESTS_PER_MINUTE`, 600 by default, which is 300 back-to-back
 pushes a minute under one token; a tool that walks a fleet of
 repositories crosses it while every human client stays far below. The
 authorizer answers the figure: spec 007's response carries an optional
 `requests_per_minute`, absent meaning the variable's value, and this
-spec's builder makes the bucket read it, so a consumer raises the rate
+spec's builder made the bucket read it, so a consumer raises the rate
 for its own tooling without raising it for every caller of the node.
 
 ## Design
@@ -355,8 +357,8 @@ the cases caught a difference between the toolchain's git and the
 runtime image's that no test running against the local git could
 have.
 
-This spec stays at `testing` until spec 021 reaches `complete`, the
-way specs 003 and 004 wait on the suite: what remains is the run of
+This spec stayed at `testing` until spec 021 reached `complete`, the
+way specs 003 and 004 waited on the suite: what remained was the run of
 the four cases against the installation `ORIGO_LIVE_URL` names, which
 spec 021 owns. The four cases are green against the image the first
 release published: the `conformance` job of the tag run 34461460766 of
@@ -441,8 +443,9 @@ that keeps its own rules; each is a candidate for a later round.
   output as data needs git 2.40, which is the floor `origod check` will
   require. That is true of the form this spec uses, and the divergence
   above is what keeps it true: `--merge-base` needs 2.41, above the
-  2.39 of the `bookworm-slim` runtime image, which the decision row of
-  spec 017 moves to `trixie-slim` and git 2.47 in a later phase. A
+  2.39 of the `bookworm-slim` runtime image the first build ran on;
+  spec 017 has since moved the image to `trixie-slim` and git 2.47, and
+  the build keeps the form that needs 2.40 alone. A
   reader of the Mechanics should not have to work out which options of
   `merge-tree` the floor admits.
 - A reference name that collides with an existing one answers 503
@@ -463,3 +466,21 @@ that keeps its own rules; each is a candidate for a later round.
   `internal/auth/`, which the builder item from spec 012 changes, nor
   `cmd/origod/`, which the route sweep of spec 016 obliges every new
   route to add a line to. All three are in the list now.
+
+A review on 2026-09-11 read the Design against `internal/api/operations.go`
+and `operations_git.go` and found the four routes, every field of the
+common shape and of each operation's body, the limits (1 000 changes,
+10 MiB per file, 64 MiB per body, 100 picked commits, 64 KiB message,
+60 operations a minute per repository, 5 minutes for the merge family),
+the three strategy names, the five `invalid_change` reasons, the
+response fields with `committed` on a dry run, the committer
+`Origo <origo@<host>>` with the two trailers, the `origo.operation=`
+push option on the entry, the dry run's temporary object directory with
+the copy's as alternate, the plumbing as the Mechanics and the
+divergences state it, the two codes at their statuses, and every named
+test present with the four conformance cases in `cases020.go`. Three
+passages were behind the tree: the Current state in unbuilt tense with
+spec 012's item still to take, a sentence saying the spec stays at
+`testing` two paragraphs before the one that closes it, and a
+spec-defect bullet saying spec 017 moves the image in a later phase.
+Each reads as the tree stands.
