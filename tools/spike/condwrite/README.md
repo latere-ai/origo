@@ -35,7 +35,7 @@ dependency footprint. Nothing in `origod` imports it.
 Against a local MinIO (the bucket is created and deleted by the run):
 
 ```sh
-podman run -d --rm --name minio -p 127.0.0.1:9000:9000 docker.io/minio/minio server /data
+podman run -d --rm --name minio -p 127.0.0.1:9000:9000 quay.io/minio/minio server /data
 cd tools/spike/condwrite
 S3_KEY=minioadmin S3_SECRET=minioadmin go run . \
   -endpoint http://127.0.0.1:9000 -bucket origo-spike -path-style -create-bucket

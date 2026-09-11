@@ -4,6 +4,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -208,6 +209,43 @@ func TestOverlayPatchesReachBothContainers(t *testing.T) {
 		}
 		if !slices.Equal(check, node) {
 			t.Errorf("%s gives the check %v and the node %v", patch, check, node)
+		}
+	}
+}
+
+// TestMinIOImagesAreOnePinFromOneRegistry holds the three places the
+// test stack names MinIO to one reference each: the compose file of
+// spec 002's local stack, the kind overlay of spec 013, and the two
+// jobs of verify.yml that run MinIO beside the runner. Each is pinned
+// by tag and digest on quay.io, where MinIO publishes its images:
+// Docker Hub stopped serving minio/minio and minio/mc on 2026-09-11 and
+// every job that pulled them went red on a pin that had resolved for
+// days, so a reference that names another registry, or differs between
+// the three files, fails here on the push that introduces it.
+func TestMinIOImagesAreOnePinFromOneRegistry(t *testing.T) {
+	files := []string{"docker-compose.yml", "deploy/examples/kind/minio.yaml", ".github/workflows/verify.yml"}
+	ref := regexp.MustCompile(`\S*minio/(minio|mc):\S+`)
+	pinned := regexp.MustCompile(`^quay\.io/minio/(minio|mc):RELEASE\.[0-9TZ-]+@sha256:[0-9a-f]{64}$`)
+	seen := map[string]map[string]bool{}
+	for _, name := range files {
+		found := 0
+		for _, m := range ref.FindAllStringSubmatch(manifest(t, name), -1) {
+			found++
+			if !pinned.MatchString(m[0]) {
+				t.Errorf("%s names %q; want quay.io/minio/<image>:<release>@sha256:<digest>", name, m[0])
+			}
+			if seen[m[1]] == nil {
+				seen[m[1]] = map[string]bool{}
+			}
+			seen[m[1]][m[0]] = true
+		}
+		if found < 2 {
+			t.Errorf("%s names MinIO %d times; want the server and the client", name, found)
+		}
+	}
+	for image, refs := range seen {
+		if len(refs) != 1 {
+			t.Errorf("minio/%s is pinned %d ways across the three files: %v", image, len(refs), slices.Sorted(maps.Keys(refs)))
 		}
 	}
 }
