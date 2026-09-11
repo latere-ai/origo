@@ -320,7 +320,7 @@ conformance suite runs on the same stack.
 | `integration` | MinIO as a service container, then `make test-tiers`: the `integration` tier and the `e2e` tier's one-node run, `-run 'TestE2E'`, which is every end-to-end test that needs no cluster, starts its own nodes against the bucket, and fits the budget: the tests that push 500 or 1 000 times, import 5 000 commits, or move 500 MiB are in the two cluster jobs below | 25 minutes |
 | `build` | builds the two images `origod` and `origo-stubs` once from the push's tree and uploads them as `docker save` tarballs in one `actions/upload-artifact` named `candidate-images`; the `e2e`, `e2e-slow`, and `up-script` jobs below and spec 018's `install` job each `needs` it and download the artifact with `actions/download-artifact`, so no job builds an image of its own and every job of the push tests the same bytes | 15 minutes |
 | `e2e` | downloads the `candidate-images` artifact, then `deploy/examples/kind/up.sh` with the two tarballs, which creates the cluster, loads them, and applies the overlay with the `test-source` component, exports the MinIO values of the overlay table as the `ORIGO_TEST_S3_ENDPOINT` family, then runs the `e2e` tier's cluster scenarios, `-run 'TestCluster' -skip 'TestClusterUpScript'`, against the three-node overlay with `kubectl` on `PATH` for `test/e2e/cluster`, among them the 500 and 1 000 push tests of spec 006 (`TestClusterFiveHundredPushesStayUnder64EntriesAnd6Packs`, `TestClusterCompactionKeepsFetchLatencyFlat`), spec 019's `TestClusterGcBoundsStorage` and `TestClusterImportFixture` (the 5 000-commit import from the in-cluster source stub, `https://origo-stubs.origo.svc:8443/fixture.git`, into the stack), and spec 014's `TestClusterMigrationCatchesALateWrite`; from spec 021 on, `TestContract` and `TestSameAnswersOnStubAndStack` of `test/conformance` as a second step against the same stack, and from spec 017 on `TestPreviousReleaseFixture` with `ORIGO_PREVIOUS_RELEASE_FIXTURE` set to the fixture archive the job downloaded from the latest release with `gh release download`, unset when no release exists | 30 minutes |
-| `e2e-slow` | the same set-up from the same artifact, with `git-lfs` installed on the runner for spec 010, then `-run 'TestSlow'`: spec 005's `TestSlowAutoscalerScalesUp` and `TestSlowReplicasScaleReads`, spec 008's `TestSlowEventRepairAfterKill`, spec 004's `TestSlowMaterializeTenThousandEntries`, and spec 010's `TestSlowLFSRoundTripBypassesTheNode` (500 MiB through MinIO's host port), which each wait on a timer or a fixture the others do not | 50 minutes |
+| `e2e-slow` | the same set-up from the same artifact, with `git-lfs` installed on the runner for spec 010, then `-run 'TestSlow'`: spec 005's `TestSlowAutoscalerScalesUp` and `TestSlowReplicasScaleReads`, spec 008's `TestSlowEventRepairAfterKill`, spec 004's `TestSlowMaterializeTenThousandEntries`, and spec 010's `TestSlowLFSRoundTripBypassesTheNode` (500 MiB through MinIO's host port), which each wait on a timer or a fixture the others do not | 30 minutes |
 | `up-script` | downloads the `candidate-images` artifact, then `-run 'TestClusterUpScript'` and nothing else: this spec's `TestClusterUpScript`, which runs `up.sh -name up-test -port-offset 1000` with the two tarballs, creating a cluster `origo-up-test` of its own whose host ports are the ports table's plus 1000, checks it, and runs `down.sh -name up-test` whatever happened; a job of its own, on no stack, because a second cluster's creation and the script's 5 minute wait do not fit beside the `e2e` job's scenarios | 15 minutes |
 | `mutation` | spec 021's job: MinIO as a service container, like `integration`, the `ORIGO_TEST_S3_ENDPOINT` family exported, and `-run 'TestMutation'` once per capability of spec 021's set with `ORIGO_TEST_DROP_CAPABILITY` set to it; `TestMutation` of `test/e2e` starts one node of its own carrying the variable, the way spec 008's repair case starts nodes, runs `conformance.Run` against it, and expects the run to fail on exactly the dropped capability; spec 021 says what it asserts, this table gives it its budget | 20 minutes |
 | `fuzz` | `make fuzz` on a weekly `schedule` trigger | 60 minutes |
@@ -595,20 +595,17 @@ Divergences and interpretations, all kept:
   The job is the proof: red on the name in runs 34524148220 and
   34525855273, green on the address in run 34526990408.
 
-One change spec 004 made to this spec's job table on 2026-09-11, when
-the scenario the table had named since it was written was finally in
-the tree. `TestSlowMaterializeTenThousandEntries` writes 10 000 entries
-through `Log.Commit` before it materializes them, and that fixture
-costs about thirteen minutes: every commit rewrites an index object
-that ends at ten thousand rows, so the per-entry cost rises with the
-count and the log's own ceiling is what the test is about. The other
-four scenarios of the job take under four minutes together. The rule
-above says a scenario that makes `e2e-slow` exceed its budget is a
-spec change and not a budget change, so this is that change: the row
-reads 50 minutes, `verify.yml` carries `timeout-minutes: 50` and
-`go test -timeout 45m`, and `TestE2EJobsSelectByPrefix` reads the new
-figure. The job runs on a tag and on a dispatch alone, so no push pays
-it.
+The job's budget was tested on 2026-09-11, when
+`TestSlowMaterializeTenThousandEntries`, the scenario this table had
+named since it was written, finally reached the tree. It writes 10 000
+entries through `Log.Commit` before it materializes them, which is the
+longest fixture any scenario here builds. On run 34629785911 the test
+took 416.83 s of a job that took 12 m 20 s, so the 30 minute row
+stands unchanged and the rule above, that a scenario making `e2e-slow`
+exceed its budget is a spec change and not a budget change, was not
+reached. The figure is worth keeping: the job was 5 m 25 s before the
+scenario landed, so the ceiling scenario more than doubled it and a
+sixth scenario of that size would need the rule.
 
 Verified on this machine against a live stack: `make dev` and
 `TestE2EDevStackClones` on podman compose, and `make test-integration`

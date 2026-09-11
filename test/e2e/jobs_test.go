@@ -76,7 +76,7 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	workflow := string(raw)
 	all := jobs(t, workflow)
 
-	budgets := map[string]string{"integration": "25", "build": "15", "e2e": "30", "e2e-slow": "50", "up-script": "15", "install": "20", "mutation": "20", "fuzz": "60"}
+	budgets := map[string]string{"integration": "25", "build": "15", "e2e": "30", "e2e-slow": "30", "up-script": "15", "install": "20", "mutation": "20", "fuzz": "60"}
 	for name, minutes := range budgets {
 		j, ok := all[name]
 		if !ok {
