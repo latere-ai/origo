@@ -903,22 +903,29 @@ this repository as
 Work the deck names and no spec owns yet. Each becomes a spec when a
 consumer needs it.
 
+Each is filed as a feature request on this repository, so the list
+here and the tracker say the same thing.
+
 - Batching concurrent pushes to one repository into one commit, for a
   repository busier than the ten pushes per second one commit per push
-  allows (spec 005 scopes it out).
+  allows (spec 005 scopes it out;
+  [#5](https://github.com/latere-ai/origo/issues/5)).
 - Creating tags and other references from a request (spec 020 scopes
-  it out).
+  it out; [#6](https://github.com/latere-ai/origo/issues/6)).
 - A shallow first import with a later deepen, for a repository larger
-  than one import budget (spec 014 scopes it out).
+  than one import budget (spec 014 scopes it out;
+  [#7](https://github.com/latere-ai/origo/issues/7)).
 - A stat mode on `GET /v1/repos/{id}/compare/{base}...{head}`, answering
   the per-file added and deleted counts without the patch. Spec 025
   parses them out of the diff on the client for now, which spends the
-  bytes on the wire that a stat mode would not send.
+  bytes on the wire that a stat mode would not send
+  ([#8](https://github.com/latere-ai/origo/issues/8)).
 - Commit search: an author filter on `GET /v1/repos/{id}/commits`, and
   a content search over a repository. Spec 009 scopes search out and
   spec 025 refuses to synthesize either on the client; its command
   answers both through a shell pipeline instead, which is cheaper than
-  either endpoint but reads only what a page already carries.
+  either endpoint but reads only what a page already carries
+  ([#9](https://github.com/latere-ai/origo/issues/9)).
 
 ## Items for `latere.ai/x/pkg`
 
@@ -937,37 +944,34 @@ the row names; the workaround stays until it lands.
 
 ## Open source readiness
 
-The repository goes public when every spec is at `complete`: the
-conformance suite green against the release artifacts in the `kind`
-example overlay and against the installation `ORIGO_LIVE_URL` names
-with only the six groups skipped, spec 017's release checklist done
-once (the object-store probe of `tools/spike/condwrite` and
-`docs/install.md` walked by a maintainer on a fresh cluster; the fork
-tag left the list on 2026-09-12, held by tests instead),
-`SECURITY.md` in place, and no Latere hostname or value anywhere but
-as a default or an example. One item of spec 016 is not on that list
-and cannot be: the bill of materials and the provenance attached to a
-published image are refused while the repository is private, so that
-row closes on the transition rather than gating it, and the first tag
-cut after the repository is public is what proves it. Until then the
-repository is private and the deck is written as if it were already
-public. A cloud provider named as a deployment target, a tested
-bucket, or an overlay name
-(DigitalOcean Spaces and AWS S3 in specs 001, 004, and 018, the
-`digitalocean` and `aws` overlays of 018, the release checklist of
-017) is not what the naming rule bars: the rule bars naming another
-company as a source or a reference. Specs 003 and 004 stay short of
-`complete` on purpose: their remaining criteria are owned elsewhere,
-003's by the suite's live run (spec 021) and 004's by two unwritten
-cluster tests and the Spaces probe of the release checklist (specs 013,
-006, 017), each named on the criterion it owns, and the dispatch gate
-above is what lets every phase between build on them meanwhile.
+The repository went public on 2026-09-11, with the `v0.1.1` tag; the
+conditions this section set for it are met and are kept here as what
+the deck promised: the conformance suite green against the release
+artifacts in the `kind` example overlay and against the installation
+`ORIGO_LIVE_URL` names with only the six groups skipped (both on the
+v0.1.3 run 34546335576), spec 017's release checklist done once (the
+object-store probe of `tools/spike/condwrite` on 2026-09-11 and
+`docs/install.md` walked by a maintainer on a fresh cluster the same
+day, for HTTPS; the fork tag left the list on 2026-09-12, held by
+tests instead), `SECURITY.md` in place, and no Latere hostname or value
+anywhere but as a default or an example. The one item of spec 016 that
+could not gate the transition, the bill of materials and the
+provenance attached to a published image, closed on it: the attestation
+steps are refused on a private repository, and the first public tag,
+`v0.1.1`, ran them. A cloud provider named as a deployment target, a
+tested bucket, or an overlay name (DigitalOcean Spaces and AWS S3 in
+specs 001, 004, and 018, the `digitalocean` and `aws` overlays of 018,
+the release checklist of 017) is not what the naming rule bars: the
+rule bars naming another company as a source or a reference.
 
-What is built: all 21 specs, twelve of them at `complete`. Every
-criterion has a passing test but for the ten items the table at the
-end of this section lists, and none of those is unbuilt behaviour: they
-are runs that have not happened, tests nobody has written, and
-decisions outside this repository. The documentation an outside
+What is built: all 26 specs, every one at `complete` since 2026-09-12.
+Every criterion has a passing test or a recorded run but for the items
+the table at the end of this section still holds open, and none of
+those is unbuilt behaviour: they are tests nobody has written and one
+walk a maintainer has not made, each filed as an issue on this
+repository. With them, and with the Later list above filed the same
+way, the repository is feature complete against the deck: what it
+does not do is written down as a request, not left unsaid. The documentation an outside
 operator needs is in the tree and is tested rather than asserted: `docs/install.md` takes a cluster and a
 bucket to a first clone and push and its commands are run against a
 bare cluster on every push, `docs/configuration.md` and `docs/api.md`
@@ -1004,24 +1008,24 @@ closed specs sit unrecorded for a day.
 | Item | Specs | What closes it |
 |---|---|---|
 | the live run of `TestContract` against a deployed Origo | 003, 019, 020, 021 | closed 2026-09-11. The `live` job of the v0.1.3 run 34546335576, id 103120952813, dialled `https://code.latere.ai` and reported `--- PASS: TestContract (173.69s)`, 51 passed, with the eight case names of exactly the six skip groups. All four specs are `complete` |
-| spec 014's `verify` case of the source group, absent from `test/conformance` | none | it was never a condition on 021, whose criterion counts the six groups and not the cases inside one. 014 is `complete` with `verify` proved in its own tests. A builder may still add it; there is no `cases014.go` |
-| `TestSlowMaterializeTenThousandEntries` | 004 | a builder writing it and the `e2e-slow` job running it. `TestE2EHundredConcurrentPushesFromEightClients` landed on 2026-09-11 in `test/e2e` and runs in the `integration` job's one-node tier on every push |
-| the object-store probe on DigitalOcean Spaces | 004, 017 | a Spaces bucket and its credentials, then a maintainer running `tools/spike/condwrite` and recording it in the release notes |
-| `TestReadTrace` in `cmd/origod` | 009 | a builder writing it |
+| spec 014's `verify` case of the source group, absent from `test/conformance` | none | it was never a condition on 021, whose criterion counts the six groups and not the cases inside one. 014 is `complete` with `verify` proved in its own tests. A builder may still add it; there is no `cases014.go`. Filed as [#12](https://github.com/latere-ai/origo/issues/12) |
+| `TestSlowMaterializeTenThousandEntries` | 004 | a builder writing it and the `e2e-slow` job running it. `TestE2EHundredConcurrentPushesFromEightClients` landed on 2026-09-11 in `test/e2e` and runs in the `integration` job's one-node tier on every push. Filed as [#10](https://github.com/latere-ai/origo/issues/10) |
+| the object-store probe on DigitalOcean Spaces | 004, 017 | closed 2026-09-11: run against the production Spaces bucket in fra1 with the current build, 20 of 20 create-race rounds applied, `HEAD` 404 and 200 as the table asks, `GET If-None-Match` 304 on the current ETag and 200 on a stale one, recorded in spec 017's checklist row and in the spike document |
+| `TestReadTrace` in `cmd/origod` | 009 | a builder writing it. Filed as [#11](https://github.com/latere-ai/origo/issues/11) |
 | the 40 second fuzz search | 009, 016 | a `fuzz` job on the fixed recipe. The job runs on a dispatch as well as on the Sunday cron since `7e7b1cd`, and the dispatched run 34598740040 reported `success` while fuzzing nothing: `make fuzz` built `-fuzz="^$$fn$$$$"`, which make and the shell turn into the shell's pid, so every function printed `no fuzz tests to fuzz` and `ok ... 0.005s` and the job was green in under a minute. The recipe is fixed and `TestFuzzTargetNamesEachFunctionExactly` in `tools/docs` holds it |
 | the attestations attached to a published image | 016, 017 | closed on the `v0.1.1` tag run 34511419232 once the repository was made public, and verified again by four `gh attestation verify` runs that exit 0 |
 | `TestPreviousReleaseFixture` against a fixture an earlier release attached | 017 | closed 2026-09-11 by the v0.1.3 run 34546335576, job 103101443762, which read `fixture-v0.1.1.tar.gz` and reports `--- PASS: TestPreviousReleaseFixture` with `the fixture of v0.1.1 (4 commits) serves on this release` |
 | both states of `ORIGO_RELEASE_DEPLOY` | 017 | closed on two runs: unset on 34461460766, where `deploy and smoke` reports `skipped` and the release published all eleven assets, and set on 34546335576, where it applied `deploy/prod`, rolled the image, and reported `release smoke passed` |
 | a release that publishes on a repository other than this one, which the criterion called the fork tag | 017 | closed 2026-09-12. The namespace was threaded through the four places it was written on 2026-09-11, `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh` hold it on every push, and the user decided those tests are the criterion rather than a tag a maintainer cuts on a fork; 017 is `complete` on that decision |
-| a maintainer walking `docs/install.md` to a push on a fresh cluster | 018 | the same maintainer, against the published artifacts; nothing blocks it |
+| a maintainer walking `docs/install.md` to a push on a fresh cluster | 018 | closed for HTTPS on 2026-09-11 against `v0.1.1`; the SSH half waits on the same maintainer against a release that carries the SSH overlay, which every release since `v0.1.3` does. Filed as [#13](https://github.com/latere-ai/origo/issues/13) |
 
 Three of those needed a decision from the user rather than work and
 have since had one: the installation the live secrets point at, the
 repository going public, and `ORIGO_RELEASE_DEPLOY` being set. What is
-left needs a Spaces bucket for the probe, the maintainer's time for the
-prose walk, and a builder for three unwritten tests; the image names in
-`release.yml` were threaded on 2026-09-11 and the fork row closed on
-2026-09-12.
+left needs the maintainer's time for the SSH half of the prose walk
+and a builder for three unwritten tests, issues #10 to #13; the Spaces
+probe ran on 2026-09-11, the image names in `release.yml` were threaded
+the same day, and the fork row closed on 2026-09-12.
 
 ## Conventions
 
