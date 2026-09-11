@@ -139,6 +139,7 @@ func specs() []spec {
 		{"015", cases015()},
 		{"019", cases019()},
 		{"020", cases020()},
+		{"026", cases026()},
 		{"012", cases012()},
 	}
 }
@@ -357,6 +358,7 @@ var sentences = map[string]string{
 	contract.CodeLFSObjectMismatch:     contract.Sentence(contract.CodeLFSObjectMismatch),
 	contract.CodeLFSObjectNotStored:    contract.Sentence(contract.CodeLFSObjectNotStored),
 	contract.CodeLFSLocksUnsupported:   contract.Sentence(contract.CodeLFSLocksUnsupported),
+	contract.CodeDirectoryUnsupported:  contract.Sentence(contract.CodeDirectoryUnsupported),
 	contract.CodeRepositoryUnavailable: contract.Sentence(contract.CodeRepositoryUnavailable),
 	contract.CodeGone:                  contract.Sentence(contract.CodeGone),
 	contract.CodeRepoFrozen:            contract.Sentence(contract.CodeRepoFrozen),

@@ -113,3 +113,19 @@ func event(t testing.TB, d sink.Delivery) map[string]any {
 	}
 	return out
 }
+
+// setDirectory gives the stub authorizer a directory to answer list
+// with (spec 026), and takes it away again when the test ends.
+func (s *session) setDirectory(t testing.TB, supported bool, repos ...authorizer.DirectoryEntry) {
+	t.Helper()
+	if repos == nil {
+		repos = []authorizer.DirectoryEntry{}
+	}
+	put := func(supported bool, repos []authorizer.DirectoryEntry) {
+		if r := s.as(t, "", "PUT", s.target.Authorizer+"/directory", mustJSON(t, map[string]any{"supported": supported, "repos": repos})); r.status != http.StatusNoContent {
+			t.Fatalf("directory at %s: %d %s", s.target.Authorizer, r.status, r.body)
+		}
+	}
+	put(supported, repos)
+	t.Cleanup(func() { put(false, []authorizer.DirectoryEntry{}) })
+}

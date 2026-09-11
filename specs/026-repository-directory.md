@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/auth/, internal/api/, internal/contract/, cmd/origod/, test/stubs/authorizer/, docs/api.md, specs/007-authentication-and-delegation.md, specs/013-test-stubs-and-kind-overlay.md, specs/README.md]
 effort: medium
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -285,13 +285,16 @@ three existing actions, their answer shape, or their caches.
 
 ## Open
 
-- **Who serves the directory on the kind stack.** The stub answers
-  `{"directory": false}` by default, so the stack proves the degraded
-  path and not the populated one. A cluster criterion that proves a
-  populated directory needs the overlay to seed the stub's directory
-  after the fixture repositories are created, which is a change to spec
-  013's overlay and to spec 021's suite. Left for whichever of the two
-  takes it.
+- **Who serves the directory on the kind stack.** Closed on
+  2026-09-12 by spec 021's suite and not the overlay: the stub answers
+  `{"directory": false}` by default, and `026/directory` in
+  `test/conformance/cases026.go` seeds the stub's directory through
+  its `/directory` endpoint with two repositories the case created,
+  reads them back from `GET /v1/repos` as the id route's
+  representation, hides one with a read deny, resolves the other by
+  name, and takes the directory away for the 501. It sits in the
+  deny-flipping group, so the stack and the stub run it and a live run
+  skips it by name. The overlay is unchanged and still seeds nothing.
 - **Whether `next_cursor` should be opaque.** Today it is whatever the
   authorizer sent, passed through unread, which is what lets an endpoint
   choose its own paging. Whether Origo should wrap it so an endpoint
@@ -338,10 +341,10 @@ Two divergences, both of naming and neither of behaviour:
   `directory_unsupported` is in the table at 501 with its sentence, and
   `docs/api.md` carries the route and the code.
 
-The two questions under Open are still open, and neither holds the
-spec: seeding the stub's directory on the kind stack belongs to spec
-013's overlay or spec 021's suite, and whether `next_cursor` should be
-opaque is a decision nothing in the interface waits on.
+One question under Open is still open and does not hold the spec:
+whether `next_cursor` should be opaque is a decision nothing in the
+interface waits on. The other, the populated directory on the stack,
+closed on 2026-09-12 through spec 021's suite.
 
 A review on 2026-09-11 read the Design against `internal/auth`,
 `internal/api/collection.go`, the contract table, the stub, and the
