@@ -169,7 +169,27 @@ func (g *Guard) Admit(w http.ResponseWriter, r *http.Request, repo RepoRef, acti
 }
 
 // WriteRefusal renders a *Denied or an *Unavailable.
+//
+// A refusal of an anonymous request is the 401 the node already answers
+// to every request with no credential (spec 027), not a 403 and not a
+// 503. Two reasons converge on it and both are required.
+//
+// Existence hiding. Spec 007 asks for authorization before lookup so a
+// refused caller cannot tell a repository they may not read from one that
+// is not there. Answering the same 401 makes the anonymous refusal
+// identical across a private repository, a name that resolves to nothing,
+// an unknown id, a refused action, and an authorizer outage, and
+// identical to an installation with ORIGO_ANONYMOUS_READ unset. The
+// registry leaks nothing, including whether the feature is on.
+//
+// Git. A client prompts for a credential on a 401 with WWW-Authenticate
+// and gives up on a 403. Answering 403 here would break every person
+// cloning a private repository over HTTPS.
 func WriteRefusal(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
+	if FromContext(r.Context()).Subject == AnonymousSubject {
+		Unauthenticated(w, refuse(ReasonMissing))
+		return
+	}
 	if denied, ok := errors.AsType[*Denied](err); ok {
 		contract.Write(w, http.StatusForbidden, contract.CodeForbidden, map[string]any{
 			"action": string(denied.Action), "subject": denied.Subject, "reason": denied.Reason,

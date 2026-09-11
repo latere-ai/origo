@@ -32,12 +32,24 @@ func Credential(r *http.Request) string {
 // not accept, with 401 unauthenticated, the row's reason in
 // details.reason, and a Basic challenge so git prompts for credentials.
 // An admitted request carries its Principal.
+//
+// One request is admitted without a credential: with anonymous read on
+// (spec 027), a request that carries no credential at all on one of the
+// routes of AnonymousRoutes is admitted with an empty Principal and
+// decided by the authorizer like any other. Only an absent credential is
+// admitted this way. A credential that is present and does not verify is
+// refused with its own reason and is never downgraded to anonymous, which
+// is why the eligibility test reads Credential again rather than reading
+// the verifier's error.
 func (v *Verifier) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := v.Verify(r.Context(), Credential(r))
 		if err != nil {
-			Unauthenticated(w, err)
-			return
+			if !v.anonymousRead || Credential(r) != "" || !AnonymousEligible(r) {
+				Unauthenticated(w, err)
+				return
+			}
+			p = Principal{Subject: AnonymousSubject}
 		}
 		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 	})

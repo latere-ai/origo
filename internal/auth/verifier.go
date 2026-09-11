@@ -51,6 +51,12 @@ type VerifierOptions struct {
 	// FetchTimeout bounds one discovery or JWKS fetch. DefaultFetchTimeout
 	// when zero.
 	FetchTimeout time.Duration
+	// AnonymousRead is ORIGO_ANONYMOUS_READ (spec 027). When true, the
+	// middleware admits a request that carries no credential on one of
+	// AnonymousRoutes with an empty subject, and the authorizer decides
+	// it. False in every installation that does not set the variable, and
+	// the node then behaves exactly as it did before that spec.
+	AnonymousRead bool
 	// Now is the clock; a test substitutes a fake.
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -69,6 +75,8 @@ type Verifier struct {
 	now      func() time.Time
 	logger   *slog.Logger
 	cache    *cache.TTLCache[[32]byte, cached]
+	// anonymousRead is VerifierOptions.AnonymousRead (spec 027).
+	anonymousRead bool
 }
 
 // cached is a verified principal and the instant it stops being valid.
@@ -90,6 +98,7 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	v := &Verifier{
 		issuers: make(map[string]*keySet, len(o.Issuers)), local: strings.TrimRight(o.LocalIssuer, "/"),
 		localKey: o.LocalKey, localKID: KeyID(o.LocalKey), client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
+		anonymousRead: o.AnonymousRead,
 	}
 	if v.timeout == 0 {
 		v.timeout = DefaultFetchTimeout
