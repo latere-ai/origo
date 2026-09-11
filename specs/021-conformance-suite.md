@@ -481,7 +481,12 @@ repository-wide deny, and `026/directory`, spec 026's populated
 directory seeded through the stub's `/directory` endpoint, filtered by
 a read deny, the name mode beside it, and the 501 once the directory
 is taken away; 61 cases now, and a live run reports ten skipped names
-over the same six groups.
+over the same six groups. The run's cleanup learnt to wait with them:
+a repository `019/forbidden` denied is still denied in the node's
+five-second decision cache when a fast tail of cases ends the run, so
+`deleteUntilGone` asks again after a 403 for up to its budget, the way
+it already waited out a 429, and `TestCleanupWaitsOutADenyStillCached`
+holds both waits without spending the seconds.
 
 | Criterion | Test |
 |---|---|

@@ -414,28 +414,59 @@ func (s *session) record(id string) {
 }
 
 // cleanup deletes every repository the run created by id, waiting out
-// a rate limit, and reports the ids.
+// a rate limit and a deny the run itself flipped, and reports the ids.
 func (s *session) cleanup(t *testing.T) []string {
 	t.Helper()
 	s.mu.Lock()
 	ids := slices.Clone(s.created)
 	s.mu.Unlock()
 	for _, id := range ids {
-		for attempt := range 5 {
-			r := s.call(t, "DELETE", "/v1/repos/"+id, "")
-			if r.status != http.StatusTooManyRequests {
-				if r.status != http.StatusAccepted && r.status != http.StatusNotFound && r.status != http.StatusGone {
-					t.Errorf("cleanup of %s: %d %s", id, r.status, r.body)
-				}
-				break
-			}
-			if attempt == 4 {
-				t.Errorf("cleanup of %s stayed rate limited", id)
-			}
-			time.Sleep(retryAfter(r.header))
+		if err := deleteUntilGone(func() response { return s.call(t, "DELETE", "/v1/repos/"+id, "") }, cleanupSleep); err != nil {
+			t.Errorf("cleanup of %s: %v", id, err)
 		}
 	}
 	return ids
+}
+
+// cleanupBudget bounds the waiting one delete does across its
+// refusals, and denyCacheWait is the pause after a 403: a case that
+// denied its own repository has had the rule removed by the time the
+// run ends, but the node keeps a deny in its decision cache for spec
+// 007's five seconds, so the first delete after a fast tail of cases
+// can still be refused on the cached verdict.
+const (
+	cleanupBudget = 30 * time.Second
+	denyCacheWait = time.Second
+)
+
+// cleanupSleep is the wait between attempts, a variable so the test of
+// the retry does not spend the seconds.
+var cleanupSleep = time.Sleep
+
+// deleteUntilGone runs del until it is accepted or the repository is
+// already gone, sleeping out a 429 for its Retry-After and a 403 for
+// the deny cache while the budget lasts, and answers the refusal it
+// gave up on.
+func deleteUntilGone(del func() response, sleep func(time.Duration)) error {
+	var waited time.Duration
+	for {
+		r := del()
+		var wait time.Duration
+		switch r.status {
+		case http.StatusAccepted, http.StatusNotFound, http.StatusGone:
+			return nil
+		case http.StatusTooManyRequests:
+			wait = retryAfter(r.header)
+		case http.StatusForbidden:
+			wait = denyCacheWait
+		default:
+			return fmt.Errorf("%d %s", r.status, r.body)
+		}
+		if waited += wait; waited > cleanupBudget {
+			return fmt.Errorf("still %d after %s: %s", r.status, waited-wait, r.body)
+		}
+		sleep(wait)
+	}
 }
 
 // retryAfter is the Retry-After header as a duration, a second when
