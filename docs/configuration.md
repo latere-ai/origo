@@ -95,17 +95,22 @@ Two ceilings protect a node from one caller and from itself. Both are per node, 
 |---|---|---|---|
 | `ORIGO_MAX_GIT_PROCS` | no | `64` | git subprocesses this node runs at once. A positive integer. Requests wait for a slot rather than failing. |
 | `ORIGO_REQUESTS_PER_MINUTE` | no | `600` | the requests one subject may send this node in a minute, and the burst it may spend at once. Every response carries the figure in force. `0` turns the limit off. Raise it for a fleet of tooling that shares one token. |
-| `ORIGO_ANONYMOUS_READ` | no | off | set to `1` to let a request with no credential reach the authorizer on the read routes below. Your authorizer then decides which repositories answer without a credential. Off means every request needs a token, as before. |
-| `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | no | `60` | the requests every anonymous caller of this node shares in a minute. They share one bucket, so a scraper slows other anonymous readers and never slows a caller with a token. Read only when `ORIGO_ANONYMOUS_READ` is set. |
 
-### Anonymous read
+## Anonymous read
 
-With `ORIGO_ANONYMOUS_READ` set, a request that carries no credential at
-all is admitted on these routes and sent to your authorizer with an empty
-subject. Your authorizer decides. A repository it does not allow answers
-`401` with `WWW-Authenticate: Basic`, which is the same answer a request
-with no credential gets on an installation that never set the variable,
-so a caller learns nothing about which repositories exist.
+A repository can be readable without a credential, if you decide it is.
+Origo holds no such decision. With `ORIGO_ANONYMOUS_READ` set, a request
+that carries no credential at all is admitted on the routes below and sent
+to your authorization endpoint with an empty subject. Your endpoint
+answers, exactly as it answers for a person. Leave the variable unset and
+every request needs a token, which is how a node behaves without this
+section.
+
+A repository your endpoint does not open answers `401` with
+`WWW-Authenticate: Basic`. That is the same answer a request with no
+credential gets on a node that never set the variable, so a caller cannot
+tell a repository they may not read from one that is not there, and `git`
+still asks them for a credential.
 
 ```
 GET  /r/{id}/info/refs?service=git-upload-pack
@@ -122,10 +127,16 @@ GET  /v1/repos/{id}/blob/{sha}
 GET  /v1/repos/{id}/archive/{file}
 ```
 
-Nothing else is ever anonymous. Not a push, not the LFS batch, not
+Nothing else is ever anonymous. Not a push. Not the Git LFS batch, whose
+answer is a signed bucket URL that would outlive the request. Not
 `/stats`, not `/export.bundle`, not the repository list, and no
-administrative route. A public repository that uses LFS clones; its LFS
-files need a credential to download.
+administrative route. A public repository that uses Git LFS can be cloned;
+its LFS files need a credential to download.
+
+| Variable | Required | Default | What it is |
+|---|---|---|---|
+| `ORIGO_ANONYMOUS_READ` | no | unset | `1` admits a request with no credential on the routes above and asks your authorization endpoint about it with an empty subject. Unset admits none. |
+| `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | no | `60` | the requests every anonymous caller of this node shares in a minute. They share one bucket, so one scraper slows other anonymous readers and never slows a caller with a token. Read only when `ORIGO_ANONYMOUS_READ` is set. |
 
 ## Git over SSH
 

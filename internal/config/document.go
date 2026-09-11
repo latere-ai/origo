@@ -112,6 +112,46 @@ var Groups = []Group{{
 		{"ORIGO_REQUESTS_PER_MINUTE", "no", fmt.Sprintf("`%d`", limits.RequestsPerMinute), "the requests one subject may send this node in a minute, and the burst it may spend at once. Every response carries the figure in force. `0` turns the limit off. Raise it for a fleet of tooling that shares one token."},
 	},
 }, {
+	Title: "Anonymous read",
+	Intro: `A repository can be readable without a credential, if you decide it is.
+Origo holds no such decision. With ` + "`ORIGO_ANONYMOUS_READ`" + ` set, a request
+that carries no credential at all is admitted on the routes below and sent
+to your authorization endpoint with an empty subject. Your endpoint
+answers, exactly as it answers for a person. Leave the variable unset and
+every request needs a token, which is how a node behaves without this
+section.
+
+A repository your endpoint does not open answers ` + "`401`" + ` with
+` + "`WWW-Authenticate: Basic`" + `. That is the same answer a request with no
+credential gets on a node that never set the variable, so a caller cannot
+tell a repository they may not read from one that is not there, and ` + "`git`" + `
+still asks them for a credential.
+
+` + "```" + `
+GET  /r/{id}/info/refs?service=git-upload-pack
+POST /r/{id}/git-upload-pack
+GET  /{owner}/{slug}/info/refs?service=git-upload-pack
+POST /{owner}/{slug}/git-upload-pack
+GET  /v1/repos/{id}
+GET  /v1/repos/{id}/refs
+GET  /v1/repos/{id}/commits
+GET  /v1/repos/{id}/commits/{sha}
+GET  /v1/repos/{id}/compare/{range}
+GET  /v1/repos/{id}/tree/{sha}
+GET  /v1/repos/{id}/blob/{sha}
+GET  /v1/repos/{id}/archive/{file}
+` + "```" + `
+
+Nothing else is ever anonymous. Not a push. Not the Git LFS batch, whose
+answer is a signed bucket URL that would outlive the request. Not
+` + "`/stats`" + `, not ` + "`/export.bundle`" + `, not the repository list, and no
+administrative route. A public repository that uses Git LFS can be cloned;
+its LFS files need a credential to download.`,
+	Variables: []Variable{
+		{"ORIGO_ANONYMOUS_READ", "no", "unset", "`1` admits a request with no credential on the routes above and asks your authorization endpoint about it with an empty subject. Unset admits none."},
+		{"ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE", "no", fmt.Sprintf("`%d`", limits.AnonymousRequestsPerMinute), "the requests every anonymous caller of this node shares in a minute. They share one bucket, so one scraper slows other anonymous readers and never slows a caller with a token. Read only when `ORIGO_ANONYMOUS_READ` is set."},
+	},
+}, {
 	Title: "Git over SSH",
 	Intro: "SSH is off until you set an address for it. It carries `git clone`, `git fetch`, and `git push` and nothing else: the JSON API, Git LFS, and reads that must not be stale are HTTPS. Origo stores no public key. It asks an endpoint you run which subject an offered key belongs to, the way it asks your authorization endpoint what that subject may do, so adding, naming, and removing keys stays yours. A file of fingerprints served behind a bearer is the whole requirement.",
 	Variables: []Variable{
