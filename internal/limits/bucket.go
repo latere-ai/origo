@@ -206,6 +206,20 @@ func (l *Limits) Middleware(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		subject := auth.Subject(r.Context())
+		if subject == auth.AnonymousSubject {
+			// Every anonymous caller of this node shares one bucket
+			// (spec 027), keyed by a sentinel no subject can equal. The
+			// rate is set on each request rather than once at start-up,
+			// so it survives the idle eviction that drops the bucket
+			// after ten quiet minutes.
+			//
+			// The consequence is stated rather than hidden: a scraper
+			// degrades other anonymous readers. It cannot degrade an
+			// authenticated subject, which holds a bucket of its own
+			// that this one cannot draw from.
+			subject = AnonymousBucket
+			l.buckets.SetRate(subject, l.anonPerMinute)
+		}
 		a := l.buckets.Allow(subject)
 		if a.PerMinute > 0 {
 			w.Header().Set(contract.HeaderRateLimit, itoa(a.PerMinute))

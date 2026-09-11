@@ -36,6 +36,16 @@ const (
 	// SlotWait is how long a request waits for a subprocess slot before
 	// it is refused.
 	SlotWait = 5 * time.Second
+	// AnonymousBucket is the key of the one bucket every anonymous caller
+	// of a node shares. The NUL byte cannot appear in a JWT subject, so
+	// no authenticated subject can land in it.
+	AnonymousBucket = "\x00anonymous"
+	// AnonymousRequestsPerMinute is the refill of the single bucket
+	// shared by every anonymous caller of a node (spec 027). It is well
+	// below RequestsPerMinute because it is one bucket for everybody who
+	// arrives without a credential, and because the most expensive thing
+	// in the anonymous route set is an archive stream.
+	AnonymousRequestsPerMinute = 60
 	// RequestsPerMinute is the token bucket's rate per effective
 	// subject per node, and Burst its depth.
 	RequestsPerMinute = 600
@@ -84,6 +94,11 @@ type Options struct {
 	// live installation.
 	PerMinute int
 	Burst     int
+	// AnonymousPerMinute is ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE (spec
+	// 027): the refill of the one bucket every anonymous caller of this
+	// node shares. AnonymousRequestsPerMinute when zero; a negative value
+	// turns the anonymous limit off, which no deployment sets.
+	AnonymousPerMinute int
 	// Idle is how long a bucket may go untouched. IdleBucket when zero.
 	Idle time.Duration
 	// MaxPushBytes is the largest single push. MaxPushBytes when zero;
@@ -108,11 +123,13 @@ type Options struct {
 type Limits struct {
 	slots   *Semaphore
 	buckets *Buckets
-	lfs     *LFSBytes
-	wait    time.Duration
-	maxPush int64
-	refused *pkgmetrics.Counter
-	logger  *slog.Logger
+	// anonPerMinute is the rate the anonymous bucket is refilled at.
+	anonPerMinute int
+	lfs           *LFSBytes
+	wait          time.Duration
+	maxPush       int64
+	refused       *pkgmetrics.Counter
+	logger        *slog.Logger
 }
 
 // New builds the limits.
@@ -131,13 +148,14 @@ func New(o Options) *Limits {
 	}
 	perMinute := orInt(o.PerMinute, RequestsPerMinute)
 	l := &Limits{
-		slots:   NewSemaphore(orInt(o.MaxGitProcs, DefaultMaxGitProcs)),
-		buckets: NewBuckets(perMinute, orInt(o.Burst, perMinute), orDuration(o.Idle, IdleBucket), now),
-		lfs:     NewLFSBytes(o.Log, orDuration(o.LFSTTL, LFSTTL), now),
-		wait:    orDuration(o.SlotWait, SlotWait),
-		maxPush: o.MaxPushBytes,
-		refused: set.RateLimited,
-		logger:  logger,
+		anonPerMinute: orInt(o.AnonymousPerMinute, AnonymousRequestsPerMinute),
+		slots:         NewSemaphore(orInt(o.MaxGitProcs, DefaultMaxGitProcs)),
+		buckets:       NewBuckets(perMinute, orInt(o.Burst, perMinute), orDuration(o.Idle, IdleBucket), now),
+		lfs:           NewLFSBytes(o.Log, orDuration(o.LFSTTL, LFSTTL), now),
+		wait:          orDuration(o.SlotWait, SlotWait),
+		maxPush:       o.MaxPushBytes,
+		refused:       set.RateLimited,
+		logger:        logger,
 	}
 	if l.maxPush == 0 {
 		l.maxPush = MaxPushBytes

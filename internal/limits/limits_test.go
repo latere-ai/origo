@@ -710,3 +710,61 @@ func TestRateLimitHeadersAreTheSubjectsFigures(t *testing.T) {
 		}
 	}
 }
+
+// TestAnonymousShareOneBucket is the denial-of-service answer of spec 027.
+// An anonymous caller has no subject, so it has no bucket under the
+// per-subject rule; every one of them shares one bucket per node at
+// AnonymousRequestsPerMinute, and that bucket cannot draw from an
+// authenticated subject's.
+func TestAnonymousShareOneBucket(t *testing.T) {
+	const anonRate = 4
+	e := newEnv(t, Options{AnonymousPerMinute: anonRate})
+	h := e.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+
+	// The anonymous subject is the empty string, and two callers with no
+	// credential are one bucket: the second one pays for what the first
+	// one spent.
+	for i := range anonRate {
+		if code, _, header := call(t, h, auth.AnonymousSubject); code != http.StatusNoContent {
+			t.Fatalf("anonymous request %d: %d %v", i+1, code, header)
+		}
+	}
+	code, env, header := call(t, h, auth.AnonymousSubject)
+	if code != http.StatusTooManyRequests {
+		t.Fatalf("the anonymous request past the rate: %d", code)
+	}
+	if env.Details["limit"] != LimitSubject {
+		t.Errorf("details.limit: %+v", env.Details)
+	}
+	if got := header.Get(contract.HeaderRateLimit); got != "4" {
+		t.Errorf("RateLimit-Limit = %q, want the anonymous rate", got)
+	}
+
+	// An authenticated subject is untouched by the exhausted anonymous
+	// bucket, which is the property the shared bucket is chosen for.
+	if code, _, _ := call(t, h, "alice"); code != http.StatusNoContent {
+		t.Fatalf("a named subject after the anonymous bucket emptied: %d", code)
+	}
+
+	// And the anonymous bucket is not the named subject's, so alice
+	// spending hers leaves the anonymous one where it was: still empty.
+	if code, _, _ := call(t, h, auth.AnonymousSubject); code != http.StatusTooManyRequests {
+		t.Errorf("the anonymous bucket refilled from a named subject's: %d", code)
+	}
+}
+
+// TestAnonymousRateDefaults records the figure, so a change to it is a
+// deliberate edit rather than a drift.
+func TestAnonymousRateDefaults(t *testing.T) {
+	if AnonymousRequestsPerMinute != 60 {
+		t.Errorf("the anonymous rate is %d; spec 027 says 60", AnonymousRequestsPerMinute)
+	}
+	if AnonymousRequestsPerMinute >= RequestsPerMinute {
+		t.Errorf("the anonymous rate %d is not below the per-subject rate %d",
+			AnonymousRequestsPerMinute, RequestsPerMinute)
+	}
+	e := newEnv(t, Options{})
+	if e.anonPerMinute != AnonymousRequestsPerMinute {
+		t.Errorf("an unset AnonymousPerMinute gave %d, want the default", e.anonPerMinute)
+	}
+}
