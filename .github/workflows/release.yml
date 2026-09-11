@@ -494,6 +494,32 @@ jobs:
             grep -E '^(--- (PASS|FAIL|SKIP)|ok|FAIL)' live.log | tail -40
             echo '```'
           } > release-evidence/live.md
+      # The live run is the one thing four specs named as what held them
+      # at `testing`, and after v0.1.3 produced it they sat unrecorded
+      # for a day because nothing connected the run to them. This step
+      # is that connection: it names every spec still at `testing` whose
+      # Outcome says it waits on this job. It warns and never fails, so
+      # a document being behind does not turn a release red.
+      - name: Name the specs this run unblocks
+        if: ${{ success() }}
+        run: |
+          set -euo pipefail
+          waiting=$(tools/release/waiting.sh specs 'the live job of release.yml')
+          if [ -z "$waiting" ]; then
+            echo "no spec at testing waits on the live job"
+            exit 0
+          fi
+          {
+            echo "## Specs this live run unblocks"
+            echo
+            echo "The run passed. Each spec below is still at \`testing\` and"
+            echo "names this job as what it waits on; read it and close it."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for spec in $waiting; do
+            echo "::warning title=Spec waiting on the live run::$spec is at testing and waits on this job, which has now passed"
+            echo "- \`specs/$spec\`" >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: live-evidence
