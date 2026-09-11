@@ -230,9 +230,12 @@ No divergence from the Design. The correction the Design names was made
 in the same change: spec 016's Transport paragraph no longer says there
 is no anonymous read in v1 and points here instead.
 
-The switch is off in `deploy/prod`, so the installation carries the code
-and serves no anonymous request; the release proves the behaviour, not a
-change of what the installation admits.
+The switch was off in `deploy/prod` when the release shipped, so the
+tag proved the behaviour and not a change of what the installation
+admitted. Later on 2026-09-11, `05b7816` added
+`deploy/prod/anonymous-read.yaml`, which sets `ORIGO_ANONYMOUS_READ=1`
+on the node container, so the installation admits anonymous reads and a
+repository the authorizer opens clones there without a token.
 
 A review on 2026-09-11 read the Design against `internal/auth/anonymous.go`,
 the verifier, the limits, and the configuration and found the twelve
