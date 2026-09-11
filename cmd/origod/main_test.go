@@ -931,3 +931,73 @@ func TestGossipWiresTwoNodes(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 }
+
+// TestServingLogNamesTheAnonymousReadState is the diagnosability half of
+// spec 027.
+//
+// The switch has no observable effect on a refused caller, by design:
+// TestTheSwitchChangesNothingForARefusedCaller asserts that a node with it
+// on and a node with it off answer a denied request byte for byte alike,
+// so the registry leaks nothing, including whether the feature is on. The
+// cost of that property is that an operator cannot tell "the switch is
+// off" from "the repository is private" by asking the node, and on
+// 2026-09-11 production spent an evening on exactly that question: the
+// patch carrying ORIGO_ANONYMOUS_READ had not been applied, every
+// anonymous clone answered the 401 a private repository answers, and
+// nothing anywhere said which of the two it was.
+//
+// So the state belongs in the node's own log, where a caller never sees
+// it. Both values are asserted, because a line that only appears when the
+// switch is on tells an operator nothing when it is off, which is the case
+// that went unread.
+func TestServingLogNamesTheAnonymousReadState(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		name := "anonymous read off"
+		if on {
+			name = "anonymous read on"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := testEnv(t)
+			if on {
+				env["ORIGO_ANONYMOUS_READ"] = "1"
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var out, errOut syncBuffer
+			done := make(chan int, 1)
+			go func() { done <- run(ctx, nil, getenv(env), &out, &errOut) }()
+
+			deadline := time.Now().Add(15 * time.Second)
+			var serving map[string]any
+			for serving == nil {
+				if time.Now().After(deadline) {
+					t.Fatalf("node did not start: %s %s", out.String(), errOut.String())
+				}
+				for line := range strings.SplitSeq(out.String(), "\n") {
+					var rec map[string]any
+					if json.Unmarshal([]byte(line), &rec) != nil || rec["msg"] != "serving" {
+						continue
+					}
+					serving = rec
+				}
+				if serving == nil {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(15 * time.Second):
+				t.Fatal("run did not return")
+			}
+
+			got, ok := serving["anonymous_read"]
+			if !ok {
+				t.Fatalf("the serving line does not name anonymous_read: %v", serving)
+			}
+			if got != on {
+				t.Errorf("anonymous_read = %v, want %v", got, on)
+			}
+		})
+	}
+}
