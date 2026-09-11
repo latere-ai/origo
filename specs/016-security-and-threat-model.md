@@ -1,6 +1,6 @@
 ---
 title: "Security and threat model: what Origo protects, against whom, and how"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/001-architecture.md
@@ -528,4 +528,38 @@ function's own name, or on a `-fuzztime` other than 40s. What closes
 this row is a `fuzz` job on the fixed recipe: a dispatch now reaches it,
 so it need not wait for the Sunday cron.
 
-Waits on: the weekly fuzz job of verify.yml.
+The fuzz row closed on 2026-09-11 on the first honest run of the fixed
+recipe. The dispatched run 34599562832 of `verify.yml`, at commit
+`a1a25f4`, reports the job `fuzz` `completed/success`, and
+`c59a664`, the commit that anchored the `-fuzz` pattern on the
+function's own name, is an ancestor of `a1a25f4`
+(`git merge-base --is-ancestor c59a664 a1a25f4` exits 0), so the run
+carried the fixed recipe. Its log names each of the eleven fuzz
+functions of the module and searches each for 40 seconds. This spec's
+two:
+
+```
+== github.com/latere-ai/origo/internal/wal FuzzValidRefName
+fuzz: elapsed: 0s, gathering baseline coverage: 25/25 completed, now fuzzing with 4 workers
+fuzz: elapsed: 41s, execs: 192320 (0/sec), new interesting: 25 (total: 50)
+ok  	github.com/latere-ai/origo/internal/wal	41.019s
+
+== github.com/latere-ai/origo/internal/wal FuzzValidLabel
+fuzz: elapsed: 0s, gathering baseline coverage: 18/18 completed, now fuzzing with 4 workers
+fuzz: elapsed: 41s, execs: 53052 (4494/sec), new interesting: 27 (total: 45)
+ok  	github.com/latere-ai/origo/internal/wal	41.018s
+```
+
+The three lines are what separate this run from 34598740040, which
+looked the same at the job level. A search that matched no function
+prints `testing: warning: no fuzz tests to fuzz` and `ok ... 0.005s`,
+with no baseline coverage line, no worker line, and no exec count. Here
+each function gathers its seed corpus, runs four workers, and reports
+hundreds of thousands of executions over 41 seconds, and the job takes
+eight minutes over eleven functions rather than under one. The log
+carries `no fuzz tests to fuzz` zero times.
+
+With that row closed the spec has no criterion without a passing test,
+and it moves to `complete`. Nothing else changed: the supply-chain row
+was already closed in both halves, and the coverage figures and the
+pinned-address decision above stand as recorded.

@@ -76,7 +76,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [013](013-test-stubs-and-kind-overlay.md) | Test stubs and the kind overlay: the issuer, authorizer, sink, and contract stubs, the tiers, and the CI jobs | medium | complete | 002, 007 |
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | complete | 002, 003, 007, 008, 016, 019 |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete | 004, 005, 011, 013 |
-| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing | 001, 007, 012, 013 |
+| [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | complete | 001, 007, 012, 013 |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing | 002, 003, 013, 021 |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | complete | 002, 005, 007, 011, 013, 017, 021 |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | complete | 003, 004, 006, 007, 008, 010, 016 |
