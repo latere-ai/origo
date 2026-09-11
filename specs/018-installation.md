@@ -29,21 +29,22 @@ reference that lists every variable with its default.
 
 ## Current state
 
-`deploy/base` holds a Deployment, a Service, the headless gossip
-Service, an Ingress, a PodDisruptionBudget, and a ServiceAccount.
-`deploy/prod` sets the namespace `origo`; `deploy/bootstrap` holds the
-Namespace and Secret templates. The Ingress assumes the `nginx` class
-and the cert-manager issuer `letsencrypt-prod` with host `code.latere.ai`;
-the Deployment sets `ORIGO_PUBLIC_URL` to `https://code.latere.ai` and
-reads the bootstrap Secrets `origod-s3` and `origod-auth` (spec 007)
-through `envFrom`. There is no HPA, no
-PrometheusRule, no `deploy/examples`, no `origod check`, no
-`docs/install.md`, and no `docs/configuration.md`; spec 002's table is
-the only configuration reference. `docs/README.md` lists both pages as
-planned. `cmd/origod` has no subcommand dispatcher: it parses flags
-and serves. This spec builds the dispatcher spec 002's subcommand
-table describes, with `check` as its first subcommand; spec 014's
-`migrate` joins it later, and spec 002's Outcome records the transfer.
+Built on 2026-09-09 and complete since 2026-09-11; the Outcome records
+the tests, the two install jobs, the walk of the page, and what
+diverged. Before it, `deploy/base` held a Deployment, a Service, the
+headless gossip Service, an Ingress, a PodDisruptionBudget, and a
+ServiceAccount; `deploy/prod` set the namespace `origo`;
+`deploy/bootstrap` held the Namespace and Secret templates. The Ingress
+assumed the `nginx` class and the cert-manager issuer
+`letsencrypt-prod` with host `code.latere.ai`; the Deployment set
+`ORIGO_PUBLIC_URL` to `https://code.latere.ai` and read the bootstrap
+Secrets `origod-s3` and `origod-auth` (spec 007) through `envFrom`.
+There was no HPA, no PrometheusRule, no `deploy/examples`, no `origod
+check`, no `docs/install.md`, and no `docs/configuration.md`; spec
+002's table was the only configuration reference, and `docs/README.md`
+listed both pages as planned. The subcommand dispatcher spec 002's
+table describes was built by spec 014 with `serve` and `migrate`, and
+this spec added `check` to it; spec 002's Outcome records both.
 
 ## Design
 
@@ -75,8 +76,9 @@ PrometheusRule (spec 011). No Secret is in the base, because `kubectl
 apply -k` of a base that carried one would overwrite the operator's on
 every rollout: the Secret templates stay in `deploy/bootstrap`
 (`secrets.example.yaml`, the two Secrets `origod-s3` and `origod-auth`
-of spec 007, the second gaining `ORIGO_GOSSIP_SECRET` of spec 005 beside
-`ORIGO_TOKEN_KEY`), with every required variable, and the base
+of spec 007, the second gaining `ORIGO_GOSSIP_SECRET` of spec 005;
+`ORIGO_TOKEN_KEY` is in neither, because the Secret `origod-token-key`
+below holds it), with every other required variable, and the base
 Deployment reads both through `envFrom`. The Namespace is not in the
 base either: it stays in `deploy/bootstrap`
 with the Secret templates, applied by hand once (spec 002's layout),
@@ -301,15 +303,16 @@ binary artifact of spec 017.
 
 ## Outcome
 
-Built on 2026-09-09. Status `testing`: every criterion a checkout or a
-push can prove has a passing test in the tree, and the two that need a
-published release are listed below with what closes each.
+Built on 2026-09-09 and complete since 2026-09-11: every criterion a
+checkout or a push can prove has a passing test in the tree, and the
+rows that needed a published release closed on the tags the pending
+table below names.
 
 ### Criterion to test
 
 | Criterion | Test | State |
 |---|---|---|
-| the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | in the tree; it runs on every push from this commit, and its first green run is what the criterion closes on |
+| the `kind` overlay installs on a bare cluster from the candidate build on every push and `TestContract` passes against it | the `install` job of `verify.yml`: `kind create cluster` from `kind.yaml`, Cilium at the version `versions.env` pins, the `candidate-images` artifact loaded, `tools/docs/run-blocks.sh docs/install.md` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS`, then `TestContract` through `ORIGO_LIVE_URL`, in 20 minutes | passing on every push since; run 34634410315 of 2026-09-11 is one, its `install from the documentation` job `success` |
 | the same from the release artifacts alone on a tag | the `install-release` job of `release.yml` after `publish`, with the published images pulled and loaded and the `kind` overlay of `deploy-<version>.tar.gz` | passing: the job ran in 3 m 43 s in the tag run 34461460766 of `v0.1.0`, at commit `2b2468d`, against `ghcr.io/latere-ai/origod:v0.1.0` and the published `deploy-v0.1.0.tar.gz`, and ended in `TestContract`. It had been skipped by the first cut of the tag, run 34450584556, which spec 017 records and fixed |
 | `kustomize build` succeeds on `deploy/examples/digitalocean` and `deploy/examples/aws` | the `overlays` job of `verify.yml`, 5 minutes, over all three example overlays | passing |
 | `deploy/base/ingress.yaml` carries no `nginx.ingress.kubernetes.io/` or `cert-manager.io/` annotation and no `ingressClassName`, and the `kind` overlay renders `proxy-body-size: "0"` and `proxy-read-timeout: "600"` | `cmd/origod`, `TestBaseIngressIsControllerNeutral` | passing |
@@ -537,3 +540,20 @@ than only this one.
 The page also says to check `kind.yaml` for the two ports before
 relying on step 5, and a failure row names the two errors, which is
 what prose can do on its own.
+
+A review on 2026-09-11 read the Design against the tree and found the
+seven lines of `origod check` with their conditions, the self-test
+variable, the probe request with the empty subject, the `ping` with
+spec 008's three headers, the 2.40 floor, and exit 1 on any failure,
+which a run against a bucket with no issuer behind it showed; the init
+container running `check`; the base Ingress with no annotation and no
+class while the kind overlay's patch carries the four; the three
+example overlays rendering; the fourteen shell blocks of the install
+page with the key block and the two variables; the generated API page
+and the parser shared through the `replace` directive; and every named
+test present. Four passages were behind the tree: the Current state in
+unbuilt tense with the dispatcher's history reversed, a Manifests
+sentence keeping `ORIGO_TOKEN_KEY` in the auth Secret against the
+divergence recorded below, the Outcome's header still at `testing`,
+and the first table row still waiting on a first green run. Each reads
+as the tree and the runs stand.
