@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -504,6 +505,77 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 			name = "anonymous read on"
 		}
 		t.Run(name, func(t *testing.T) { everyRouteRequiresAToken(t, anonymous) })
+	}
+}
+
+// TestTheSwitchChangesNothingForARefusedCaller is what makes this safe to
+// ship before anybody turns it on.
+//
+// The sweep above asserts each state against a written-down expectation.
+// This one asserts the two states against each other: the same
+// credential-less request, on a node with ORIGO_ANONYMOUS_READ unset and
+// on a node with it set whose authorizer denies, answers the same status,
+// the same headers a caller can read, and the same body, byte for byte. So
+// an installation that takes the release and turns nothing on cannot be
+// told apart from the one before it, and neither can a caller who is
+// refused by an installation that did turn it on.
+func TestTheSwitchChangesNothingForARefusedCaller(t *testing.T) {
+	const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	paths := []string{
+		"/r/" + repoA + ".git/info/refs?service=git-upload-pack",
+		"/r/" + repoA + ".git/info/refs?service=git-receive-pack",
+		"POST:/r/" + repoA + ".git/git-upload-pack",
+		"/v1/repos/" + repoA,
+		"/v1/repos/" + repoA + "/refs",
+		"/v1/repos/" + repoA + "/tree/main",
+		"/v1/repos/" + repoA + "/archive/main.tar.gz",
+		"/v1/repos/" + repoA + "/stats",
+		"/v1/repos",
+		"/v1/repos/" + repoA + "/export.bundle",
+	}
+
+	answers := make([]map[string]string, 2)
+	for i, anonymous := range []bool{false, true} {
+		env, id := newEnv(t)
+		env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
+		env["ORIGO_S3_PATH_STYLE"] = "1"
+		if anonymous {
+			env["ORIGO_ANONYMOUS_READ"] = "1"
+			// What auth answers an empty subject for a repository
+			// nobody marked public.
+			id.authz.Deny(authorizer.Rule{}, "anonymous_subject")
+		}
+		n, stop := startNode(t, env)
+		public, _, _ := n.addrs()
+		client := &http.Client{Transport: &http.Transport{}}
+		answers[i] = map[string]string{}
+		for _, raw := range paths {
+			method, path := http.MethodGet, raw
+			if rest, ok := strings.CutPrefix(raw, "POST:"); ok {
+				method, path = http.MethodPost, rest
+			}
+			req, _ := http.NewRequestWithContext(context.Background(), method,
+				"http://"+public+path, strings.NewReader("{}"))
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			answers[i][raw] = fmt.Sprintf("%d|%s|%s|%s", resp.StatusCode,
+				resp.Header.Get("WWW-Authenticate"), resp.Header.Get(contract.Header), body)
+		}
+		_ = stop()
+	}
+
+	for _, path := range paths {
+		off, on := answers[0][path], answers[1][path]
+		if off != on {
+			t.Errorf("%s\n  switch off: %s\n  switch on:  %s", path, off, on)
+		}
+		if !strings.HasPrefix(off, "401|") {
+			t.Errorf("%s: %s, want a 401 with no credential", path, off)
+		}
 	}
 }
 
