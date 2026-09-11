@@ -1054,8 +1054,8 @@ name, or when a spec names something no spec defines.
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027 |
-| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 016 |
-| variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | - |
+| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 016 |
+| variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002 |
 | variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
@@ -1174,7 +1174,7 @@ name, or when a spec names something no spec defines.
 | event | `verified` | [014](014-repository-migration.md) | 008 |
 | endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `GET /` | [022](022-landing-page.md) | 002 |
-| endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 005, 016, 022 |
+| endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 002, 005, 016, 022 |
 | endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |

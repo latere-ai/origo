@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -32,28 +32,31 @@ Built in phase 1 and in the tree. `cmd/origod` is the binary,
 identity, `Makefile` the gate's entry point, `Dockerfile` and
 `Dockerfile.ci` the images, `docker-compose.yml` the local MinIO,
 `deploy/base`, `deploy/prod`, and `deploy/bootstrap` the manifests,
-`.github/workflows/verify.yml` and `release.yml` the thin callers of the
-shared pipeline in `latere-ai/ci`, and `tools/smoke/release.sh` the
-post-deploy smoke. No tag has been cut. The Outcome lists what diverged
-from the first draft. The rows the table below gained for later specs
+`.github/workflows/verify.yml`, whose `gate` job calls the shared
+pipeline in `latere-ai/ci`, `release.yml`, which spec 017 owns and which
+calls no shared workflow, and `tools/smoke/release.sh` the post-deploy
+smoke. Tags are cut by spec 017's pipeline. The Outcome lists what
+diverged from the first draft. The rows the table below gained for later specs
 and the Failpoint table are reference entries; the spec named in each
 row builds what reads it.
 
 The shared runtime stage of `Dockerfile` and `Dockerfile.ci` is
-`debian:bookworm-slim`, whose `git` is 2.39. Spec 017 owns the move to
-`debian:trixie-slim` pinned by digest, which ships git 2.47, the floor
-`origod check` (spec 018) enforces for spec 020's merge family; both
-files are in that spec's affects and change at once so the two stages
-stay byte for byte the same. This spec is complete as built.
+`debian:trixie-slim` pinned by digest, which ships git 2.47, above the
+2.40 floor `origod check` (spec 018) enforces for spec 020's merge
+family. Spec 017 moved it there from `bookworm-slim`, whose git was
+2.39; both files are in that spec's affects and change at once so the
+two stages stay byte for byte the same. This spec is complete as built.
 
 ## Design
 
 ### Layout
 
-What exists today is marked as such; the rest lands with the spec named.
+Every entry is in the tree. The spec named in an entry is the one that
+built it; an entry without one is this spec's.
 
 ```
-cmd/origod/             main: configuration, listeners, run group, readiness, the sweeper loop
+cmd/origod/             main: the subcommand dispatcher, configuration, listeners, run group, readiness, the sweeper loop
+cmd/origo/              main of the agent client, and nothing else (spec 025)
 internal/config/        typed configuration from the environment; every problem in one message
 internal/version/       build identity set by -ldflags
 internal/contract/      the Origo-Contract header and the error codes (spec 003)
@@ -63,22 +66,32 @@ internal/repo/          the local repository cache and the git subprocess wrappe
 internal/httpgit/       smart HTTP: info/refs, upload-pack, receive-pack, the pre-receive hook (spec 003, 004)
 internal/api/           the JSON API: repositories today (spec 003); reads (spec 009); administration (spec 019)
 internal/gittest/       test support over the real git
-internal/placement/     rendezvous hashing, gossip, eviction (spec 005)      -- not yet
-internal/compact/       compaction (spec 006)                                 -- not yet
-internal/events/        push events (spec 008)                                -- not yet
+internal/placement/     rendezvous hashing, gossip, eviction (spec 005)
+internal/compact/       compaction (spec 006)
+internal/events/        push events (spec 008)
 internal/lfs/           the LFS batch API and the presigned transfers (spec 010)
-internal/limits/        quotas and rate limits (spec 012)                     -- not yet
-internal/metrics/       the one place every metric of spec 011 is registered   -- not yet
+internal/limits/        quotas and rate limits (spec 012)
+internal/metrics/       the one place every metric of spec 011 and spec 024 is registered
+internal/tracing/       the spans of spec 011; the one package that imports the OpenTelemetry SDK
+internal/sshd/          git over SSH; the one package that imports golang.org/x/crypto/ssh (spec 024)
+internal/origocli/      the `origo` command: flags, defaults, exit codes (spec 025)
+internal/origoclient/   the client of the contract the `origo` command speaks (spec 025)
 test/e2e/               origod as a process against MinIO with the real git (e2e build tag)
-test/conformance/       the contract as an importable test package (spec 021) -- not yet
-test/stubs/             the stub issuer and authorizer (spec 007, built); the event sink, contract stub, source, binary, and slow proxy (spec 013, 015) -- not yet
+test/conformance/       the contract as an importable test package (spec 021)
+test/stubs/             the stub issuer and authorizer (spec 007); the event sink, contract stub, source, binary, and slow proxy (spec 013, 015)
 tools/smoke/            the post-deploy smoke the release pipeline runs
 tools/spike/            the conditional-write probe; its own module
 tools/specindex/        the cross-reference table of specs/README.md; its own module
-deploy/base/            Deployment, Service, headless gossip Service, Ingress, PodDisruptionBudget, ServiceAccount
+tools/configdoc/        writes docs/configuration.md from internal/config
+tools/apidoc/           writes docs/api.md from the specs' endpoint, header, and code tables
+tools/docs/             walks the shell blocks of docs/install.md against a cluster (spec 018)
+tools/release/          the release pipeline's scripts: the deploy archive and the waiting-spec sweep (spec 017)
+deploy/base/            Deployment, the public, headless gossip, and SSH Services, Ingress, PodDisruptionBudget, ServiceAccount, HorizontalPodAutoscaler (spec 005), PrometheusRule (spec 011), NetworkPolicies (spec 016)
 deploy/prod/            the overlay the release pipeline applies; namespace origo
 deploy/bootstrap/       Namespace and the Secret templates, applied by hand once
-deploy/examples/kind/   MinIO, three nodes, and the stubs in a kind cluster (spec 013) -- not yet
+deploy/examples/kind/   MinIO, three nodes, and the stubs in a kind cluster (spec 013)
+deploy/examples/        the digitalocean and aws overlays an operator starts from (spec 018)
+skills/origo/           the skill that teaches an agent the `origo` command (spec 025)
 ```
 
 ### Local stack
@@ -100,7 +113,7 @@ service container.
 
 | Listener | Default address | Serves |
 |---|---|---|
-| public | `:8080` (`ORIGO_PUBLIC_ADDR`) | `/r/{id}.git/*` and `/{owner}/{slug}.git/*` smart HTTP, `/v1/*`, LFS, plus `GET /readyz` and `GET /version` so the release smoke reaches them through the ingress, and the landing page `GET /` with `GET /favicon.ico` beside it (spec 022) |
+| public | `:8080` (`ORIGO_PUBLIC_ADDR`) | `/r/{id}.git/*` and `/{owner}/{slug}.git/*` smart HTTP, `/v1/*`, LFS, plus `GET /readyz` and `GET /version` so the release smoke reaches them through the ingress, the landing page `GET /` with `GET /favicon.ico` beside it (spec 022), and the key set `GET /.well-known/jwks.json` (spec 007) |
 | internal | `:8081` (`ORIGO_INTERNAL_ADDR`) | the four probes below |
 | gossip | `:7946/udp` (`ORIGO_GOSSIP_ADDR`) | node to node sequence announcements (spec 005); until then datagrams are read and discarded |
 
@@ -218,6 +231,8 @@ one page:
 | spec 024 | `ORIGO_SSH_HOST_KEYS` | the ordered list of host key files the SSH listener presents and announces, the same list on every node of one installation |
 | spec 024 | `ORIGO_SSH_KEYS_URL` | the operator's endpoint that resolves an offered public key to a subject |
 | spec 024 | `ORIGO_SSH_KEYS_TOKEN` | the bearer Origo sends that endpoint |
+| spec 027 | `ORIGO_ANONYMOUS_READ` | `1` admits a request with no credential on the read routes spec 027 lists, with an empty subject the authorizer decides on; unset admits none and is the default |
+| spec 027 | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | the refill of the one bucket every anonymous caller of a node shares, `60` by default; read only when the switch is on |
 
 ### Failpoints
 
@@ -243,7 +258,8 @@ configured in `.lateregate.yaml`: `fmt-check`, `modernize`, `cgo-free`,
 `vuln`, `test`, `race`, `hermetic` (the suite with only the toolchain and
 `/usr/bin` on `PATH`, because git is the one binary origod needs beside
 itself), `tempdir` (the suite against an empty temporary directory), and
-`cover` (90% per package, no exemptions). `make test-integration` runs
+`cover` (90% per package; the one exemption is `cmd/origo`, spec 025's
+main, whose reason its row in `.lateregate.yaml` carries). `make test-integration` runs
 the tiers that need MinIO: the store suite (`integration` tag) and the
 end-to-end suite (`e2e` tag). Fuzz tests cover every parser that reads
 bytes from a client: pkt-line, the receive-pack request, the entry
@@ -254,8 +270,11 @@ are spec 013's.
 
 ### Release
 
-`.github/workflows/release.yml` runs the shared `service-release.yml` of
-`latere-ai/ci` on a `v*` tag: build the binary, package it with
+`.github/workflows/release.yml` was drafted as a thin caller of the
+shared `service-release.yml` of `latere-ai/ci`; spec 017 built it to
+produce every artifact itself and call no shared workflow, for the
+reason it gives. On a `v*` tag it does what this spec asked of the
+shared one: build the binary, package it with
 `Dockerfile.ci`, push `ghcr.io/latere-ai/origod:<tag>`, apply
 `deploy/prod/`, wait for the rollout, run `tools/smoke/release.sh`
 against the public URL (`GET /readyz` answers 200 and `GET /version`
@@ -272,8 +291,8 @@ release evidence beyond the smoke.
 runtime stage, byte for byte: Debian slim pinned by digest, with `git`
 and `ca-certificates`, user `65532`, `/var/lib/origo` owned by it, ports
 `8080`, `8081`, `7946/udp`. The runtime is not distroless because origod
-runs git as a subprocess. The tree carries bookworm-slim, whose git is
-2.39; spec 017 moves both files to trixie-slim, git 2.47 (Current state).
+runs git as a subprocess. The base is trixie-slim, git 2.47, where spec
+017 moved it from bookworm-slim (Current state).
 
 ## Acceptance criteria
 
@@ -361,3 +380,14 @@ Divergences from the first draft:
   on an `amd64` runner failed with `exec format error`. Every pin is now
   the index digest, which resolves to the platform's manifest; the
   `build` and `integration` jobs of `verify.yml` prove it on every push.
+- Two drifts found by a review on 2026-09-11. The coverage criterion
+  read 97%: spec 016's CA bundle reader had a branch no test reached,
+  spec 027 added `ORIGO_ANONYMOUS_READ` and the parse of
+  `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` with no test in this package, and
+  the exported `DiskSize` that `origod check` reads was never called; the
+  three table tests now carry the two variables, the system pool is a
+  variable a test swaps, and the disk test goes through the export, so
+  the package is at 100% again. The third table lacked spec 027's two
+  variables, which this spec promises to list; it has them now, and the
+  layout, the quality bar, and the release paragraph were brought
+  current with the tree at the same time.
