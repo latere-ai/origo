@@ -298,13 +298,15 @@ workflow identity, which is what an outside operator can verify.
 Built on 2026-09-09; the first release ran on 2026-09-10. Every
 criterion a checkout can prove has a passing test in the tree, and the
 tag closed every row below that a tag on this repository can close. The
-spec stays at `testing` on three rows that one cannot: the `live` job,
-which needs the two secrets and an installation behind them; the
-compatibility
-assertion against a fixture an earlier release attached, which needs a
-second tag; and the fork tag in both its halves, with the deploy
-variable set and unset, which needs a maintainer and a fork. The last
-two are the same person's work as spec 018's walk of the prose.
+spec stays at `testing` on one row that one cannot: the fork tag in
+both its halves, with the deploy variable set and unset, which needs a
+maintainer and a fork. Two rows that were open with it have since
+closed on real tags. The `live` job ran against
+`https://code.latere.ai` on the v0.1.3 run 34546335576 of 2026-09-11,
+once the two secrets were set and the installation answered. The
+compatibility assertion ran in the same release, against
+`fixture-v0.1.1.tar.gz`, the fixture an earlier release attached. The
+fork tag is the same person's work as spec 018's walk of the prose.
 
 The first tag, `v0.1.0` of 2026-09-10, published nothing and was
 deleted. It is blocked twice over, on two limits outside this
@@ -315,12 +317,12 @@ around.
 
 | Criterion | Test | State |
 |---|---|---|
-| the fixture of release N-1 materializes and serves on release N with identical `rev-list --all`, uploaded under a fresh prefix through the S3 client, skipped when the variable is unset | `test/conformance`, `TestPreviousReleaseFixture` (`e2e`), with `TestReleaseFixtureRoundTrip` and `TestReleaseFixtureRefusesABadArchive` on the harness itself and `TestReleaseFixturePush`/`TestReleaseFixturePack` as the pipeline's two halves | in the tree; the assertion against a real previous fixture waits for the second release |
+| the fixture of release N-1 materializes and serves on release N with identical `rev-list --all`, uploaded under a fresh prefix through the S3 client, skipped when the variable is unset | `test/conformance`, `TestPreviousReleaseFixture` (`e2e`), with `TestReleaseFixtureRoundTrip` and `TestReleaseFixtureRefusesABadArchive` on the harness itself and `TestReleaseFixturePush`/`TestReleaseFixturePack` as the pipeline's two halves | passing against a real previous fixture. The `conformance against the published image` job of the v0.1.3 run 34546335576, id 103101443762, downloaded `fixture-v0.1.1.tar.gz` into `ORIGO_PREVIOUS_RELEASE_FIXTURE` and reports `--- PASS: TestPreviousReleaseFixture (0.06s)` with `fixture_e2e_test.go:137: the fixture of v0.1.1 (4 commits) serves on this release under bfb9b540-349f-4dea-80c7-3d4b632a0347` |
 | a node reading an index object with `v: 2` answers 503 `repository_unavailable` with `details.key`, logs the documented line, serves another repository, and stays ready | `internal/repo`, `TestNewerLogFormatIsRefused`; `internal/wal`, `TestNewerFormatIsNamed` | passing |
 | both Dockerfiles name `debian:trixie-slim` by one digest and the built image answers `git --version` with 2.47 or newer | `cmd/origod`, `TestDockerfilesShareOneRuntimeStage`; the `build` job of `verify.yml` and the `build` job of `release.yml`, each running `git --version` in the image it built | passing in the tree; the image check runs on a tag or a dispatch |
 | `tools/smoke/release.sh` passes against a stub whose `/readyz` answers `ok` and `/version` serves `TAG`, with standard input closed, and fails naming the mismatch | `tools/smoke/release_test.sh`, run by the `test` gate through `TestReleaseSmoke` | passing |
 | `main.version` no longer exists and a binary linked with `internal/version.Version` serves and prints it | `cmd/origod`, `TestVersionHasOneSource` |
-| the two documents that name a version by hand, `SECURITY.md` and the production overlay, name the changelog's newest release, so neither is left behind by a tag | `tools/docs`, `TestSecurityNamesTheCurrentRelease`, `TestProductionOverlayPinsTheCurrentRelease` | closed 2026-09-10 | passing |
+| the two documents that name a version by hand, `SECURITY.md` and the production overlay, name the changelog's newest release, so neither is left behind by a tag | `tools/docs`, `TestSecurityNamesTheCurrentRelease`, `TestProductionOverlayPinsTheCurrentRelease` | passing, closed 2026-09-10 |
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
 | a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | passing: the `verify the published release` job of the tag run 34461460766, 50 s, verified both signatures against `^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/` and the GitHub OIDC issuer, refused a foreign identity, checked `checksums.txt` and its cosign bundle, read the deploy archive, and matched the body against the section |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | closed by the `v0.1.1` tag run 34511419232: the repository is public, so `Verify the attestations` ran and succeeded and `Attestation verification is skipped on a private repository` was the skipped step instead. Read back on 2026-09-11, `gh attestation verify oci://ghcr.io/latere-ai/origod:v0.1.1 --repo latere-ai/origo` exits 0, and so does the same command for `origo-stubs`, for both `--predicate-type https://spdx.dev/Document` and `--predicate-type https://slsa.dev/provenance/v1`; every one names the signer `https://github.com/latere-ai/origo/.github/workflows/release.yml@refs/tags/v0.1.1` |
@@ -359,17 +361,28 @@ up-script check, and the mutation job, all green.
 | the bill of materials as a release asset, spec 016's supply-chain row in its shipping half | the `build` job of the first tag: the three SPDX documents are uploaded with the other assets | closed by run 34461460766: `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json` are on the release |
 | conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
 | the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on | closed by the `v0.1.1` tag run 34511419232 on the now-public repository: `Verify the attestations` succeeded there, and four `gh attestation verify` runs on 2026-09-11, over `origod` and `origo-stubs` at `v0.1.1` for the SPDX and the SLSA predicate types, each exit 0 against the tag's workflow identity |
-| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | open. Run 34461460766's `live` job ran and skipped: neither secret is set and `https://code.latere.ai` does not resolve. The job is green because a skipped test passes, which is why `publish`'s `needs.live.result == 'success'` did not stop the release and why nothing here claims the live run happened |
+| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | closed by the v0.1.3 run 34546335576 of 2026-09-11. The two secrets are set and `https://code.latere.ai` answers, so the `live` job, id 103120952813, took its live branch: `contract_test.go:133: live run against ***: 51 passed` and `--- PASS: TestContract (173.69s)`, with the eight case names of exactly the six groups reported skipped. Run 34461460766's `live` job had run and skipped, neither secret being set then, and nothing here read that green as the run |
 | the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | open. The unset half ran on this repository and is recorded here. The set half has never run, so no tag has yet deployed or smoked a real rollout; neither half ran on a fork, and no checklist entry is in the notes. It sits beside spec 018's walk of the prose as the maintainer's work |
-| `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | open. Run 34461460766 reports `--- SKIP: TestPreviousReleaseFixture (0.00s)`: no earlier release carried a fixture. `fixture-v0.1.0.tar.gz` is on this release, so the second tag closes it |
+| `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | closed by the v0.1.3 run 34546335576. Its `conformance against the published image` job, id 103101443762, read `previous release fixture: /home/runner/work/_temp/previous/fixture-v0.1.1.tar.gz`, uploaded the copy through the S3 client, cloned it from the published image's node, and matched `rev-list --all`: `--- PASS: TestPreviousReleaseFixture (0.06s)`, `the fixture of v0.1.1 (4 commits) serves on this release`. Run 34461460766 had reported `--- SKIP`, no earlier release carrying a fixture |
 | `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
 
-The spec stays at `testing`. Four rows are open, and each needs
-something outside a tag on this repository: the repository becoming
-public or the plan being upgraded; the two live secrets with an
-installation behind them; a second tag; and a maintainer tagging a
-fork with `ORIGO_RELEASE_DEPLOY` set and unset, which is also the only
-way `deploy and smoke` has ever been asked to run.
+The spec stays at `testing` on one row. Three of the four have closed
+since this table was first written, each by something outside a tag
+arriving: the repository was made public, which turned the attestation
+steps back on and closed the supply-chain row on `v0.1.1`; the two
+live secrets were set with `https://code.latere.ai` behind them, which
+closed the `live` row on `v0.1.3`; and a fourth tag gave the
+compatibility assertion a real previous fixture to read. What is left
+is a maintainer tagging a fork with `ORIGO_RELEASE_DEPLOY` set and
+unset, which is also the only way `deploy and smoke` has ever been
+asked to run. `deploy and smoke` is no longer untried, though: with
+`ORIGO_RELEASE_DEPLOY` now set, the job ran on 34546335576, id
+103102068011, applied `deploy/prod`, rolled the new image, and smoked
+the installation, `OK GET /readyz (200)`, `OK GET /version (200)`,
+`OK served version matches the tag (v0.1.3)`, `release smoke passed`.
+What the row still asks for is the fork and the two states of the
+variable, which is a maintainer's tagging and not a job this
+repository can run.
 
 ### The defect the first tag found
 
