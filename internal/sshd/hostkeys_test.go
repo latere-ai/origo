@@ -43,26 +43,34 @@ func TestHostKeysAreRefusedByAlgorithmAndSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	good := []crypto.PrivateKey{generateEd25519(t), generateKey(t), strong}
+	// The host key algorithms are the client key algorithms: ed25519,
+	// the three ECDSA curves, and RSA at 2048 bits or more (spec 024,
+	// decision 10, widened on 2026-09-12).
+	good := []crypto.PrivateKey{generateEd25519(t), generateKey(t), strong, p384}
 	var paths []string
 	for i, k := range good {
 		paths = append(paths, writeKey(t, dir, "good"+string(rune('a'+i)), k))
 	}
 	keys, err := ParseHostKeys(paths)
 	if err != nil {
-		t.Fatalf("three host key algorithms were refused: %v", err)
+		t.Fatalf("four host key algorithms were refused: %v", err)
 	}
-	if got := algosOf(keys.Presented()); len(got) != 3 {
+	if got := algosOf(keys.Presented()); len(got) != 4 {
 		t.Errorf("presented = %v, want one per algorithm", got)
+	}
+	// An algorithm outside the set is refused by name: ssh-dss is the
+	// one x/crypto still knows and MarshalPrivateKey cannot write, so
+	// the check is driven with a key of that type directly.
+	if msg := checkHostKey(fakePublicKey{algo: ssh.KeyAlgoDSA}); !strings.Contains(msg, "not a host key algorithm") {
+		t.Errorf("an ssh-dss host key: %q", msg)
 	}
 
 	missing := filepath.Join(dir, "absent")
 	bad := ParseHostKeysError(t, []string{
 		writeKey(t, dir, "weak", weak),
-		writeKey(t, dir, "p384", p384),
 		missing,
 	})
-	for _, want := range []string{"at least 2048 bits", "not a host key algorithm", "absent"} {
+	for _, want := range []string{"at least 2048 bits", "absent"} {
 		if !strings.Contains(bad, want) {
 			t.Errorf("the message %q does not name %q", bad, want)
 		}
@@ -235,3 +243,11 @@ func TestFingerprintsNameEveryConfiguredKey(t *testing.T) {
 		}
 	}
 }
+
+// fakePublicKey is an ssh.PublicKey of any algorithm name, for the
+// refusal of an algorithm outside the host key set.
+type fakePublicKey struct{ algo string }
+
+func (k fakePublicKey) Type() string                        { return k.algo }
+func (k fakePublicKey) Marshal() []byte                     { return nil }
+func (k fakePublicKey) Verify([]byte, *ssh.Signature) error { return nil }

@@ -89,7 +89,7 @@ func ParseHostKeys(paths []string) (*HostKeys, error) {
 // checkHostKey reports why a key may not be a host key, or "".
 func checkHostKey(pub ssh.PublicKey) string {
 	switch pub.Type() {
-	case AlgoED25519, AlgoECDSA:
+	case AlgoED25519, AlgoECDSA, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521:
 		return ""
 	case AlgoRSA:
 		if bits := rsaBits(pub); bits < MinRSABits {
@@ -97,7 +97,7 @@ func checkHostKey(pub ssh.PublicKey) string {
 		}
 		return ""
 	default:
-		return pub.Type() + " is not a host key algorithm; use ssh-ed25519, ecdsa-sha2-nistp256, or ssh-rsa"
+		return pub.Type() + " is not a host key algorithm; use ssh-ed25519, ecdsa-sha2-nistp256, nistp384, or nistp521, or ssh-rsa"
 	}
 }
 

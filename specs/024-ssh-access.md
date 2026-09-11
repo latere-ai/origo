@@ -14,7 +14,7 @@ depends_on:
 affects: [internal/sshd/, internal/config/, internal/repo/, internal/auth/, cmd/origod/, deploy/, docs/, test/e2e/]
 effort: large
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -143,7 +143,7 @@ Content-Type: application/json
 | Field | Value |
 |---|---|
 | `fingerprint` | the OpenSSH SHA-256 fingerprint of the offered key, `SHA256:` and the unpadded base64 of the SHA-256 of the key blob, the string `ssh-keygen -lf` prints |
-| `type` | the key algorithm name, `ssh-ed25519`, `ecdsa-sha2-nistp256`, or `ssh-rsa` |
+| `type` | the key algorithm name, `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`, or `ssh-rsa` |
 | `public_key` | the key in `authorized_keys` form, type and base64 blob, no options and no comment, so a store that keeps keys as text can match on it without re-encoding |
 
 **The answer, always 200:**
@@ -402,7 +402,7 @@ parsed by Origo and never by a shell.
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `ORIGO_SSH_ADDR` | no | unset | the SSH listener's address, `:2222` in the deployment; unset turns SSH off and the node runs as it does today |
-| `ORIGO_SSH_HOST_KEYS` | when `ORIGO_SSH_ADDR` is set | none | an ordered comma-separated list of paths to OpenSSH private host key files, the same list on every node of one installation; the first key of each algorithm is presented and every key is announced through `hostkeys-00@openssh.com`; a path that does not parse, a list with no key, or a key algorithm outside `ssh-ed25519`, `ecdsa-sha2-nistp256`, and `ssh-rsa` at 2048 bits or more is a problem in spec 002's one start-up message |
+| `ORIGO_SSH_HOST_KEYS` | when `ORIGO_SSH_ADDR` is set | none | an ordered comma-separated list of paths to OpenSSH private host key files, the same list on every node of one installation; the first key of each algorithm is presented and every key is announced through `hostkeys-00@openssh.com`; a path that does not parse, a list with no key, or a key algorithm outside the client key set, `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`, and `ssh-rsa` at 2048 bits or more, is a problem in spec 002's one start-up message |
 | `ORIGO_SSH_KEYS_URL` | when `ORIGO_SSH_ADDR` is set | none | the operator's key resolution endpoint, the contract above |
 | `ORIGO_SSH_KEYS_TOKEN` | when `ORIGO_SSH_ADDR` is set | none | the bearer Origo sends that endpoint |
 
@@ -690,11 +690,16 @@ resolver's cache and every answer shape it may read
   the three are unread, the way `ORIGO_GOSSIP_SECRET` is read and unused
   without peers. The spec states the two ends of the rule and not this
   middle; refusing it would fail a start-up that is merely untidy.
-- **Host key algorithms are narrower than client key algorithms.**
-  Decision 10 names `ssh-ed25519`, `ecdsa-sha2-nistp256`, and `ssh-rsa`
+- **Host key algorithms were narrower than client key algorithms.**
+  Decision 10 named `ssh-ed25519`, `ecdsa-sha2-nistp256`, and `ssh-rsa`
   at 2048 bits for a host key, and five algorithms for a client key, so
-  `ecdsa-sha2-nistp384` authenticates a person and cannot be a host key.
-  That is what the sentence says and it may not be what it meant.
+  `ecdsa-sha2-nistp384` authenticated a person and could not be a host
+  key. The user decided on 2026-09-12 that the sentence did not mean
+  that, and the host key set is now the client key set: the two ECDSA
+  curves were added to `checkHostKey` in `internal/sshd/hostkeys.go`,
+  the variable row above names the five, and
+  `TestHostKeysAreRefusedByAlgorithmAndSize` presents a `nistp384` key
+  among the four good ones and refuses `ssh-dss` by name.
 
 ### Deferred
 
