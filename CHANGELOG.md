@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- Your installation can serve a repository to somebody with no account, if
+  you turn it on. Set `ORIGO_ANONYMOUS_READ` and your permission service
+  decides, one repository at a time, who may be read without signing in.
+  Clone, fetch, refs, commits, files and archives are offered. Writes,
+  administration, large file downloads, bundles and the repository list are
+  not. It is off unless you set it, and with it off every refusal is exactly
+  what this release would have answered before.
+- An anonymous caller gets its own request budget, shared across everyone
+  without an account on that node, so it cannot take from anyone signed in.
+
 ## v0.1.3 - 2026-09-11
 
 - A release now carries a second command, `origo`, beside the server. It
