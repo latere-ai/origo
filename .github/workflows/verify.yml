@@ -91,6 +91,13 @@ jobs:
         run: |
           make docs
           git diff --exit-code docs/
+      # Spec 001's seventh invariant names the module's direct
+      # dependencies; go.mod is where a reader checks the claim, so it
+      # has to agree with the imports. golang.org/x/crypto sat in the
+      # indirect block for two days after internal/sshd began importing
+      # it, and no gate noticed.
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
 
   # `kustomize build` over everything under deploy/. The two cloud
   # overlays are never applied here, because this repository has no cloud
