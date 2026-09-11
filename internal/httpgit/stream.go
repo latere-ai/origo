@@ -301,11 +301,14 @@ func (h *Handler) streamVerdict(ctx context.Context, id string, rp *repo.Repo, q
 // the protocol version is the one git falls back to.
 func (h *Handler) streamCommand(ctx context.Context, rp *repo.Repo, args ...string) (*exec.Cmd, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	// The span is the subprocess: the caller defers the cancel this
+	// returns and waits for the process before it runs.
+	ctx, endSpan := repo.Span(ctx, args)
 	cmd := h.cache.Git().Command(ctx, rp.Dir, args...)
 	// The hook is a grandchild; killing the group on cancel takes it too.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	return cmd, cancel
+	return cmd, func() { endSpan(); cancel() }
 }
 
 // spoolTee copies the client's bytes to the spool and then to git, in

@@ -259,6 +259,8 @@ func (rr *readRequest) gitCommand(ctx context.Context, args ...string) *exec.Cmd
 
 // run runs a subprocess to completion and returns its stdout.
 func (rr *readRequest) run(ctx context.Context, stdin io.Reader, args ...string) ([]byte, error) {
+	ctx, end := repo.Span(ctx, args)
+	defer end()
 	cmd := rr.gitCommand(ctx, args...)
 	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
@@ -291,6 +293,10 @@ type stream struct {
 	stderr bytes.Buffer
 	cancel context.CancelFunc
 	args   []string
+	// endSpan closes the git.<subcommand> span when the subprocess is
+	// reaped, so the span is the subprocess and not the call that
+	// started it.
+	endSpan func()
 }
 
 // start begins a subprocess with its stdout as a pipe. The caller
@@ -298,17 +304,20 @@ type stream struct {
 // running, as a page or a cut leaves it.
 func (rr *readRequest) start(ctx context.Context, stdin io.Reader, args ...string) (*stream, error) {
 	ctx, cancel := context.WithCancel(ctx)
+	ctx, endSpan := repo.Span(ctx, args)
 	cmd := rr.gitCommand(ctx, args...)
 	cmd.Stdin = stdin
-	s := &stream{cmd: cmd, cancel: cancel, args: args}
+	s := &stream{cmd: cmd, cancel: cancel, args: args, endSpan: endSpan}
 	cmd.Stderr = &s.stderr
 	out, err := cmd.StdoutPipe()
 	if err != nil {
+		endSpan()
 		cancel()
 		return nil, err
 	}
 	s.out = out
 	if err := cmd.Start(); err != nil {
+		endSpan()
 		cancel()
 		return nil, err
 	}
@@ -324,6 +333,7 @@ func (s *stream) finish(done bool) error {
 	}
 	err := s.cmd.Wait()
 	s.cancel()
+	s.endSpan()
 	if err != nil && !done {
 		return &repo.Error{Args: s.args, Err: err, Stderr: strings.TrimSpace(s.stderr.String())}
 	}

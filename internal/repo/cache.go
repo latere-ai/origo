@@ -27,6 +27,7 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/metrics"
+	"github.com/latere-ai/origo/internal/tracing"
 	"github.com/latere-ai/origo/internal/wal"
 )
 
@@ -496,6 +497,15 @@ func (c *Cache) applyNewest(ctx context.Context, r *Repo, newest *wal.Index) err
 	return c.Apply(ctx, r, newest)
 }
 
+// newest is the currency check under the index.check span of spec 011's
+// read path: one HEAD on the index object after the one the copy holds,
+// and the read of a newer index when the HEAD finds one.
+func (c *Cache) newest(ctx context.Context, r *Repo, held uint64, local bool) (*wal.Index, bool, error) {
+	ctx, end := tracing.Start(ctx, "index.check", tracing.Repo(r.ID))
+	defer end()
+	return c.log.Newest(ctx, r.ID, held, local)
+}
+
 // sync runs the currency check and applies what the local copy lacks.
 // Without the write lock it only reports whether work is needed, with
 // the newer index it read so the caller applies it under the lock.
@@ -508,7 +518,7 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) (*wal.Index, erro
 			}
 		}
 	}
-	newest, changed, err := c.log.Newest(ctx, r.ID, r.Seq, r.Local)
+	newest, changed, err := c.newest(ctx, r, r.Seq, r.Local)
 	if err != nil {
 		if errors.Is(err, wal.ErrNotFound) {
 			return nil, ErrNotFound
@@ -537,7 +547,7 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) (*wal.Index, erro
 			// now, which is ErrNotFound when it holds nothing.
 			c.logger.WarnContext(ctx, "held sequence is not in the log, rebuilding the copy", "repo", r.ID, "seq", r.Seq)
 			c.evict(r)
-			newest, changed, err = c.log.Newest(ctx, r.ID, 0, false)
+			newest, changed, err = c.newest(ctx, r, 0, false)
 			if err != nil {
 				if errors.Is(err, wal.ErrNotFound) {
 					return nil, ErrNotFound
@@ -566,6 +576,8 @@ func (c *Cache) sync(ctx context.Context, r *Repo, write bool) (*wal.Index, erro
 // holds the write lock; a push handler calls it with the index another
 // writer committed while the push was in flight.
 func (c *Cache) Apply(ctx context.Context, r *Repo, ix *wal.Index) error {
+	ctx, end := tracing.Start(ctx, "materialize", tracing.Repo(r.ID))
+	defer end()
 	start := time.Now()
 	fresh := !r.Local
 	if fresh {

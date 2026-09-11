@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/latere-ai/origo/internal/tracing"
 )
 
 // Git runs the git binary against one bare repository with a hermetic
@@ -44,6 +46,31 @@ func (g *Git) Env(dir string) []string {
 	}
 }
 
+// Subcommand is the git subcommand an argument list names: the first
+// argument that is not an option, with the value of -c and -C skipped.
+// It is the name of the span, so `--no-pager rev-parse HEAD` traces as
+// git.rev-parse and not as git.--no-pager.
+func Subcommand(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-c" || a == "-C":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			return a
+		}
+	}
+	return "git"
+}
+
+// Span opens the span of one git subprocess, git.<subcommand> of spec
+// 011's table. Run wraps its own; a caller that starts the process and
+// waits for it itself ends the span when the process is reaped, so the
+// span is the subprocess and not the call that built it.
+func Span(ctx context.Context, args []string) (context.Context, func()) {
+	return tracing.Start(ctx, "git."+Subcommand(args))
+}
+
 // Command builds a command in dir. The caller wires the streams and runs
 // it; the context bounds it.
 func (g *Git) Command(ctx context.Context, dir string, args ...string) *exec.Cmd {
@@ -62,6 +89,8 @@ func (g *Git) Run(ctx context.Context, dir string, stdin io.Reader, args ...stri
 		ctx, cancel = context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
 	}
+	_, end := Span(ctx, args)
+	defer end()
 	cmd := g.Command(ctx, dir, args...)
 	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer

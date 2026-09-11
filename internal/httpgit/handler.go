@@ -326,6 +326,9 @@ func (h *Handler) advertisementError(w http.ResponseWriter, r *http.Request, ser
 // with the client's protocol version and the request deadline.
 func (h *Handler) gitCommand(ctx context.Context, r *http.Request, rp *repo.Repo, args ...string) (*exec.Cmd, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	// The span is the subprocess: the caller defers the cancel this
+	// returns and waits for the process before it runs.
+	ctx, endSpan := repo.Span(ctx, args)
 	cmd := h.cache.Git().Command(ctx, rp.Dir, args...)
 	if proto := r.Header.Get("Git-Protocol"); proto != "" {
 		cmd.Env = append(cmd.Env, "GIT_PROTOCOL="+proto)
@@ -333,7 +336,7 @@ func (h *Handler) gitCommand(ctx context.Context, r *http.Request, rp *repo.Repo
 	// The hook is a grandchild; killing the group on cancel takes it too.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	return cmd, cancel
+	return cmd, func() { endSpan(); cancel() }
 }
 
 // infoRefs advertises references for the requested service.

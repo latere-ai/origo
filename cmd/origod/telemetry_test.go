@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -490,4 +491,101 @@ func TestDetailsAreEmptyOffThePublicListener(t *testing.T) {
 	if got := routeOf(r); got != "" {
 		t.Fatalf("route of an unmatched request %q", got)
 	}
+}
+
+// TestReadTrace is spec 009's trace criterion and the read half of spec
+// 011's span table: a read against an in-memory OTLP receiver produces
+// one trace carrying index.check, materialize, and a git.<command>
+// span, with the repository id on the two spans the cache owns.
+//
+// The read runs against a second node with a data directory of its own
+// against the same bucket, because materialize is what a node does for
+// a repository it does not hold: the node that took the push already
+// has the copy, and a read through it would carry the currency check
+// and no materialization.
+func TestReadTrace(t *testing.T) {
+	env, id := servingEnv(t)
+	pusher, stopPusher := startNode(t, env)
+	public, _, _ := pusher.addrs()
+	token := fixture(t, "http://"+public, id)
+	if err := stopPusher(); err != nil {
+		t.Fatal(err)
+	}
+
+	receiver := newOTLPReceiver(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", receiver.URL())
+	// The default sampler keeps one root trace in five; the test needs
+	// the one it makes.
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "1")
+
+	// The same bucket and the same identity, an empty disk of its own.
+	reader := maps.Clone(env)
+	reader["ORIGO_DATA_DIR"] = t.TempDir()
+	cfg, err := config.Load(getenv(reader))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Resolve(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	logger, flush := bootstrap(ctx, io.Discard)
+	n, err := newNode(cfg, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.flushTelemetry, n.drainDelay = flush, 0
+	done := make(chan error, 1)
+	go func() { done <- n.run(ctx) }()
+	readAddr, _, _ := n.addrs()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"http://"+readAddr+"/v1/repos/"+repoID+"/commits?limit=10", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("read: %d %s", resp.StatusCode, body)
+	}
+	// The drain flushes the batcher, whose own timeout is five seconds.
+	cancel()
+	<-done
+
+	traces := map[string][]otlpSpan{}
+	for _, s := range receiver.spans() {
+		traces[s.trace] = append(traces[s.trace], s)
+	}
+	for _, spans := range traces {
+		names := map[string]otlpSpan{}
+		var git []string
+		for _, s := range spans {
+			names[s.name] = s
+			if strings.HasPrefix(s.name, "git.") {
+				git = append(git, s.name)
+			}
+		}
+		if _, ok := names["materialize"]; !ok {
+			continue
+		}
+		if _, ok := names["index.check"]; !ok {
+			t.Fatalf("the read trace has no index.check span; it has %v", keys(names))
+		}
+		if len(git) == 0 {
+			t.Fatalf("the read trace carries no git.<command> span; it has %v", keys(names))
+		}
+		for _, name := range []string{"index.check", "materialize"} {
+			if got := names[name].attrs["origo.repo"]; got != repoID {
+				t.Fatalf("the %s span names the repository %q, want %q", name, got, repoID)
+			}
+		}
+		return
+	}
+	t.Fatalf("no trace carries a materialize span; %d traces arrived", len(traces))
 }
