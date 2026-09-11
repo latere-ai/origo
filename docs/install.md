@@ -59,7 +59,9 @@ curl -fLO "https://github.com/latere-ai/origo/releases/download/$VERSION/deploy-
 tar xzf "deploy-$VERSION.tar.gz"
 ```
 
-That writes `deploy/`, whose two directories the next section names. You
+That writes `deploy/`, whose two directories the next section names.
+Ignore `up.sh` and `down.sh` inside the `kind` example: they build the
+project's own test stack, which runs things no installation wants. You
 never edit what you unpacked: you copy an example overlay out of it,
 and your copy names `../deploy/base` or wherever you keep it. What a
 version number promises and how to move between two of them is in
