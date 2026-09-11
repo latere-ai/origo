@@ -14,7 +14,7 @@ depends_on:
 affects: [internal/sshd/, internal/config/, internal/repo/, internal/auth/, cmd/origod/, deploy/, docs/, test/e2e/]
 effort: large
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -43,18 +43,21 @@ There is no second write path and no second durability rule.
 
 ## Current state
 
-Not built. `cmd/origod` runs two HTTP listeners and a gossip socket
-(spec 002); `internal/httpgit` owns the smart HTTP handlers, spools the
-push body, runs the git subprocess through `internal/repo.Git`, and asks
-`internal/auth.Guard` before any read of the repository. The module's
-direct dependencies are the standard library, `latere.ai/x/pkg`, and the
-OpenTelemetry SDK (spec 001, invariant 7, as spec 011 amended it), and
-`latere.ai/x/pkg` carries no SSH package.
+Built on 2026-09-10; the Outcome records the tests, the divergences,
+and the stack proof. Before it, `cmd/origod` ran two HTTP listeners and
+a gossip socket (spec 002); `internal/httpgit` owned the smart HTTP
+handlers, spooled the push body, ran the git subprocess through
+`internal/repo.Git`, and asked `internal/auth.Guard` before any read of
+the repository. The module's direct dependencies were the standard
+library, `latere.ai/x/pkg`, and the OpenTelemetry SDK (spec 001,
+invariant 7, as spec 011 amended it), and `latere.ai/x/pkg` carried no
+SSH package; `golang.org/x/crypto/ssh` is the fourth now, confined to
+`internal/sshd`.
 
-No component of Latere's stack holds an SSH public key today. Auth
-serves the authorizer of spec 007 and has no key concept; this spec
-states what a key store must answer and leaves the store to the
-operator.
+No component of Latere's stack held an SSH public key then, and none
+does now. Auth serves the authorizer of spec 007 and has no key
+concept; this spec states what a key store must answer and leaves the
+store to the operator, with `test/stubs/sshkeys` as the reference.
 
 ## Design
 
@@ -695,12 +698,13 @@ resolver's cache and every answer shape it may read
 
 ### Deferred
 
-One half of one criterion. The install document's SSH step ran in the
-`install` job of `verify.yml` against the candidate image. The other
-half, `install-release`, walks the same blocks against the published
-release and runs only on a tag, so the next tag closes it. Nothing about
-the step is different there: the same document, the same overlay, and an
-image built from the same tree.
+Nothing. The install document's SSH step ran in the `install` job of
+`verify.yml` against the candidate image, and its other half,
+`install-release`, which walks the same blocks against the published
+release on a tag, closed on the first tags after the step landed: the
+trees of `v0.1.3` and `v0.2.0` both contain `3f5bea6`, and the
+`install from the release artifacts` job reports `success` in the
+release runs 34546335576 and 34617034527.
 
 The two things this spec names as somebody else's stay there:
 `git-lfs-authenticate` and LFS over an SSH remote, which is a spec of
@@ -734,3 +738,19 @@ OpenSSH gives up on a refused `shell` request without draining the
 session's stderr, so the shell case reads the client's own message and
 the code's line is asserted on the `exec` beside it, which the client
 does read.
+
+A review on 2026-09-11 read the Design against `internal/sshd`, the
+manifests, and the documents and found the 30 second handshake bound,
+the three attempts, public key as the only method, the six client key
+algorithms, the three host key algorithms with RSA at 2048 bits and the
+first key of each algorithm presented, session as the only channel type
+with the refused request names as listed, the two exported stream
+entry points of `internal/httpgit`, the code's line on stderr with the
+wait on a second line and exit status 1, the resolver call's three
+fields and the answer's four with the 60 second default and 600 second
+cap, the three metrics with their vocabularies, the container port
+with no SSH variable in the base, the two load balancer patches, the
+install step and the rotation procedure, and every named test present.
+The Current state still said the spec was not built, and the Deferred
+section still waited on a tag that has since run twice; both read as
+the tree and the runs stand.
