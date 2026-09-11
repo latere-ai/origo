@@ -511,4 +511,21 @@ the weekly `fuzz` job of `verify.yml`, which has not fired. The seeds
 are proved and the search is not, which is the same item spec 009
 waits on.
 
+
+The fuzz row did not close on 2026-09-11, and the run that looked like
+it closed is why this paragraph exists. `7e7b1cd` gave the `fuzz` job a
+`workflow_dispatch` path, and the dispatched run 34598740040 reported
+the job `success`. It fuzzed nothing. `make fuzz` built its `-fuzz`
+pattern as `-fuzz="^$$fn$$$$"`, where make turns `$$$$` into `$$` and
+the shell turns that into its own pid, so every invocation asked for
+`^FuzzValidRefName24748` and the like, matched no function, and printed
+`testing: warning: no fuzz tests to fuzz` with `ok ... 0.005s`. `go
+test` reports that as a warning and exits 0, so the job was green over
+eleven functions in under a minute. The recipe is fixed at the root and
+`TestFuzzTargetNamesEachFunctionExactly` in `tools/docs` runs the real
+recipe against a stub `go` and fails on any pattern not anchored on the
+function's own name, or on a `-fuzztime` other than 40s. What closes
+this row is a `fuzz` job on the fixed recipe: a dispatch now reaches it,
+so it need not wait for the Sunday cron.
+
 Waits on: the weekly fuzz job of verify.yml.
