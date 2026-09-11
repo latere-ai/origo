@@ -30,10 +30,13 @@ operations on the JSON API.
 
 ## Current state
 
-`internal/api` serves create, get, rename (`PATCH`), delete, and
-undelete (spec 003). The sweeper's purge (`internal/wal`) removes every
-object under the repository prefix including `meta`, so an undeleted-too-late
-repository answers 404. Nothing else below exists.
+Built on 2026-09-09 and complete since 2026-09-11; the Outcome records
+the tests, the stack and live runs, and what diverged. Before it,
+`internal/api` served create, get, rename (`PATCH`), delete, and
+undelete (spec 003), the sweeper's purge (`internal/wal`) removed every
+object under the repository prefix including `meta`, so an
+undeleted-too-late repository answered 404, and nothing else below
+existed.
 
 ## Design
 
@@ -556,3 +559,19 @@ now counts distinct ids, and a third DELETE that moved `deleted_at`
 would still fail it as a third id. The criterion is unchanged; only
 what the test measures is. Spec 008's storage table says the same rule
 in one place now.
+
+A review on 2026-09-11 read the Design against `internal/api`,
+`internal/httpgit`, and `internal/wal` and found the eight routes, the
+five codes at the stated statuses with `repo_frozen` at both of its,
+the eight event kinds with the extra fields of the table and the
+source redacted on `imported`, the frozen push's `ERR` line and verdict
+with the 60 second `meta` window, the import's three commands, its
+`compact` entry with `CompactedThrough` one below its own sequence and
+`HEAD` in the transaction only when it moves, the 30 minute budget and
+the 45 minute lease with the three error strings, the bundle export
+with its 10 minute deadline and the 404 on an empty repository, the
+`stats` fields, the `gc` answers with the 600 second window and the
+hourly limit, the tombstone purge, and the sweep on Sunday at 03:00 on
+the first name of the sorted live set with the one-day orphan age and
+the seven-day hold; every named test is present. The Current state
+still described the tree before the build; it reads as built.
