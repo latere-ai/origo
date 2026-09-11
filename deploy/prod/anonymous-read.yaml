@@ -1,0 +1,18 @@
+# Anonymous read (spec 027). A request with no credential on a read route
+# is admitted with an empty subject and decided by the authorizer like any
+# other, so a repository an administrator has made public on the web
+# interface clones with a plain `git clone https://code.latere.ai/owner/name`
+# and no token. A private one still answers 401 and git asks for a
+# credential. Only the node reads it; the check container does not.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_ANONYMOUS_READ
+              value: "1"

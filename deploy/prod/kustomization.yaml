@@ -36,6 +36,8 @@ patches:
   - path: pull-secret.yaml
   - path: replicas.yaml
   - path: ssh.yaml
+  # Public repositories clone without a token (spec 027).
+  - path: anonymous-read.yaml
 
 # Port 22 is not patched onto origod-ssh here. Latere's ingress
 # controller passes TCP 22 through to this Service (its tcp-services
