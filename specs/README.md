@@ -791,6 +791,82 @@ so a fork's tag pushes to this organization's packages and fails before
 publishing. The row therefore waits on threading the namespace through
 those four places, a builder's change, not on a maintainer's time.
 
+The twenty-second round, on the seven specs that were not `complete`.
+Six of them are now, and 017 is the one that is not.
+
+025, 026 and 027 were built, released in `v0.2.0` by the tag run
+34617034527 at commit `a60893d`, whose every job passed, and are
+running in production, which answers `{"version":"v0.2.0"}` at
+`https://code.latere.ai/version`. 026 said `drafted` while its route,
+its interface and its tests were on main and in a release; its Outcome
+records that the status, not the work, was what never advanced. Every
+criterion test of the three ran in the `gate / test`, `gate / race`,
+`gate / cover` and `integration and one-node e2e tiers` jobs of the
+verify run 34619859907 on main, all `success`, and each was read back
+locally with `go test -v`. Three of the names the criteria proposed are
+not the names in the tree, and each spec now says so:
+`TestE2EOrigoDirectoryUnsupported` is
+`TestE2EOrigoDirectoryNeedsAnIssuerToken`, which carries two rows
+beyond the criterion; `TestStubDirectory` is in `internal/auth` and not
+`test/stubs/authorizer`; and `TestEveryCodeHasStatuses` does not exist,
+`TestEveryCodeHasOneSentence` holding the status half of that row and
+more. None of the three is a missing assertion.
+
+The fuzz row of 009 and 016 closed on the first honest run of the
+fixed recipe, the dispatched run 34599562832 at `a1a25f4`, whose
+`fuzz` job searched each of the eleven fuzz functions of the module
+for 40 seconds. The line that proves it is per function, not per job:
+each prints a baseline coverage count, `now fuzzing with 4 workers`,
+and tens of thousands of executions at 41 s, where the run that fuzzed
+nothing printed `testing: warning: no fuzz tests to fuzz` and
+`ok ... 0.005s`. `c59a664`, the recipe fix, is an ancestor of
+`a1a25f4`. 016 is `complete` on that row alone.
+
+009's other item was built rather than waited for. The read path's
+three spans did not exist: `index.check`, `materialize` and
+`git.<subcommand>` were added to `internal/repo`, `internal/api` and
+`internal/httpgit`, and `TestReadTrace` in `cmd/origod` reads a trace
+of a read through a second node with an empty disk, which is the one
+shape that carries all three. Without the spans it fails with `no
+trace carries a materialize span`.
+
+004's three deferred criteria closed together. Two were tests nobody
+had written and now exist:
+`TestE2EHundredConcurrentPushesFromEightClients`, green in run
+34631054209's one-node tier, and `TestSlowMaterializeTenThousandEntries`,
+green in job 103363974071 of the dispatched run 34629785911 at
+`--- PASS (416.83s)`. The third was the conditional-write probe against
+DigitalOcean Spaces, run on 2026-09-11 and recorded in the spike and in
+017's release checklist: create-if-absent, the one primitive the design
+depends on, applied 20 of 20 rounds with 0 transport errors, and the
+`HEAD` 404 and `GET` 304 rows passed. The probe also confirms that
+`PUT If-Match` and the conditional `CopyObject` are absent on Spaces.
+Neither is a finding: `IfMatch`, `If-Match`, `CopyObject` and
+`CopySource` appear in no file under `internal/`, `cmd/` or `test/`
+outside two comments, and `latere.ai/x/pkg/s3` has no `If-Match` on
+`PUT` at all.
+
+017 stays at `testing`, and what holds it moved from a builder to a
+maintainer. The image namespace is threaded: `release.yml` derives
+`ORIGOD_IMAGE` and `STUBS_IMAGE` from `ORIGO_IMAGE_NAMESPACE` or, unset,
+`ghcr.io/${{ github.repository_owner }}`, `release-verify` greps
+`${ORIGOD_IMAGE}` out of the archive, `deploy-archive.sh` rewrites the
+namespace and the version together, and the deploy step moves
+`deploy/prod`'s image name with it.
+`TestReleasePublishesUnderTheRepositoryOwnersNamespace` fails on any
+line of the workflow fixing a namespace, and `deploy_archive_test.sh`
+packs the archive a second time under `ghcr.io/example-fork` and
+asserts nothing of Latere's survives in it. What remains is a
+maintainer pushing a tag on a fork and reading the run; no tag was cut
+here.
+
+One measurement the round produced, worth keeping. Writing 10 000
+entries through `Log.Commit` costs 38 ms each on the runner, because
+every commit rewrites an index object that ends at ten thousand rows,
+while materializing all of them onto an empty disk costs 3.2 s. The
+ceiling the log has without compaction is a write cost, not a read
+cost.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -1064,7 +1140,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_pushes_rejected_total` | [011](011-observability.md) | - |
 | metric | `origo_pushes_total` | [011](011-observability.md) | - |
 | metric | `origo_rate_limited_total` | [011](011-observability.md) | 012, 019, 020 |
-| metric | `origo_repo_entries_applied_total` | [011](011-observability.md) | 005 |
+| metric | `origo_repo_entries_applied_total` | [011](011-observability.md) | 004, 005 |
 | metric | `origo_repo_materialize_seconds` | [011](011-observability.md) | 005 |
 | metric | `origo_repo_materialized_total` | [011](011-observability.md) | 005 |
 | metric | `origo_repo_rebuilt_total` | [011](011-observability.md) | 004 |
