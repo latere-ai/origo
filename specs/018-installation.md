@@ -344,12 +344,15 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
   tiers, the up-script check, and the mutation job keep the tag-only
   rule spec 013 set for the minutes they cost; one image build and one
   20 minute install job are what a push now carries that it did not.
-- `docs/install.md` reads a `VERSION` variable that `ORIGO_INSTALL_IMAGE`
-  defaults from, which the Design's variable table does not name. The
-  table's two variables are unchanged and the jobs set them the same
-  way; `VERSION` exists so the page names the release once, beside the
-  releases page and the deploy archive, rather than printing an image
-  tag a reader copies without knowing where its number comes from.
+- `docs/install.md` had read a `VERSION` variable that
+  `ORIGO_INSTALL_IMAGE` defaulted from, which the Design's variable
+  table does not name. The walk of 2026-09-11 removed it: a number
+  baked into the settings block is stale the day after a tag, and step
+  6's `set image` then overrode the archive's own pins with it. The
+  page's `IMAGE` is empty unless `ORIGO_INSTALL_IMAGE` is set, step 6
+  runs `set image` only when it is, and the version appears once in the
+  download line a reader edits. The Design's table stands: both install
+  jobs set the two variables and neither changed.
 - `ORIGO_TOKEN_KEY` left `deploy/bootstrap/secrets.example.yaml`. The
   Manifests section says `origod-auth` carries it and the base reads
   both bootstrap Secrets through `envFrom`; the paragraph after it says
