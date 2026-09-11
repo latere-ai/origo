@@ -47,8 +47,9 @@ command over a tool server, and the measurement is in Not in this spec.
 
 ## Current state
 
-Nothing of this is built. `cmd/` holds `origod` alone. The pieces it
-stands on are released:
+Built, and shipped in `v0.2.0` on 2026-09-11; the Outcome records the
+runs. `cmd/` holds `origod` and `origo`. The pieces it stands on were
+released before it:
 
 - Spec 009's read API in `v0.1.0`: `GET /v1/repos/{id}/refs`,
   `GET /v1/repos/{id}/commits`, `GET /v1/repos/{id}/commits/{sha}`,
@@ -742,13 +743,13 @@ replacing the surface:
 | 23 | the file read windowed the fetch by `-max-bytes`, so `-offset` past that cap answered nothing and the line count was of the fetched fragment. The acceptance criterion's own "no overlap and no gap" would have failed under the default flags, which is the configuration every caller uses. Found by testing at the default rather than with the cap turned off | the `Range` is for the node's 50 MiB rule alone, the cap bounds what is printed, and a line longer than the cap is printed whole with a line saying why |
 | 24 | `origo repos -n 1` bounded the answer but not the request, so it fetched the node's default page of fifty rows to print one | the loop asks for what is still wanted, up to spec 026's 200 |
 
-**The dependency ordering, stated rather than assumed.** Spec 026 is at
-`drafted` while the route it specifies, `GET /v1/repos`, is built,
-served and in `docs/api.md`. This spec therefore does not go to
+**The dependency ordering, stated rather than assumed.** Spec 026 was
+at `drafted` while the route it specifies, `GET /v1/repos`, was built,
+served and in `docs/api.md`. This spec therefore did not go through
 `dispatched`, whose gate is every dependency at `testing` or later; it
-is built against the route as the tree holds it, and 026's status is
-what lags its code rather than a design still moving. A reader who finds
-025 at `testing` before 026 has the reason here.
+was built against the route as the tree held it, 026's status being
+what lagged its code rather than a design still moving. Both closed on
+the same day, 2026-09-11, on the v0.2.0 tag run.
 
 Unchanged after checking: spec 007's `Mint` writes `repo`, `scope` and a
 copied `act` and caps `ttl` at 3 600 seconds; spec 009's budget is 30
@@ -975,3 +976,18 @@ directory, `origo repos` exits 1 with `directory_unsupported` and names
 named is served. That test carries two rows beyond the criterion, the
 served listing once a directory is set and the refusal of `repos` under
 a repository-bound token, so it is the wider test and keeps its name.
+
+A review on 2026-09-11 read the Design against `internal/origoclient`,
+`internal/origocli`, `cmd/origo`, and the documents and found the four
+variables with their start-up refusals (the https rule with its
+loopback exception, the PEM prefix, the author's angle brackets and
+`@`), the twelve commands, the byte defaults of the table (200, 100,
+200, 800 lines or 32 KiB, 20, and the 72 character subject), the
+placeholder segment, the `Range` arithmetic, the 5 second wait bound,
+`main` as one call into `origocli.Run`, the two documents linked from
+both READMEs, the skill's frontmatter under the bound, the
+`release-verify` pattern for both archives, and every named test
+present under the names the Outcome gives. Two passages were behind the
+tree: the Current state said nothing was built, and the
+dependency-ordering paragraph still called spec 026 `drafted`; both
+read as the tree stands.
