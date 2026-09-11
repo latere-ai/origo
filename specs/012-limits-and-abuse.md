@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/limits/, internal/httpgit/, internal/api/, internal/lfs/, internal/auth/, internal/config/, cmd/origod/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -289,8 +289,11 @@ Divergences and interpretations, each kept and the reason:
   on the stack, so spec 021's `rate_limited` case can still meet it;
   `RateLimit-Limit` on every response of the surface is how that case
   learns the figure to exceed. That 600 a minute refuses a legitimate
-  client pushing in a loop is a finding for the deck, not something
-  this build settles.
+  client pushing in a loop was a finding for the deck, not something
+  the build settled; the user settled it on 2026-09-12 and the default
+  stays 600, for the reason the decision below gives: an operator who
+  drives one subject harder sets `ORIGO_REQUESTS_PER_MINUTE`, the way
+  the kind overlay does.
 
 No criterion of this spec is a stack criterion, so none needed the
 kind stack; what the stack proves is that the limits do not refuse the
