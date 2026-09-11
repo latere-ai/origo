@@ -1,6 +1,8 @@
 # Spike: conditional writes on S3 compatible object storage
 
-Date: 2026-09-06. Tool: [`tools/spike/condwrite/`](../../tools/spike/condwrite/README.md).
+Date: 2026-09-06, with a re-run against DigitalOcean Spaces on
+2026-09-11. Tool:
+[`tools/spike/condwrite/`](../../tools/spike/condwrite/README.md).
 Raw reports: [MinIO](2026-09-06-conditional-writes.minio.json),
 [DigitalOcean Spaces](2026-09-06-conditional-writes.spaces.json).
 
@@ -128,6 +130,66 @@ Latency, 200 samples, 8 KiB body, from a laptop to fra1:
 
 A `HEAD` 404, the currency check, costs one round trip: 23 ms p50 from a
 laptop, and the same as a 304. A commit is one unconditional-priced `PUT`.
+
+#### Re-run on 2026-09-11, before the v0.2.0 tag
+
+Spec 017's release checklist has a maintainer run the probe against a
+real DigitalOcean Spaces bucket before a tag, and spec 004's last
+criterion is the create race, the `HEAD` 404 and the `GET` 304 passing
+there on the current build. The run of 2026-09-11 against the
+production bucket in fra1, under the prefix
+`origo-spike/82b9e6a7ba5eca31/`, answers all three and repeats every
+row of the table above. The bucket is not named here, as above.
+
+| Primitive | Got | Result |
+|---|---|---|
+| `PUT If-None-Match: *` on absent key | 200 | pass |
+| `PUT If-None-Match: *` on existing key | 412, content unchanged | pass |
+| Create race, 20 rounds x 16 writers | 20 applied / 20 rounds, 20 x 200, 300 x 412, 0 transport errors | pass |
+| `HEAD` absent key | 404 | pass |
+| `HEAD` existing key | 200, ETag agrees with `GET` | pass |
+| `GET If-None-Match: <current>` | 304 | pass |
+| `GET If-None-Match: <stale>` | 200 | pass |
+| `PUT If-Match: <current>` | 412 | absent |
+| `PUT If-Match: <stale>` | 412 | pass, vacuous |
+| CAS race, 20 rounds x 16 writers | 0 applied / 20 rounds, 320 x 412 | absent |
+| `PUT If-Match: <any>` on absent key | 412, nothing created | recorded |
+| `CopyObject If-None-Match: *` on existing destination | 200, destination changed | not honoured |
+| `CopyObject If-Match: <stale>` on destination | 200, destination changed | not honoured |
+| `CopyObject If-Match: <current>` on destination | 200, destination replaced | honoured |
+| Bucket versioning | off | recorded |
+
+Latency, from a laptop to fra1:
+
+| Operation | p50 ms | p95 ms |
+|---|---|---|
+| `GET If-None-Match` -> 304 | 24.5 | 98.9 |
+| `GET` unconditional -> 200 | 27.5 | 101.7 |
+| `HEAD` missing key -> 404 | 24.3 | 99.6 |
+| `HEAD` existing key -> 200 | 24.3 | 92.6 |
+| `PUT` -> 200 | 39.8 | 117.9 |
+
+Nothing moved in five days. The create-if-absent commit, which is the
+one primitive the design depends on, gave exactly one winner in each of
+twenty rounds with no transport error, and the currency check and the
+conditional read answered as the design assumes. The p95 figures are
+four times the p50 on every operation, which is the laptop's link and
+not the provider: the p50 figures match the 2026-09-06 run within a
+millisecond.
+
+The two absences are recorded for a later reader and are not findings
+against anything built. `PUT If-Match` is refused on every use,
+including one carrying the ETag Spaces returned a moment earlier, so
+compare-and-swap does not exist on this provider; `CopyObject` ignores
+`If-None-Match: *` and a stale `If-Match` on the destination and
+overwrites, and honours only an `If-Match` that is already current,
+which decides nothing. No Origo code path reaches either: `IfMatch`,
+`If-Match`, `CopyObject` and `CopySource` appear in no file under
+`internal/`, `cmd/` or `test/` outside two comments, the client
+`latere.ai/x/pkg/s3` has no `If-Match` on `PUT` at all, and its fake
+answers 412 to one so a compare-and-swap cannot enter the design
+unnoticed. A future design that wants either primitive cannot have it
+on Spaces.
 
 ### AWS S3
 
