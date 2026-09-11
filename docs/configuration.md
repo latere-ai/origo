@@ -211,3 +211,4 @@ None of these is read by a serving node in an installation. They belong to the t
 | `ORIGO_INSTALL_MANIFESTS` | no | `deploy/examples/kind` | the manifests the install document applies. |
 | `ORIGO_KUBECONFIG` | no | unset | the kubeconfig the release pipeline applies a release with. |
 | `ORIGO_RELEASE_DEPLOY` | no | unset | unset, a tag publishes artifacts and deploys nothing. |
+| `ORIGO_IMAGE_NAMESPACE` | no | `ghcr.io/` and the repository owner | the registry namespace a tag publishes both images under, so a fork publishes its own. An image reference is lowercase, so an owner whose login carries capitals sets it. |
