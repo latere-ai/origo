@@ -515,8 +515,6 @@ script, so they carry no statements and the gate does not measure them.
   run and recorded on 2026-09-11 in the checklist row above. Both are
   `complete`.
 
-Waits on: nothing.
-
 ### Why the row named a fork, and what holds it now
 
 The criterion reads as two states of `ORIGO_RELEASE_DEPLOY`, and both
