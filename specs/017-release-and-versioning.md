@@ -525,9 +525,22 @@ anything.
 
 So the row does not close on a fork tag a maintainer has not cut; a
 fork tag today would fail the criterion rather than prove it. What the
-row now waits on is a change to `release.yml`, reading the two image
-names from repository variables with `ghcr.io/${{ github.repository }}`
-as the default, after which the fork half is a tag a maintainer cuts
-and the `if` on the variable is already proved. That is a builder's
-change to this spec's own workflow, not an errand, and it is the one
-thing holding the spec at `testing`.
+row waits on is making the image namespace a variable, and that is
+wider than `release.yml`. The name `ghcr.io/latere-ai` is written in
+four places, and a fork needs all four:
+
+| Where | What holds it |
+|---|---|
+| `.github/workflows/release.yml` | `ORIGOD_IMAGE` and `STUBS_IMAGE` at lines 38 and 39, and `release-verify`'s `grep -q "image: ghcr.io/latere-ai/origod:${TAG}"` at line 767, which reads the name out of the deploy archive |
+| `deploy/base/deployment.yaml` | two committed `image: ghcr.io/latere-ai/origod:unreleased` lines, the placeholder the deploy archive pins |
+| `deploy/prod/kustomization.yaml`, `deploy/examples/kind/*` | the `images:` name the overlays patch, and the two `:candidate` images of the kind example |
+| `tools/release/deploy-archive.sh` | three `pin` calls naming the from and to images literally, with `deploy_archive_test.sh` asserting the same name |
+
+A fork therefore needs the namespace threaded from one place through
+the workflow, the manifests, and the archive script, with
+`ghcr.io/${{ github.repository_owner }}` as the default so this
+repository's behaviour does not change. Until that is done the fork
+half cannot be attempted, which is why this row, not a maintainer's
+time, is what holds the spec at `testing`. The `if` on the variable
+that the criterion's sentence is really about is already proved on the
+two runs above.
