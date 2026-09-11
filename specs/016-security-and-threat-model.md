@@ -500,8 +500,10 @@ spec 019's builder made and the pin rule decided:
 `TestValidLabel` admits `a..b`, and the dialer applies a pin wherever
 its address is.
 
-Verified on 2026-09-11: the spec stays at `testing`, and on one item
-rather than the one the deck recorded. The supply-chain row is closed
+Verified in the twenty-first round of 2026-09-11, and superseded by the
+twenty-second round of the same day, which is the last block of this
+Outcome: the spec stayed at `testing` then, and on one item rather than
+the one the deck recorded. The supply-chain row is closed
 in both halves, the shipping half by the first tag and the attachment
 half by `v0.1.1`, which the criterion table above records with the four
 `gh attestation verify` runs that exit 0. What is left is the fuzz row:

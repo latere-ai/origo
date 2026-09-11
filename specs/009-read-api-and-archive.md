@@ -312,8 +312,9 @@ release's own image, the `conformance` job of the tag run 34461460766
 naming `--- PASS: TestContract/009 (1.68s)`, but that is not what the
 spec waits on.
 
-Verified on 2026-09-11: the spec stays at `testing` on the same two
-items. `TestReadTrace` is still in no file, and the 40 second
+Verified in the twenty-first round of 2026-09-11, and superseded by the
+twenty-second round of the same day, which is the two blocks below: the
+spec stayed at `testing` then, on the same two items. `TestReadTrace` is still in no file, and the 40 second
 `FuzzValidPath` run still belongs to the weekly `fuzz` job of
 `verify.yml`, whose cron `0 3 * * 0` has not yet fired; the job is real
 and is at line 411 of that workflow, gated on

@@ -578,8 +578,12 @@ Divergences from the first draft, all kept and now in the Design:
   runs them for 40 seconds. The 40 second run is `make fuzz` of spec 013
   with its weekly schedule, a builder item there.
 - The sampled connectivity check runs on every 256th write open.
-- Without compaction the `entries` list grows by one row per push; the
-  1 MiB ceiling holds for roughly ten thousand pushes.
+- Without compaction the `entries` list grows by one row per push. No
+  limit refuses such an index: `wal.maxIndexBytes` is 64 MiB and bounds
+  the read, and `compact.MaxIndexBytes` is 512 KiB and only schedules a
+  compaction. Ten thousand entries is therefore a cost and not a
+  ceiling, which `TestSlowMaterializeTenThousandEntries` measures: 38 ms
+  a push to rewrite the index, against 3.2 s to materialize all of it.
 - The hook channel, fixed at its root on 2026-09-08: the node's blocking
   open of the `updates` FIFO for reading met the hook's blocking open for
   writing, and on macOS that rendezvous loses its wakeup about once in a
@@ -605,7 +609,9 @@ Divergences from the first draft, all kept and now in the Design:
   `TestValidRefName` and the corpus of `FuzzValidRefName` in
   `internal/wal`.
 
-Verified on 2026-09-11: the spec stays at `testing`. Two of its three
+Verified in the twenty-first round of 2026-09-11, and superseded by the
+twenty-second round of the same day, which is the block below: the spec
+stayed at `testing` then. Two of its three
 deferred criteria are tests nobody has written,
 `TestE2EHundredConcurrentPushesFromEightClients` and
 `TestSlowMaterializeTenThousandEntries`, neither of which `grep -r`
