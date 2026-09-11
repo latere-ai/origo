@@ -486,11 +486,13 @@ as a previous release's, and the version re-cut.
   table's row says. Whether `deploy-<version>.tar.gz` and
   `fixture-<version>.tar.gz` join it is not settled: the fixture is
   produced in a later job than the checksums, so covering it needs the
-  signing moved after `conformance`.
+  signing moved after `conformance`. Filed as
+  [origo#2](https://github.com/latere-ai/origo/issues/2).
 - The `deploy` job takes its kubeconfig from `ORIGO_KUBECONFIG`, where
   the shared pipeline mints a short-lived one from a provider token. A
   long-lived kubeconfig in a repository secret is what spec 002's table
   fixes; whether the release should mint instead is for a later round.
+  Filed as [origo#3](https://github.com/latere-ai/origo/issues/3).
 
 ### Coverage
 

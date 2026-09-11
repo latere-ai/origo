@@ -299,7 +299,8 @@ three existing actions, their answer shape, or their caches.
   authorizer sent, passed through unread, which is what lets an endpoint
   choose its own paging. Whether Origo should wrap it so an endpoint
   cannot leak an internal key through it is undecided; nothing in the
-  interface reads it.
+  interface reads it. Filed as
+  [origo#1](https://github.com/latere-ai/origo/issues/1).
 
 ## Outcome
 

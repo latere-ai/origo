@@ -890,7 +890,13 @@ that holds one pin per image across the three files, after Docker Hub
 stopped answering for them. Not fixed here, and named where they live:
 the shared-library items below, `next_cursor`'s opacity (026), and the
 `repo_importing` push that `cases019` asserts only while an import is
-running.
+running. Each is filed: the library items on `latere-ai/pkg` as the
+table below names, and the three open questions with the import gap on
+this repository as
+[#1](https://github.com/latere-ai/origo/issues/1),
+[#2](https://github.com/latere-ai/origo/issues/2),
+[#3](https://github.com/latere-ai/origo/issues/3), and
+[#4](https://github.com/latere-ai/origo/issues/4).
 
 ## Later
 
@@ -917,16 +923,17 @@ consumer needs it.
 ## Items for `latere.ai/x/pkg`
 
 Gaps a spec met in the shared library and worked around here. Each is
-carried to that module's own queue; the workaround stays until it lands.
+carried to that module's own queue, filed on 2026-09-12 as the issue
+the row names; the workaround stays until it lands.
 
 | Item | Found by | Workaround here |
 |---|---|---|
-| `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
-| Neither a token bucket nor a semaphore a caller can wait on with a deadline is in the library. A rate limiter keyed on a caller, refilling at a rate with a burst and evicting an idle key, and a counting semaphore whose `Acquire(ctx, d)` reports whether a slot came free, are both generic and both wanted by any service that admits work | 012 | `internal/limits` holds both, with the values of spec 012's table; the metrics label, the `Retry-After` rendering, and the `lfs/` sum beside them are Origo's own |
-| `pkg/circuitbreaker` has no clock option: `New(threshold, openDuration)` reads `time.Now`, so its open window cannot be advanced in a test. `WithClock(func() time.Time)` as an `Option` on `New`, the way `BackoffConfig.Now` already works for the other breaker, would close it | 015 | `internal/wal/breaker.go` holds a breaker with the package's semantics and a clock function; `circuitbreaker.State` is still the package's type and the gauge's values |
-| `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do` passes one context to every attempt, so "10 seconds per attempt" cannot be expressed from outside the client. A `Timeout` on `retry.Policy`, applied to each attempt's context, would close it | 015 | `wal.BreakerStore` bounds the whole call with `ORIGO_STORAGE_TIMEOUT`, so a slow bucket fails a call after that deadline however many attempts fitted inside it |
-| `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library | 011 | `internal/tracing` is the one importer, the decision row above |
-| `pkg/hostmatch.ValidPattern` takes an FQDN or an IP literal and refuses a single-label name, so an allow-list cannot carry `localhost` or a bare in-cluster Service name; an option admitting a single label would close it | 016 | the kind overlay lists the Service by its `svc` name, and the tests use a name under `.localhost`, which the resolver answers with loopback and no DNS query |
+| `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it ([pkg#10](https://github.com/latere-ai/pkg/issues/10)) | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
+| Neither a token bucket nor a semaphore a caller can wait on with a deadline is in the library. A rate limiter keyed on a caller, refilling at a rate with a burst and evicting an idle key, and a counting semaphore whose `Acquire(ctx, d)` reports whether a slot came free, are both generic and both wanted by any service that admits work ([pkg#13](https://github.com/latere-ai/pkg/issues/13)) | 012 | `internal/limits` holds both, with the values of spec 012's table; the metrics label, the `Retry-After` rendering, and the `lfs/` sum beside them are Origo's own |
+| `pkg/circuitbreaker` has no clock option: `New(threshold, openDuration)` reads `time.Now`, so its open window cannot be advanced in a test. `WithClock(func() time.Time)` as an `Option` on `New`, the way `BackoffConfig.Now` already works for the other breaker, would close it ([pkg#8](https://github.com/latere-ai/pkg/issues/8)) | 015 | `internal/wal/breaker.go` holds a breaker with the package's semantics and a clock function; `circuitbreaker.State` is still the package's type and the gauge's values |
+| `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do` passes one context to every attempt, so "10 seconds per attempt" cannot be expressed from outside the client. A `Timeout` on `retry.Policy`, applied to each attempt's context, would close it ([pkg#9](https://github.com/latere-ai/pkg/issues/9)) | 015 | `wal.BreakerStore` bounds the whole call with `ORIGO_STORAGE_TIMEOUT`, so a slow bucket fails a call after that deadline however many attempts fitted inside it |
+| `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library ([pkg#11](https://github.com/latere-ai/pkg/issues/11)) | 011 | `internal/tracing` is the one importer, the decision row above |
+| `pkg/hostmatch.ValidPattern` takes an FQDN or an IP literal and refuses a single-label name, so an allow-list cannot carry `localhost` or a bare in-cluster Service name; an option admitting a single label would close it ([pkg#12](https://github.com/latere-ai/pkg/issues/12)) | 016 | the kind overlay lists the Service by its `svc` name, and the tests use a name under `.localhost`, which the resolver answers with loopback and no DNS query |
 
 ## Open source readiness
 

@@ -407,7 +407,8 @@ Deferred: the conformance half of the first criterion is spec 021's
 in the tree and registered, so what is deferred is now the part of it
 that is missing rather than the whole: the `repo_importing` push
 asserted whatever the import's state, which `cases019.go` reads inside
-an `if` today. The 403 for each operation of the row table landed on
+an `if` today, filed as
+[origo#4](https://github.com/latere-ai/origo/issues/4). The 403 for each operation of the row table landed on
 2026-09-12 as `019/forbidden` in the deny-flipping group: the nine
 operations under a repository-wide deny, each 403 `forbidden` with the
 authorizer's reason, the create run under a one-second allow so the
