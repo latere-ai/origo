@@ -14,6 +14,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/test/stubs/authorizer"
 )
 
 // The rows of spec 019: transfer, freeze and unfreeze, stats, gc, the
@@ -30,6 +31,7 @@ func cases019() []testCase {
 		{name: "export", run: case019Export},
 		{name: "import_not_found", run: case019ImportNotFound},
 		{name: "lifecycle-events", run: case019LifecycleEvents},
+		{name: "forbidden", group: GroupDeny, run: case019Forbidden},
 		{name: "repo_not_empty", group: GroupSource, run: case019RepoNotEmpty},
 		{name: "import", group: GroupSource, run: case019Import},
 	}
@@ -216,4 +218,39 @@ func (s *session) writeToken(t *testing.T, id string) string {
 	expectStatus(t, r, http.StatusCreated)
 	token, _ := r.json["token"].(string)
 	return token
+}
+
+// case019Forbidden: every operation of the row table answers 403
+// forbidden with the authorizer's reason to a caller it denies, the
+// reads among them, and none of them runs. The deny is on the
+// repository for every action, so the case needs the authorizer's
+// control endpoint and skips with the deny-flipping group.
+//
+// The node caches an allow for the answer's ttl (spec 007), and the
+// create is an admin decision on this very repository, so the create
+// runs under an allow of one second and the deny is asked once that
+// second has passed; without the short ttl the transfer would run on
+// the cached allow.
+func case019Forbidden(t *testing.T, s *session) {
+	id := newID(t)
+	s.setRules(t, authorizer.Rule{Repo: id, Allow: true, TTL: 1})
+	r := s.call(t, "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, Owner, SlugPrefix+"forbidden-"+id[:8]))
+	s.record(id)
+	expectStatus(t, r, http.StatusCreated)
+	s.setRules(t, authorizer.Rule{Repo: id, Allow: false, Reason: "not welcome"})
+	time.Sleep(time.Second + 100*time.Millisecond)
+	for _, op := range []struct{ method, path, body string }{
+		{"POST", "/transfer", `{"owner":"nobody"}`},
+		{"POST", "/freeze", ""},
+		{"POST", "/unfreeze", ""},
+		{"POST", "/import", `{"source":"https://source.invalid/x.git"}`},
+		{"GET", "/import", ""},
+		{"GET", "/export.bundle", ""},
+		{"GET", "/stats", ""},
+		{"POST", "/gc", ""},
+		{"POST", "/verify", `{"source":"https://source.invalid/x.git"}`},
+	} {
+		d := expectError(t, s.call(t, op.method, "/v1/repos/"+id+op.path, op.body), http.StatusForbidden, contract.CodeForbidden)
+		failIf(t, d["reason"] != "not welcome", "%s %s denied with %v", op.method, op.path, d)
+	}
 }

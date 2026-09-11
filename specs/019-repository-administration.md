@@ -405,9 +405,14 @@ Items this spec closes for others:
 Deferred: the conformance half of the first criterion is spec 021's
 `TestContract`, which owns the code table and the stub. `cases019` is
 in the tree and registered, so what is deferred is now the part of it
-that is missing rather than the whole: a 403 case for each operation
-of the row table, and the `repo_importing` push asserted whatever the
-import's state, which `cases019.go` reads inside an `if` today. Spec
+that is missing rather than the whole: the `repo_importing` push
+asserted whatever the import's state, which `cases019.go` reads inside
+an `if` today. The 403 for each operation of the row table landed on
+2026-09-12 as `019/forbidden` in the deny-flipping group: the nine
+operations under a repository-wide deny, each 403 `forbidden` with the
+authorizer's reason, the create run under a one-second allow so the
+node's decision cache does not hold the create's admin verdict over
+the deny. Spec
 014's `TestSourceTokenIsNeverLogged` asserts in-process that the
 bearer appears in no log line, and landed on 2026-09-09.
 
