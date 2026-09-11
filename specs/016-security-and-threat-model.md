@@ -500,3 +500,15 @@ spec 019's builder made and the pin rule decided:
 `TestValidLabel` admits `a..b`, and the dialer applies a pin wherever
 its address is.
 
+Verified on 2026-09-11: the spec stays at `testing`, and on one item
+rather than the one the deck recorded. The supply-chain row is closed
+in both halves, the shipping half by the first tag and the attachment
+half by `v0.1.1`, which the criterion table above records with the four
+`gh attestation verify` runs that exit 0. What is left is the fuzz row:
+`FuzzValidRefName` and `FuzzValidLabel` run their seed corpora in the
+`test` gate on every push, and the 40 second search is `make fuzz` in
+the weekly `fuzz` job of `verify.yml`, which has not fired. The seeds
+are proved and the search is not, which is the same item spec 009
+waits on.
+
+Waits on: the weekly fuzz job of verify.yml.

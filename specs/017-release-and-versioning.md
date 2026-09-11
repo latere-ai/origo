@@ -497,3 +497,5 @@ script, so they carry no statements and the gate does not measure them.
   remaining criteria: the conformance suite and the code table (021),
   the cluster-job tests and the packs (013, 006), and the Spaces probe
   of the release checklist, which is a maintainer's step.
+
+Waits on: a maintainer.

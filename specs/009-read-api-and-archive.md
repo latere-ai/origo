@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/gittest/, cmd/origod/, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -311,3 +311,17 @@ not. This spec's read cases are green against the
 release's own image, the `conformance` job of the tag run 34461460766
 naming `--- PASS: TestContract/009 (1.68s)`, but that is not what the
 spec waits on.
+
+Verified on 2026-09-11: the spec stays at `testing` on the same two
+items. `TestReadTrace` is still in no file, and the 40 second
+`FuzzValidPath` run still belongs to the weekly `fuzz` job of
+`verify.yml`, whose cron `0 3 * * 0` has not yet fired; the job is real
+and is at line 411 of that workflow, gated on
+`if: github.event_name == 'schedule'`, so Sunday 2026-09-13 at 03:00
+UTC remains the first fire. The live run of spec 021 on 2026-09-11
+names `--- PASS: TestContract/009` on the installation, which is this
+spec's read cases against a real target and is not what the spec waits
+on.
+
+Waits on: a test not yet in the tree.
+Waits on: the weekly fuzz job of verify.yml.

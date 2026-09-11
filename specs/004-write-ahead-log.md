@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -604,3 +604,16 @@ Divergences from the first draft, all kept and now in the Design:
   `refs/heads/a.`, `refs/heads/a./b`, and `refs/heads/\xee` in
   `TestValidRefName` and the corpus of `FuzzValidRefName` in
   `internal/wal`.
+
+Verified on 2026-09-11: the spec stays at `testing`. Two of its three
+deferred criteria are tests nobody has written,
+`TestE2EHundredConcurrentPushesFromEightClients` and
+`TestSlowMaterializeTenThousandEntries`, neither of which `grep -r`
+finds in the tree, and the third is the conditional-write probe against
+DigitalOcean Spaces, a maintainer's run of `tools/spike/condwrite`
+before a tag. The live run of spec 021 that closed specs 003, 019, 020,
+and 021 on 2026-09-11 carries none of the three and moves this spec
+nowhere.
+
+Waits on: a test not yet in the tree.
+Waits on: a maintainer.
