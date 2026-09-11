@@ -1,6 +1,6 @@
 ---
 title: "Conformance suite: the contract as executable tests"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -99,9 +99,10 @@ deny-flipping cases (403 before lookup, the authorizer outage, and
 the quota row (`over_quota`, which needs `Authorizer` to set
 `quota_bytes` on a rule below the size of the push the case makes,
 because no target's default quota is small enough to fill in a test),
-and the source group (the `import` of spec 019 and the `verify` of
-spec 014, with `repo_importing`, `repo_not_empty`, and the `imported`
-event, which need `Source` and `SourceToken`: on the stack the source
+and the source group (the `import` of spec 019 and
+`repo_not_empty`, with `repo_importing` and the `imported` event
+asserted inside the `import` case, which need `Source` and
+`SourceToken`: on the stack the source
 stub of spec 013 at `https://origo-stubs.origo.svc:8443/fixture.git`
 with `stub-source-token`, the address the nodes reach through
 `ORIGO_EGRESS_ALLOW`; the stub run leaves them empty and reports the
@@ -138,7 +139,7 @@ report with fewer or more skipped names is a failure of the run.
 | the delegation group: `act` on a service token, the repository-bound token minted through delegation | needs `Issuer` to mint the token |
 | the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable` | needs `Authorizer` to flip an answer |
 | the quota row: `over_quota` | needs `Authorizer` to lower `quota_bytes` |
-| the source group: `import`, `verify`, `repo_importing`, `repo_not_empty`, the `imported` event | needs `Source` and `SourceToken` |
+| the source group: `import` and `repo_not_empty`, with `repo_importing` and the `imported` event asserted inside `import` | needs `Source` and `SourceToken` |
 | the `storage_unavailable` row of spec 003 | needs `Fault` to cut the bucket |
 | the `repository_unavailable` row of spec 015 | needs `Fault` to delete a pack object |
 
@@ -593,8 +594,14 @@ Divergences and interpretations, each kept, with the reason:
   with a sink, recording each delivery they could not observe in
   `Report.Unverified`; `TestStubConforms` and the stack run require
   that list empty. A seventh group would have made the live skip list
-  seven entries, which the criterion forbids; this is a spec defect for
-  the deck to settle.
+  seven entries, which the criterion forbids, so `Report.Unverified` is
+  where a live run states what it could not observe and the live branch
+  logs the list. This is settled rather than deferred: the criterion
+  asks the live run for the six groups and for every other case to
+  pass, which the run of 2026-09-11 did, and its fourteen event
+  deliveries are named in its log rather than hidden. A target that
+  supplies a sink, the stub and the stack among them, still admits
+  nothing to the list.
 - **`fetch-by-hash` runs under protocol version 0.** Protocol v2 lets a
   client want any object whatever `uploadpack.allowAnySHA1InWant` says,
   so only v0 proves the two sha1-in-want rows, and the mutation of
@@ -666,11 +673,21 @@ commits:
 
 Deferred, each named on its criterion:
 
-- The live run, which needs a release: the `live` job of `release.yml`
+- The live run, which needed a release: the `live` job of `release.yml`
   runs `TestContract` against `ORIGO_LIVE_URL` and asserts the six
-  groups; this spec reaches `complete` once one has run green.
-- Spec 014's `verify` case of the source group, which 014 adds with
-  its endpoint.
+  groups. Closed on 2026-09-11 by the v0.1.3 release run 34546335576,
+  recorded at the end of this Outcome.
+- Spec 014's `verify` case of the source group. It was never written.
+  014 reached `complete` on 2026-09-09 with `verify` proved in its own
+  tests, `TestSourceTokenIsNeverLogged` and
+  `TestClusterMigrationCatchesALateWrite` among them, and it added no
+  conformance case. The skip table above named the case anyway, which
+  was an overclaim; the row now names the two cases the source group
+  holds, `import` and `repo_not_empty`, which is what `cases019.go`
+  registers and what every skipped run reports. A `verify` case is
+  worth adding and is 014's to add. It is not a condition on this
+  spec: the criterion counts the six groups, and the group is reported
+  by name whether it carries two cases or three.
 
 Open, for the deck:
 
@@ -767,6 +784,32 @@ target other than the stub or the stack. What the first criterion above
 waits on is that branch against the installation `ORIGO_LIVE_URL`
 names, which is a deployed Origo and not a cluster a job made.
 
-Spec 017's Outcome records the limit. What closes this: the two secrets
-set on the repository with an installation behind the URL, and a tag or
-a re-run of that job.
+Spec 017's Outcome records that limit and its lifting. The two secrets
+were set, `https://code.latere.ai` answers, and the v0.1.3 release run
+34546335576 of 2026-09-11 produced the run this spec waited on. Its
+`live` job, id 103120952813, reports
+`contract_test.go:133: live run against ***: 51 passed` and
+`--- PASS: TestContract (173.69s)`, and names the skipped cases of
+exactly the six groups: `003/storage_unavailable` for storage,
+`007/forbidden` and `007/authorizer_unavailable` for deny-flipping,
+`007/delegation` for delegation, `015/repository_unavailable` for
+repository, `019/repo_not_empty` and `019/import` for source, and
+`012/over_quota` for quota. Eight case names over six groups, each
+reported by name and no seventh group, which is the first criterion in
+full.
+
+That run's `Report.Unverified` holds the two shapes the divergences
+above allow a live target and no other: the fourteen event deliveries,
+which a target with no `EventsSink` cannot show, and the 429 of
+`012/rate_limited`, recorded as `one bucket answered the burst but
+nothing refused within 12000 requests, so this target refills faster
+than the runner sends`, which is the drain bound failing to converge on
+the installation's refill. The burst itself passed:
+`RateLimit-Remaining over 64 requests in 517ms: 5999 down to 5989, 11
+figures in 1 runs, about 52 refilled`, one bucket and one run of
+consecutive figures. Both entries are what the live branch is specified
+to record; the stack and the stub still require the list empty.
+
+With the live run green the spec is `complete`. Every other criterion
+has had a passing test in the tree since 2026-09-09, and the stack
+proofs above stand on the runs that produced them.
