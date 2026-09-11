@@ -640,13 +640,17 @@ the `fuzz` row missing the dispatch trigger, and an Outcome bullet
 saying the base Ingress is deleted where the overlay keeps and
 annotates it; each reads as the tree stands.
 
-On 2026-09-11 Docker Hub stopped serving `minio/minio` and `minio/mc`:
-the two repositories answer 404 while the `minio` namespace stands, and
-the `integration` and `install` jobs of run 34644149393 went red on a
-pin that had resolved for days, `docker run` refused with `pull access
-denied` and the kind stack's MinIO pods in `ImagePullBackOff` until the
-install document's wait timed out. MinIO publishes the same images on
-`quay.io/minio`, where both pinned releases carry the same digests, so
+On 2026-09-11 Docker Hub began refusing `minio/minio` and `minio/mc`:
+the two repositories answer 404 on the Hub API and the web page, the
+registry answers 401 to an anonymous pull, and the `minio` namespace
+lists twenty other repositories that still answer, so it is not a Hub
+incident; whether MinIO removed the two or made them private is not
+known. The `integration` and `install` jobs of run 34644149393 went red
+on a pin that had resolved two hours earlier in run 34634410315,
+`docker run` refused with `pull access denied` and the kind stack's
+MinIO pods in `ImagePullBackOff` until the install document's wait
+timed out. MinIO publishes the same images on `quay.io/minio`, where
+both pinned releases carry the same digests, so
 the three files that name the image, `docker-compose.yml`,
 `deploy/examples/kind/minio.yaml`, and `verify.yml`, name `quay.io`
 now with the tags and digests unchanged, and

@@ -217,11 +217,14 @@ func TestOverlayPatchesReachBothContainers(t *testing.T) {
 // test stack names MinIO to one reference each: the compose file of
 // spec 002's local stack, the kind overlay of spec 013, and the two
 // jobs of verify.yml that run MinIO beside the runner. Each is pinned
-// by tag and digest on quay.io, where MinIO publishes its images:
-// Docker Hub stopped serving minio/minio and minio/mc on 2026-09-11 and
-// every job that pulled them went red on a pin that had resolved for
-// days, so a reference that names another registry, or differs between
-// the three files, fails here on the push that introduces it.
+// by tag and digest on quay.io, where MinIO publishes its images. On
+// 2026-09-11 Docker Hub began answering 404 for minio/minio and
+// minio/mc and 401 to an anonymous pull, while the namespace's other
+// repositories still answered, and every job that pulled them went red
+// on a pin that had resolved two hours earlier; whether MinIO removed
+// the two or made them private is not known. A reference that names
+// another registry, or differs between the three files, fails here on
+// the push that introduces it.
 func TestMinIOImagesAreOnePinFromOneRegistry(t *testing.T) {
 	files := []string{"docker-compose.yml", "deploy/examples/kind/minio.yaml", ".github/workflows/verify.yml"}
 	ref := regexp.MustCompile(`\S*minio/(minio|mc):\S+`)
