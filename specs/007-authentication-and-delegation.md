@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -44,17 +44,20 @@ envelope is rendered from. The stubs this spec builds are
 `test/stubs/issuer` and `test/stubs/authorizer`, to spec 013's table;
 the end-to-end harness and the unit suites run them in-process.
 
-Between this spec and spec 013, `make dev` is out of service and says
-so: the phase 1 bearer is gone and the node needs an issuer, an
-authorizer, and a signing key, which the stub binary
+`make dev` was out of service between this spec and spec 013, which
+restored it: the phase 1 bearer is gone and the node needs an issuer,
+an authorizer, and a signing key, which the stub binary
 `test/stubs/cmd/origo-stubs` of spec 013 provides beside MinIO, with
 `ORIGO_TOKEN_KEY` generated at start with `openssl ecparam -genkey
 -name prime256v1` into a file under `out/` (spec 002, Local stack).
-Nothing in this spec's criteria needs it. The bootstrap Secret is
-`origod-auth` with the four variables above, read by
-`deploy/base/deployment.yaml`; the kind overlay (spec 013) runs the
-stubs as pods and generates the key into a Secret the same way `make
-dev` will.
+Nothing in this spec's criteria needs it. The bootstrap Secret
+`origod-auth` carries `ORIGO_OIDC_ISSUERS`, `ORIGO_AUTHORIZER_URL`, and
+`ORIGO_AUTHORIZER_TOKEN`, with spec 005's gossip secret beside them; a
+third Secret, `origod-token-key`, carries `ORIGO_TOKEN_KEY` and is not
+a template, because the operator generates the key (spec 018,
+`docs/install.md`, and `deploy/bootstrap/README.md`), and the kind
+overlay's `up.sh` generates it into that Secret the way `make dev`
+writes its file. `deploy/base/deployment.yaml` reads all three.
 
 ## Design
 
@@ -352,7 +355,7 @@ Every criterion has a passing test in the tree:
 | two tokens differing in `act` are two calls and two entries | `internal/auth`, `TestCacheKeyIncludesActor` |
 | a `read` token refused by scope on `git-receive-pack` of A and on `info/refs` of B, expired one second after `exp` | `internal/auth`, `TestRepositoryBoundTokenScope` |
 | `ORIGO_DEV_TOKEN` refused with the one message | `internal/config`, `TestDevTokenIsRefused` |
-| `FuzzParseToken` | `internal/auth`, as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013, which is why this spec stays at `testing` |
+| `FuzzParseToken` | `internal/auth`, as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013 on the weekly schedule |
 
 Spec 013 built `make fuzz`, which runs `FuzzParseToken` for 40
 seconds, and the `fuzz` job of `verify.yml` that calls it on the
@@ -438,3 +441,20 @@ Divergences and interpretations, all kept:
   issuers: an unreachable issuer does not stop the node, and a readiness
   that waited for its keys would hold a rollout for an outage the node
   is built to ride out.
+
+A review on 2026-09-11 read the Design against `internal/auth` and the
+handlers and found every rule of the verification table in the stated
+order with the stated reason, every constant at its value (the 8 KiB
+token bound, the 60 second skew, the 24 hour `iat`, the 5 minute and
+65 536 entry caches, the 600 second `ttl` cap, the 5 second deny, the
+hour and minute refreshes, the second-to-minute first retry), the
+retry on a failure before any response byte and on nothing else, the
+minted token's claims and `kid`, the scope rules with both reasons,
+the action each handler sends, the stubs' options and control paths,
+and every named test present. Two sentences were behind the tree: the
+Current state said `make dev` was out of service and that one Secret
+carried all four variables, when the key has its own Secret,
+`origod-token-key`, that the install document and the bootstrap README
+describe; and a row of the Outcome table still said the spec stays at
+`testing` on the fuzz run, which spec 013 closed. Both read as the
+tree stands.
