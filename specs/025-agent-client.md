@@ -157,6 +157,14 @@ so they are not in spec 002's reference and not in
 `internal/config`: a row there would be a row the generator cannot
 produce and `make docs` would drift. `docs/cli.md` is their reference.
 
+`TestConfigurationDocIsCurrent` of `internal/config` held the stronger
+rule that every variable a started spec defines is in the node's deck,
+which was true while Origo had one binary. These four make it false, so
+the test now reads the rule it always meant: a variable a started spec
+defines has a row on a page under `docs/`, and `docs/configuration.md`
+holds the node's deck and nothing else. The generalisation is spec 018's
+criterion, unchanged in what it asserts about `make docs`.
+
 | Variable | Value |
 |---|---|
 | `ORIGO_URL` | the installation, `https://git.example.com`. Required; a URL that is not `https://` is refused at start-up unless its host is a loopback address |

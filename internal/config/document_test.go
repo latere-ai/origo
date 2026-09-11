@@ -132,9 +132,82 @@ func TestUnstartedSpecsDoNotNeedAReferenceRow(t *testing.T) {
 	}
 }
 
+// referenceRow matches one row of a reference page: a variable name in
+// the first cell. Every page under docs/ that documents a variable uses
+// this shape, whatever else its columns hold.
+var referenceRow = regexp.MustCompile("(?m)^\\| `([A-Z][A-Z0-9_]*\\*?)` \\| ")
+
+// referencePages maps each variable name to the pages under dir/docs
+// that carry a row for it. A variable the node reads is on
+// docs/configuration.md, which make docs renders from this package. A
+// variable of a second binary is not in this deck at all and its page
+// is docs/cli.md. A page that walks a procedure may restate a node
+// variable in a table of its own, so a name is on one page or more. The
+// rule is that a started spec's variable is documented somewhere a
+// reader looks, not that every variable is the node's.
+func referencePages(t *testing.T, dir string) map[string][]string {
+	t.Helper()
+	pages, err := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]string{}
+	for _, page := range pages {
+		raw, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := filepath.Base(page)
+		for _, m := range referenceRow.FindAllStringSubmatch(string(raw), -1) {
+			if !slices.Contains(out[m[1]], name) {
+				out[m[1]] = append(out[m[1]], name)
+			}
+		}
+	}
+	return out
+}
+
+// TestAVariableOfASecondBinaryHasItsOwnReferencePage holds the rule on a
+// fixture: a reference page is any page under docs/, not
+// configuration.md alone, because a variable the node never reads is
+// documented where its reader looks. A family is named with its
+// wildcard, and prose that names a variable is not a row.
+func TestAVariableOfASecondBinaryHasItsOwnReferencePage(t *testing.T) {
+	dir := t.TempDir()
+	docs := filepath.Join(dir, "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(docs, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("configuration.md", "\n| `ORIGO_NODE` | yes | none | The node reads it. |\n"+
+		"| `ORIGO_BOTH` | no | none | So does this. |\n")
+	write("cli.md", "\n| `ORIGO_CLIENT` | the command reads it |\n"+
+		"| `ORIGO_BOTH` | and this |\n"+
+		"| `OTEL_*` | a family, named with its wildcard |\n"+
+		"Prose naming `ORIGO_NOWHERE` is not a row.\n")
+
+	pages := referencePages(t, dir)
+	for name, want := range map[string][]string{
+		"ORIGO_NODE":    {"configuration.md"},
+		"ORIGO_CLIENT":  {"cli.md"},
+		"ORIGO_BOTH":    {"cli.md", "configuration.md"},
+		"ORIGO_NOWHERE": nil,
+	} {
+		if got := pages[name]; !slices.Equal(got, want) {
+			t.Errorf("%s is on %v, want %v", name, got, want)
+		}
+	}
+}
+
 // TestConfigurationDocIsCurrent is spec 018's criterion: the page in the
-// tree is what make docs renders, and it documents every variable the
-// deck defines and no other.
+// tree is what make docs renders, it documents the node's deck and no
+// other variable, and every variable a started spec defines is on a
+// reference page under docs/.
 func TestConfigurationDocIsCurrent(t *testing.T) {
 	page := filepath.Join(root(t), "docs", "configuration.md")
 	got, err := os.ReadFile(page)
@@ -146,9 +219,10 @@ func TestConfigurationDocIsCurrent(t *testing.T) {
 	}
 
 	documented, defined := Names(), crossReference(t)
+	pages := referencePages(t, root(t))
 	for _, name := range defined {
-		if !slices.Contains(documented, name) {
-			t.Errorf("the deck defines %s and the reference has no row for it", name)
+		if len(pages[name]) == 0 {
+			t.Errorf("a started spec defines %s and no page under docs/ carries a row for it", name)
 		}
 	}
 	for _, name := range documented {
