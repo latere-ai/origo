@@ -78,7 +78,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete | 004, 005, 011, 013 |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | testing | 001, 007, 012, 013 |
 | [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing | 002, 003, 013, 021 |
-| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | testing | 002, 005, 007, 011, 013, 017, 021 |
+| [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | complete | 002, 005, 007, 011, 013, 017, 021 |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | testing | 003, 004, 006, 007, 008, 010, 016 |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | testing | 004, 007, 008, 009, 012, 019 |
 | [021](021-conformance-suite.md) | Conformance suite: the contract as executable tests | large | testing | 003, 007, 008, 009, 010, 012, 013, 015, 019 |

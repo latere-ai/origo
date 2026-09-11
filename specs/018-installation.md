@@ -1,6 +1,6 @@
 ---
 title: "Installation: running Origo on any Kubernetes with any S3 compatible bucket"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -320,7 +320,7 @@ published release are listed below with what closes each.
 | the document's blocks run with nothing set and with an operator's variables set, and the second path never reaches the example stack's issuer | walked by hand on 2026-09-10 against a local node with the stubs of spec 013, once with nothing set and once with the token, the repository id, the owner, and the slug set through the document's own variables, which are the page's and not the node's; the `install` job walks the first path on every push | passing by hand; the job is the standing proof of the first path |
 | every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
 | `ORIGO_TOKEN_KEY` comes from the Secret `origod-token-key` and from nowhere else, in every workload that runs `origod` | `cmd/origod`, `TestSigningKeyHasOneSource` | passing |
-| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | walked on 2026-09-11 against `v0.1.1`. It reached a push and a clone that read it back over HTTPS, after the eight defects below were fixed and the page was walked a second time from a fresh cluster. The SSH half of the page did not hold and is the new open row |
+| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | walked on 2026-09-11 against `v0.1.1`. It reached a push and a clone that read it back over HTTPS, after the eight defects below were fixed and the page was walked a second time from a fresh cluster. The SSH half did not hold because the page and the archive did not travel together; the archive now carries the page, which closes it |
 
 Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 `internal/config` 98.9%, `tools/configdoc` 93.8%, `tools/apidoc` 94.6%,
@@ -400,7 +400,7 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 |---|---|---|
 | `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag | closed by the tag run 34461460766 of `v0.1.0` |
 | a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | closed for the HTTPS path by the walk of 2026-09-11 against `v0.1.1`, recorded below. The next release's notes carry the checklist entry; `v0.1.1`'s were already published |
-| the same walk reaching an SSH clone | a release whose `deploy-<version>.tar.gz` carries the SSH overlay, or a change that ships the page and the manifests together | open, and the one thing holding this spec at `testing`. It is not a prose defect and the section below says what the software would have to do |
+| the same walk reaching an SSH clone | a release whose `deploy-<version>.tar.gz` carries the SSH overlay, or a change that ships the page and the manifests together | closed 2026-09-11 by the second: `tools/release/deploy-archive.sh` packs `docs/install.md` beside `deploy/`, and `deploy_archive_test.sh` fails without it, so the page a reader follows is the page of the release they hold |
 
 ### The walk of 2026-09-11
 
@@ -525,15 +525,15 @@ page on `main`, which documents whatever landed since the tag. Every
 feature that reaches the example overlay before a release does this
 again; SSH is only the first.
 
-One of two changes closes it, and both are in this repository rather
-than in the prose:
+**Closed 2026-09-11 by the first of the two changes it named.**
+`tools/release/deploy-archive.sh` now copies `docs/install.md` into the
+archive beside `deploy/`, so the page a reader follows is the page of
+the release they unpacked, and the relative default the page names for
+the manifests resolves where they stand. `deploy_archive_test.sh`
+requires the page in the archive and fails without it, which is what
+keeps the two travelling together for every feature after SSH rather
+than only this one.
 
-- pack `docs/install.md` into `deploy-<version>.tar.gz`, so the page a
-  reader follows is the page of the release they unpacked; or
-- publish the page per release and link it from the release notes, so
-  the address a reader lands on carries the tag.
-
-The page now says to check `kind.yaml` for the two ports before relying
-on step 5, and a failure row names the two errors, which is the most
-prose can do. Until one of the two changes above, this spec stays at
-`testing` on that row.
+The page also says to check `kind.yaml` for the two ports before
+relying on step 5, and a failure row names the two errors, which is
+what prose can do on its own.

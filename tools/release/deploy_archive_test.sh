@@ -2,10 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Latere AI
 # SPDX-License-Identifier: MIT
 #
-# The test of deploy-archive.sh: the archive holds deploy/base and
-# deploy/examples, every image line in it names the version, no
-# placeholder tag survives, and the script refuses a tree whose
-# placeholders are gone. The Go test beside this file runs it.
+# The test of deploy-archive.sh: the archive holds deploy/base,
+# deploy/examples and the installation page, every image line in it
+# names the version, no placeholder tag survives, and the script
+# refuses a tree whose placeholders are gone. The Go test beside this
+# file runs it.
 set -eu
 
 dir=$(cd "$(dirname "$0")" && pwd)
@@ -17,10 +18,13 @@ trap 'rm -rf "$work" 2>/dev/null || :' EXIT
 "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/deploy-v9.9.9.tar.gz"
 mkdir -p "$work/unpacked"
 tar -xzf "$work/deploy-v9.9.9.tar.gz" -C "$work/unpacked"
-for f in deploy/base/kustomization.yaml deploy/base/deployment.yaml deploy/examples/kind/kustomization.yaml deploy/examples/kind/origo-stubs.yaml deploy/examples/kind/up.sh; do
+for f in deploy/base/kustomization.yaml deploy/base/deployment.yaml deploy/examples/kind/kustomization.yaml deploy/examples/kind/origo-stubs.yaml deploy/examples/kind/up.sh install.md; do
   [ -f "$work/unpacked/$f" ] || { echo "FAIL $f is not in the archive"; exit 1; }
 done
 [ -d "$work/unpacked/deploy/prod" ] && { echo "FAIL deploy/prod is in the archive"; exit 1; }
+# The page and the manifests sit beside each other, so the relative
+# default the page names resolves in an unpacked archive.
+grep -q 'deploy/base' "$work/unpacked/install.md" || { echo "FAIL the packed page does not name the manifests beside it"; exit 1; }
 grep -q 'image: ghcr.io/latere-ai/origod:v9.9.9' "$work/unpacked/deploy/base/deployment.yaml" || { echo "FAIL the base does not pin origod"; exit 1; }
 grep -q 'newTag: v9.9.9' "$work/unpacked/deploy/examples/kind/kustomization.yaml" || { echo "FAIL the kind overlay does not pin origod"; exit 1; }
 grep -q 'image: ghcr.io/latere-ai/origo-stubs:v9.9.9' "$work/unpacked/deploy/examples/kind/origo-stubs.yaml" || { echo "FAIL the kind overlay does not pin origo-stubs"; exit 1; }
