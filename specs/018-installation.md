@@ -477,18 +477,33 @@ Eight defects, each what the page said, what happened, and the change:
    status and the body on anything but a 201, the address wait now
    waits for `/readyz` as well as `/version`, and three failure rows
    name the 503, the `storage_unavailable` a first push can meet, and
-   the SSH case below. The same walk after the change printed `create
-   answered 503` with
-   `{"error":{"code":"storage_unavailable",...,"details":{"error":"breaker
-   open","key":"origo/repos/.../meta","op":"get"}}}`, which is the
-   whole diagnosis on one line.
+   the SSH case below. Run 2 below is the change showing its work.
 
-The page was then walked a second time from a fresh cluster through
-`tools/docs/run-blocks.sh docs/install.md`, which runs its `sh` blocks
-in order the way the install jobs do. It reported seven `ok` lines from
-`origod check`, `{"version":"v0.1.1",...}` from `/version`, `created
-ab23e1d6-1201-4022-94b1-314916c27c0d`, and `the installation serves a
-clone and a push`.
+The page was then walked again from a second, fresh cluster, in three
+runs:
+
+1. `tools/docs/run-blocks.sh docs/install.md`, the whole page in order
+   the way the install jobs run it, on three replicas. It reported the
+   seven `ok` lines of `origod check`, `{"version":"v0.1.1",...}` from
+   `/version`, and `created e6a7ef4f-cda2-4d51-9eb3-166798f34c8d`, and
+   then the push was rejected: `remote: storage_unavailable: The
+   repository is temporarily unavailable. Nothing was lost. Try again
+   in a few minutes.` with `! [remote rejected] main -> main
+   (pre-receive hook declined)`. That rejection is what the new failure
+   row for `storage_unavailable` was written from.
+2. The page's blocks 8 to 12, the first clone and push, after the
+   StatefulSet was scaled to the one node the machine holds. The create
+   printed `create answered 503` and the whole body,
+   `{"error":{"code":"storage_unavailable",...,"details":{"error":"breaker
+   open","key":"origo/repos/.../meta","op":"get"}}}`. The block as it
+   stood before this walk would have exited 22 and printed nothing, so
+   this run is defect 8's fix showing its work.
+3. The same blocks once more, with the breaker closed: `created
+   ab23e1d6-1201-4022-94b1-314916c27c0d` and `the installation serves a
+   clone and a push`.
+
+So the criterion holds with one retry, which the page now names and
+tells the reader to make.
 
 ### What the software would have to do
 
