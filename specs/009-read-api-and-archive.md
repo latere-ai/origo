@@ -24,11 +24,14 @@ the currency check of spec 004.
 
 ## Current state
 
-Spec 003 names the endpoints and points here. `internal/api` serves the
-lifecycle only; `internal/repo.Git` runs git with a hermetic environment
-and a deadline, and `Cache.Acquire(ctx, id, false)` gives a handler a
-current copy under a read lock. `internal/gittest` builds fixtures with the real
-git. None of the endpoints below exists.
+Built on 2026-09-08 as the Design describes and complete since
+2026-09-11; the Outcome records the tests and the interpretations.
+Before it, spec 003 named the endpoints and pointed here;
+`internal/api` served the lifecycle only; `internal/repo.Git` ran git
+with a hermetic environment and a deadline, and `Cache.Acquire(ctx, id,
+false)` gave a handler a current copy under a read lock;
+`internal/gittest` built fixtures with the real git; none of the
+endpoints below existed.
 
 ## Design
 
@@ -267,8 +270,8 @@ Divergences and interpretations, all kept and now in the Design:
   `?path=` that names a file lists nothing. `since` and `until` reach
   git normalized to UTC.
 - The per-node subprocess cap `ORIGO_MAX_GIT_PROCS` is spec 012's
-  semaphore and is not built here; a read runs under the 30 second
-  budget alone until that spec lands.
+  semaphore, which was not built here; since that spec landed every
+  read takes a slot of it (`limits.Slot`) before its budget starts.
 - `pushed_at` (spec 004): an index object written before the field
   existed reads as null. The rule that it reads as the object's own
   entry's `at` needs a second read of the entry, which the same
@@ -392,3 +395,15 @@ With `TestE2EArchiveStreams` closed on run 34460223906, the 40 second
 `FuzzValidPath` search closed on 34599562832, and `TestReadTrace`
 green on 34631054209, this spec has no criterion without a passing
 test and moves to `complete`.
+
+A review on 2026-09-11 read the Design against `internal/api/read.go`
+and `path.go` and found every bound at its value (50 and 200 commits,
+10 000 references, 5 000 tree entries, 1 MiB of diff, 50 MiB of blob,
+30 seconds), every git command as written with `--no-pager` and
+`--end-of-options`, the peel per endpoint, the six `invalid_request`
+reasons, the two headers, the `ETag` and its 304, the 413 and 416 with
+their details, the path rules with the NTFS and HFS forms, both codes
+at the stated status, and every named test present, `TestReadTrace`
+included and green locally. Two sentences still spoke as if the spec
+were unbuilt, in the Current state and in the bullet on the subprocess
+cap; both read as the tree stands.
