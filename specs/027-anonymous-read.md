@@ -170,10 +170,10 @@ here.
 | a present but unverifiable credential is never downgraded to anonymous | `internal/auth`, `TestBadCredentialIsNotAnonymous` |
 | the set admits every read route and withholds every route named above | `internal/auth`, `TestAnonymousSetAdmitsTheReadRoutes`, `TestAnonymousSetWithholdsTheRest` |
 | the anonymous rate is below the per-subject rate and defaults to 60 | `internal/limits`, `TestAnonymousRateDefaults` |
-| an anonymous deny, an unresolvable name, an unknown id, and an authorizer outage are the identical 401 with `reason: "missing"` and a `Basic` challenge | `internal/auth`, `TestAnonymousDenialIsTheSame401Everywhere` |
+| an anonymous deny, an unresolvable name, an unknown id, and an authorizer outage are the identical 401 with `reason: "missing"` and a `Basic` challenge | `internal/auth`, `TestAnonymousDenialIsTheSame401Everywhere`; over the git routes, `internal/httpgit`, `TestAnonymousIsRefusedWithTheOne401` |
 | `info/refs?service=git-receive-pack` is never anonymous, in either URL form | `internal/auth`, `TestAnonymousSetExcludesReceivePack` |
 | all anonymous traffic shares one bucket, and it cannot draw from an authenticated subject's | `internal/limits`, `TestAnonymousShareOneBucket` |
-| an anonymous clone of a repository the authorizer allows succeeds, and a fetch of one it denies is refused | `internal/httpgit`, `TestAnonymousClone` |
+| an anonymous clone of a repository the authorizer allows succeeds, in both URL forms | `internal/httpgit`, `TestAnonymousClone` |
 
 The sweep runs the two owner/slug rows in the switch-off state only: the
 fake bucket it runs on answers a storage error to every resolve, so with

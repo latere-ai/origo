@@ -78,6 +78,11 @@ type nodeConfig struct {
 	limits *limits.Options
 	logger *slog.Logger
 	now    func() time.Time
+	// subject is the principal every request carries. "alice" by
+	// default; the empty string is the anonymous principal of spec 027,
+	// which the verifier admits on the read routes when
+	// ORIGO_ANONYMOUS_READ is set.
+	subject string
 }
 
 type nodeOption func(*nodeConfig)
@@ -102,9 +107,16 @@ func withNow(now func() time.Time) nodeOption {
 	return func(c *nodeConfig) { c.now = now }
 }
 
+// anonymously gives the node the empty principal, which is what the
+// verifier hands a credential-less request on a route of the anonymous
+// set (spec 027).
+func anonymously() nodeOption {
+	return func(c *nodeConfig) { c.subject = auth.AnonymousSubject }
+}
+
 func newNode(t *testing.T, store wal.Store, options ...nodeOption) *node {
 	t.Helper()
-	cfg := nodeConfig{logger: slog.New(slog.DiscardHandler)}
+	cfg := nodeConfig{logger: slog.New(slog.DiscardHandler), subject: "alice"}
 	for _, o := range options {
 		o(&cfg)
 	}
@@ -128,7 +140,7 @@ func newNode(t *testing.T, store wal.Store, options ...nodeOption) *node {
 	// The verifier is spec 007's own; here the principal is set on the
 	// request the way the middleware does.
 	srv := httptest.NewServer(contract.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: "alice"})))
+		mux.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Subject: cfg.subject})))
 	})))
 	t.Cleanup(srv.Close)
 	return &node{t: t, store: store, log: l, cache: cache, h: h, srv: srv, reg: reg, logger: logger, authz: authz}
