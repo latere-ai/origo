@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/events/, internal/httpgit/, internal/api/, internal/wal/, internal/config/, cmd/origod/, test/e2e/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -216,10 +216,10 @@ does two things over `origo/events/`:
    `next_at` is never before the write; every other pending object
    costs one read per sweep.
 2. Reads the journals of nodes that are not in the live set of spec 005
-   (the `events.Membership` interface, `LastHeard(node)`, which spec
-   005 wires; nil until then, so every other node counts as never
-   heard since this node started and a two-node harness repairs
-   without gossip) and were last heard more than `ORIGO_REPAIR_UNHEARD`
+   (the `events.Membership` interface, `LastHeard(node)`, which the
+   node satisfies with spec 005's live set; a nil interface, which the
+   two-node harness passes, counts every other node as never heard
+   since this node started, so it repairs without gossip) and were last heard more than `ORIGO_REPAIR_UNHEARD`
    ago (spec 002, default 5 minutes), or never heard since this node
    started, for today and yesterday. For every repository
    those journals name, it reads the newest index and, for each listed
@@ -408,8 +408,10 @@ Divergences and interpretations, all kept:
   receive path's own enqueue is asserted by the `forced` test.
 - The dispatcher's default HTTP client sets an explicit transport of
   the node's outbound shape; `pkg/otel`'s instrumented client would
-  put the OpenTelemetry SDK on the node's build list, which is spec
-  011's to add, and 011 wraps this transport when it lands.
+  have put the OpenTelemetry SDK on the node's build list before spec
+  011 admitted it. Spec 011 landed and wrapped the storage transport
+  alone, so the sink client stays untraced like the issuer and
+  authorizer clients, which that spec's Outcome states.
 - Deliveries are one at a time per node, the one loop the Design
   names; a sink that answers slowly bounds the rate at one delivery per
   round trip.
@@ -451,3 +453,18 @@ suite ran; the sweep's lag check then read the objects as younger
 than a minute and delivered nothing. `newHarnessOn` stamps the store
 with the fake clock from the start, so the verdict no longer depends
 on the day.
+
+A review on 2026-09-11 read the Design against `internal/events` and
+the receive path and found the key layout, the namespace UUID and both
+id derivations, the pending object and cursor shapes with the 24 hour
+prune of the delivered set, the five delays and the hourly tail, the
+24 hour window, the 10 second delivery timeout, the three headers, the
+one-minute repair lag, the journal's 10 second flush with the
+immediate first line and its two-day life, the sweep offset by the
+node's name, the create-if-absent of a rebuilt event and the skip of
+one under `dead/`, the `forced` command with the quarantine in its
+environment, the four phase labels, and every named test present. Two
+sentences were behind the tree: the Repair section still said the
+membership interface was nil until spec 005 wired it, and an Outcome
+bullet said spec 011 would wrap the sink client's transport, when 011
+wrapped the storage transport alone. Both read as the tree stands.
