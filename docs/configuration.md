@@ -95,6 +95,37 @@ Two ceilings protect a node from one caller and from itself. Both are per node, 
 |---|---|---|---|
 | `ORIGO_MAX_GIT_PROCS` | no | `64` | git subprocesses this node runs at once. A positive integer. Requests wait for a slot rather than failing. |
 | `ORIGO_REQUESTS_PER_MINUTE` | no | `600` | the requests one subject may send this node in a minute, and the burst it may spend at once. Every response carries the figure in force. `0` turns the limit off. Raise it for a fleet of tooling that shares one token. |
+| `ORIGO_ANONYMOUS_READ` | no | off | set to `1` to let a request with no credential reach the authorizer on the read routes below. Your authorizer then decides which repositories answer without a credential. Off means every request needs a token, as before. |
+| `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | no | `60` | the requests every anonymous caller of this node shares in a minute. They share one bucket, so a scraper slows other anonymous readers and never slows a caller with a token. Read only when `ORIGO_ANONYMOUS_READ` is set. |
+
+### Anonymous read
+
+With `ORIGO_ANONYMOUS_READ` set, a request that carries no credential at
+all is admitted on these routes and sent to your authorizer with an empty
+subject. Your authorizer decides. A repository it does not allow answers
+`401` with `WWW-Authenticate: Basic`, which is the same answer a request
+with no credential gets on an installation that never set the variable,
+so a caller learns nothing about which repositories exist.
+
+```
+GET  /r/{id}/info/refs?service=git-upload-pack
+POST /r/{id}/git-upload-pack
+GET  /{owner}/{slug}/info/refs?service=git-upload-pack
+POST /{owner}/{slug}/git-upload-pack
+GET  /v1/repos/{id}
+GET  /v1/repos/{id}/refs
+GET  /v1/repos/{id}/commits
+GET  /v1/repos/{id}/commits/{sha}
+GET  /v1/repos/{id}/compare/{range}
+GET  /v1/repos/{id}/tree/{sha}
+GET  /v1/repos/{id}/blob/{sha}
+GET  /v1/repos/{id}/archive/{file}
+```
+
+Nothing else is ever anonymous. Not a push, not the LFS batch, not
+`/stats`, not `/export.bundle`, not the repository list, and no
+administrative route. A public repository that uses LFS clones; its LFS
+files need a credential to download.
 
 ## Git over SSH
 
