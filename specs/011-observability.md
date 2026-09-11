@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -21,38 +21,42 @@ Every signal is named here so nothing is added ad hoc. Metrics are the
 logs go out over OTLP through `latere.ai/x/pkg/otel` with the standard
 exporter variables; labels come from fixed vocabularies so a hostile
 client cannot grow cardinality. This spec owns every metric name in the
-deck.
+deck but the three of spec 024's SSH listener, which that spec's table
+owns and `internal/metrics` registers beside these.
 
 ## Current state
 
-`cmd/origod` serves the registry on the internal listener and logs one
-JSON line per event through `log/slog` to stdout. Six packages record
-metrics and each registers its own with an `Add(nil, 0)`, so the series
-reads 0 before its first event: `internal/wal`, `internal/repo`, and
-`internal/httpgit` the twelve phase 1 metrics below, `internal/auth`
-the authorizer histogram (spec 007), `internal/events` the two delivery
-counters (spec 008), and `internal/placement` the gossip, eviction, and
-cache metrics (spec 005). There are
-no traces, no request log line, no PrometheusRule in `deploy/base`, and
-`OTEL_*` is not read: `pkg/otel` is not imported.
+Built on 2026-09-08 as the Design describes; the Outcome records the
+tests and the interpretations. Before it, `cmd/origod` served the
+registry on the internal listener and logged one JSON line per event
+through `log/slog` to stdout. Six packages recorded metrics and each
+registered its own with an `Add(nil, 0)`, so the series read 0 before
+its first event: `internal/wal`, `internal/repo`, and `internal/httpgit`
+the twelve phase 1 metrics below, `internal/auth` the authorizer
+histogram (spec 007), `internal/events` the two delivery counters (spec
+008), and `internal/placement` the gossip, eviction, and cache metrics
+(spec 005). There were no traces, no request log line, no
+PrometheusRule in `deploy/base`, and `OTEL_*` was not read: `pkg/otel`
+was not imported.
 
-One change to the tree, for the builder: registration moves out of all
-six into one place, `internal/metrics/register.go` (spec 002's layout),
-which registers every name in the table below on the registry at
-start-up and hands the handles to the packages that record them, so a
-metric of a spec not built yet still exists at 0 and the presence test
-below needs no fixture. A package keeps only the recording. The `internal/metrics` of
-phase 1 that moved to `latere.ai/x/pkg/metrics` (spec 002, Outcome)
-was the registry; this is the list of names over it.
+One change to the tree, which the builder made: registration moved out
+of all six into one place, `internal/metrics/register.go` (spec 002's
+layout), which registers every name in the table below on the registry
+at start-up and hands the handles to the packages that record them, so
+a metric of a spec not built yet still exists at 0 and the presence
+test below needs no fixture. A package keeps only the recording. The
+`internal/metrics` of phase 1 that moved to `latere.ai/x/pkg/metrics`
+(spec 002, Outcome) was the registry; this is the list of names over
+it.
 
-A second change, from spec 010: `internal/lfs` sends `request_id` in
-the LFS error body and has nothing to read today, so it sends a fresh
-UUID. The trace id the request log line below carries is what it
-needs: the builder puts the id on the request's context in the
-`otel.Handler` wrapping and reads it in `internal/lfs`, so the LFS
-body and the log line name one request. `otel.TraceIDs` of `pkg/otel`
-is not imported before this spec, because it pulls the OpenTelemetry
-SDK onto the node's build list, which this spec is what adds.
+A second change, from spec 010, also made: `internal/lfs` sent
+`request_id` in the LFS error body and had nothing to read, so it sent
+a fresh UUID. The trace id the request log line below carries is what
+it needed: the id is on the request's context in the `otel.Handler`
+wrapping and `internal/lfs` reads it, so the LFS body and the log line
+name one request. `otel.TraceIDs` of `pkg/otel` was not imported
+before this spec, because it pulls the OpenTelemetry SDK onto the
+node's build list, which this spec is what added.
 
 ## Design
 
@@ -322,8 +326,9 @@ each as the rule, so a reader finds one answer:
   call the shared duration buckets of `pkg/metrics`, 5 ms to 10 s, which
   `origo_request_duration_seconds` and `origo_authorizer_seconds` also
   take. The table above carries both ranges.
-- The outbound transport to the issuers and the authorizer is not
-  wrapped; the Traces section names the storage transport only.
+- The outbound transports to the issuers, the authorizer, and the
+  event sink are not wrapped; the Traces section names the storage
+  transport only.
 
 Both builder items are closed: spec 010's `request_id` is the trace id
 of the request's span, a fresh UUID when nothing traced it, which is the
@@ -354,3 +359,17 @@ amended to name it as the one further direct dependency, and the Traces
 section above states which packages may import it: `internal/tracing`
 alone, and `cmd/origod` through `latere.ai/x/pkg/otel`. The decisions
 table of `specs/README.md` carries the rule.
+
+A review on 2026-09-11 read the Design against the tree and found the
+table and the registry in agreement, which `TestRegisterNamesEveryMetric`
+holds on every push; every label vocabulary and every bucket range at
+the stated values; the bootstrap, the handler wrapping without a route
+template, the in-flight middleware, and the log line's ten fields as
+written; the rule file carrying the ten alerts with the stated
+expressions and windows, named in the base kustomization by a comment
+alone; and every named test present. Three sentences were behind the
+tree: the Current state described the six per-package registrations
+and the two builder items as still to do, the Overview claimed every
+metric name in the deck when spec 024's table owns three, and the
+untraced-transport bullet named two clients where three are untraced.
+All three read as the tree stands.
