@@ -30,8 +30,10 @@ Phase 1 serves the part of this contract one node can serve without
 identity: smart HTTP in both URL forms from `internal/httpgit`, the
 repository lifecycle from `internal/api`, the error envelope and the
 `Origo-Contract` header from `internal/contract` over
-`latere.ai/x/pkg/httpjson`. Identity is the static bearer of spec 002's
-Outcome. The Outcome below lists what is served and what is promised.
+`latere.ai/x/pkg/httpjson`. Identity has been spec 007's since
+2026-09-08: tokens from the configured issuers and repository-bound
+tokens, decided by the consumer's authorizer. The Outcome below lists
+what is served and what is promised.
 
 Two defects against the contract found by review were fixed by spec
 007 on 2026-09-08: `GET /readyz` and `GET /version` on the public
@@ -55,8 +57,8 @@ then recorded as the actor. Origo never decides who may do what: it asks
 the consumer's authorizer with the effective subject, the repository, and
 the action (`read`, `write`, `admin`), and caches the answer for the
 `ttl` the authorizer returns, 60 seconds by default (spec 007). In phase
-1 the token is the one value of `ORIGO_DEV_TOKEN` and every request
-carries the subject `dev`.
+1 the token was the one value of `ORIGO_DEV_TOKEN` and every request
+carried the subject `dev`; spec 007 removed it.
 
 A request without a valid token answers 401 `unauthenticated` with
 `WWW-Authenticate: Basic realm="origo"`, on every path including
@@ -162,9 +164,11 @@ and never built from the underlying error, `details` is an object of the
 developer fields named below, present only when there is one. Git
 protocol errors use the sideband as `<code>: <message>`. Codes other
 specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
-`operation_timeout` (009), `repository_unavailable` (015), `gone`,
+`operation_timeout` (009), `lfs_object_mismatch`, `lfs_object_not_stored`,
+`lfs_locks_unsupported` (010), `repository_unavailable` (015), `gone`,
 `repo_frozen`, `repo_importing`, `repo_not_empty`, `import_not_found`
-(019), `merge_conflict`, `invalid_change` (020).
+(019), `merge_conflict`, `invalid_change` (020), `directory_unsupported`
+(026).
 
 | Code | Status | Message | Details |
 |---|---|---|---|
@@ -222,7 +226,7 @@ then.
   against a live node (spec 013 builds the stub, spec 021 owns the
   test: `test/conformance`, `TestSameAnswersOnStubAndStack`).
 - Every code in the table above and in the tables of specs 007, 009,
-  010, 015, 019, and 020 has exactly one `message`, asserted by a test over
+  010, 015, 019, 020, and 026 has exactly one `message`, asserted by a test over
   `internal/contract` that lists the codes and their sentences and by the
   conformance suite comparing responses to it (`internal/contract`,
   `TestEveryCodeHasOneSentence`; owned by spec 021, whose code table
@@ -270,9 +274,10 @@ Divergences recorded against the first draft, all kept:
   created by create-if-absent, so a taken name is refused by the store.
 - `invalid_request` was added for a malformed body, id, label, branch
   name, or service parameter.
-- `POST /v1/repos/{id}/undelete` after the purge answers 404
-  `repo_not_found` today, because the purge removes `meta`; 410 `gone`
-  needs the tombstone spec 019 defines.
+- `POST /v1/repos/{id}/undelete` after the purge answered 404
+  `repo_not_found` in phase 1, because the purge removed `meta`. Spec
+  019 built the tombstone the purge leaves, and the route answers 410
+  `gone` now, as the lifecycle table says.
 
 Divergences fixed by spec 007 on 2026-09-08, ahead of spec 021's
 code-table test: the JSON envelopes of `internal/api`,
@@ -353,3 +358,13 @@ exactly the six groups and naming each: `003/storage_unavailable`,
 live target cannot carry, and it closed on the stack as the paragraph
 above records. With that the deferred criteria are answered and the
 spec is `complete`.
+
+A review on 2026-09-11 found two named tests short of their criteria
+and closed the gap: `TestRepositoryLifecycle` checked that the new name
+resolved after a rename but never that the old URL answered 404, and
+`TestCloneFetchPushOverSmartHTTP` made a shallow clone and never
+deepened it, so the fourth and fifth criteria rested on the conformance
+suite alone; both tests assert them now. The same review found four
+codes in `internal/contract` that the list of codes other specs add did
+not name, the three of spec 010 and the one of spec 026, and added
+them, so the contract is again the one document that names every code.

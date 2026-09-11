@@ -1031,15 +1031,15 @@ name, or when a spec names something no spec defines.
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
-| error code | `directory_unsupported` | [026](026-repository-directory.md) | 025 |
+| error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025, 026 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
 | error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026 |
-| error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 021 |
-| error code | `lfs_object_mismatch` | [010](010-lfs.md) | 021 |
-| error code | `lfs_object_not_stored` | [010](010-lfs.md) | 021 |
+| error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 003, 021 |
+| error code | `lfs_object_mismatch` | [010](010-lfs.md) | 003, 021 |
+| error code | `lfs_object_not_stored` | [010](010-lfs.md) | 003, 021 |
 | error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 012, 020, 021, 025 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021, 025 |
