@@ -242,12 +242,17 @@ jobs:
         run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture' -v
 
   # The slow scenarios on the same stack, with git-lfs for spec 010.
+  # The budget is the materialization ceiling of spec 004: writing the
+  # 10 000 entries of TestSlowMaterializeTenThousandEntries through the
+  # log costs about thirteen minutes, because every commit rewrites an
+  # index object that ends at ten thousand rows, and the other four
+  # scenarios together take under four.
   e2e-slow:
     name: slow cluster e2e tier
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -272,7 +277,7 @@ jobs:
           ORIGO_TEST_S3_KEY: minioadmin
           ORIGO_TEST_S3_SECRET: minioadmin
           ORIGO_TEST_S3_PATH_STYLE: "1"
-        run: go test -v -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestSlow'
+        run: go test -v -count=1 -timeout 45m -tags=e2e ./test/e2e/... -run 'TestSlow'
 
   # up.sh on a cluster of its own, with the ports offset by 1000.
   up-script:
