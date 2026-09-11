@@ -484,18 +484,18 @@ entry's `at`, every other commit copies it forward, index 0 holds
 null, and `ParseIndex` accepts its absence, which reads as null
 (`TestCommitWritesOneEntryAndOneIndex`, `TestParseIndex`). A `delete`
 records the same `at` as its entry's header. With every defect fixed,
-what holds the spec at `testing` is the three deferred criteria. Spec
-013 is complete and its jobs are green on main, so the tier each test
-runs in exists; none of the three tests does.
-`TestE2EHundredConcurrentPushesFromEightClients` (the eighth) has
-nothing left to wait for, spec 013 having been its deferral target: it
-belongs in `test/e2e` under the `TestE2E` prefix the `integration` job
-selects through `make test-tiers`, and writing it is this spec's own
-remaining item. `TestSlowMaterializeTenThousandEntries` (the ninth)
-needs the packs of spec 006 and runs in the `e2e-slow` job. The tenth
-is spec 017's release checklist recording the Spaces probe, which spec
-017 wrote on 2026-09-09 and which stays open: it is a maintainer's
-run of `tools/spike/condwrite` before a tag, not a job.
+what held the spec at `testing` was the three deferred criteria. Spec
+013 was complete and its jobs green on main, so the tier each test
+runs in existed before any of the three tests did.
+`TestE2EHundredConcurrentPushesFromEightClients` (the eighth) had
+nothing left to wait for, spec 013 having been its deferral target,
+and was written on 2026-09-11 in `test/e2e` under the `TestE2E` prefix
+the `integration` job selects through `make test-tiers`.
+`TestSlowMaterializeTenThousandEntries` (the ninth) needed the packs
+of spec 006 and runs in the `e2e-slow` job. The tenth is spec 017's
+release checklist recording the Spaces probe, a maintainer's run of
+`tools/spike/condwrite` before a tag, not a job. The paragraphs at the
+end record how each of the three closed on 2026-09-11.
 
 One change spec 019 made to this spec's Design on 2026-09-09, recorded
 in its Outcome: the purge no longer removes `meta`. It deletes every
@@ -505,15 +505,16 @@ deletes the name, so the id stays taken forever, every endpoint answers
 (`TestPurgeLeavesATombstone`, and the tombstone as the one surviving
 key in `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`).
 
-One divergence stands open on purpose: the Sweeper table's index row,
-rewritten on 2026-09-08 when the currency check's rule was settled, is
-ahead of `internal/wal/sweep.go`, which still deletes index objects
-below `compacted_through`, and of
-`TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`, which asserts the
-count it reports. Nothing reaches the rule while `compacted_through` is
-0, which no commit sets until spec 006 lands, and 006's builder removes
-the rule, the `Indexes` count of `SweepReport`, and those assertions
-with the compaction that makes them reachable.
+One divergence stood open on purpose for a day: the Sweeper table's
+index row, rewritten on 2026-09-08 when the currency check's rule was
+settled, was ahead of `internal/wal/sweep.go`, which still deleted
+index objects below `compacted_through`, and of
+`TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`, which asserted the
+count it reported. Nothing reached the rule while `compacted_through`
+was 0, which no commit set until spec 006 landed, and 006's builder
+removed the rule, the `Indexes` count of `SweepReport`, and those
+assertions with the compaction that made them reachable, as the
+paragraphs on spec 006 below record; the code deletes no index object.
 
 Two defects found and fixed by spec 005 on 2026-09-08, each in its
 own commit with a test that fails without it:
@@ -700,8 +701,8 @@ compare-and-swap cannot enter the design unnoticed. The probe proves
 what the design relies on and records what a later design cannot have.
 
 With the three closed, this spec has no criterion without a passing
-test and moves to `complete`. The one divergence left open on purpose
-stands: the Sweeper table's index row is ahead of
-`internal/wal/sweep.go`, and spec 006's builder removes the rule, the
-`Indexes` count of `SweepReport`, and the assertions on it with the
-compaction that makes them reachable.
+test and moves to `complete`. The one divergence once left open on
+purpose, the Sweeper table's index row ahead of `internal/wal/sweep.go`,
+closed on 2026-09-08 when spec 006's builder removed the rule, the
+`Indexes` count of `SweepReport`, and the assertions on it; nothing in
+the spec stands open.
