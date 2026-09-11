@@ -246,10 +246,12 @@ lock, applies, and downgrades. `Apply` does, in order:
    that name is never fetched again, so the step costs one `stat` per
    listed pack on a current copy.
 3. For each listed entry above the local sequence: `GET` the entry,
-   check `seq` and `kind` against the index row, spool the pack, verify
-   its length and `pack_sha256`, run `git index-pack --stdin --fix-thin
-   --strict`, and apply the transaction with `git update-ref --stdin`
-   (`git symbolic-ref` for `HEAD`); values are set, not compared.
+   check `seq` and `kind` against the index row, spool the pack, and
+   verify its length and `pack_sha256`; the fetches run concurrently.
+   Consecutive entries are joined into one pack for one `git index-pack
+   --stdin --fix-thin --strict` run, at most 256 entries or 256 MiB a
+   run (spec 005's materialization budget), and the references are
+   left to step 4, which sets values and compares none.
 4. Reconcile the whole reference map to the index with `git
    for-each-ref` and one `update-ref --stdin`, so the copy equals the
    index whatever it held before.
@@ -264,10 +266,11 @@ next open rebuilds it from the log. The log is never repaired from a
 local copy.
 
 Git configuration of a materialized repository: `core.protectNTFS`,
-`receive.fsckObjects`, `receive.advertiseAtomic`,
-`receive.advertisePushOptions`, `uploadpack.allowFilter`,
-`uploadpack.allowAnySHA1InWant` on; `receive.autogc` off and `gc.auto`
-0, because compaction is a log entry. Every git subprocess runs with the
+`core.protectHFS`, `receive.fsckObjects`, `transfer.fsckObjects`,
+`receive.advertiseAtomic`, `receive.advertisePushOptions`,
+`uploadpack.allowFilter`, `uploadpack.allowAnySHA1InWant` on;
+`receive.autogc` off and `gc.auto` 0, because compaction is a log
+entry. Every git subprocess runs with the
 environment of spec 016, `GIT_DIR` set, `HOME` an empty directory under
 `ORIGO_DATA_DIR`, and a 5 minute deadline.
 
@@ -381,10 +384,10 @@ the size limits (spec 012).
   the suite on every push and for 40 seconds under `make fuzz` (spec
   013) on the weekly schedule.
 - 100 concurrent pushes to distinct branches from 8 clients all land and
-  the newest index lists 100 entries in sequence order (proposed:
-  `test/e2e`, `TestE2EHundredConcurrentPushesFromEightClients`, a test
-  of the one-node run; deferred to spec 013, which owns the job that
-  runs the tier).
+  the newest index lists 100 entries in sequence order (`test/e2e`,
+  `TestE2EHundredConcurrentPushesFromEightClients`, a test of the
+  one-node run in the `integration` job's e2e tier through `make
+  test-tiers`).
 - A repository of 10 000 entries and 3 packs materializes onto an empty
   disk and `git fsck` passes; the entries are written by the harness
   through `Log.Commit`, not by `git push`, and the packs by a compaction
