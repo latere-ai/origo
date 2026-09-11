@@ -720,6 +720,77 @@ that case is spec 021's own deferred item and no criterion of 014, so
 tier's `ok` rather than by name, `TestE2EOldCloneURLRedirectsToOrigo`
 in the job that runs without `-v`, and 014 now says which row that is.
 
+The twenty-first round, on the ten specs at `testing` after the v0.1.3
+release: the release of 2026-09-11, run 34546335576 at commit
+`677c2b5`, produced the live run of `TestContract` against
+`https://code.latere.ai` that four specs named as the one thing they
+waited on. Its `live` job, id 103120952813, reports
+`--- PASS: TestContract (173.69s)`, 51 passed, and names the skipped
+cases of exactly the six groups. 003, 019, 020, and 021 are
+`complete` on it; each cites the run and the cases of its own that the
+run carried. The run's only failing job, `verify the published
+release`, failed on its last step alone, `tar: stdout: write error` in
+an archive listing, and every step before it passed, the attestation
+verification of both images among them; `1144f94` fixed it.
+
+017 dropped from four open rows to one. The `live` row closed on that
+run; the compatibility row closed in the same run against
+`fixture-v0.1.1.tar.gz`, job 103101443762 reporting
+`--- PASS: TestPreviousReleaseFixture` and `the fixture of v0.1.1 (4
+commits) serves on this release`; the attestations had closed on
+`v0.1.1` once the repository was made public. Both states of
+`ORIGO_RELEASE_DEPLOY` are now proved, unset on 34461460766 where
+`deploy and smoke` reports `skipped`, set on 34546335576 where it
+applied `deploy/prod`, rolled the image, and reported `release smoke
+passed`.
+
+What the round found, and what prompted it, is that nothing connected
+a green run to the specs waiting behind it: the four sat at `testing`
+for a day after the run that closed them. A spec at `testing` may now
+carry a `Waits on: <token>` line naming what holds it, from a closed
+set of four tokens; `tools/release/waiting.sh` reports every spec at
+`testing` naming a token, the `live` job of `release.yml` runs it after
+the suite passes and emits a `::warning::` and a step-summary entry per
+spec, and `TestWaitsOnMarkersAreWellFormed` and
+`TestWaitingNamesOnlyTestingSpecsThatSaySo` in `tools/release` hold the
+grammar and the sweep. The warning never fails a release: a document
+being behind is not a reason to turn a tag red.
+
+The weekly fuzz was green and had fuzzed nothing. `7e7b1cd` gave the
+`fuzz` job a dispatch path and the dispatched run 34598740040 reported
+it `success` in under a minute over eleven functions, each printing
+`testing: warning: no fuzz tests to fuzz` and `ok ... 0.005s`. `make
+fuzz` built its pattern as `-fuzz="^$$fn$$$$"`: make turns `$$$$` into
+`$$` and the shell turns that into its own pid, so every invocation
+asked for `^FuzzValidRefName24748` and matched no function, and `go
+test` reports that as a warning and exits 0. The recipe is fixed and
+`TestFuzzTargetNamesEachFunctionExactly` in `tools/docs` runs the real
+recipe against a stub `go` and fails on a pattern not anchored on the
+function's own name or a `-fuzztime` other than 40s. 009 and 016 record
+it; neither closes on 34598740040.
+
+Two overclaims were corrected. 021's skip table named a `verify` case
+in its source group; 014 reached `complete` with `verify` proved in its
+own tests and never wrote one, so the row now names the two cases the
+group holds, `import` and `repo_not_empty`, with `repo_importing` and
+the `imported` event asserted inside `import`. It was never a condition
+on 021, whose criterion counts the six groups and not the cases inside
+one. 021's push-event bullet ended "a spec defect for the deck to
+settle", which a spec at `complete` cannot carry; it now states what
+the live branch does and cites the run's fourteen unverified
+deliveries.
+
+017's fork row was read again and is narrower and wider than it looked.
+The two states of the variable, which is what its sentence is about,
+are proved on this repository, so a fork would only repeat them. What
+a fork would add is that a release publishes on a repository holding
+none of this one's names, and that is false today: `ghcr.io/latere-ai`
+is written in `release.yml`, in `deploy/base/deployment.yaml`, in the
+`deploy/prod` and kind overlays, and in `tools/release/deploy-archive.sh`,
+so a fork's tag pushes to this organization's packages and fails before
+publishing. The row therefore waits on threading the namespace through
+those four places, a builder's change, not on a maintainer's time.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
