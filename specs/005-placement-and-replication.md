@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/placement/, internal/repo/, internal/wal/, internal/config/, cmd/origod/, deploy/, deploy/examples/kind/, Makefile, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -186,7 +186,9 @@ next test inside the job budget. That overlay runs the nodes as the
 StatefulSet `origod` so each pod has a host port of its own (spec 013,
 ports table), and patches the autoscaler's `scaleTargetRef` to it
 (`patches/hpa-statefulset.yaml`); the base keeps the Deployment, and
-`deploy/prod` carries the autoscaler at 2 to 32. The overlay's pods
+`deploy/prod` carries the autoscaler at 2 to 8, because the cluster it
+installs into has room for no more; the base's 32 is the ceiling an
+operator with the room raises to. The overlay's pods
 request 50m CPU, not the base's 250m: the runner has one kind node, and
 at 250m a fourth replica cannot schedule, so neither the 4 nor the 8
 replica count of the criteria below could exist there. The 70% target
@@ -452,8 +454,9 @@ states:
   refused after the listeners closed, because the first draft named two
   and the test saw that one on the runner.
 - The base's `HorizontalPodAutoscaler` names the Deployment; the
-  overlay's patch names the StatefulSet. `deploy/prod` therefore
-  carries the autoscaler at 2 to 32, which the Scaling section states.
+  overlay's patch names the StatefulSet. `deploy/prod` carries bounds
+  of its own, 2 to 8 since the overlay moved into the `latere` cluster,
+  which the Scaling section states.
 - The kind overlay's pods request 50m CPU, not the base's 250m: the
   first stack run left `origod-3` unschedulable, `Insufficient cpu`, on
   the runner's one kind node, so neither 4 nor 8 replicas could exist
@@ -478,10 +481,9 @@ Items for other specs:
   `HEAD index/<n+1>` stays the currency check and a 404 stays proof
   that a copy is current. Truncation removes folded entries and
   superseded packs only. An index object is one small object per push,
-  which is the cheaper side of the trade. Spec 006 states the rule and
-  its builder implements it; today `internal/wal/sweep.go` still
-  deletes index objects below `compacted_through`, which nothing
-  reaches because `compacted_through` is always 0 until 006 lands.
+  which is the cheaper side of the trade. Spec 006 stated the rule and
+  its builder implemented it on 2026-09-08: `internal/wal/sweep.go`
+  deletes no index object.
 - Spec 015, settled: a thin pack whose base is in no entry fails the
   batch with git's `did not receive expected object` and is served
   `storage_unavailable`, not `repository_unavailable`: a base the log
@@ -560,3 +562,11 @@ and the read loop of `Run` stay covered by
 which bind real sockets, and by
 `TestGossipWiresTwoNodes` in `cmd/origod`, which runs two nodes over
 loopback; the package's coverage is unchanged at 92.6%.
+
+A review on 2026-09-11 read the Design against the tree and found the
+code as stated, every named test present, and two sentences behind
+the tree: the Scaling section and an Outcome bullet said `deploy/prod`
+carried the autoscaler at 2 to 32, while the overlay has carried 2 to
+8 since it moved into the `latere` cluster, for the reason its file
+gives; and the item for spec 006 still said the sweeper deleted index
+objects, which 006 removed the same day. Both read as the tree stands.
