@@ -234,8 +234,8 @@ recorded in the release notes as done or as not applicable:
 
 | Item | Spec | Last done |
 |---|---|---|
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec | never, in either half |
-| the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 | not recorded here |
+| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec | never, in either half. It became possible on 2026-09-11, when the image namespace stopped being fixed; the fork half below says what the run is |
+| the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 | done on 2026-09-11 against the production Spaces bucket in fra1 with the current build: the create race applied 20 of 20 rounds, 20 x 200 and 300 x 412 with no transport error, `HEAD` on an absent key answered 404 and on a present one 200 with the ETag `GET` agrees with, and `GET If-None-Match: <current>` answered 304 while a stale one answered 200. Recorded in [the spike](../docs/spikes/2026-09-06-conditional-writes.md) with the two absences it also confirms, `PUT If-Match` and the conditional `CopyObject` |
 | `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 | done on 2026-09-11 against `v0.1.1`, with `deploy-v0.1.1.tar.gz` and the two published images and no checkout on the path of any command. It reached a push and a clone that read it back, after eight prose defects the walk found and fixed; spec 018's Outcome holds the list. The SSH half of the page could not be walked, because the page on `main` is newer than the newest archive, which is the open row there |
 
 ## Not in this spec
@@ -495,7 +495,9 @@ script, so they carry no statements and the gate does not measure them.
 - Specs 003 and 004 stay at `testing`. Nothing here touches their
   remaining criteria: the conformance suite and the code table (021),
   the cluster-job tests and the packs (013, 006), and the Spaces probe
-  of the release checklist, which is a maintainer's step.
+  of the release checklist, which is a maintainer's step. The probe was
+  run and recorded on 2026-09-11 and the checklist row above carries
+  it.
 
 Waits on: a maintainer.
 
