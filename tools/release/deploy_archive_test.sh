@@ -47,4 +47,23 @@ if "$bash" "$work/tree/tools/release/deploy-archive.sh" v9.9.9 "$work/refused.ta
 fi
 [ ! -f "$work/refused.tar.gz" ] || { echo "FAIL the refused archive was written"; exit 1; }
 
+# A fork publishes under its own namespace: every image line in the
+# archive names it, the kind overlay's selector moves with the base's
+# name, and nothing in the archive names the namespace the tree carries.
+fork="ghcr.io/example-fork"
+ORIGO_IMAGE_NAMESPACE="$fork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/deploy-fork.tar.gz"
+mkdir -p "$work/fork"
+tar -xzf "$work/deploy-fork.tar.gz" -C "$work/fork"
+grep -q "image: $fork/origod:v9.9.9" "$work/fork/deploy/base/deployment.yaml" || { echo "FAIL the fork base does not pin the fork image"; exit 1; }
+grep -q "image: $fork/origo-stubs:v9.9.9" "$work/fork/deploy/examples/kind/origo-stubs.yaml" || { echo "FAIL the fork kind overlay does not pin origo-stubs"; exit 1; }
+grep -q "name: $fork/origod" "$work/fork/deploy/examples/kind/kustomization.yaml" || { echo "FAIL the fork kind overlay selects another namespace than its base"; exit 1; }
+if grep -rn --include='*.yaml' 'ghcr.io/latere-ai/' "$work/fork"; then
+  echo "FAIL the tree's namespace survives in a fork's archive"; exit 1
+fi
+
+# A namespace an image reference cannot carry is refused.
+if ORIGO_IMAGE_NAMESPACE="ghcr.io/ExampleFork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/bad.tar.gz" 2>/dev/null; then
+  echo "FAIL an uppercase namespace was packed"; exit 1
+fi
+
 echo "deploy_archive_test.sh passed"

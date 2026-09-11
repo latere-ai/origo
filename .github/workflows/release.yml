@@ -34,9 +34,18 @@ on:
 permissions:
   contents: read
 
+# The registry namespace both images are published under, derived from
+# the repository that runs the workflow: a fork's tag publishes to the
+# fork's own packages and no name here is Latere's. The repository
+# variable ORIGO_IMAGE_NAMESPACE overrides it for an installation that
+# publishes elsewhere, and an owner whose login carries capitals must
+# set it, because an image reference is lowercase and a workflow
+# expression cannot fold case. The build job refuses a namespace that is
+# not a valid reference prefix before anything is pushed.
 env:
-  ORIGOD_IMAGE: ghcr.io/latere-ai/origod
-  STUBS_IMAGE: ghcr.io/latere-ai/origo-stubs
+  IMAGE_NAMESPACE: ${{ vars.ORIGO_IMAGE_NAMESPACE || format('ghcr.io/{0}', github.repository_owner) }}
+  ORIGOD_IMAGE: ${{ vars.ORIGO_IMAGE_NAMESPACE || format('ghcr.io/{0}', github.repository_owner) }}/origod
+  STUBS_IMAGE: ${{ vars.ORIGO_IMAGE_NAMESPACE || format('ghcr.io/{0}', github.repository_owner) }}/origo-stubs
 
 jobs:
   # Step 1. Everything that is built from the tag's tree, signed, and
@@ -67,6 +76,20 @@ jobs:
             *+*) echo "::error::${TAG} carries SemVer build metadata; an image tag cannot contain '+'. Cut a tag without it."; exit 1 ;;
           esac
 
+      # An image reference is lowercase and carries no scheme or tag, and
+      # the default namespace is the repository owner's login, which
+      # preserves case. A fork whose owner has capitals is told here what
+      # to set, rather than by a push that fails after the archives are
+      # built.
+      - name: Check the image namespace
+        run: |
+          case "$IMAGE_NAMESPACE" in
+            *[[:upper:]]*|*:*|*//*|*' '*|"")
+              echo "::error::ORIGO_IMAGE_NAMESPACE is '${IMAGE_NAMESPACE}', which is not a lowercase image reference prefix. Set the repository variable ORIGO_IMAGE_NAMESPACE to one, for example ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')."
+              exit 1 ;;
+          esac
+          echo "publishing under ${IMAGE_NAMESPACE}"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -84,9 +107,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: make release-archives VERSION="$TAG" COMMIT="$(git rev-parse --short HEAD)"
 
+      # ORIGO_IMAGE_NAMESPACE reaches the script from the workflow env, so
+      # the manifests in the archive name the same namespace the images
+      # were pushed to.
       - name: Pack the deploy archive
         env:
           TAG: ${{ github.ref_name }}
+          ORIGO_IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
         run: tools/release/deploy-archive.sh "$TAG" "out/release/deploy-${TAG}.tar.gz"
 
       # The runtime stage installs its packages for the target platform,
@@ -404,6 +431,14 @@ jobs:
           # whatever deploy/prod declares.
           NS=$(kubectl kustomize deploy/prod | awk '/^  namespace: /{print $2; exit}')
           test -n "$NS"
+          # deploy/prod is Latere's overlay and its images field selects
+          # the base by the namespace the tree carries. A repository
+          # publishing elsewhere applies the same manifests against its
+          # own packages, so the name moves with the images before the
+          # apply rather than only on the set image below.
+          if [ "$IMAGE_NAMESPACE" != "ghcr.io/latere-ai" ]; then
+            sed -i "s|ghcr.io/latere-ai/origod|${ORIGOD_IMAGE}|g" deploy/prod/kustomization.yaml deploy/base/deployment.yaml
+          fi
           kubectl apply -k deploy/prod/
           # Every container of the workload, which is the node and the
           # check that runs in front of it; both are this one image.
@@ -764,7 +799,7 @@ jobs:
           # reader of this release follows the prose of this release.
           grep -q '^install.md$' listing.txt
           tar -xzOf "deploy-${TAG}.tar.gz" deploy/base/deployment.yaml > deployment.yaml
-          grep -q "image: ghcr.io/latere-ai/origod:${TAG}" deployment.yaml
+          grep -q "image: ${ORIGOD_IMAGE}:${TAG}" deployment.yaml
           test -s "fixture-${TAG}.tar.gz"
       - name: Compare the release body with the changelog section
         env:

@@ -48,8 +48,11 @@ func TestTheReleaseCarriesBothBinaries(t *testing.T) {
 	if !strings.Contains(workflow, "out/release/*.tar.gz") {
 		t.Fatal("the upload is no longer glob-driven; a second binary now needs a line there too")
 	}
-	// No second image: the command runs beside an agent, not in a cluster.
-	if strings.Contains(workflow, "ghcr.io/latere-ai/origo:") {
+	// No second image: the command runs beside an agent, not in a
+	// cluster. The workflow names its images through ORIGOD_IMAGE and
+	// STUBS_IMAGE, whose namespace is the repository owner's, so the
+	// name to look for is the suffix and not a fixed namespace.
+	if strings.Contains(workflow, "/origo:") || strings.Contains(workflow, "ORIGO_IMAGE:") {
 		t.Fatal("an image for origo was added; spec 025 says the command takes an archive and no image")
 	}
 }

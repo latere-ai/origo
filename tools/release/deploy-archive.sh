@@ -13,12 +13,25 @@
 # origo-stubs on the stub pod, and the script refuses to pack while any
 # placeholder tag (unreleased, candidate) remains.
 #
+# The namespace both images are published under is ORIGO_IMAGE_NAMESPACE,
+# which the release workflow sets from the repository that runs it. The
+# manifests in the tree carry the default namespace as their placeholder,
+# so the script rewrites the namespace and the version together and a
+# fork's archive names the fork's own packages.
+#
 # Usage: deploy-archive.sh VERSION OUT.tar.gz
 set -euo pipefail
 
 version="${1:?usage: deploy-archive.sh VERSION OUT}"
 out="${2:?usage: deploy-archive.sh VERSION OUT}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# The namespace written in the tree, and the one the archive is to name.
+default_ns="ghcr.io/latere-ai"
+ns="${ORIGO_IMAGE_NAMESPACE:-$default_ns}"
+case "$ns" in
+  *[[:upper:]]*|*' '*|"") echo "deploy-archive: ORIGO_IMAGE_NAMESPACE '$ns' is not a lowercase image reference prefix" >&2; exit 1 ;;
+esac
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -31,16 +44,30 @@ pin() {
   grep -q "$from" "$file" || { echo "deploy-archive: $file does not carry $from" >&2; exit 1; }
   sed -i.bak "s|$from|$to|g" "$file" && rm -f "$file.bak"
 }
-pin "$tmp/deploy/base/deployment.yaml" "ghcr.io/latere-ai/origod:unreleased" "ghcr.io/latere-ai/origod:$version"
+pin "$tmp/deploy/base/deployment.yaml" "$default_ns/origod:unreleased" "$ns/origod:$version"
 pin "$tmp/deploy/examples/kind/kustomization.yaml" "newTag: candidate" "newTag: $version"
-pin "$tmp/deploy/examples/kind/origod.yaml" "ghcr.io/latere-ai/origod:candidate" "ghcr.io/latere-ai/origod:$version"
-pin "$tmp/deploy/examples/kind/origo-stubs.yaml" "ghcr.io/latere-ai/origo-stubs:candidate" "ghcr.io/latere-ai/origo-stubs:$version"
+pin "$tmp/deploy/examples/kind/origod.yaml" "$default_ns/origod:candidate" "$ns/origod:$version"
+pin "$tmp/deploy/examples/kind/origo-stubs.yaml" "$default_ns/origo-stubs:candidate" "$ns/origo-stubs:$version"
+
+# The kind overlay's images field selects the base's image by name, so
+# the selector moves with the name it selects or kustomize rewrites
+# nothing.
+if [ "$ns" != "$default_ns" ]; then
+  pin "$tmp/deploy/examples/kind/kustomization.yaml" "name: $default_ns/origod" "name: $ns/origod"
+fi
 
 if grep -rn --include='*.yaml' -e ':unreleased' -e ':candidate' -e 'newTag: candidate' "$tmp/deploy"; then
   echo "deploy-archive: an image is not pinned to $version" >&2
   exit 1
 fi
 
+# Nothing in a fork's archive names the namespace the tree was written
+# with: a leftover would pull an image the fork cannot have published.
+if [ "$ns" != "$default_ns" ] && grep -rn --include='*.yaml' "$default_ns/" "$tmp/deploy"; then
+  echo "deploy-archive: $default_ns survives in an archive for $ns" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$out")"
 tar -czf "$out" -C "$tmp" deploy install.md
-echo "deploy-archive: wrote $out with every image at $version"
+echo "deploy-archive: wrote $out with every image at $ns at $version"

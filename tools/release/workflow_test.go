@@ -231,3 +231,37 @@ func TestPipeIntoGrepQIsFound(t *testing.T) {
 		t.Errorf("the fixed line was flagged: %v", got)
 	}
 }
+
+// TestReleasePublishesUnderTheRepositoryOwnersNamespace is spec 017's
+// fork row as far as a test can hold it: the workflow fixes no image
+// namespace of its own. Both image names come from
+// ORIGO_IMAGE_NAMESPACE or, unset, from the owner of the repository the
+// tag was pushed to, so a fork's tag pushes, signs, attests, and
+// verifies its own packages. The default namespace may still be written
+// where the workflow rewrites it into the manifests, which is a source
+// of a substitution and not a name anything is published under; every
+// other mention is a name a fork cannot write.
+func TestReleasePublishesUnderTheRepositoryOwnersNamespace(t *testing.T) {
+	text := readWorkflow(t, "release.yml")
+	const derived = "${{ vars.ORIGO_IMAGE_NAMESPACE || format('ghcr.io/{0}', github.repository_owner) }}"
+	for _, want := range []string{
+		"  IMAGE_NAMESPACE: " + derived,
+		"  ORIGOD_IMAGE: " + derived + "/origod",
+		"  STUBS_IMAGE: " + derived + "/origo-stubs",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("release.yml does not derive the image namespace: %s is missing", want)
+		}
+	}
+	for i, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, "ghcr.io/latere-ai") {
+			continue
+		}
+		// A rewrite names the namespace it replaces and the one it
+		// writes; anything else fixes a name a fork cannot publish to.
+		if strings.Contains(line, "ORIGOD_IMAGE") || strings.Contains(line, "IMAGE_NAMESPACE") {
+			continue
+		}
+		t.Errorf("release.yml:%d fixes an image namespace a fork cannot write: %s", i+1, strings.TrimSpace(line))
+	}
+}
