@@ -41,18 +41,21 @@ authorizer's answer, rendered through Origo's own representation.
 
 ## Current state
 
-`internal/auth` holds the authorizer client (`authorizer.go`) with the
-three actions `read`, `write`, `admin`, one request shape carrying a
-`repo` object, and one answer shape whose `allow` field is mandatory: a
-body without it is an `*Unavailable` and fails closed. `guard.go`
-decides a request from a repository-bound token's scope or from that
-client. `internal/api` serves `POST /v1/repos` and the id-keyed verbs;
-there is no `GET /v1/repos`, so the collection path answers 404 through
-`cmd/origod`'s unknown-route handler as `invalid_request`.
-`internal/wal` already resolves a name: `(*Log).Resolve(owner, slug)`
-reads `origo/names/<owner>/<slug>`, which is what `internal/httpgit`
-calls for every clone in the label form. `test/stubs/authorizer` answers
-from a rule table and records every request.
+Built, and shipped in `v0.2.0` on 2026-09-11; the Outcome records the
+runs and the two naming divergences. Before it, `internal/auth` held
+the authorizer client (`authorizer.go`) with the three actions `read`,
+`write`, `admin`, one request shape carrying a `repo` object, and one
+answer shape whose `allow` field was mandatory: a body without it was
+an `*Unavailable` and failed closed, which still holds for those three.
+`guard.go` decided a request from a repository-bound token's scope or
+from that client. `internal/api` served `POST /v1/repos` and the
+id-keyed verbs; there was no `GET /v1/repos`, so the collection path
+answered 404 through `cmd/origod`'s unknown-route handler as
+`invalid_request`. `internal/wal` already resolved a name:
+`(*Log).Resolve(owner, slug)` reads `origo/names/<owner>/<slug>`, which
+is what `internal/httpgit` calls for every clone in the label form.
+`test/stubs/authorizer` answered from a rule table and recorded every
+request.
 
 Spec 023's client in `latere-ai/origo-web` already treats a 400, 404,
 405, or 501 from `GET /v1/repos` as *no directory* and degrades, so the
@@ -339,3 +342,17 @@ The two questions under Open are still open, and neither holds the
 spec: seeding the stub's directory on the kind stack belongs to spec
 013's overlay or spec 021's suite, and whether `next_cursor` should be
 opaque is a decision nothing in the interface waits on.
+
+A review on 2026-09-11 read the Design against `internal/auth`,
+`internal/api/collection.go`, the contract table, the stub, and the
+generated API page and found the `list` request without a `repo` key,
+the three answer shapes told apart by key with anything else an
+outage, the directory uncached, the bound token refused on its scope
+before any call, the collection route's two modes with the `limit`
+bounds and the two validation reasons, the dropped ids by absent
+metadata, deleted index, or tombstone, the cursor passed through from
+the authorizer, the code at 501 with its sentence, the stub's
+`/directory` control with the rule-table filter and the page cut at
+`limit`, and every named test present under the names the Outcome
+gives. The Current state still described the tree before the build; it
+reads as built.
