@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.1.3 - 2026-09-11
+
 - A release now carries a second command, `origo`, beside the server. It
   reads and changes a repository on your installation without cloning it,
   from a shell or from an agent: list a tree, read a file, read history,
