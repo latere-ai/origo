@@ -37,17 +37,17 @@ process group that is killed whole, the other subprocesses under the
 context's kill. The egress dialer and the forward proxy are
 `internal/api/egress.go`, built by `cmd/origod` from the three
 variables of spec 002 and handed to the handler, whose `import` and
-`verify` (specs 019, 014) are the callers to come. The pod runs with
+`verify` (specs 019, 014) are the callers. The pod runs with
 the security context below (`deploy/base/deployment.yaml`) and the
 NetworkPolicy `origod-gossip` of `deploy/base/networkpolicy.yaml`,
 with `origod-http` beside it. `SECURITY.md` exists at the root with
-the disclosure process. The gate runs `vuln` on every push. Not yet: the
-`release-verify` job of `release.yml` at which `cosign verify` accepts
-the image and `sha256sum -c` accepts the archives, which the first tag
-closes. The bill of materials ships with that tag as three SPDX release
-assets; its attachment to the image, and the provenance beside it, are
-deferred while the repository is private, by spec 017's attestation
-rule. Both callers of the dialer
+the disclosure process. The gate runs `vuln` on every push. The
+`release-verify` job of `release.yml`, at which `cosign verify` accepts
+the image and `sha256sum -c` accepts the archives, ran first on the
+`v0.1.0` tag; the bill of materials ships with every tag as three SPDX
+release assets, and since `v0.1.1`, the repository being public, it
+and the build provenance are attached to both images as attestations
+the same job verifies (spec 017). Both callers of the dialer
 have landed: `import` with spec 019 and `verify` with spec 014, whose
 `TestSourceTokenIsNeverLogged` covers the bearer of both.
 
@@ -339,7 +339,7 @@ a test in the tree:
 |---|---|
 | every route refuses a missing, foreign-audience, or expired token except the three unauthenticated paths | `cmd/origod`, `TestEveryRouteRequiresAToken` (spec 007) |
 | a `.git`, NTFS, or HFS+ tree entry or a broken object is rejected with git's message and no entry is written | `internal/httpgit`, `TestMaliciousPackWritesNothing` |
-| a reference name, owner, or slug with a metacharacter, `..`, or a control character is refused; the fuzz finds nothing git refuses | `internal/wal`, `TestValidRefName`, `TestValidLabel`, `FuzzValidRefName`, `FuzzValidLabel`, whose seed corpora run in the `test` gate on every push. The 40 second search is `make fuzz` in the weekly `fuzz` job, which has never run: `gh run list --event=schedule` returns nothing and the job's `if: github.event_name == 'schedule'` puts it out of reach of a dispatch, so the cron `0 3 * * 0` is the only path and Sunday 2026-09-13 at 03:00 UTC is the first fire. The seeds are proved and the search is not |
+| a reference name, owner, or slug with a metacharacter, `..`, or a control character is refused; the fuzz finds nothing git refuses | `internal/wal`, `TestValidRefName`, `TestValidLabel`, `FuzzValidRefName`, `FuzzValidLabel`, whose seed corpora run in the `test` gate on every push; the 40 second search of both ran in the dispatched `fuzz` job of run 34599562832 on the fixed recipe, which the last block of this Outcome records with the two functions' log lines |
 | a git subprocess observes exactly the documented environment | `internal/repo`, `TestSubprocessEnvironment`; `TestBareRepositoryConfiguration` for the four config keys |
 | the egress dialer on its own | `internal/api`, `TestEgressDialerHonoursTheAllowList`, `TestEgressDialerAdmitsOnlyThePinnedClusterAddress`, `TestEgressDialerAllowLoopbackIsATestSeam`, `TestEgressDialerPinsTheResolvedAddress`, `TestEgressPinAppliesOutsideClusterRanges`; `internal/config`, `TestEgressAllowPinsOnlyExactHosts`, `TestEgressCABundleIsReadAtStartup` |
 | a production configuration admits no loopback source; the seam is written in `_test.go` files only | `cmd/origod`, `TestEgressAdmitsNoLoopbackInProduction`; `internal/api`, `TestAllowLoopbackIsSetOnlyByTests` |
@@ -565,3 +565,18 @@ With that row closed the spec has no criterion without a passing test,
 and it moves to `complete`. Nothing else changed: the supply-chain row
 was already closed in both halves, and the coverage figures and the
 pinned-address decision above stand as recorded.
+
+A review on 2026-09-11 read the Design against the tree and found the
+dialer, the proxy, and the git configuration as the egress row states
+them (the allow-list through `hostmatch`, the `reason: "egress"`, the
+ten hops, the 405 on `CONNECT`, the 407 without the credential, the
+proxy URL with its fixed password, the count of two keys and the
+fsck flag on the command line), the subprocess environment of seven
+variables with the smart HTTP services in a process group killed
+whole, the pod's security context and resources, the three
+NetworkPolicies with the stated ports and peers, `SECURITY.md` with
+the address, the three business days, and the release rule, and every
+named test present. Two passages were behind the file's own last
+block: the Current state still called the `release-verify` job and the
+attestations "not yet", and the criterion table's fuzz row still said
+the job had never run. Both read as the tree and the runs stand.
