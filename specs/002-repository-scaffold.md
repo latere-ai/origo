@@ -200,6 +200,7 @@ node:
 | `ORIGO_LIVE_URL`, `ORIGO_LIVE_TOKEN` | the live conformance run (spec 021) | repository secrets: the installation the run targets after a release and a token with `admin` on its conformance prefix |
 | `ORIGO_KUBECONFIG` | the `deploy` job of `release.yml` (spec 017) | a repository secret holding the kubeconfig `kubectl` applies the release with |
 | `ORIGO_RELEASE_DEPLOY` | `release.yml` (spec 017) | a repository variable; unset skips the deploy and smoke step, so a tag on a fork publishes artifacts only |
+| `ORIGO_IMAGE_NAMESPACE` | `release.yml` and `tools/release/deploy-archive.sh` (spec 017) | a repository variable naming the registry namespace both images are published under; unset it is `ghcr.io/<the repository owner>`, so a fork's tag publishes to the fork's own packages. An image reference is lowercase and no workflow expression folds case, so an owner whose login carries capitals sets it; the `build` job refuses a namespace that is not a lowercase reference prefix before anything is pushed |
 
 Variables another spec's table defines, listed here so the reference is
 one page:

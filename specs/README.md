@@ -997,6 +997,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 008, 013 |
 | variable | `ORIGO_GOSSIP_SECRET` | [002](002-repository-scaffold.md) | 005, 008, 013, 016, 018, 024 |
 | variable | `ORIGO_HOOK_DIR` | [004](004-write-ahead-log.md) | 002, 016, 024 |
+| variable | `ORIGO_IMAGE_NAMESPACE` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_INSTALL_IMAGE` | [018](018-installation.md) | 002, 017 |
 | variable | `ORIGO_INSTALL_MANIFESTS` | [018](018-installation.md) | 002, 017 |
 | variable | `ORIGO_INTERNAL_ADDR` | [002](002-repository-scaffold.md) | - |
