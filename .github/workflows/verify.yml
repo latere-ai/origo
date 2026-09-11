@@ -422,3 +422,27 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make fuzz
+      # The other half of the marker sweep the `live` job of release.yml
+      # runs. Two specs name this job as what holds them at `testing`, and
+      # a green run that nobody reads back into them is how the deck fell
+      # behind before. Warns, never fails.
+      - name: Name the specs this run unblocks
+        if: ${{ success() }}
+        run: |
+          set -euo pipefail
+          waiting=$(tools/release/waiting.sh specs 'the weekly fuzz job of verify.yml')
+          if [ -z "$waiting" ]; then
+            echo "no spec at testing waits on the fuzz job"
+            exit 0
+          fi
+          {
+            echo "## Specs this fuzz run unblocks"
+            echo
+            echo "The 40 second search passed. Each spec below is still at"
+            echo "\`testing\` and names this job as what it waits on."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for spec in $waiting; do
+            echo "::warning title=Spec waiting on the fuzz job::$spec is at testing and waits on this job, which has now passed"
+            echo "- \`specs/$spec\`" >> "$GITHUB_STEP_SUMMARY"
+          done

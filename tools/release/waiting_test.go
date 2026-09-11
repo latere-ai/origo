@@ -145,3 +145,35 @@ func TestWaitsOnMarkersAreWellFormed(t *testing.T) {
 func contains(all []string, s string) bool {
 	return slices.Contains(all, s)
 }
+
+// jobTokens are the markerTokens that name a CI job, as opposed to the
+// two that name a person or an unwritten test. Each must be swept by the
+// job it names, or a spec can sit at `testing` naming a run that has
+// already proved it and nothing will say so, which is the whole defect.
+var jobTokens = map[string]string{
+	"the live job of release.yml":       filepath.Join(".github", "workflows", "release.yml"),
+	"the weekly fuzz job of verify.yml": filepath.Join(".github", "workflows", "verify.yml"),
+}
+
+// TestEveryJobTokenIsSwept pins the wiring to the token set. Adding a
+// token that names a job without adding the step that sweeps it would
+// leave specs waiting on a run that cannot report them.
+func TestEveryJobTokenIsSwept(t *testing.T) {
+	for token, workflow := range jobTokens {
+		body, err := os.ReadFile(filepath.Join(root(t), workflow))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "tools/release/waiting.sh specs '" + token + "'"
+		if !strings.Contains(string(body), want) {
+			t.Errorf("%s does not run the sweep for %q; expected a step invoking %s", workflow, token, want)
+		}
+	}
+	// Every token that names a job is in markerTokens, so the two sets
+	// cannot drift apart.
+	for token := range jobTokens {
+		if !contains(markerTokens, token) {
+			t.Errorf("%q is swept by a job but is not a marker token", token)
+		}
+	}
+}
