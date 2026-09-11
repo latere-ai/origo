@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/compact/, internal/wal/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -24,14 +24,16 @@ repacking.
 
 ## Current state
 
-Spec 004 stores entries and lists packs in the index: `wal.Entry` has
-`Kind: compact`, `Packs`, and `CompactedThrough`; `Log.Commit` builds
-the index object for one (`packs` replaced, `entries` reset to the
-compaction entry, `compacted_through` set); `repo.Cache.Apply` fetches
-listed packs (`TestCompactionPacksAreFetched`); the sweeper deletes
-folded entries, and index objects below `compacted_through`, which the
-Truncation section below removes. Nothing produces a compaction entry:
-`internal/compact` does not exist.
+Built on 2026-09-08 as the Design describes, with the divergences the
+Outcome records. Before it, spec 004 stored entries and listed packs in
+the index: `wal.Entry` had `Kind: compact`, `Packs`, and
+`CompactedThrough`; `Log.Commit` built the index object for one
+(`packs` replaced, `entries` reset to the compaction entry,
+`compacted_through` set); `repo.Cache.Apply` fetched listed packs
+(`TestCompactionPacksAreFetched`); the sweeper deleted folded entries,
+and index objects below `compacted_through`, which the Truncation
+section below removed. Nothing produced a compaction entry:
+`internal/compact` did not exist.
 
 ## Design
 
@@ -113,9 +115,9 @@ per sweep for a whole day.
 30 minutes for the whole run (the repack subprocess runs with that
 deadline rather than the 5 minutes of spec 004, which spec 012 records).
 Every git subprocess of the run takes a slot of the node's subprocess
-semaphore through `compact.Slots`, the seam spec 012 wires
-`ORIGO_MAX_GIT_PROCS` into; a node passes nil until that spec lands and
-the run takes no slot. A run that waits more than 5 seconds for a slot
+semaphore through `compact.Slots`, the seam spec 012 wired
+`ORIGO_MAX_GIT_PROCS` into: `cmd/origod` passes the node's semaphore,
+and the nil seam the unit tests pass grants at once. A run that waits more than 5 seconds for a slot
 skips this run with `origo_compactions_total{result="skipped"}` and the
 next sweep retries it:
 
@@ -218,12 +220,11 @@ references for as long as it held the copy. Keeping the objects is the
 cheaper side of the trade: an index object is one small object per
 push, bounded by 1 MiB (spec 004), against a check that would otherwise
 need a second round trip or a mutable marker. Spec 004's Sweeper table
-carries the same three rows; this spec's builder removes the index rule
-from `internal/wal/sweep.go`, which implements it today and which
-nothing reaches because `compacted_through` is 0 until this spec lands,
-and with it the `Indexes` count of `SweepReport` and the two assertions
-on it in `TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`, which pass
-against the old rule.
+carries the same three rows; this spec's builder removed the index
+rule from `internal/wal/sweep.go`, which nothing had reached because
+`compacted_through` was 0 until this spec landed, and with it the
+`Indexes` count of `SweepReport` and the two assertions on it in
+`TestSweepRemovesOrphansAndKeepsWhatAnIndexNames`.
 
 ### Invariants
 
@@ -445,3 +446,11 @@ kind stack cannot run on this machine. That job is green on `main` at
 complete. The `build` and `race` jobs of the first attempt failed on
 the module proxy answering `INTERNAL_ERROR` to two downloads and were
 re-run.
+
+A review on 2026-09-11 read the Design against `internal/compact` and
+found every threshold, deadline, and wait at the stated value, the
+procedure in the stated order with the stated commands, the request
+object and its sweep rules as written, the slot seam wired to the
+node's semaphore, and every named test present. Three sentences still
+spoke as if the spec were unbuilt, in the Current state, the Procedure,
+and the Truncation section; they read as the tree stands now.
