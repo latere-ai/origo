@@ -19,5 +19,11 @@ key that signs repository-bound tokens, which must be the operator's
 own. Step 4 of [`../../docs/install.md`](../../docs/install.md)
 generates it, and the Deployment reads it by name.
 
+The fourth, `origod-ssh-host-key`, is not a template either and is
+needed only when SSH is turned on: it holds the host keys every node
+presents, generated once with `ssh-keygen` by the SSH step of the same
+document and mounted where `ORIGO_SSH_HOST_KEYS` points. An
+installation that sets no `ORIGO_SSH_ADDR` needs no such Secret.
+
 A resource that belongs to a release belongs in `deploy/base/` with the
 target overlay under `deploy/prod/`, not here.
