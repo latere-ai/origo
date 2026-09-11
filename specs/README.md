@@ -77,7 +77,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [014](014-repository-migration.md) | Migration of existing repositories from a prior host: import, verify, cut over, in batches | medium | complete | 002, 003, 007, 008, 016, 019 |
 | [015](015-degraded-storage.md) | Degraded storage: what a node does when the bucket is slow, partial, or gone | medium | complete | 004, 005, 011, 013 |
 | [016](016-security-and-threat-model.md) | Security and threat model: what Origo protects, against whom, and how | medium | complete | 001, 007, 012, 013 |
-| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | testing | 002, 003, 013, 021 |
+| [017](017-release-and-versioning.md) | Release and versioning: images, binaries, compatibility, and what a version promises | small | complete | 002, 003, 013, 021 |
 | [018](018-installation.md) | Installation: running Origo on any Kubernetes with any S3 compatible bucket | medium | complete | 002, 005, 007, 011, 013, 017, 021 |
 | [019](019-repository-administration.md) | Repository administration: rename, transfer, freeze, delete, undelete, import, export, garbage collection | medium | complete | 003, 004, 006, 007, 008, 010, 016 |
 | [020](020-server-side-git-operations.md) | Server-side git operations: commits, merges, cherry-picks, and reverts without a clone | large | complete | 004, 007, 008, 009, 012, 019 |
@@ -173,7 +173,7 @@ flowchart BT
 | 3 | 005, 006, 008, 009 | Many nodes with consistent reads, compaction under load, push events, the read API and archive | 005 and 008 complete, 005's cluster criteria green in the `e2e` and `e2e-slow` jobs; 009 built, still at testing on `TestReadTrace`, which is in no file, and on the 40 second fuzz search, whose job first fires on 2026-09-13; `TestE2EArchiveStreams` is done, green in the tier of run 34460223906; 006 complete, its two cluster criteria green in the `e2e` job |
 | 4 | 010, 011, 012, 015 | LFS, telemetry, limits, and degraded-storage behaviour | 010 and 011 complete, the 500 MiB round trip green in the `e2e-slow` job and every metric, the traces, the request log line, and the alert rules in the tree; 012 complete, its last criterion, the frozen repository, owned by 021's `TestContract` and green against the stack in the dispatched run 34358421294; 015 complete, the breakers, stale reads, the refused push, `repository_unavailable`, and the slow proxy in the tree, `TestClusterDegradedStorage` green in a dispatched `e2e` run |
 | 5 | 016, 019 | Threat model written and enforced; the administration operations a long-lived repository needs | 016 built and at testing: the egress dialer and proxy, the three variables, `transfer.fsckObjects` and `core.protectHFS`, the validator fuzz tests, the subprocess environment test, the gossip NetworkPolicy with `origod-http` beside it, and `SECURITY.md` in the tree, `TestClusterPodSecurityContext` green in the dispatched run 34296753008; its supply-chain row is closed in both halves, the shipping half by the first tag and the attachment half by `v0.1.1`, so what holds it is the 40 second fuzz search of the weekly `fuzz` job, which first fires 2026-09-13. 019 complete: transfer, freeze, import, export, `stats`, `gc`, the purge tombstone, and the weekly orphan sweep in the tree, `TestClusterImportFixture` and `TestClusterGcBoundsStorage` green in the dispatched run 34335095125; its conformance cases ran against the installation in the live job of the v0.1.3 run 34546335576 on 2026-09-11, `019/transfer`, `019/freeze`, `019/stats`, `019/gc`, `019/export`, `019/import_not_found` and `019/lifecycle-events` each `--- PASS`, with `019/repo_not_empty` and `019/import` reported skipped as the source group and closed on the stack |
-| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the live run arrived on 2026-09-11 with the v0.1.3 release, run 34546335576 at commit `677c2b5`, whose `live` job dialled `https://code.latere.ai` and reported `--- PASS: TestContract (173.69s)`, 51 passed, with the eight case names of exactly the six skip groups. 021 is complete on it. 017 stays at `testing` on one row: the `live` row closed on that run, the N-1 fixture row closed in the same run against `fixture-v0.1.1.tar.gz` (`--- PASS: TestPreviousReleaseFixture`), and the attestations closed on `v0.1.1` once the repository was public, leaving the fork tag with `ORIGO_RELEASE_DEPLOY` set and unset, which needs a maintainer. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
+| 6 | 021, 017, 018 | The conformance suite gating releases and run against the live installation `ORIGO_LIVE_URL` names after each one; releases an outside operator can install and upgrade from the documentation alone, on the trixie-slim image; the point at which the repository can go public | the live run arrived on 2026-09-11 with the v0.1.3 release, run 34546335576 at commit `677c2b5`, whose `live` job dialled `https://code.latere.ai` and reported `--- PASS: TestContract (173.69s)`, 51 passed, with the eight case names of exactly the six skip groups. 021 is complete on it. 017 stays at `testing` on one row: the `live` row closed on that run, the N-1 fixture row closed in the same run against `fixture-v0.1.1.tar.gz` (`--- PASS: TestPreviousReleaseFixture`), and the attestations closed on `v0.1.1` once the repository was public, leaving the fork tag with `ORIGO_RELEASE_DEPLOY` set and unset, which needed a maintainer; on 2026-09-12 the user decided that `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh` are the criterion, the row was reworded to name them, and 017 is `complete`. 018: `install-release` ran against the published artifacts on a bare cluster; what remains is a maintainer walking the prose |
 | 7 | 014 | Existing repositories migrate from a prior host with verification and a cut-over | 014 complete: `POST /v1/repos/{id}/verify` with `verified_at` and `verified_equal` on the representation, the `verified` event, the subcommand dispatcher of 002 with `origod migrate` on it, and `docs/migration.md` whose blocks are its own test, in the tree; the `cluster e2e tier` job of the tag run 34461461220 names `--- PASS: TestClusterMigrationCatchesALateWrite` and `--- PASS: TestClusterMigrationDocCommandsRun`, which was the last item |
 | 8 | 020 | Commits, merges, cherry-picks, and reverts from a request, for tooling that changes many repositories | 020 complete: the four routes, the two codes with their call sites, the per-repository bucket, and the per-subject rate from the authorizer that closes 012's builder item, all in the tree; 021's suite carries the four `TestContract/020` cases, green against the stub and against the stack in the `e2e` job of the dispatched run 34353736553 and whole in 34358421294, and green against the installation in the live job of the v0.1.3 run 34546335576, `--- PASS: TestContract/020/commits`, `/merge`, `/cherry-pick` and `/revert`. The colliding-reference refusal spec 025 reports is recorded in its Spec defects and owned there |
 | 9 | 022 | A person who opens the installation in a browser reads a page instead of a credential dialog they cannot satisfy | 022 complete: the root and the favicon are served without a token, the page is one constant document with the version on it, and the shadowing test was proved against a registration that does shadow. The page depends on nothing outside the process, so it has no cluster criterion; the release smoke checks it on the installation from the next tag on |
@@ -868,6 +868,30 @@ while materializing all of them onto an empty disk costs 3.6 s. The
 ceiling the log has without compaction is a write cost, not a read
 cost.
 
+The twenty-third round, a review of every spec against the tree on
+2026-09-12, one spec at a time. The implementation matched the specs;
+what drifted was prose, and the fixes the review left were these, each
+with a test. 017 closed on the fork row by decision: the user asked
+what a maintainer's tag on a fork would prove that the two namespace
+tests do not, the answer was nothing, and the criterion now names the
+tests. 012's "600 a minute is a finding for the deck" was decided the
+same day: the default stays. 020's directory-file conflict on
+`create_branch`, which fell through to 503 `storage_unavailable`,
+answers 400 `invalid_request` with `details.field` and `details.ref`,
+and 025's Open item on it is closed. 024's host key algorithms are the
+client key algorithms, the two ECDSA curves added. 004's `ValidRefName`
+refuses `refs/heads/HEAD`. 019's `compacted` event and the `pusher` of
+every kind are asserted in `internal/api`, and its 403 per operation is
+a conformance case in the deny-flipping group; 026's populated
+directory is a conformance case in the same group, driven through the
+stub's `/directory` endpoint, which closes its first Open item without
+touching the overlay. 013's MinIO images moved to `quay.io` with a test
+that holds one pin per image across the three files, after Docker Hub
+stopped answering for them. Not fixed here, and named where they live:
+the shared-library items below, `next_cursor`'s opacity (026), and the
+`repo_importing` push that `cases019` asserts only while an import is
+running.
+
 ## Later
 
 Work the deck names and no spec owns yet. Each becomes a spec when a
@@ -910,8 +934,9 @@ The repository goes public when every spec is at `complete`: the
 conformance suite green against the release artifacts in the `kind`
 example overlay and against the installation `ORIGO_LIVE_URL` names
 with only the six groups skipped, spec 017's release checklist done
-once (the fork tag, the object-store probe of `tools/spike/condwrite`,
-and `docs/install.md` walked by a maintainer on a fresh cluster),
+once (the object-store probe of `tools/spike/condwrite` and
+`docs/install.md` walked by a maintainer on a fresh cluster; the fork
+tag left the list on 2026-09-12, held by tests instead),
 `SECURITY.md` in place, and no Latere hostname or value anywhere but
 as a default or an example. One item of spec 016 is not on that list
 and cannot be: the bill of materials and the provenance attached to a
@@ -980,15 +1005,16 @@ closed specs sit unrecorded for a day.
 | the attestations attached to a published image | 016, 017 | closed on the `v0.1.1` tag run 34511419232 once the repository was made public, and verified again by four `gh attestation verify` runs that exit 0 |
 | `TestPreviousReleaseFixture` against a fixture an earlier release attached | 017 | closed 2026-09-11 by the v0.1.3 run 34546335576, job 103101443762, which read `fixture-v0.1.1.tar.gz` and reports `--- PASS: TestPreviousReleaseFixture` with `the fixture of v0.1.1 (4 commits) serves on this release` |
 | both states of `ORIGO_RELEASE_DEPLOY` | 017 | closed on two runs: unset on 34461460766, where `deploy and smoke` reports `skipped` and the release published all eleven assets, and set on 34546335576, where it applied `deploy/prod`, rolled the image, and reported `release smoke passed` |
-| a release that publishes on a repository other than this one, which the criterion calls the fork tag | 017 | threading the image namespace through the four places it is written: `release.yml`'s `ORIGOD_IMAGE` and `STUBS_IMAGE` and `release-verify`'s grep, the two committed `image:` lines of `deploy/base/deployment.yaml`, the `images:` name of `deploy/prod` and the kind example, and the three `pin` calls of `tools/release/deploy-archive.sh`. A fork's tag pushes to this organization's packages today and fails before publishing, so the fork half cannot be attempted until then. Both states of `ORIGO_RELEASE_DEPLOY`, which is what the criterion's sentence is about, are proved on the row above |
+| a release that publishes on a repository other than this one, which the criterion called the fork tag | 017 | closed 2026-09-12. The namespace was threaded through the four places it was written on 2026-09-11, `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh` hold it on every push, and the user decided those tests are the criterion rather than a tag a maintainer cuts on a fork; 017 is `complete` on that decision |
 | a maintainer walking `docs/install.md` to a push on a fresh cluster | 018 | the same maintainer, against the published artifacts; nothing blocks it |
 
 Three of those needed a decision from the user rather than work and
 have since had one: the installation the live secrets point at, the
 repository going public, and `ORIGO_RELEASE_DEPLOY` being set. What is
 left needs a Spaces bucket for the probe, the maintainer's time for the
-prose walk, and a builder for three unwritten tests and the image names
-in `release.yml`.
+prose walk, and a builder for three unwritten tests; the image names in
+`release.yml` were threaded on 2026-09-11 and the fork row closed on
+2026-09-12.
 
 ## Conventions
 
@@ -1032,7 +1058,7 @@ name, or when a spec names something no spec defines.
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025, 026 |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |

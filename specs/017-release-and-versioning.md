@@ -1,6 +1,6 @@
 ---
 title: "Release and versioning: images, binaries, compatibility, and what a version promises"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/002-repository-scaffold.md
@@ -10,7 +10,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, Dockerfile.stubs, Makefile, CHANGELOG.md, tools/release/, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -235,7 +235,7 @@ recorded in the release notes as done or as not applicable:
 
 | Item | Spec | Last done |
 |---|---|---|
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step; done once for the first release and again when `release.yml` changes | this spec | never, in either half. It became possible on 2026-09-11, when the image namespace stopped being fixed; the fork half below says what the run is |
+| a release publishes under the repository owner's namespace, so a fork's tag pushes to its own packages and not to this repository's | this spec | not a hand step since 2026-09-12: held by `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh` on every push, the criterion below. Until then the row read "a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset", a run a maintainer never made; the two states of the variable are proved on this repository's own tags, in the Outcome |
 | the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 | done on 2026-09-11 against the production Spaces bucket in fra1 with the current build: the create race applied 20 of 20 rounds, 20 x 200 and 300 x 412 with no transport error, `HEAD` on an absent key answered 404 and on a present one 200 with the ETag `GET` agrees with, and `GET If-None-Match: <current>` answered 304 while a stale one answered 200. Recorded in [the spike](../docs/spikes/2026-09-06-conditional-writes.md) with the two absences it also confirms, `PUT If-Match` and the conditional `CopyObject` |
 | `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 | done on 2026-09-11 against `v0.1.1`, with `deploy-v0.1.1.tar.gz` and the two published images and no checkout on the path of any command. It reached a push and a clone that read it back, after eight prose defects the walk found and fixed; spec 018's Outcome holds the list. The SSH half of the page could not be walked, because the page on `main` is newer than the newest archive, which is the open row there |
 
@@ -256,12 +256,21 @@ workflow identity, which is what an outside operator can verify.
   attestation rule above skips both the attachment and this check, and
   this clause of the criterion is the one part a private release does
   not prove.
-- A tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every
-  artifact and skips the deploy and smoke step, and the same tag with
-  the variable set runs it: a release checklist item above, done by a
-  maintainer by tagging a fork and recorded in the release notes, not
-  a CI test, because CI cannot tag a fork of itself (`release.yml`, the
-  `deploy` job's `if` on the variable).
+- A release publishes under the repository owner's namespace and
+  holds none of this repository's names: `release.yml`'s three image
+  `env` entries derive from `ORIGO_IMAGE_NAMESPACE` or
+  `github.repository_owner`, no other line of the workflow names
+  `ghcr.io/latere-ai` except as one side of a rewrite, and the deploy
+  archive packed for another namespace names that namespace in the
+  base, the kind overlay, and the overlay's `images:` selector with
+  nothing of Latere's surviving (`tools/release`,
+  `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and
+  `deploy_archive_test.sh`). Until 2026-09-12 this read as a tag on a
+  fork with `ORIGO_RELEASE_DEPLOY` unset and then set, a maintainer's
+  step CI cannot run; both states of the variable are proved on this
+  repository's own tags (the Outcome names the runs), and the property
+  a fork would add is the one the two tests hold, so the hand step was
+  dropped by the user's decision rather than left waiting.
 - The fixture repository attached to release N-1 materializes and
   serves on release N with identical `rev-list --all`, the fixture
   downloaded from that release's assets by the job with `gh release
@@ -298,15 +307,20 @@ workflow identity, which is what an outside operator can verify.
 
 Built on 2026-09-09; the first release ran on 2026-09-10. Every
 criterion a checkout can prove has a passing test in the tree, and the
-tag closed every row below that a tag on this repository can close. The
-spec stays at `testing` on one row that one cannot, and that row is
-not what it was written as: the fork tag. Two rows that were open with it have since
-closed on real tags. The `live` job ran against
+tags closed every row below that a tag on this repository can close.
+The spec is `complete` since 2026-09-12. It stood at `testing` on one
+row until then, the fork tag, which was not what it was written as:
+the two states of `ORIGO_RELEASE_DEPLOY` in its sentence are proved
+on this repository's own tags, and the property a fork would add is
+held by two tests since 2026-09-11. The user decided on 2026-09-12
+that the tests are the criterion and no maintainer cuts a tag on a
+fork to prove what they already hold; the row and the checklist entry
+were reworded to say so. Two rows that were open with it closed on
+real tags before that. The `live` job ran against
 `https://code.latere.ai` on the v0.1.3 run 34546335576 of 2026-09-11,
 once the two secrets were set and the installation answered. The
 compatibility assertion ran in the same release, against
-`fixture-v0.1.1.tar.gz`, the fixture an earlier release attached. The
-fork tag is the same person's work as spec 018's walk of the prose.
+`fixture-v0.1.1.tar.gz`, the fixture an earlier release attached.
 
 The first tag, `v0.1.0` of 2026-09-10, published nothing and was
 deleted. It is blocked twice over, on two limits outside this
@@ -326,7 +340,7 @@ around.
 | the deploy archive carries `deploy/base` and `deploy/examples` with every image at the version and no placeholder, and refuses a tree whose placeholder is gone | `tools/release`, `TestDeployArchive` over `deploy_archive_test.sh` | passing |
 | a tag produces every artifact for both architectures, `cosign verify` accepts the images, `sha256sum -c checksums.txt` passes, and the release body equals the `CHANGELOG.md` section | the `release-verify` job of `release.yml` | passing: the `verify the published release` job of the tag run 34461460766, 50 s, verified both signatures against `^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/` and the GitHub OIDC issuer, refused a foreign identity, checked `checksums.txt` and its cosign bundle, read the deploy archive, and matched the body against the section |
 | `gh attestation verify` accepts the images | the `release-verify` job of `release.yml`, its `Verify the attestations` step | closed by the `v0.1.1` tag run 34511419232: the repository is public, so `Verify the attestations` ran and succeeded and `Attestation verification is skipped on a private repository` was the skipped step instead. Read back on 2026-09-11, `gh attestation verify oci://ghcr.io/latere-ai/origod:v0.1.1 --repo latere-ai/origo` exits 0, and so does the same command for `origo-stubs`, for both `--predicate-type https://spdx.dev/Document` and `--predicate-type https://slsa.dev/provenance/v1`; every one names the signer `https://github.com/latere-ai/origo/.github/workflows/release.yml@refs/tags/v0.1.1` |
-| a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset publishes every artifact and skips the deploy and smoke step, and the same tag with the variable set runs it | the release checklist, done by a maintainer and recorded in the release notes | the two variable states are proved on this repository, and the fork is not. Unset: the tag run 34461460766 of `v0.1.0` reports `skipped` for `deploy and smoke` and `success` for every other job, all eleven assets and both images published. Set: the tag run 34546335576 of `v0.1.3` reports `success`, and its job 103102068011 applied `deploy/prod`, rolled the image, and smoked the installation. The `if` on the variable is therefore exercised in both directions. What the fork would add is examined below, and as `release.yml` stands it cannot be run |
+| a release publishes under the repository owner's namespace and holds none of this repository's names, and both states of `ORIGO_RELEASE_DEPLOY` run | `tools/release`, `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh`, for the namespace; the two tag runs, for the variable | passing. The two variable states are proved on this repository. Unset: the tag run 34461460766 of `v0.1.0` reports `skipped` for `deploy and smoke` and `success` for every other job, all eleven assets and both images published. Set: the tag run 34546335576 of `v0.1.3` reports `success`, and its job 103102068011 applied `deploy/prod`, rolled the image, and smoked the installation. The namespace half is the two tests, which fail on any line of `release.yml` fixing a namespace and on an archive in which `ghcr.io/latere-ai` survives a rewrite. Written until 2026-09-12 as a tag on a fork, which is examined below |
 
 ### What blocked the first release, and what still holds
 
@@ -362,19 +376,19 @@ up-script check, and the mutation job, all green.
 | conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
 | the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on | closed by the `v0.1.1` tag run 34511419232 on the now-public repository: `Verify the attestations` succeeded there, and four `gh attestation verify` runs on 2026-09-11, over `origod` and `origo-stubs` at `v0.1.1` for the SPDX and the SLSA predicate types, each exit 0 against the tag's workflow identity |
 | the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | closed by the v0.1.3 run 34546335576 of 2026-09-11. The two secrets are set and `https://code.latere.ai` answers, so the `live` job, id 103120952813, took its live branch: `contract_test.go:133: live run against ***: 51 passed` and `--- PASS: TestContract (173.69s)`, with the eight case names of exactly the six groups reported skipped. Run 34461460766's `live` job had run and skipped, neither secret being set then, and nothing here read that green as the run |
-| the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | the behaviour is closed and the fork is unblocked but untried. Unset ran on 34461460766 and set on 34546335576, the two run ids above. The namespace was threaded on 2026-09-11: `ORIGOD_IMAGE` and `STUBS_IMAGE` are now `ORIGO_IMAGE_NAMESPACE` or, unset, `ghcr.io/${{ github.repository_owner }}`, `release-verify` greps `${ORIGOD_IMAGE}` out of the deploy archive, `deploy-archive.sh` rewrites the namespace and the version together, and the deploy step moves `deploy/prod`'s image name with it, so a fork's tag pushes, signs, attests, deploys and verifies its own packages. What remains is a maintainer cutting one on a fork |
+| the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | closed on 2026-09-12 by rewording, not by a run. Unset ran on 34461460766 and set on 34546335576, the two run ids above. The namespace was threaded on 2026-09-11: `ORIGOD_IMAGE` and `STUBS_IMAGE` are now `ORIGO_IMAGE_NAMESPACE` or, unset, `ghcr.io/${{ github.repository_owner }}`, `release-verify` greps `${ORIGOD_IMAGE}` out of the deploy archive, `deploy-archive.sh` rewrites the namespace and the version together, and the deploy step moves `deploy/prod`'s image name with it, so a fork's tag pushes, signs, attests, deploys and verifies its own packages, and `TestReleasePublishesUnderTheRepositoryOwnersNamespace` with `deploy_archive_test.sh` hold that on every push. The user decided the criterion is those tests and not a tag a maintainer cuts on a fork |
 | `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | closed by the v0.1.3 run 34546335576. Its `conformance against the published image` job, id 103101443762, read `previous release fixture: /home/runner/work/_temp/previous/fixture-v0.1.1.tar.gz`, uploaded the copy through the S3 client, cloned it from the published image's node, and matched `rev-list --all`: `--- PASS: TestPreviousReleaseFixture (0.06s)`, `the fixture of v0.1.1 (4 commits) serves on this release`. Run 34461460766 had reported `--- SKIP`, no earlier release carrying a fixture |
 | `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
 
-The spec stays at `testing` on one row. Three of the four have closed
-since this table was first written, each by something outside a tag
-arriving: the repository was made public, which turned the attestation
-steps back on and closed the supply-chain row on `v0.1.1`; the two
-live secrets were set with `https://code.latere.ai` behind them, which
-closed the `live` row on `v0.1.3`; and a fourth tag gave the
-compatibility assertion a real previous fixture to read. What is left is the fork, and it is
-worth saying exactly what a fork adds, because the two runs above
-already cover the variable. `deploy and smoke` is no longer untried: with `ORIGO_RELEASE_DEPLOY`
+Every row of the table is closed. Three of the four that were open
+closed by something outside a tag arriving: the repository was made
+public, which turned the attestation steps back on and closed the
+supply-chain row on `v0.1.1`; the two live secrets were set with
+`https://code.latere.ai` behind them, which closed the `live` row on
+`v0.1.3`; and a fourth tag gave the compatibility assertion a real
+previous fixture to read. The fourth, the fork, closed by decision, and
+it is worth saying exactly what a fork would have added, because the
+two runs above already cover the variable. `deploy and smoke` is no longer untried: with `ORIGO_RELEASE_DEPLOY`
 set, the job ran on 34546335576, id 103102068011, applied
 `deploy/prod`, rolled the new image, and smoked the installation,
 `OK GET /readyz (200)`, `OK GET /version (200)`, `OK served version
@@ -499,9 +513,9 @@ script, so they carry no statements and the gate does not measure them.
   run and recorded on 2026-09-11 in the checklist row above. Both are
   `complete`.
 
-Waits on: a maintainer.
+Waits on: nothing.
 
-### Why the row names a fork, and what it now waits on
+### Why the row named a fork, and what holds it now
 
 The criterion reads as two states of `ORIGO_RELEASE_DEPLOY`, and both
 states are now proved here: `skipped` on 34461460766, `success` with a
@@ -525,7 +539,7 @@ A fork's tag would push to this organization's packages, which a fork
 cannot write, and the run would fail in step 1 before publishing
 anything.
 
-So the row does not close on a fork tag a maintainer has not cut, and
+So the row could not close on a fork tag a maintainer had not cut, and
 until 2026-09-11 a fork tag would have failed the criterion rather
 than proved it. What the row waited on was making the image namespace a
 variable, and that was wider than `release.yml`. The name
@@ -573,16 +587,21 @@ second names the fork in the base, in the kind overlay's stub pod and
 in the overlay's `images:` selector, that `ghcr.io/latere-ai` survives
 nowhere in it, and that an uppercase namespace is refused.
 
-What a maintainer does next: fork the repository, push a `vX.Y.Z` tag
-on the fork with no repository variable set and `ORIGO_RELEASE_DEPLOY`
-unset, and read the run. It publishes to `ghcr.io/<the fork owner>` and
-the `deploy` job reports `skipped`. Setting `ORIGO_RELEASE_DEPLOY` on
-the fork is the second half, and needs a cluster and an
-`ORIGO_KUBECONFIG` of the fork's own. Both states of the variable are
-already proved on this repository, so the fork run adds the property
-the two cannot show: that a release publishes on a repository holding
-none of this one's secrets, variables, environment, or package
-namespace. The row waits on that run and on nothing a builder owns.
+What was left after that was a maintainer forking the repository,
+pushing a `vX.Y.Z` tag on the fork with no variable set, and reading
+that it published to `ghcr.io/<the fork owner>` with `deploy` reporting
+`skipped`; then the same with `ORIGO_RELEASE_DEPLOY` set, against a
+cluster and an `ORIGO_KUBECONFIG` of the fork's own. On 2026-09-12 the
+user asked what that run would prove that the tree does not, and the
+answer is nothing the two tests do not already hold: the namespace is
+derived in the workflow and rewritten in the archive, and both are
+asserted on every push, while the variable's two states are proved on
+this repository's own tags. A maintainer's fork run would repeat the
+runner's work by hand, and a criterion that waits on it waits on a
+person's time for no new evidence. The criterion was reworded to name
+the two tests, the checklist entry with it, and the spec is
+`complete`. Anyone who does fork and tag reads the same thing the
+tests assert.
 
-The `if` on the variable that the criterion's sentence is really about
-is already proved on the two runs above.
+The `if` on the variable that the criterion's sentence was really about
+is proved on the two runs above.
