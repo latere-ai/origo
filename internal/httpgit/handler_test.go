@@ -249,6 +249,11 @@ func TestCloneFetchPushOverSmartHTTP(t *testing.T) {
 	if strings.TrimSpace(mustGit(t, shallow, "rev-list", "--count", "HEAD")) != "1" {
 		t.Fatal("shallow clone depth")
 	}
+	// Deepening reaches the rest of dev's history through the same node.
+	mustGit(t, shallow, "fetch", "-q", "--deepen", "1", "origin")
+	if strings.TrimSpace(mustGit(t, shallow, "rev-list", "--count", "HEAD")) != "2" {
+		t.Fatal("deepened clone depth")
+	}
 	// A reachable commit is fetchable by hash.
 	byHash := filepath.Join(t.TempDir(), "byhash")
 	mustGit(t, t.TempDir(), "init", "-q", byHash)

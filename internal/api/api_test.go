@@ -391,6 +391,14 @@ func TestRepositoryLifecycle(t *testing.T) {
 	if id, err := h.log.Resolve(context.Background(), "acme", "app2"); err != nil || id != repoA {
 		t.Fatal("new name does not resolve")
 	}
+	// The rename takes effect at once: the old name resolves to nothing
+	// and its URL answers 404 to a caller the authorizer allowed.
+	if _, err := h.log.Resolve(context.Background(), "acme", "app"); err == nil {
+		t.Fatal("the old name still resolves")
+	}
+	if status, out := h.do("GET", "/acme/app.git/info/refs?service=git-upload-pack", ""); status != 404 || code(out) != contract.CodeRepoNotFound {
+		t.Fatalf("old URL after the rename: %d %v", status, out)
+	}
 	if status, out := h.do("PATCH", "/v1/repos/"+repoA, `{"owner":"acme2","default_branch":"main"}`); status != 200 || out["owner"] != "acme2" || out["default_branch"] != "main" {
 		t.Fatalf("rename owner and branch: %d %v", status, out)
 	}
