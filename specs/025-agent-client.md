@@ -1,6 +1,6 @@
 ---
 title: "Agent client: Origo as a command and a skill"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -941,3 +941,37 @@ what it is told.
   document a command that does not work; the test mirrors spec 014's
   `TestClusterMigrationDocCommandsRun` with the one-node harness in place
   of `requireNodes` (proposed: `test/e2e`, `TestE2EOrigoDocCommandsRun`).
+
+## Outcome
+
+Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
+34617034527 at commit `a60893d`, whose every job passed, `conformance
+against the live installation` and `verify the published release` among
+them. The release carries `origo` beside `origod` for the four
+platforms, which is what `TestTheReleaseCarriesBothBinaries` holds
+against the workflow. The installation the run deployed answers `GET
+https://code.latere.ai/version` with `{"version":"v0.2.0",...}`.
+
+Every criterion has a passing test in the tree. The unit tests ran in
+the `gate / test`, `gate / race` and `gate / cover` jobs of the verify
+run 34619859907 on main at `8aa2296`, and the four end-to-end tests in
+that run's `integration and one-node e2e tiers` job, which runs `make
+test-tiers` over the `TestE2E` prefix; all are `success`. Read back on
+2026-09-11 with `go test -v`, each reports `--- PASS`:
+`TestTheReleaseCarriesBothBinaries` and `TestMainDispatchesAndExits` in
+`cmd/origo`; `TestTokenIsNeverWritten` and
+`TestDocumentedCommandsMatchTheBinary` in `internal/origocli`;
+`TestE2EOrigoReadsCommitsAndReverts` (22.10s),
+`TestE2EOrigoReadTokenCannotWrite` (17.87s),
+`TestE2EOrigoDirectoryNeedsAnIssuerToken` (3.12s) and
+`TestE2EOrigoDocCommandsRun` (3.84s) in `test/e2e`.
+
+One divergence, of naming and not of behaviour. The directory criterion
+proposes `TestE2EOrigoDirectoryUnsupported`, which is in no file. The
+criterion's two assertions are in `TestE2EOrigoDirectoryNeedsAnIssuerToken`
+in `test/e2e/origo_test.go`: against a node whose authorizer has no
+directory, `origo repos` exits 1 with `directory_unsupported` and names
+`-repo` as what to do instead, and `origo info` with that repository
+named is served. That test carries two rows beyond the criterion, the
+served listing once a directory is set and the refusal of `repos` under
+a repository-bound token, so it is the wider test and keeps its name.

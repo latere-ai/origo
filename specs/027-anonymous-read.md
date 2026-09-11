@@ -1,6 +1,6 @@
 ---
 title: "Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -200,3 +200,32 @@ tests cover both URL forms.
 
 Anonymous LFS. Anonymous writes, ever. A per-address bucket. Any notion
 of visibility stored on the node.
+
+## Outcome
+
+Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
+34617034527 at commit `a60893d`, whose every job passed, `conformance
+against the live installation` and `verify the published release` among
+them. The installation serves it: `GET https://code.latere.ai/version`
+answers `{"version":"v0.2.0","commit":"a60893d",...}`.
+
+Every criterion of the table has a passing test in the tree, and every
+one of them ran in the `gate / test`, `gate / race` and `gate / cover`
+jobs of the verify run 34619859907 on main at `8aa2296`, all three
+`success`. Read back on 2026-09-11 with `go test -v`, each named test
+reports `--- PASS`:
+
+| Test | Package |
+|---|---|
+| `TestEveryRouteRequiresAToken`, `TestTheSwitchChangesNothingForARefusedCaller` | `cmd/origod` |
+| `TestBadCredentialIsNotAnonymous`, `TestAnonymousSetAdmitsTheReadRoutes`, `TestAnonymousSetWithholdsTheRest`, `TestAnonymousDenialIsTheSame401Everywhere`, `TestAnonymousSetExcludesReceivePack` | `internal/auth` |
+| `TestAnonymousRateDefaults`, `TestAnonymousShareOneBucket` | `internal/limits` |
+| `TestAnonymousIsRefusedWithTheOne401`, `TestAnonymousClone` | `internal/httpgit` |
+
+No divergence from the Design. The correction the Design names was made
+in the same change: spec 016's Transport paragraph no longer says there
+is no anonymous read in v1 and points here instead.
+
+The switch is off in `deploy/prod`, so the installation carries the code
+and serves no anonymous request; the release proves the behaviour, not a
+change of what the installation admits.

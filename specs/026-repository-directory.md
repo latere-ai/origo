@@ -1,6 +1,6 @@
 ---
 title: "Repository directory: the list action on the authorizer contract and the collection route"
-status: drafted
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/auth/, internal/api/, internal/contract/, cmd/origod/, test/stubs/authorizer/, docs/api.md, specs/007-authentication-and-delegation.md, specs/013-test-stubs-and-kind-overlay.md, specs/README.md]
 effort: medium
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -294,3 +294,48 @@ three existing actions, their answer shape, or their caches.
   choose its own paging. Whether Origo should wrap it so an endpoint
   cannot leak an internal key through it is undecided; nothing in the
   interface reads it.
+
+## Outcome
+
+Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
+34617034527 at commit `a60893d`, whose every job passed, `conformance
+against the live installation` and `verify the published release` among
+them. The installation serves the release: `GET
+https://code.latere.ai/version` answers `{"version":"v0.2.0",...}`.
+
+The frontmatter said `drafted` until 2026-09-11 while the route,
+the interface and the tests were on main and in a release. The status
+was never advanced, which is a defect of this document and not of the
+work; it is recorded here so a reader of the history knows the code
+did not arrive in one step behind a `drafted` spec.
+
+Every criterion has a passing test in the tree, and every one of them
+ran in the `gate / test`, `gate / race` and `gate / cover` jobs of the
+verify run 34619859907 on main at `8aa2296`, all three `success`. Read
+back on 2026-09-11 with `go test -v`, each reports `--- PASS`:
+`TestDirectoryServesWhatSurvives`, `TestDirectoryRefusals`,
+`TestNameModeMatchesTheIdRoute` and `TestCollectionQueryIsValidated` in
+`internal/api`; `TestEveryRouteRequiresAToken` in `cmd/origod`;
+`TestStubDirectory` in `internal/auth`.
+
+Two divergences, both of naming and neither of behaviour:
+
+- The criterion proposes `TestStubDirectory` in `test/stubs/authorizer`.
+  It is in `internal/auth/directory_test.go`, beside the directory
+  request and response types it exercises, and it drives the stub
+  through `test/stubs/authorizer`. The assertion is the criterion's:
+  `{"directory": false}` until a directory is set, the rule table
+  applied per subject, and the listing paged at `limit`.
+- The criterion proposes `TestEveryCodeHasOneSentenceInTheUserRegister`
+  and `TestEveryCodeHasStatuses` in `internal/contract`. The second name
+  is not in the tree and no test needs it: `TestEveryCodeHasOneSentence`
+  in `internal/contract/table_test.go` asserts a sentence, at least one
+  status, a producers row, and a call site for every code constant, so
+  it holds the status half of the criterion and more.
+  `directory_unsupported` is in the table at 501 with its sentence, and
+  `docs/api.md` carries the route and the code.
+
+The two questions under Open are still open, and neither holds the
+spec: seeding the stub's directory on the kind stack belongs to spec
+013's overlay or spec 021's suite, and whether `next_cursor` should be
+opaque is a decision nothing in the interface waits on.
