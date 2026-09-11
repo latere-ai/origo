@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.2.0 - 2026-09-11
+
 - Your installation can serve a repository to somebody with no account, if
   you turn it on. Set `ORIGO_ANONYMOUS_READ` and your permission service
   decides, one repository at a time, who may be read without signing in.
