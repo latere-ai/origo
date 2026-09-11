@@ -1,0 +1,43 @@
+# Git over SSH at code.latere.ai (spec 024). The four variables go
+# together: a node with ORIGO_SSH_ADDR set and any of the other three
+# missing refuses to start and says which.
+#
+# The key store is auth's, which holds the public keys people register
+# and answers which subject an offered key belongs to. It reads the same
+# bearer the authorizer does, so ORIGO_SSH_KEYS_TOKEN carries the value
+# of ORIGO_AUTHORIZER_TOKEN in a Secret of its own.
+#
+# The host key Secret is made by hand and lives in no manifest: the
+# private halves are generated into a temporary directory, piped through
+# `kubectl create secret --dry-run=client`, and never written to this
+# repository. Publish the public fingerprints instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      volumes:
+        - name: ssh-host-key
+          secret:
+            secretName: origod-ssh-host-key
+            defaultMode: 0400
+      containers:
+        - name: origod
+          volumeMounts:
+            - name: ssh-host-key
+              mountPath: /etc/origo/ssh
+              readOnly: true
+          env:
+            - name: ORIGO_SSH_ADDR
+              value: ":2222"
+            - name: ORIGO_SSH_HOST_KEYS
+              value: /etc/origo/ssh/ssh_host_ed25519_key,/etc/origo/ssh/ssh_host_ecdsa_key
+            - name: ORIGO_SSH_KEYS_URL
+              value: http://auth.latere.svc.cluster.local/internal/origo/ssh-keys/resolve
+            - name: ORIGO_SSH_KEYS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: origod-ssh-keys
+                  key: ORIGO_SSH_KEYS_TOKEN

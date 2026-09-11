@@ -35,3 +35,5 @@ patches:
   - path: public-url.yaml
   - path: pull-secret.yaml
   - path: replicas.yaml
+  - path: ssh.yaml
+  - path: ssh-service.yaml
