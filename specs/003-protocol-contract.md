@@ -1,13 +1,13 @@
 ---
 title: "Protocol contract: what a consumer relies on"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/001-architecture.md
 affects: [internal/contract/, internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -308,8 +308,12 @@ without `-v`, so the evidence is the package's `ok` and those
 assertions rather than a named case. Spec 021's Outcome records the
 same run.
 
-This spec stays at `testing` until spec 021's live run has run once,
-for the cases a live run can carry. One of this spec's cases is not
+Spec 021's live run has now run, which is what this spec waited on.
+The `conformance against the live installation` job of the v0.1.3
+release run 34546335576, on 2026-09-11 against `https://code.latere.ai`,
+reports `contract_test.go:133: live run against ***: 51 passed` and
+`--- PASS: TestContract (173.69s)`. Every 003 case a live target can
+carry is in those 51. One of this spec's cases is not
 among them: `TestContract/003/storage_unavailable` sits in
 `GroupStorage`, which needs a `Fault` on the target, and a live target
 has none by definition, so every live run skips it and reports it by
@@ -338,6 +342,14 @@ groups skipped. Its target is a kind cluster the job had just built
 from the published artifacts, not an installation, so that run closes
 spec 018's job row and no criterion here.
 
-Spec 017's Outcome records the limit. What closes this: the two secrets
-set on the repository with an installation behind the URL, and a tag or
-a re-run of that job.
+Spec 017's Outcome records that limit and records its lifting: the two
+secrets were set and `https://code.latere.ai` answers. The v0.1.3
+release run 34546335576 of 2026-09-11 dialled it. Its `live` job, id
+103120952813, ran `TestContract` in live mode and passed, skipping
+exactly the six groups and naming each: `003/storage_unavailable`,
+`007/forbidden`, `007/authorizer_unavailable`, `007/delegation`,
+`015/repository_unavailable`, `019/repo_not_empty`, `019/import`, and
+`012/over_quota`. `003/storage_unavailable` is this spec's one case a
+live target cannot carry, and it closed on the stack as the paragraph
+above records. With that the deferred criteria are answered and the
+spec is `complete`.
