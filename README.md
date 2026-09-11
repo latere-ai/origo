@@ -5,8 +5,8 @@ write-ahead log in S3 compatible object storage. Repositories on disk are
 only a cache. There is no database, no leader, and no consensus cluster.
 
 Latere runs Origo at [code.latere.ai](https://code.latere.ai) for its own
-platform. Anyone with a Kubernetes cluster and an S3 compatible bucket can
-run their own.
+repositories, behind a sign-in; it is not a hosted service. Anyone with a
+Kubernetes cluster and an S3 compatible bucket can run their own.
 
 [![CI](https://github.com/latere-ai/origo/actions/workflows/verify.yml/badge.svg)](https://github.com/latere-ai/origo/actions/workflows/verify.yml)
 [![Release](https://img.shields.io/github/v/release/latere-ai/origo)](https://github.com/latere-ai/origo/releases)
@@ -22,8 +22,8 @@ on a specific disk, so nodes are not interchangeable, growth means
 migration, and a million repositories that nobody fetches still cost a
 million repositories' worth of storage and backup.
 
-Origo gives each of them a real git remote over HTTPS, and pays for the
-ones in use.
+Origo gives each of them a real git remote over HTTPS and SSH, and pays
+for the ones in use.
 
 ## How it works
 
@@ -83,9 +83,10 @@ questions rather than deciding them itself.
 
 ## What you get
 
-- **A git remote.** `git clone`, `fetch`, and `push` over smart HTTP with
-  bearer authentication. Shallow and partial clones work at any reachable
-  commit. Git LFS is supported.
+- **A git remote.** `git clone`, `fetch`, and `push` over HTTPS with a
+  bearer token, or over SSH with a public key your key store resolves.
+  Shallow and partial clones work at any reachable commit. Git LFS is
+  supported.
 - **Consistent reads.** Every reference update is one compare-and-swap
   against the log, so a read never sees a half-applied push.
 - **A read API.** Refs, log, diff, tree, blob, and an archive of any commit
@@ -106,6 +107,22 @@ questions rather than deciding them itself.
   is a separate, optional program that reads this API and renders
   repositories, history, diffs and files in a browser. Run it or don't;
   Origo neither needs it nor knows about it.
+
+## Day to day
+
+With [origo-web](https://github.com/latere-ai/origo-web) in front of it, a
+person signs in, creates a repository, registers a public key, and clones:
+
+```sh
+git clone git@code.example.com:owner/name.git
+```
+
+Commit and push as anywhere else. Over HTTPS a public repository clones
+with no credential when the installation admits anonymous reads
+(`ORIGO_ANONYMOUS_READ`), and a private one takes a bearer token as the
+password, with any username. `owner/name` is the name a person sees; the
+API and its tokens use the repository's identifier, which a rename does
+not change.
 
 ## Documentation
 
