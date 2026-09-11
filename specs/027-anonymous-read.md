@@ -122,6 +122,14 @@ An authorizer outage on an anonymous request renders the same 401, for
 the same reason: the shape of the answer must not depend on anything the
 node learned about the repository.
 
+One path reaches the bucket before the decision, and it is not a
+refusal. The owner/slug form resolves the name to an id before it asks,
+because an authorizer keys on the id (spec 007). A bucket that cannot
+answer that resolve produces the ordinary `storage_unavailable`, which is
+the same answer for every name and the same answer an authenticated
+caller gets, so it discloses nothing about the registry. The work it
+costs is one resolve per request, inside the anonymous bucket.
+
 ### Paying for it
 
 One token bucket for all anonymous traffic on a node, keyed by a sentinel
@@ -160,10 +168,17 @@ here.
 | with the switch off, every route of the public listener is 401 for a request with no credential | `cmd/origod`, `TestEveryRouteRequiresAToken` (extended to run in both switch states) |
 | with the switch on, only the routes of the set admit a credential-less request; every other route is still 401 | `cmd/origod`, `TestEveryRouteRequiresAToken` |
 | a present but unverifiable credential is never downgraded to anonymous | `internal/auth`, `TestBadCredentialIsNotAnonymous` |
+| the set admits every read route and withholds every route named above | `internal/auth`, `TestAnonymousSetAdmitsTheReadRoutes`, `TestAnonymousSetWithholdsTheRest` |
+| the anonymous rate is below the per-subject rate and defaults to 60 | `internal/limits`, `TestAnonymousRateDefaults` |
 | an anonymous deny, an unresolvable name, an unknown id, and an authorizer outage are the identical 401 with `reason: "missing"` and a `Basic` challenge | `internal/auth`, `TestAnonymousDenialIsTheSame401Everywhere` |
 | `info/refs?service=git-receive-pack` is never anonymous, in either URL form | `internal/auth`, `TestAnonymousSetExcludesReceivePack` |
 | all anonymous traffic shares one bucket, and it cannot draw from an authenticated subject's | `internal/limits`, `TestAnonymousShareOneBucket` |
 | an anonymous clone of a repository the authorizer allows succeeds, and a fetch of one it denies is refused | `internal/httpgit`, `TestAnonymousClone` |
+
+The sweep runs the two owner/slug rows in the switch-off state only: the
+fake bucket it runs on answers a storage error to every resolve, so with
+the switch on those two never reach the decision. The route set's own
+tests cover both URL forms.
 
 ## Out of scope
 
