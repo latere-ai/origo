@@ -380,6 +380,10 @@ Divergences from the first draft:
   on an `amd64` runner failed with `exec format error`. Every pin is now
   the index digest, which resolves to the platform's manifest; the
   `build` and `integration` jobs of `verify.yml` prove it on every push.
+  Since 2026-09-11 the MinIO and `mc` pins name `quay.io/minio`, the
+  same tags and digests, because Docker Hub stopped serving both
+  repositories that day; spec 013's Outcome records the run that found
+  it and the test that holds the pins.
 - Two drifts found by a review on 2026-09-11. The coverage criterion
   read 97%: spec 016's CA bundle reader had a branch no test reached,
   spec 027 added `ORIGO_ANONYMOUS_READ` and the parse of
