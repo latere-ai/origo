@@ -8,12 +8,15 @@ package e2e
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/latere-ai/origo/internal/compact"
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/internal/wal"
 )
@@ -166,5 +169,207 @@ func TestE2EKillMidPush(t *testing.T) {
 	cl := clone(t, fresh.url(id))
 	if gittest.RevList(t, cl) != gittest.RevList(t, work) {
 		t.Fatal("history after the retry")
+	}
+}
+
+// TestE2EHundredConcurrentPushesFromEightClients is spec 004's
+// concurrency criterion: 100 pushes to distinct branches, driven by 8
+// clients at once against one node, all land; the newest index lists
+// 100 entries in sequence order and carries every branch at the commit
+// its client pushed; and every sequence from 0 to 100 has exactly one
+// index object, which is what the create-if-absent commit linearizes.
+//
+// The 100 branches are prepared before the clients start, so the window
+// the test measures is the commit path and not git's own object
+// writing. Each client owns a disjoint slice of the branches and pushes
+// them one after another, so 8 pushes are in flight at any moment and
+// the writers race for index/<n+1> a hundred times.
+func TestE2EHundredConcurrentPushesFromEightClients(t *testing.T) {
+	const branches, clients = 100, 8
+	s := requireStack(t)
+	n := startNode(t, s, "", nil)
+	id := newID(t)
+	n.createRepo(id, "acme", "app-"+id[:8])
+
+	// One working copy per client, each with its own commits, so no two
+	// clients share a git directory while they push.
+	type work struct {
+		dir   string
+		heads map[string]string
+	}
+	works := make([]*work, clients)
+	for c := range clients {
+		dir := clone(t, n.url(id))
+		w := &work{dir: dir, heads: map[string]string{}}
+		for b := c; b < branches; b += clients {
+			branch := fmt.Sprintf("refs/heads/b%d", b)
+			w.heads[branch] = commitFile(t, dir, "payload", fmt.Sprintf("commit for %s", branch), fmt.Sprintf("b%d", b))
+		}
+		works[c] = w
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, branches)
+	for _, w := range works {
+		wg.Go(func() {
+			for branch, head := range w.heads {
+				if out, err := git(t, w.dir, "push", "-q", "origin", head+":"+branch); err != nil {
+					errs <- fmt.Errorf("push %s: %v\n%s", branch, err, out)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	ix, _, err := s.log.Newest(context.Background(), id, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// index/0 is created with the repository and lists no entry, so 100
+	// pushes leave the newest index at sequence 100 with 100 entries.
+	if ix.Seq != branches || len(ix.Entries) != branches {
+		t.Fatalf("newest index: seq %d, %d entries, want %d and %d", ix.Seq, len(ix.Entries), branches, branches)
+	}
+	for i, e := range ix.Entries {
+		if e.Seq != uint64(i+1) {
+			t.Fatalf("entry %d of the newest index is at sequence %d, so the list is not in sequence order", i, e.Seq)
+		}
+	}
+	for _, w := range works {
+		for branch, head := range w.heads {
+			if got := ix.Refs[branch]; got != head {
+				t.Errorf("the newest index has %s at %q, the client pushed %q", branch, got, head)
+			}
+		}
+	}
+	// One index object per sequence: a second winner at any sequence
+	// would be an object the list below does not have room for.
+	indexes := s.keys(t, id, "index/0")
+	if len(indexes) != branches+1 {
+		t.Fatalf("%d index objects for %d pushes", len(indexes), branches)
+	}
+	for i, key := range indexes {
+		if want := fmt.Sprintf("index/%012d", i); key != want {
+			t.Fatalf("index object %d is %s, want %s", i, key, want)
+		}
+	}
+}
+
+// TestSlowMaterializeTenThousandEntries is spec 004's materialization
+// ceiling: a repository whose newest index lists 10 000 entries and the
+// packs of three compactions is materialized onto an empty disk, and
+// git fsck passes on the result.
+//
+// The entries are written by the harness through Log.Commit, not by git
+// push, because the criterion is the size of the log a node must apply
+// and not the throughput of the receive path; writeEntries is the same
+// builder TestE2EMaterializeThousandEntriesUnderBudget uses, at ten
+// times the count. The packs come from compaction, which a node
+// schedules only on the push path when the entries an index lists cross
+// compact.MaxEntries, so each round writes that many entries through
+// the log and then pushes one commit through the node to cross it. How
+// many packs a run leaves is what `git repack --geometric=2` decides,
+// so the rounds run until the index lists the three the criterion
+// names.
+//
+// The node is stopped before the 10 000 entries are written, so nothing
+// compacts them away and the fresh node below applies every one.
+func TestSlowMaterializeTenThousandEntries(t *testing.T) {
+	const entries, packs = 10000, 3
+	s := requireStack(t)
+	n := startNode(t, s, "", nil)
+	id := newID(t)
+	n.createRepo(id, "bench", "ceiling-"+id[:8])
+
+	start := time.Now()
+	for round := 0; len(newestIndexOf(t, s, id).Packs) < packs; round++ {
+		if round == 10 {
+			t.Fatalf("%d compaction rounds left %d packs", round, len(newestIndexOf(t, s, id).Packs))
+		}
+		writeEntriesTo(t, s, id, fmt.Sprintf("refs/heads/fill-%d", round), compact.MaxEntries+1)
+		through := newestIndexOf(t, s, id).CompactedThrough
+		work := clone(t, n.url(id))
+		commitFile(t, work, "round", fmt.Sprintf("round %d", round), fmt.Sprintf("round %d", round))
+		mustGit(t, work, "push", "-q", "origin", fmt.Sprintf("HEAD:refs/heads/round-%d", round))
+		waitForCompactionPast(t, s, id, through)
+	}
+	held := newestIndexOf(t, s, id)
+	t.Logf("MEASURE %d compaction packs after %s", len(held.Packs), time.Since(start).Round(time.Millisecond))
+
+	// Nothing compacts while the ceiling is written: compaction is
+	// scheduled on the push path alone, and no push reaches a node that
+	// is not running.
+	n.stop()
+	// The last compaction left the entries it did not fold, the round's
+	// own push among them, so the fill is the ceiling less what the
+	// index already lists and the total is the count the criterion
+	// names.
+	kept := len(held.Entries)
+	start = time.Now()
+	writeEntries(t, s, id, entries-kept)
+	t.Logf("MEASURE wrote %d entries in %s", entries-kept, time.Since(start).Round(time.Millisecond))
+	ix := newestIndexOf(t, s, id)
+	if len(ix.Entries) != entries {
+		t.Fatalf("the newest index lists %d entries, want %d", len(ix.Entries), entries)
+	}
+	if len(ix.Packs) < packs {
+		t.Fatalf("the newest index lists %d packs, want at least %d", len(ix.Packs), packs)
+	}
+
+	fresh := startNode(t, s, "", nil)
+	if dir, _ := os.ReadDir(filepath.Join(fresh.dataDir, "repos")); len(dir) != 0 {
+		t.Fatalf("the fresh node's disk holds %d entries", len(dir))
+	}
+	ls := filepath.Join(t.TempDir(), "ls")
+	mustGit(t, t.TempDir(), "init", "-q", ls)
+	start = time.Now()
+	mustGit(t, ls, "ls-remote", "-q", fresh.url(id))
+	t.Logf("MEASURE materialize %d entries and %d packs onto an empty disk: %s",
+		entries, len(ix.Packs), time.Since(start).Round(time.Millisecond))
+	if got := fresh.metric("origo_repo_entries_applied_total", ""); got != entries {
+		t.Fatalf("the fresh node applied %v entries, want %d", got, entries)
+	}
+
+	cl := clone(t, fresh.url(id))
+	// writeEntries commits a chain of its own, one commit per entry, and
+	// the fill above is what refs/heads/main names.
+	if got := mustGit(t, cl, "rev-list", "--count", "HEAD"); got != fmt.Sprint(entries-kept) {
+		t.Fatalf("the clone holds %s commits, want %d", got, entries-kept)
+	}
+	mustGit(t, cl, "fsck", "--no-progress")
+}
+
+// newestIndexOf is the newest index of a repository read straight from
+// the log, with no node in the path.
+func newestIndexOf(t *testing.T, s *stack, id string) *wal.Index {
+	t.Helper()
+	ix, _, err := s.log.Newest(context.Background(), id, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ix
+}
+
+// waitForCompactionPast waits for the compaction the round's push
+// scheduled: the newest index names a compacted_through above the one
+// the round started from, within five minutes.
+func waitForCompactionPast(t *testing.T, s *stack, id string, through uint64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		ix := newestIndexOf(t, s, id)
+		if ix.CompactedThrough > through {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no compaction within five minutes: %d entries, compacted_through %d, %d packs",
+				len(ix.Entries), ix.CompactedThrough, len(ix.Packs))
+		}
+		time.Sleep(time.Second)
 	}
 }

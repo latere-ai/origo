@@ -235,6 +235,16 @@ func TestE2EDrainLosesNoPush(t *testing.T) {
 // the fixture of the materialization budget and of TestMeasure.
 func writeEntries(t *testing.T, s *stack, id string, n int) {
 	t.Helper()
+	writeEntriesTo(t, s, id, "refs/heads/main", n)
+}
+
+// writeEntriesTo is writeEntries against one reference. Each call opens
+// a history of its own, so the first entry creates the reference and a
+// second call over a reference that already exists is refused by the
+// fast-forward check: a caller that fills a repository more than once
+// names a reference of its own each time.
+func writeEntriesTo(t *testing.T, s *stack, id, ref string, n int) {
+	t.Helper()
 	src := gittest.NewSource(t)
 	held, _, err := s.log.Newest(context.Background(), id, 0, false)
 	if err != nil {
@@ -251,7 +261,7 @@ func writeEntries(t *testing.T, s *stack, id string, n int) {
 			pack = src.Pack(c, prev)
 			old = prev
 		}
-		e := wal.Entry{Kind: wal.KindPush, Refs: []wal.RefUpdate{{Ref: "refs/heads/main", Old: old, New: c}}, Pack: wal.BytesBody(pack)}
+		e := wal.Entry{Kind: wal.KindPush, Refs: []wal.RefUpdate{{Ref: ref, Old: old, New: c}}, Pack: wal.BytesBody(pack)}
 		committed, err := s.log.Commit(context.Background(), id, held, e, func(context.Context, *wal.Index) error { return nil })
 		if err != nil {
 			t.Fatal(err)
