@@ -86,6 +86,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
 | [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | testing | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
+| [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | drafted | 007, 009, 012, 016 |
 
 ## Dependency graph
 
@@ -126,6 +127,7 @@ flowchart BT
   S024[024 SSH access]
   S025[025 agent client]
   S026[026 repository directory]
+  S027[027 anonymous read]
   S002 --> S001
   S003 --> S001
   S004 --> S002
@@ -159,6 +161,7 @@ flowchart BT
   S024 --> S018
   S025 --> S020
   S026 --> S013
+  S027 --> S016
 ```
 
 ## Build order

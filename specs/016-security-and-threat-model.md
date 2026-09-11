@@ -190,10 +190,13 @@ TLS terminates at the ingress; the public listener may be plain HTTP
 inside the cluster only. Bearer tokens are required on every request
 including `info/refs`; the unauthenticated paths are
 `GET /.well-known/jwks.json` (spec 007) and the probes `GET /readyz` and
-`GET /version` (spec 002), which serve no repository state. There is no anonymous read in
-v1; an operator who wants public repositories does so through the
-authorizer answering allow for an anonymous subject, which is not in
-this spec.
+`GET /version` (spec 002), which serve no repository state. Anonymous
+read is off by default and is spec 027: with `ORIGO_ANONYMOUS_READ` set,
+a request with no credential on one of the read routes that spec names is
+admitted with an empty subject and decided by the authorizer like any
+other, and every refusal of an empty subject is the same 401 this section
+describes. With the variable unset no anonymous request is admitted and
+a bearer is required on every request including `info/refs`.
 
 ### Disclosure
 
