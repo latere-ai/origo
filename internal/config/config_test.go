@@ -505,6 +505,10 @@ func TestSSHConfigurationIsAllOrNothing(t *testing.T) {
 	})
 
 	t.Run("a key algorithm that is not a host key algorithm", func(t *testing.T) {
+		// The host key set is the client key set since 2026-09-12 (spec
+		// 024, decision 10): nistp384 is accepted, and ssh-dss, the one
+		// algorithm x/crypto parses and the set excludes, is refused by
+		// name in the one message. The key file is sshd's fixture.
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		if err != nil {
 			t.Fatal(err)
@@ -514,8 +518,12 @@ func TestSSHConfigurationIsAllOrNothing(t *testing.T) {
 		m["ORIGO_SSH_HOST_KEYS"] = hostKeyFile(t, "p384", key)
 		m["ORIGO_SSH_KEYS_URL"] = "https://keys.example"
 		m["ORIGO_SSH_KEYS_TOKEN"] = "s"
-		if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "not a host key algorithm") {
-			t.Fatalf("an ecdsa-sha2-nistp384 host key was accepted: %v", err)
+		if _, err := Load(env(m)); err != nil {
+			t.Fatalf("an ecdsa-sha2-nistp384 host key was refused: %v", err)
+		}
+		m["ORIGO_SSH_HOST_KEYS"] = filepath.Join("..", "sshd", "testdata", "ssh-dss.pem")
+		if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ssh-dss is not a host key algorithm") {
+			t.Fatalf("an ssh-dss host key was accepted: %v", err)
 		}
 	})
 

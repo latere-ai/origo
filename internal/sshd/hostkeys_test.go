@@ -58,19 +58,17 @@ func TestHostKeysAreRefusedByAlgorithmAndSize(t *testing.T) {
 	if got := algosOf(keys.Presented()); len(got) != 4 {
 		t.Errorf("presented = %v, want one per algorithm", got)
 	}
-	// An algorithm outside the set is refused by name: ssh-dss is the
-	// one x/crypto still knows and MarshalPrivateKey cannot write, so
-	// the check is driven with a key of that type directly.
-	if msg := checkHostKey(fakePublicKey{algo: ssh.KeyAlgoDSA}); !strings.Contains(msg, "not a host key algorithm") {
-		t.Errorf("an ssh-dss host key: %q", msg)
-	}
-
+	// An algorithm outside the set is refused by name. ssh-dss is the
+	// one x/crypto still parses and MarshalPrivateKey cannot write, so
+	// testdata/ssh-dss.pem is a checked-in OpenSSL-format key of that
+	// type (generated once with crypto/dsa; it guards nothing).
 	missing := filepath.Join(dir, "absent")
 	bad := ParseHostKeysError(t, []string{
 		writeKey(t, dir, "weak", weak),
+		filepath.Join("testdata", "ssh-dss.pem"),
 		missing,
 	})
-	for _, want := range []string{"at least 2048 bits", "absent"} {
+	for _, want := range []string{"at least 2048 bits", "ssh-dss is not a host key algorithm", "absent"} {
 		if !strings.Contains(bad, want) {
 			t.Errorf("the message %q does not name %q", bad, want)
 		}
@@ -243,11 +241,3 @@ func TestFingerprintsNameEveryConfiguredKey(t *testing.T) {
 		}
 	}
 }
-
-// fakePublicKey is an ssh.PublicKey of any algorithm name, for the
-// refusal of an algorithm outside the host key set.
-type fakePublicKey struct{ algo string }
-
-func (k fakePublicKey) Type() string                        { return k.algo }
-func (k fakePublicKey) Marshal() []byte                     { return nil }
-func (k fakePublicKey) Verify([]byte, *ssh.Signature) error { return nil }
