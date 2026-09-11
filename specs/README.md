@@ -834,10 +834,11 @@ trace carries a materialize span`.
 had written and now exist:
 `TestE2EHundredConcurrentPushesFromEightClients`, green in run
 34631054209's one-node tier, and `TestSlowMaterializeTenThousandEntries`,
-green in job 103363974071 of the dispatched run 34629785911 at
-`--- PASS (416.83s)`. The third was the conditional-write probe against
-DigitalOcean Spaces, run on 2026-09-11 and recorded in the spike and in
-017's release checklist: create-if-absent, the one primitive the design
+green in job 103373438650 of the dispatched run 34632623961 at
+`--- PASS (495.42s)`, a run whose every job is `success`. The third was
+the conditional-write probe against DigitalOcean Spaces, run on
+2026-09-11 and recorded in the spike and in 017's release checklist:
+create-if-absent, the one primitive the design
 depends on, applied 20 of 20 rounds with 0 transport errors, and the
 `HEAD` 404 and `GET` 304 rows passed. The probe also confirms that
 `PUT If-Match` and the conditional `CopyObject` are absent on Spaces.
@@ -861,9 +862,9 @@ maintainer pushing a tag on a fork and reading the run; no tag was cut
 here.
 
 One measurement the round produced, worth keeping. Writing 10 000
-entries through `Log.Commit` costs 38 ms each on the runner, because
+entries through `Log.Commit` costs 45 ms each on the runner, because
 every commit rewrites an index object that ends at ten thousand rows,
-while materializing all of them onto an empty disk costs 3.2 s. The
+while materializing all of them onto an empty disk costs 3.6 s. The
 ceiling the log has without compaction is a write cost, not a read
 cost.
 

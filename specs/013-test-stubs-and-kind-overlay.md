@@ -599,8 +599,8 @@ The job's budget was tested on 2026-09-11, when
 `TestSlowMaterializeTenThousandEntries`, the scenario this table had
 named since it was written, finally reached the tree. It writes 10 000
 entries through `Log.Commit` before it materializes them, which is the
-longest fixture any scenario here builds. On run 34629785911 the test
-took 416.83 s of a job that took 12 m 20 s, so the 30 minute row
+longest fixture any scenario here builds. On run 34632623961 the test
+took 495.42 s of a job that took 13 m 34 s, so the 30 minute row
 stands unchanged and the rule above, that a scenario making `e2e-slow`
 exceed its budget is a spec change and not a budget change, was not
 reached. The figure is worth keeping: the job was 5 m 25 s before the

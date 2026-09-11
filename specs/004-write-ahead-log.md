@@ -582,8 +582,8 @@ Divergences from the first draft, all kept and now in the Design:
   limit refuses such an index: `wal.maxIndexBytes` is 64 MiB and bounds
   the read, and `compact.MaxIndexBytes` is 512 KiB and only schedules a
   compaction. Ten thousand entries is therefore a cost and not a
-  ceiling, which `TestSlowMaterializeTenThousandEntries` measures: 38 ms
-  a push to rewrite the index, against 3.2 s to materialize all of it.
+  ceiling, which `TestSlowMaterializeTenThousandEntries` measures: 45 ms
+  a push to rewrite the index, against 3.6 s to materialize all of it.
 - The hook channel, fixed at its root on 2026-09-08: the node's blocking
   open of the `updates` FIFO for reading met the hook's blocking open for
   writing, and on macOS that rendezvous loses its wakeup about once in a
@@ -655,22 +655,22 @@ first advertisement, and the test asserts 10 000 entries and 3 packs in
 the index, 10 000 in `origo_repo_entries_applied_total` on the fresh
 node, the commit count of the clone, and `git fsck`.
 
-It is green in the `slow cluster e2e tier` job 103363974071 of the
-dispatched run 34629785911: `--- PASS: TestSlowMaterializeTenThousandEntries
-(416.83s)`, with `MEASURE wrote 9999 entries in 6m17.507s` and
-`MEASURE materialize 10000 entries and 3 packs onto an empty disk:
-3.221s`. That run's overall conclusion is `failure` on its
-cross-reference job alone, which `04efb39` fixed; the slow tier job
-itself is `success` and is what this row reads. The job took 12 m 20 s
-against 5 m 25 s before the scenario landed, inside spec 013's
-unchanged 30 minute budget.
+It is green in the `slow cluster e2e tier` job 103373438650 of the
+dispatched run 34632623961 at `7e03ff8`, whose every job is `success`:
+`--- PASS: TestSlowMaterializeTenThousandEntries (495.42s)`, with
+`MEASURE wrote 9999 entries in 7m31.843s` and `MEASURE materialize
+10000 entries and 3 packs onto an empty disk: 3.624s`. The job took
+13 m 34 s against 5 m 25 s before the scenario landed, inside spec
+013's unchanged 30 minute budget. The run 34629785911 before it had
+the same job `success` at `--- PASS (416.83s)` and failed on its
+cross-reference job alone.
 
 The two figures are worth keeping beside the measurements above. The
-fixture costs 38 ms per entry on the runner, because every commit
+fixture costs 45 ms per entry on the runner, because every commit
 rewrites an index object that ends at ten thousand rows: that is what a
 repository pays for ten thousand pushes without compaction, and it is
 why compaction exists. The materialization the criterion is about
-costs 3.2 s for all of it.
+costs 3.6 s for all of it.
 
 The tenth, the conditional-write probe against DigitalOcean Spaces, was
 run on 2026-09-11 against the production bucket in fra1 with the
