@@ -509,3 +509,27 @@ func writeResult(w http.ResponseWriter, res operationResult, dryRun bool) {
 	}
 	httpjson.Write(w, http.StatusCreated, res)
 }
+
+// refDirectoryConflict answers the existing reference git cannot hold
+// beside name: one under name as a directory (refs/heads/topic/x when
+// refs/heads/topic is being created) or one that is a parent directory
+// of name (refs/heads/topic when refs/heads/topic/x is), the smallest
+// such name so the answer is stable; "" when there is none.
+func refDirectoryConflict(refs map[string]string, name string) string {
+	conflict := ""
+	prefix := name + "/"
+	for existing := range refs {
+		if strings.HasPrefix(existing, prefix) && (conflict == "" || existing < conflict) {
+			conflict = existing
+		}
+	}
+	for i := len(name) - 1; i > 0; i-- {
+		if name[i] != '/' {
+			continue
+		}
+		if _, ok := refs[name[:i]]; ok && (conflict == "" || name[:i] < conflict) {
+			conflict = name[:i]
+		}
+	}
+	return conflict
+}

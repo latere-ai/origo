@@ -12,7 +12,7 @@ depends_on:
 affects: [cmd/origo/, internal/origoclient/, internal/origocli/, docs/cli.md, docs/README.md, skills/origo/SKILL.md, Makefile, .lateregate.yaml, .github/workflows/release.yml, test/e2e/, specs/README.md]
 effort: large
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -762,21 +762,21 @@ exactly as What must land first says.
 
 ## Open
 
-One thing this spec found and does not own.
+One thing this spec found and does not own, since closed where it
+belongs.
 
-**A reference name that collides with an existing one answers
+**A reference name that collides with an existing one answered
 `storage_unavailable`.** Creating `refs/heads/topic` in a repository that
 already holds `refs/heads/topic/x` is a git directory-file conflict: git
-cannot hold a file and a directory at one path. The node surfaces it as
+cannot hold a file and a directory at one path. The node surfaced it as
 503 `storage_unavailable`, "The repository is temporarily unavailable.
-Nothing was lost. Try again in a few minutes.", which tells a caller to
-wait for something that will never change. The right answer is a 409 of
-its own, or `invalid_request` with the conflicting name, and it belongs
-to spec 020 with the rest of the operation refusals rather than here.
-Found while writing this spec's end-to-end test, which had picked a
-colliding name; the test now names a branch that does not collide and
-says why. This client adds no refusal Origo does not send, so it reports
-what it is told.
+Nothing was lost. Try again in a few minutes.", which told a caller to
+wait for something that would never change. Found while writing this
+spec's end-to-end test, which had picked a colliding name; the test
+names a branch that does not collide and says why. Spec 020 closed it on
+2026-09-12: the node answers 400 `invalid_request` with `details.field:
+"branch"` and `details.ref` naming the reference in the way, and this
+client, which adds no refusal Origo does not send, reports that.
 
 ## Acceptance criteria
 

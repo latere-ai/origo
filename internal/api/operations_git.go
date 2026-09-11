@@ -108,6 +108,17 @@ func (o *operation) run(w http.ResponseWriter, r *http.Request, branch string, c
 		nonFastForward(o.w, o.branch, nil, head)
 		return
 	case expectedHead == nil:
+		// A name git cannot hold beside an existing one, refs/heads/topic
+		// beside refs/heads/topic/x in either order, is refused here with
+		// the reference in the way; left to git it would fail the
+		// reference write on every node after the entry was committed.
+		if conflict := refDirectoryConflict(o.refs(), o.branch); conflict != "" {
+			writeReadError(o.w, &readError{contract.Refuse(http.StatusBadRequest, contract.CodeInvalid, map[string]any{
+				"reason": o.branch + " cannot be created beside " + conflict + ": a reference and a directory cannot share a name",
+				"field":  "branch", "ref": conflict,
+			})})
+			return
+		}
 	case !present:
 		writeReadError(o.w, refNotFound(o.branch))
 		return

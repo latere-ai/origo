@@ -1042,3 +1042,34 @@ func TestPicksNameNoMergeBaseOption(t *testing.T) {
 		t.Fatal("the pick ran no merge-tree")
 	}
 }
+
+// TestCreateBranchRefusesADirectoryFileConflict: a branch git cannot
+// hold beside an existing one, refs/heads/topic beside refs/heads/topic/x
+// in either order, is 400 invalid_request naming the branch field and
+// the reference in the way, and nothing is written (spec 020, the
+// directory-file conflict its Outcome recorded as answering 503).
+func TestCreateBranchRefusesADirectoryFileConflict(t *testing.T) {
+	h := newHarness(t)
+	o := seedOps(t, h, repoA)
+	create := func(branch string) (int, map[string]any) {
+		return o.post("commits", `{"branch":"`+branch+`","create_branch":true,"from":"main","expected_head":null,`+author+
+			`,"message":"m","changes":[{"path":"n.txt","content":"`+b64("n\n")+`"}]}`)
+	}
+	if status, out := create("topic/x"); status != 201 {
+		t.Fatalf("create topic/x: %d %v", status, out)
+	}
+	for branch, conflict := range map[string]string{"topic": "refs/heads/topic/x", "topic/x/y": "refs/heads/topic/x"} {
+		status, out := create(branch)
+		if status != 400 || code(out) != contract.CodeInvalid || details(out)["field"] != "branch" || details(out)["ref"] != conflict {
+			t.Fatalf("create %s beside %s: %d %v", branch, conflict, status, out)
+		}
+	}
+	if r := h.get("/v1/repos/" + o.id + "/refs?prefix=refs/heads/topic"); strings.Count(string(r.body), `"name"`) != 1 || !strings.Contains(string(r.body), "refs/heads/topic/x") {
+		t.Fatalf("references under topic after the refusals: %s", r.body)
+	}
+	if refDirectoryConflict(map[string]string{"refs/heads/a": "x", "refs/heads/b/c": "x"}, "refs/heads/b") != "refs/heads/b/c" ||
+		refDirectoryConflict(map[string]string{"refs/heads/a": "x"}, "refs/heads/a/b/c") != "refs/heads/a" ||
+		refDirectoryConflict(map[string]string{"refs/heads/a": "x"}, "refs/heads/ab") != "" {
+		t.Fatal("refDirectoryConflict")
+	}
+}

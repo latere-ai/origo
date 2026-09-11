@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/httpgit/, internal/contract/, internal/limits/, internal/auth/, cmd/origod/, test/conformance/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -448,19 +448,26 @@ that keeps its own rules; each is a candidate for a later round.
   the build keeps the form that needs 2.40 alone. A
   reader of the Mechanics should not have to work out which options of
   `merge-tree` the floor admits.
-- A reference name that collides with an existing one answers 503
-  `storage_unavailable`, which tells a caller to wait for something
-  that will never change. Creating `refs/heads/topic` where
+- A reference name that collides with an existing one answered 503
+  `storage_unavailable`, which told a caller to wait for something
+  that would never change. Creating `refs/heads/topic` where
   `refs/heads/topic/x` exists is git's directory-file conflict: git
   cannot hold a file and a directory at one path. The Errors section
-  names no code for it, so the build fell through to the storage
-  refusal. The right answer is a 409 of its own or `invalid_request`
-  naming the conflicting reference, and it belongs with the operation
-  refusals here. Spec 025's Open section reports it, having met it
-  while writing its end-to-end test; this spec records it and leaves
-  the code for the round that adds it, because no criterion above
-  covers the shape and nothing a caller relies on changes until one
-  does.
+  named no code for it, so the build fell through to the storage
+  refusal. Spec 025's Open section reported it, having met it while
+  writing its end-to-end test. Closed on 2026-09-12 by the user's
+  decision: `create_branch` answers 400 `invalid_request` with
+  `details.field: "branch"`, `details.ref` the reference in the way,
+  and a reason naming both, before anything is written, in either
+  direction of the conflict (`refs/heads/topic` beside
+  `refs/heads/topic/x`, and `refs/heads/topic/x/y` beside it too).
+  `refDirectoryConflict` in `internal/api/operations.go` finds the
+  smallest such reference so the answer is stable, and
+  `TestCreateBranchRefusesADirectoryFileConflict` holds both
+  directions and asserts the references are unchanged after the
+  refusals. A 409 of its own was not added: the name is wrong for this
+  repository the way a malformed name is, and nothing the caller can
+  wait for changes that.
 
 - The frontmatter's `affects` named neither `internal/limits/` nor
   `internal/auth/`, which the builder item from spec 012 changes, nor
