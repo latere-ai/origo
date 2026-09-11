@@ -244,7 +244,7 @@ fuzz:
 	@for pkg in $$($(GO) list ./...); do \
 		for fn in $$($(GO) test -list '^Fuzz' $$pkg 2>/dev/null | grep '^Fuzz'); do \
 			echo "== $$pkg $$fn"; \
-			$(GO) test -run='^$$' -fuzz="^$$fn$$$$" -fuzztime=40s $$pkg || exit 1; \
+			$(GO) test -run='^$$' -fuzz="^$$fn\$$" -fuzztime=40s $$pkg || exit 1; \
 		done; \
 	done
 
