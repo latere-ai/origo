@@ -198,6 +198,17 @@ other, and every refusal of an empty subject is the same 401 this section
 describes. With the variable unset no anonymous request is admitted and
 a bearer is required on every request including `info/refs`.
 
+This paragraph said something else until 2026-09-11, and what it said was
+wrong. It read: "There is no anonymous read in v1; an operator who wants
+public repositories does so through the authorizer answering allow for an
+anonymous subject, which is not in this spec." No such path existed.
+`Verifier.Middleware` answered 401 for a request with no credential
+before the guard ran, so the authorizer was never asked and an allow for
+an empty subject was unreachable code. An operator who followed that
+sentence would have written an authorizer that could not be reached. It
+is recorded here rather than quietly replaced, because a reader who
+already believed it needs to meet the correction.
+
 ### Disclosure
 
 `SECURITY.md` at the root: report to `security@latere.ai`, acknowledged

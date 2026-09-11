@@ -86,7 +86,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [024](024-ssh-access.md) | SSH access: git over SSH beside smart HTTP | large | complete | 002, 003, 007, 012, 013, 015, 016, 018 |
 | [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | testing | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | drafted | 003, 007, 013 |
-| [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | drafted | 007, 009, 012, 016 |
+| [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | testing | 007, 009, 012, 016 |
 
 ## Dependency graph
 
@@ -899,8 +899,10 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
-| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 021, 024, 025 |
-| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025 |
+| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 021, 024, 025, 027 |
+| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027 |
+| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 016 |
+| variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | - |
 | variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013 |
@@ -1023,7 +1025,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
-| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 025 |
+| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 025, 027 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
@@ -1031,9 +1033,9 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/commits/{sha}` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /v1/repos/{id}/compare/{base}...{head}` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /v1/repos/{id}/export.bundle` | [019](019-repository-administration.md) | - |
-| endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
+| endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014, 027 |
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | 025 |
-| endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010 |
+| endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010, 027 |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
@@ -1064,8 +1066,8 @@ name, or when a spec names something no spec defines.
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
 | header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 024, 025 |
 | header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 025 |
-| header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021, 024, 025 |
-| header | `RateLimit-Remaining` | [012](012-limits-and-abuse.md) | 002, 003, 021 |
+| header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021, 024, 025, 027 |
+| header | `RateLimit-Remaining` | [012](012-limits-and-abuse.md) | 002, 003, 021, 027 |
 | header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021, 024, 025 |
 | failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
 | failpoint | `events.before-enqueue` | [002](002-repository-scaffold.md) | 008 |

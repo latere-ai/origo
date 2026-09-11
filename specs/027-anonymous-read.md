@@ -1,6 +1,6 @@
 ---
 title: "Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential"
-status: drafted
+status: testing
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -35,9 +35,24 @@ that carries no credential, and paying for it.
 
 ## Current state
 
-Not built. `internal/auth/middleware.go` refuses `Credential(r) == ""`
-with `ReasonMissing`. `internal/limits` buckets per effective subject,
-and an anonymous request has none.
+Built on 2026-09-11, off in every installation. `internal/auth/anonymous.go`
+holds the route set and matches a request against it with an
+`http.ServeMux` over the same patterns; `Verifier.Middleware` admits a
+credential-less request on one of them with `Principal{}` when
+`VerifierOptions.AnonymousRead` is set; `WriteRefusal` renders every
+refusal of an empty-subject principal as the 401 with `reason: "missing"`
+and the `Basic` challenge; `Limits.Middleware` buckets an empty subject at
+the sentinel `AnonymousBucket` and refills it at
+`ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE`; `cmd/origod` reads both variables
+and wires them. Every criterion below has a green test, and spec 016's
+"Transport" paragraph is corrected.
+
+Not yet: a release carrying the switch, and a live installation with it
+set. The status stays `testing` until a tag ships it and the consumer
+that decides visibility (auth's spec 077) is deployed against it. Nothing
+in this spec is reachable before an operator sets the variable, so the
+release that carries it changes nothing for an installation that does
+not, and `TestTheSwitchChangesNothingForARefusedCaller` is what says so.
 
 ## Design
 
@@ -174,6 +189,7 @@ here.
 | `info/refs?service=git-receive-pack` is never anonymous, in either URL form | `internal/auth`, `TestAnonymousSetExcludesReceivePack` |
 | all anonymous traffic shares one bucket, and it cannot draw from an authenticated subject's | `internal/limits`, `TestAnonymousShareOneBucket` |
 | an anonymous clone of a repository the authorizer allows succeeds, in both URL forms | `internal/httpgit`, `TestAnonymousClone` |
+| with the switch off and with it on, a refused caller gets the same status, headers and body, byte for byte, on the anonymous routes and on the withheld ones alike | `cmd/origod`, `TestTheSwitchChangesNothingForARefusedCaller` |
 
 The sweep runs the two owner/slug rows in the switch-off state only: the
 fake bucket it runs on answers a storage error to every resolve, so with
