@@ -25,45 +25,46 @@ may assume.
 
 ## Current state
 
-`.github/workflows/release.yml` is a thin caller of `service-release.yml`
-in `latere-ai/ci` on a `v*` tag: that pipeline builds one `linux/amd64`
-binary, packages it with `Dockerfile.ci`, pushes
-`ghcr.io/latere-ai/origod:<tag>`, applies `deploy/prod/`, waits for the
-rollout, runs `tools/smoke/release.sh`, and publishes the GitHub
-release with the smoke evidence and the `CHANGELOG.md` section. It
-produces none of the other artifacts in the table below: no second
+Built on 2026-09-09, and the pipeline has run on every tag since
+`v0.1.0` on 2026-09-10, `v0.2.0` being the newest; the Outcome records
+each run and what it closed. Before it,
+`.github/workflows/release.yml` was a thin caller of
+`service-release.yml` in `latere-ai/ci` on a `v*` tag: that pipeline
+built one `linux/amd64` binary, packaged it with `Dockerfile.ci`,
+pushed `ghcr.io/latere-ai/origod:<tag>`, applied `deploy/prod/`, waited
+for the rollout, ran `tools/smoke/release.sh`, and published the
+GitHub release with the smoke evidence and the `CHANGELOG.md` section.
+It produced none of the other artifacts in the table below: no second
 architecture, no binary archives, no signature, no bill of materials,
-no provenance, no deploy archive. `CHANGELOG.md` has an `Unreleased`
-section. No tag has been cut, so the pipeline has never run for Origo.
-`internal/wal` writes `v: 1` in every header and index and refuses any
-other version, and nothing maps that refusal to a response code.
-`docs/upgrades/` is empty. There is no compatibility statement.
+no provenance, no deploy archive. No tag had been cut. `internal/wal`
+wrote `v: 1` in every header and index and refused any other version,
+and nothing mapped that refusal to a response code. `docs/upgrades/`
+was empty and there was no compatibility statement.
 
-Two version mechanisms exist, for the builder to reduce to one:
+Two version mechanisms existed, which the builder reduced to one:
 `internal/version.Version`, set by the `-ldflags` of spec 002's
 `Makefile`, and `main.version` in `cmd/origod/main.go`, set by the
 shared pipeline with `-X main.version=<tag>` and copied over the first
-at start-up when non-empty. `main.version` is removed under this spec;
+at start-up when non-empty. `main.version` was removed under this spec;
 `release.yml` below sets `internal/version.Version`, `Commit`, and
 `Date` with the same `-ldflags` the `Makefile` uses, so a binary from
 the pipeline and one from `make build` carry their identity the same
 way and `GET /version` has one source.
 
-One change to the tree, for the builder: the shared runtime stage of
-`Dockerfile` and `Dockerfile.ci` is `debian:bookworm-slim`, whose
+One change to the tree the builder made: the shared runtime stage of
+`Dockerfile` and `Dockerfile.ci` was `debian:bookworm-slim`, whose
 `git` is 2.39, and `origod check` (spec 018) requires 2.40 because
-spec 020's merge family needs it. This spec owns the move: the base
-becomes `debian:trixie-slim` pinned by digest, which ships git 2.47,
-in both files in one change so the two stages stay byte for byte the
-same, as the artifact table below and spec 002's Images section say.
+spec 020's merge family needs it. The base became `debian:trixie-slim`
+pinned by digest, which ships git 2.47, in both files in one change so
+the two stages stay byte for byte the same, as the artifact table below
+and spec 002's Images section say.
 
-Known defect the first tag will hit, which the builder fixes under this
-spec with the shell test the criteria propose: after `GET /readyz`
-answers 200, `tools/smoke/release.sh` runs `grep -qx "ok"` with no
-file operand, which reads standard input; under `set -e` it exits 1
-whenever nothing is piped in, which is every pipeline run. The fix
-greps the saved body, `grep -qx ok "$tmp/readyz"`. The script is not
-changed by this spec's text.
+Known defect the first tag would have hit, fixed under this spec with
+the shell test the criteria propose: after `GET /readyz` answered 200,
+`tools/smoke/release.sh` ran `grep -qx "ok"` with no file operand, which
+reads standard input; under `set -e` it exited 1 whenever nothing was
+piped in, which is every pipeline run. The fix greps the saved body,
+`grep -qx ok "$tmp/readyz"`.
 
 ## Design
 
@@ -489,15 +490,14 @@ script, so they carry no statements and the gate does not measure them.
 - Spec 002's Images section and the decision row on the runtime base:
   both Dockerfiles and `Dockerfile.stubs` are on `debian:trixie-slim`
   pinned by one digest, git 2.47.
-- Spec 016 stays at `testing`. Its supply-chain row reads "the release
-  carries a bill of materials and provenance", and the pipeline that
-  produces them exists while no release does; the first tag closes it.
-- Specs 003 and 004 stay at `testing`. Nothing here touches their
-  remaining criteria: the conformance suite and the code table (021),
-  the cluster-job tests and the packs (013, 006), and the Spaces probe
-  of the release checklist, which is a maintainer's step. The probe was
-  run and recorded on 2026-09-11 and the checklist row above carries
-  it.
+- Spec 016's supply-chain row, "the release carries a bill of
+  materials and provenance", closed in its shipping half on the first
+  tag and in its attachment half on `v0.1.1`; the spec is `complete`.
+- Specs 003 and 004 waited on nothing here: the conformance suite and
+  the code table (021), the cluster-job tests and the packs (013, 006),
+  and the Spaces probe of the release checklist, a maintainer's step,
+  run and recorded on 2026-09-11 in the checklist row above. Both are
+  `complete`.
 
 Waits on: a maintainer.
 
