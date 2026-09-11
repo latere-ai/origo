@@ -1,6 +1,6 @@
 ---
 title: "Server-side git operations: commits, merges, cherry-picks, and reverts without a clone"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/004-write-ahead-log.md
@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/repo/, internal/httpgit/, internal/contract/, internal/limits/, internal/auth/, cmd/origod/, test/conformance/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -387,9 +387,14 @@ groups skipped. Its target is a kind cluster the job had just built
 from the published artifacts, not an installation, so that run closes
 spec 018's job row and no criterion here.
 
-Spec 017's Outcome records the limit. What closes this: the two secrets
-set on the repository with an installation behind the URL, and a tag or
-a re-run of that job.
+Spec 017's Outcome records that limit and its lifting. The v0.1.3
+release run 34546335576 of 2026-09-11 is the run: its `live` job, id
+103120952813, dialled `https://code.latere.ai` and passed,
+`contract_test.go:133: live run against ***: 51 passed` and
+`--- PASS: TestContract (173.69s)`. This spec's four cases are among
+them, `--- PASS: TestContract/020/commits`, `/merge`, `/cherry-pick`,
+and `/revert`, one per row of the Operations table. That was the last
+item and the spec is `complete`.
 
 ### Open
 
@@ -440,6 +445,20 @@ that keeps its own rules; each is a candidate for a later round.
   spec 017 moves to `trixie-slim` and git 2.47 in a later phase. A
   reader of the Mechanics should not have to work out which options of
   `merge-tree` the floor admits.
+- A reference name that collides with an existing one answers 503
+  `storage_unavailable`, which tells a caller to wait for something
+  that will never change. Creating `refs/heads/topic` where
+  `refs/heads/topic/x` exists is git's directory-file conflict: git
+  cannot hold a file and a directory at one path. The Errors section
+  names no code for it, so the build fell through to the storage
+  refusal. The right answer is a 409 of its own or `invalid_request`
+  naming the conflicting reference, and it belongs with the operation
+  refusals here. Spec 025's Open section reports it, having met it
+  while writing its end-to-end test; this spec records it and leaves
+  the code for the round that adds it, because no criterion above
+  covers the shape and nothing a caller relies on changes until one
+  does.
+
 - The frontmatter's `affects` named neither `internal/limits/` nor
   `internal/auth/`, which the builder item from spec 012 changes, nor
   `cmd/origod/`, which the route sweep of spec 016 obliges every new
