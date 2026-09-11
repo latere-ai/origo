@@ -236,8 +236,8 @@ walk needs no type checker. It fails on:
 - a code of the table with no call site of the three functions
   anywhere in the module, for a code whose producing spec is at
   `testing` or `complete`, so a dead row is noticed; a code whose
-  producer is not there yet, spec 020's two and spec 012's two today,
-  may have none.
+  producer was not there yet, spec 020's two and spec 012's two when
+  the rule was written, may have none.
 
 Each failure names the file and line. The test also holds the table
 itself: every code constant has one sentence and at least one status,
@@ -627,11 +627,13 @@ Divergences and interpretations, each kept, with the reason:
   spec gives them, which spec 013's prefix rule (`TestCluster`) would
   not select, so the job's second line selects the two by name and
   `TestE2EJobsSelectByPrefix` admits it beside the prefix line.
-- **The `live` job of `release.yml` runs after the reusable release
-  workflow.** The deploy and publish steps live inside
-  `latere-ai/ci`'s `service-release.yml`, so the job cannot sit between
-  them until spec 017 restructures the pipeline; the test skips when
-  `ORIGO_LIVE_URL` is unset, so a fork runs no live run.
+- **The `live` job of `release.yml` first ran after the reusable
+  release workflow.** The deploy and publish steps lived inside
+  `latere-ai/ci`'s `service-release.yml`, so the job could not sit
+  between them until spec 017 restructured the pipeline on 2026-09-09;
+  it sits between `deploy` and `publish` now, as the Runs table says.
+  The test skips when `ORIGO_LIVE_URL` is unset, so a fork runs no live
+  run.
 - **`TestMutation` runs the suite in a second process of the test
   binary.** A failed subtest fails the test that ran it, so the run
   whose failure is the expected outcome happens in a child process,
@@ -731,8 +733,8 @@ answers at `ORIGO_TEST_URL`, which the job's passing `Bring the stack
 up` step and the step's 65 s of wall clock rule out: a skipped test
 returns at once.
 
-The spec stays at `testing`. The two deferred items above are what
-remains, and neither is a stack run: the live run of `TestContract`
+The spec stayed at `testing` on the two deferred items above, neither
+of them a stack run: the live run of `TestContract`
 against `ORIGO_LIVE_URL`, and spec 014's `verify` case of the source
 group, which is not in `test/conformance` yet.
 
@@ -815,3 +817,21 @@ to record; the stack and the stub still require the list empty.
 With the live run green the spec is `complete`. Every other criterion
 has had a passing test in the tree since 2026-09-09, and the stack
 proofs above stand on the runs that produced them.
+
+A review on 2026-09-11 read the Design against `test/conformance`,
+`internal/contract`, and the jobs and found the nine fields of
+`Target`, the two methods of `Fault`, the `conformance-` prefix with
+deletion by created id, the six groups gating exactly the eight cases
+the live run reports skipped, the stack branch requiring nothing
+skipped and nothing unverified, the burst of 64 requests from 32
+workers, the producers table with one row per code, the negative
+fixture's two lines, the five-name mutation set, the package's five
+default ports, and every named test present. `TestStubConforms` run
+verbosely answers 57 passed and 2 skipped, 59 cases, which is also the
+live run's 51 passed plus its 8 skipped; the Outcome had said 64 cases
+and 60 passing and says 59 and 57 now. The Current state still said
+the spec was at `testing`, the producers table lacked spec 026's row
+that the test's map carries, a rule still said two specs' codes had no
+producer "today", and a divergence bullet still said the `live` job
+could not sit between deploy and publish until spec 017 restructured
+the pipeline, which it did. Each reads as the tree and the runs stand.
