@@ -224,8 +224,15 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	if perMinute == 0 {
 		perMinute = -1
 	}
+	// The same reading for the one bucket every anonymous caller shares
+	// (spec 027).
+	anonPerMinute := cfg.AnonymousRequestsPerMinute
+	if anonPerMinute == 0 {
+		anonPerMinute = -1
+	}
 	n.limits = limits.New(limits.Options{
 		MaxGitProcs: cfg.MaxGitProcs, PerMinute: perMinute, Log: n.log, Metrics: n.metrics, Logger: logger,
+		AnonymousPerMinute: anonPerMinute,
 	})
 
 	// Compaction (spec 006): the primary of a repository is the first
@@ -248,7 +255,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	authClient := &http.Client{Transport: outboundTransport()}
 	n.verifier, err = auth.NewVerifier(auth.VerifierOptions{
 		Issuers: cfg.OIDCIssuers, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
-		Client: authClient, Logger: logger,
+		Client: authClient, Logger: logger, AnonymousRead: cfg.AnonymousRead,
 	})
 	if err != nil {
 		return nil, err

@@ -139,6 +139,18 @@ type Config struct {
 	MaxGitProcs       int
 	RequestsPerMinute int
 
+	// AnonymousRead is ORIGO_ANONYMOUS_READ (spec 027): when set, a
+	// request that carries no credential on one of the read routes that
+	// spec names is admitted with an empty subject and decided by the
+	// authorizer like any other. Off by default, and an installation that
+	// leaves it off behaves exactly as it did before that spec.
+	// AnonymousRequestsPerMinute is
+	// ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE, the refill of the one bucket
+	// every anonymous caller of this node shares; 0 turns that limit off,
+	// which no installation should do.
+	AnonymousRead              bool
+	AnonymousRequestsPerMinute int
+
 	// The egress rules of spec 016 for a server-side fetch (import,
 	// verify). EgressAllow is ORIGO_EGRESS_ALLOW: the hosts a fetch may
 	// reach, exact names or *. wildcards, lower-cased with a trailing
@@ -271,6 +283,16 @@ func Load(getenv Getenv) (*Config, error) {
 			problems = append(problems, "ORIGO_REQUESTS_PER_MINUTE must be a non-negative integer")
 		} else {
 			cfg.RequestsPerMinute = n
+		}
+	}
+	cfg.AnonymousRead = getenv("ORIGO_ANONYMOUS_READ") == "1"
+	cfg.AnonymousRequestsPerMinute = limits.AnonymousRequestsPerMinute
+	if raw := getenv("ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			problems = append(problems, "ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE must be a non-negative integer")
+		} else {
+			cfg.AnonymousRequestsPerMinute = n
 		}
 	}
 	if raw := getenv("ORIGO_CACHE_BYTES"); raw != "" {

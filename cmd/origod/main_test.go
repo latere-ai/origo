@@ -488,13 +488,53 @@ func (s *syncBuffer) String() string {
 // row's reason, while the three unauthenticated paths answer without
 // one; and every response of the listener carries Origo-Contract.
 func TestEveryRouteRequiresAToken(t *testing.T) {
+	// The sweep runs in both states of ORIGO_ANONYMOUS_READ (spec 027),
+	// rather than keeping a second list of routes beside this one.
+	//
+	// With the switch on, the routes of the anonymous set do reach the
+	// authorizer, which denies here because no rule allows them; and the
+	// assertions below are unchanged, because an anonymous refusal is
+	// rendered as the same 401 with reason "missing" that a request with
+	// no credential gets with the switch off. That identity is the
+	// existence-hiding rule, and this is where it is asserted over every
+	// route at once.
+	for _, anonymous := range []bool{false, true} {
+		name := "anonymous read off"
+		if anonymous {
+			name = "anonymous read on"
+		}
+		t.Run(name, func(t *testing.T) { everyRouteRequiresAToken(t, anonymous) })
+	}
+}
+
+func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 	env, id := newEnv(t)
 	env["ORIGO_S3_ENDPOINT"], _ = fakeBucket(t)
 	env["ORIGO_S3_PATH_STYLE"] = "1"
+	if anonymous {
+		env["ORIGO_ANONYMOUS_READ"] = "1"
+		// The authorizer denies every request, which is what auth
+		// answers an empty subject for a repository nobody marked
+		// public. The sweep then asserts that the deny reaches the
+		// client as the same 401 a request with no credential gets
+		// with the switch off.
+		id.authz.Deny(authorizer.Rule{}, "anonymous_subject")
+	}
 	n, stop := startNode(t, env)
 	defer func() { _ = stop() }()
 	public, _, _ := n.addrs()
 	const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+	// nameForm holds the two owner/slug routes of the anonymous set. The
+	// name form resolves the name against the bucket before it asks the
+	// authorizer, because an authorizer keys on the id (spec 007), and
+	// this sweep runs on a fake bucket that answers a storage error to
+	// every resolve. So with anonymous read on they never reach the
+	// decision, and the name form is asserted against a working stack by
+	// internal/auth's route-set tests and internal/httpgit instead.
+	nameForm := map[string]bool{
+		"/acme/app.git/info/refs?service=git-upload-pack": true,
+		"/acme/app.git/git-upload-pack":                   true,
+	}
 	routes := []struct{ method, path string }{
 		{"GET", "/r/" + repoA + ".git/info/refs?service=git-upload-pack"},
 		{"GET", "/r/" + repoA + ".git/info/refs?service=git-receive-pack"},
@@ -562,6 +602,9 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 	}
 	client := &http.Client{Transport: &http.Transport{}}
 	for _, r := range routes {
+		if anonymous && nameForm[r.path] {
+			continue
+		}
 		for _, tok := range tokens {
 			req, _ := http.NewRequestWithContext(context.Background(), r.method, "http://"+public+r.path, strings.NewReader("{}"))
 			if tok.token != "" {
@@ -579,8 +622,16 @@ func TestEveryRouteRequiresAToken(t *testing.T) {
 			}
 		}
 	}
-	if len(id.authz.Requests()) != 0 {
-		t.Fatal("a refused request reached the authorizer")
+	// With the switch off nothing reaches the authorizer, which is the
+	// property that says the refusal is made before any repository is
+	// looked at. With it on the anonymous set does reach it and is
+	// denied there, and the sweep above has already asserted that the
+	// denial is the identical 401.
+	switch reached := len(id.authz.Requests()); {
+	case !anonymous && reached != 0:
+		t.Fatalf("a refused request reached the authorizer %d times", reached)
+	case anonymous && reached == 0:
+		t.Fatal("with anonymous read on, no request reached the authorizer")
 	}
 	// The unauthenticated paths, each stamped as well. The list is the
 	// deliberate one: the two probes and the key set of the contract,
