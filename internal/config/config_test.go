@@ -118,6 +118,11 @@ func TestLoadAppliesDefaults(t *testing.T) {
 		t.Fatalf("limits: %d procs and %d requests a minute, want the defaults %d and %d",
 			cfg.MaxGitProcs, cfg.RequestsPerMinute, limits.DefaultMaxGitProcs, limits.RequestsPerMinute)
 	}
+	// Anonymous read is off and its bucket carries spec 027's default
+	// whether or not the switch is set.
+	if cfg.AnonymousRead || cfg.AnonymousRequestsPerMinute != limits.AnonymousRequestsPerMinute {
+		t.Fatalf("anonymous read: %v at %d a minute, want off at %d", cfg.AnonymousRead, cfg.AnonymousRequestsPerMinute, limits.AnonymousRequestsPerMinute)
+	}
 }
 
 func TestLoadReadsEveryOptionalValue(t *testing.T) {
@@ -145,6 +150,8 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	m["ORIGO_S3_PUBLIC_ENDPOINT"] = "http://localhost:30900"
 	m["ORIGO_MAX_GIT_PROCS"] = "8"
 	m["ORIGO_REQUESTS_PER_MINUTE"] = "0"
+	m["ORIGO_ANONYMOUS_READ"] = "1"
+	m["ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE"] = "7"
 	cfg, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +182,9 @@ func TestLoadReadsEveryOptionalValue(t *testing.T) {
 	}
 	if cfg.MaxGitProcs != 8 || cfg.RequestsPerMinute != 0 {
 		t.Fatalf("limits: %d procs, %d requests a minute", cfg.MaxGitProcs, cfg.RequestsPerMinute)
+	}
+	if !cfg.AnonymousRead || cfg.AnonymousRequestsPerMinute != 7 {
+		t.Fatalf("anonymous read: %v at %d a minute", cfg.AnonymousRead, cfg.AnonymousRequestsPerMinute)
 	}
 	if cfg.RepairInterval != 10*time.Second || cfg.RepairUnheard != 5*time.Second {
 		t.Fatalf("repair values: %+v", cfg)
@@ -240,6 +250,7 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 	m["ORIGO_OIDC_ISSUERS"] = "issuer.example"
 	m["ORIGO_MAX_GIT_PROCS"] = "0"
 	m["ORIGO_REQUESTS_PER_MINUTE"] = "-1"
+	m["ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE"] = "-1"
 	_, err := Load(env(m))
 	if err == nil {
 		t.Fatal("expected an error")
@@ -251,6 +262,7 @@ func TestLoadReportsMalformedValuesTogether(t *testing.T) {
 		"ORIGO_OIDC_ISSUERS: issuer.example is not an absolute",
 		"ORIGO_MAX_GIT_PROCS must be a positive integer",
 		"ORIGO_REQUESTS_PER_MINUTE must be a non-negative integer",
+		"ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE must be a non-negative integer",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err, want)
@@ -373,8 +385,14 @@ func TestResolveReportsAnUnusableDataDir(t *testing.T) {
 	}
 }
 
-func TestDiskSizeReportsAMissingPath(t *testing.T) {
-	if _, err := diskSize(filepath.Join(t.TempDir(), "missing")); err == nil {
+// TestDiskSizeReportsTheFileSystem: DiskSize is what origod check reads
+// (spec 018); a directory that exists has a size and a path that does
+// not is an error.
+func TestDiskSizeReportsTheFileSystem(t *testing.T) {
+	if size, err := DiskSize(t.TempDir()); err != nil || size <= 0 {
+		t.Fatalf("size %d, err %v", size, err)
+	}
+	if _, err := DiskSize(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected an error")
 	}
 }

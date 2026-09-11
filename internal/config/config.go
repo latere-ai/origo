@@ -437,6 +437,10 @@ func egressAllow(raw string, problems *[]string) ([]string, map[string]netip.Add
 	return hosts, pinned
 }
 
+// systemCertPool is x509.SystemCertPool; a variable so a test covers
+// the branch where the roots cannot be read, the way diskSize is.
+var systemCertPool = x509.SystemCertPool
+
 // caBundle reads a PEM file of certificates and returns the system roots
 // with them appended.
 func caBundle(path string) (*x509.CertPool, error) {
@@ -444,7 +448,7 @@ func caBundle(path string) (*x509.CertPool, error) {
 	if err != nil {
 		return nil, err
 	}
-	pool, err := x509.SystemCertPool()
+	pool, err := systemCertPool()
 	if err != nil {
 		return nil, err
 	}

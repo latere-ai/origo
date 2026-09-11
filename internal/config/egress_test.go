@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/netip"
 	"os"
@@ -119,5 +120,15 @@ func TestEgressCABundleIsReadAtStartup(t *testing.T) {
 	m["ORIGO_EGRESS_CA_BUNDLE"] = empty
 	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "holds no certificate") {
 		t.Fatalf("empty bundle: %v", err)
+	}
+	// The system roots that cannot be read are the same problem in the
+	// same message, so a node on a host with no trust store says so
+	// rather than trusting the bundle alone.
+	old := systemCertPool
+	systemCertPool = func() (*x509.CertPool, error) { return nil, errors.New("no system roots") }
+	t.Cleanup(func() { systemCertPool = old })
+	m["ORIGO_EGRESS_CA_BUNDLE"] = selfSignedCA(t)
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ORIGO_EGRESS_CA_BUNDLE: no system roots") {
+		t.Fatalf("unreadable roots: %v", err)
 	}
 }
