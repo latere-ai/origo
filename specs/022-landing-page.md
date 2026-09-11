@@ -10,7 +10,7 @@ depends_on:
 affects: [cmd/origod/, tools/smoke/]
 effort: small
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -34,12 +34,15 @@ else in Origo and this spec does not start one.
 
 ## Current state
 
-Not built. `cmd/origod/node.go` `publicHandler` registers three
+Built on 2026-09-10; the Outcome records what the build settled.
+Before it, `publicHandler` in `cmd/origod/node.go` registered three
 unauthenticated paths on the public listener's mux, `GET /readyz`,
-`GET /version`, and `GET /.well-known/jwks.json`, and hands `/` to the
-application surface behind the verifier. The route sweep
-`TestEveryRouteRequiresAToken` in `cmd/origod` holds the rule that every
-other route demands a token, as a maintained list (spec 016).
+`GET /version`, and `GET /.well-known/jwks.json`, and handed `/` to the
+application surface behind the verifier, so a browser at the root met
+the 401 and its dialog. The route sweep `TestEveryRouteRequiresAToken`
+in `cmd/origod` holds the rule that every other route demands a token,
+as a maintained list (spec 016), and carries the two paths of this spec
+as unauthenticated now.
 
 ## Design
 
@@ -260,3 +263,14 @@ Four notes on what the build settled:
 No cluster criterion. The page reads no bucket, no issuer, no
 authorizer, and no disk, so a node in a cluster can prove nothing about
 it that a node in a test does not, and the tier tests carry it whole.
+
+A review on 2026-09-11 read the Design against `cmd/origod/landing.go`
+and found the two routes on the outer mux, the plain body by default
+and the HTML body when `Accept` names it, `Vary: Accept` on both, the
+`data:` icon link, the project URL as the one external reference, the
+clone line as a shape with `{host}` and no request value, the version
+interpolated, the 204 favicon, the route sweep's table of five
+unauthenticated paths with their statuses and the `POST` of both paths
+demanding a token, the smoke's root check, and every named test
+present. The Current state still said the spec was not built; it reads
+as built.
