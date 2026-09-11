@@ -182,3 +182,52 @@ jobs:
 		t.Errorf("silentlySkipped = %v, want %v", got, want)
 	}
 }
+
+// pipeIntoGrepQ finds every line of a workflow that ends a pipeline in
+// `grep -q`. Under `set -o pipefail`, which every run block here sets,
+// grep closes the pipe on its first match and the producer dies with
+// EPIPE, so the step fails or passes on whether the producer's output
+// happened to fit in the 64 KiB pipe buffer before grep exited. Run
+// 34546335576 of v0.1.3 failed the release verification that way, with
+// `tar: stdout: write error`, after one file was added to the archive
+// being listed. The producer's output belongs in a file that grep then
+// reads.
+func pipeIntoGrepQ(text string) []string {
+	var out []string
+	for line := range strings.SplitSeq(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "#") || !strings.Contains(t, "|") {
+			continue
+		}
+		last := strings.TrimSpace(t[strings.LastIndex(t, "|")+1:])
+		if strings.HasPrefix(last, "grep -q") {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// TestNoStepPipesIntoGrepQ keeps the release workflow free of the
+// broken-pipe race above: a check that reads a listing must not decide
+// its own outcome on the size of what it listed.
+func TestNoStepPipesIntoGrepQ(t *testing.T) {
+	for _, name := range []string{"release.yml", "verify.yml"} {
+		if got := pipeIntoGrepQ(readWorkflow(t, name)); len(got) != 0 {
+			for _, line := range got {
+				t.Errorf("%s pipes into grep -q under pipefail: %s", name, line)
+			}
+		}
+	}
+}
+
+// TestPipeIntoGrepQIsFound proves the check on the line that failed.
+func TestPipeIntoGrepQIsFound(t *testing.T) {
+	const before = "          tar -tzf \"deploy-${TAG}.tar.gz\" | grep -q '^deploy/base/deployment.yaml$'"
+	if got := pipeIntoGrepQ(before); len(got) != 1 {
+		t.Fatalf("the failing line was not found: %v", got)
+	}
+	const after = "          tar -tzf \"deploy-${TAG}.tar.gz\" > listing.txt"
+	if got := pipeIntoGrepQ(after); len(got) != 0 {
+		t.Errorf("the fixed line was flagged: %v", got)
+	}
+}

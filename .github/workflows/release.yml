@@ -727,8 +727,18 @@ jobs:
             --certificate-identity-regexp "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             checksums.txt
-          tar -tzf "deploy-${TAG}.tar.gz" | grep -q '^deploy/base/deployment.yaml$'
-          tar -xzOf "deploy-${TAG}.tar.gz" deploy/base/deployment.yaml | grep -q "image: ghcr.io/latere-ai/origod:${TAG}"
+          # Written to a file rather than piped into grep: under pipefail,
+          # `grep -q` closes the pipe on its first match and tar dies with
+          # "tar: stdout: write error" whenever the listing had not already
+          # fit in the pipe buffer, which made this step fail on the size of
+          # the archive rather than on its contents.
+          tar -tzf "deploy-${TAG}.tar.gz" > listing.txt
+          grep -q '^deploy/base/deployment.yaml$' listing.txt
+          # The installation page ships with the manifests it describes, so a
+          # reader of this release follows the prose of this release.
+          grep -q '^install.md$' listing.txt
+          tar -xzOf "deploy-${TAG}.tar.gz" deploy/base/deployment.yaml > deployment.yaml
+          grep -q "image: ghcr.io/latere-ai/origod:${TAG}" deployment.yaml
           test -s "fixture-${TAG}.tar.gz"
       - name: Compare the release body with the changelog section
         env:
