@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/events/, cmd/origod/, test/e2e/, docs/migration.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-09
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -38,11 +38,13 @@ concrete.
 
 ## Current state
 
-Spec 019 defines `POST /v1/repos/{id}/import` for one repository from an
-HTTPS source with a bearer, resumable through `GET /v1/repos/{id}/import`,
-refusing pushes while it runs, and emitting `imported`. Spec 007 lets the
-prior host act for its users with the `act` claim. Nothing coordinates
-many imports, a cut-over, or a verification against the source.
+Built on 2026-09-09; the Outcome records the tests and the divergences.
+Before it, spec 019 defined `POST /v1/repos/{id}/import` for one
+repository from an HTTPS source with a bearer, resumable through `GET
+/v1/repos/{id}/import`, refusing pushes while it ran, and emitting
+`imported`, and spec 007 let the prior host act for its users with the
+`act` claim. Nothing coordinated many imports, a cut-over, or a
+verification against the source.
 
 ## Design
 
@@ -385,8 +387,7 @@ refreshed.
 - The subcommand dispatcher of spec 002 was not in the tree, so this
   spec built it: `serve` (the default, which is where the node's
   configuration is now loaded, so `migrate` reads none of it) and
-  `migrate`. `check` stays spec 018's and is an unknown subcommand
-  until it lands. Spec 002's Outcome records it.
+  `migrate`. `check` was spec 018's and landed with it. Spec 002's Outcome records it.
 - `AllowLoopback` reaches `cmd/origod` through `newHandler`, the
   package variable holding `api.New` that `migrate_test.go` replaces
   with a wrapper setting the field, so the field is written in a
@@ -409,3 +410,20 @@ refreshed.
   branch is not the source's `HEAD` at import, and it is one field on
   the manifest struct, one refusal in the shape check, and one field on
   the create call. Small, and it moves no status.
+
+A review on 2026-09-11 read the Design against `internal/api/verify.go`
+and `cmd/origod/migrate.go` and found the verify body and response
+shapes field for field, the `ls-remote` through the egress proxy with
+`transfer.fsckObjects` on the command line, the peeled and `HEAD` lines
+dropped, the `for-each-ref` and `rev-list --objects --all` on the copy,
+the two `meta` fields written and the `verified` event emitted with its
+four extras, the 400 with `field: "source"` for a source that does not
+answer, the read budget as the bound; the command's two flags, its
+three variables with the default of 4, the manifest and report shapes
+as the tables give them with `default_branch` still unaccepted as the
+builder item says, the line-numbered refusal, and the resume through
+the repository, its import, and `verified_equal`; and every named test
+present with the six shell blocks of the runbook. Two sentences were
+behind the tree, the Current state in unbuilt tense and a divergence
+bullet saying `check` was an unknown subcommand until spec 018 landed;
+both read as the tree stands.
