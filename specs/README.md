@@ -1031,7 +1031,7 @@ name, or when a spec names something no spec defines.
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
-| error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 025 |
+| error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 020, 021, 024, 025, 026 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
