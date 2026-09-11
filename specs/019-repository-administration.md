@@ -1,6 +1,6 @@
 ---
 title: "Repository administration: rename, transfer, freeze, delete, undelete, import, export, and garbage collection"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-11
 author: changkun
 ---
 
@@ -476,8 +476,8 @@ passed in the `e2e` job of the dispatched run 34335095125 of
 `verify.yml` on main, at commit `8007a06`, with every other job of the
 run green.
 
-The spec stays at `testing` by the lifecycle rule of
-`specs/README.md`: what remains is a criterion another spec owns the
+The spec stayed at `testing` by the lifecycle rule of
+`specs/README.md`: what remained was a criterion another spec owns the
 test for. The import criterion's second half, that the source bearer
 appears in no process argument and no log line, landed with spec 014 on
 2026-09-09: `TestSourceTokenIsNeverLogged` in `internal/api` runs an
@@ -533,9 +533,18 @@ groups skipped. Its target is a kind cluster the job had just built
 from the published artifacts, not an installation, so that run closes
 spec 018's job row and no criterion here.
 
-Spec 017's Outcome records the limit. What closes this: the two secrets
-set on the repository with an installation behind the URL, and a tag or
-a re-run of that job.
+Spec 017's Outcome records that limit and its lifting. The v0.1.3
+release run 34546335576 of 2026-09-11 is the run: its `live` job, id
+103120952813, dialled `https://code.latere.ai` and passed,
+`contract_test.go:133: live run against ***: 51 passed` and
+`--- PASS: TestContract (173.69s)`. This spec's cases are among them,
+`019/transfer`, `019/freeze`, `019/stats`, `019/gc`, `019/export`,
+`019/import_not_found`, and `019/lifecycle-events` each `--- PASS`.
+The two the live run cannot carry, `019/repo_not_empty` and
+`019/import`, are the source group, reported skipped by name in the
+same log, and both close on the stack as the paragraphs above record.
+With that the first criterion's conformance cases are answered on a
+live installation and the spec is `complete`.
 
 `TestAdministrationEvents` asserted the wrong quantity for the repeated
 DELETE. It counted deliveries and required two, while the property is
