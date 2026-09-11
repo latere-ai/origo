@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -415,15 +415,19 @@ Items left to another builder, found by the eighteenth round's second
 review:
 
 - Spec 020's builder, who owns `internal/api`: the `compacted` event of
-  the Events table is asserted in no unit test. `gc.go` emits it, and
+  the Events table was asserted in no unit test. `gc.go` emits it, and
   neither `TestAdministrationEvents` nor `TestGcRoutesToThePrimary`
-  installs a sink over a `gc`, so the last criterion covers seven of
+  installed a sink over a `gc`, so the last criterion covered seven of
   the eight kinds; `cases019` asserts it on the stack only when the
   `gc` answered 200 and a sink is configured. The same round: `pusher`,
-  a shared field of every kind, is checked for `renamed`,
+  a shared field of every kind, was checked for `renamed`,
   `transferred`, `imported`, and `undeleted` and not for `frozen`,
   `unfrozen`, or `deleted`, because `waitEvent` reads `kind`, `repo`,
-  `id`, and `at` alone.
+  `id`, and `at` alone. Both closed on 2026-09-12:
+  `TestGcRoutesToThePrimary` installs a sink on the primary and asserts
+  the one `compacted` event carries the response's `before` and `after`
+  and the caller as `pusher`, and `TestAdministrationEvents` asserts
+  `pusher` on `frozen`, `unfrozen`, `deleted`, and `undeleted`.
 - Spec 021's builder, who owns `test/conformance`: the two `cases019`
   gaps above.
 

@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/latere-ai/origo/internal/limits"
 	"github.com/latere-ai/origo/internal/placement"
 	"github.com/latere-ai/origo/internal/wal"
+	"github.com/latere-ai/origo/test/stubs/sink"
 )
 
 // stubCompactor answers what a test fixes, for the states a real
@@ -74,7 +76,8 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 
 	// The primary runs it and answers the before and after figures.
 	now := newTestClock(time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC))
-	home := newHarness(t, withPlacement(set), withCompaction(primary), withNow(now.Now))
+	events := sink.New(t)
+	home := newHarness(t, withPlacement(set), withCompaction(primary), withNow(now.Now), withSink(events))
 	home.seed(f)
 	status, out = home.do("POST", "/v1/repos/"+repoA+"/gc", "")
 	if status != 200 {
@@ -83,6 +86,15 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 	got, want := out["before"].(map[string]any), out["after"].(map[string]any)
 	if got["entries"] != float64(1) || want["entries"] != float64(1) || want["packs"] == float64(0) {
 		t.Fatalf("figures %v", out)
+	}
+	// One compacted event from the node that compacted, carrying the
+	// response's two figures and the caller as pusher (spec 019).
+	compacted := waitEvent(t, events, repoA, KindCompacted)
+	if !reflect.DeepEqual(compacted["before"], got) || !reflect.DeepEqual(compacted["after"], want) {
+		t.Fatalf("compacted event %v, want before %v after %v", compacted, got, want)
+	}
+	if p, _ := compacted["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "" {
+		t.Fatalf("compacted pusher %v", compacted["pusher"])
 	}
 	ix := mustIndex(t, home.log, repoA)
 	if len(ix.Entries) != 1 || ix.Entries[0].Kind != wal.KindCompact {

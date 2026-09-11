@@ -248,7 +248,7 @@ func TestAdministrationEvents(t *testing.T) {
 	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/unfreeze", ""); status != 200 {
 		t.Fatal("unfreeze")
 	}
-	waitEvent(t, s, repoA, KindUnfrozen)
+	unfrozen := waitEvent(t, s, repoA, KindUnfrozen)
 
 	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
 		t.Fatal("delete")
@@ -260,7 +260,14 @@ func TestAdministrationEvents(t *testing.T) {
 	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/undelete", ""); status != 200 {
 		t.Fatal("undelete")
 	}
-	waitEvent(t, s, repoA, KindUndeleted)
+	undeleted := waitEvent(t, s, repoA, KindUndeleted)
+	// Every kind carries the caller as pusher, the field spec 019 shares
+	// with the push event, whether or not the kind has extra fields.
+	for name, ev := range map[string]map[string]any{"frozen": frozen, "unfrozen": unfrozen, "deleted": deleted, "undeleted": undeleted} {
+		if p, _ := ev["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "" {
+			t.Fatalf("%s pusher %v", name, ev["pusher"])
+		}
+	}
 
 	// A repeated DELETE of a deleted repository is one event, because
 	// the id is derived from the repository, the kind, and at, and a
