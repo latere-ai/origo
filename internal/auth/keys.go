@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -201,10 +202,18 @@ func FetchKeys(ctx context.Context, client *http.Client, iss string, timeout tim
 		return nil, fmt.Errorf("discovery: %w", err)
 	}
 	var discovery struct {
+		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
 	}
 	if err := json.Unmarshal(doc, &discovery); err != nil || discovery.JWKSURI == "" {
 		return nil, errors.New("discovery: no jwks_uri")
+	}
+	// OIDC Discovery 4.3: the document's issuer must be the URL it was
+	// fetched under. A document that names another issuer publishes keys
+	// for tokens whose iss the node would never match, so its keys are
+	// not this issuer's and the fetch fails like an unreachable one.
+	if strings.TrimRight(discovery.Issuer, "/") != strings.TrimRight(iss, "/") {
+		return nil, fmt.Errorf("discovery: issuer %q is not %q", discovery.Issuer, iss)
 	}
 	set, err := getDocument(ctx, client, discovery.JWKSURI, timeout)
 	if err != nil {

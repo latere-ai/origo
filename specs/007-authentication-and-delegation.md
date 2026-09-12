@@ -83,7 +83,7 @@ spec 003's table carries.
 | `nbf` | absent or in the past, with 60 seconds of skew | `nbf` |
 | `iat` | present and at most 24 hours old | `iat` |
 | `sub` | present and not empty; a token that names nobody is not a caller, and would otherwise verify to the empty subject that spec 027 admits as anonymous | `subject` |
-| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute by the loop and from one second on by a request, doubling per failure up to the minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
+| keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, after its `issuer` is checked to equal the configured URL (OIDC Discovery 4.3; a document naming another issuer fails the fetch like an unreachable issuer), cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute by the loop and from one second on by a request, doubling per failure up to the minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
 | issuer scheme | an issuer URL is `https://`; `http://` is accepted only when the URL's host is a loopback address or the URL is listed in `ORIGO_OIDC_INSECURE_ISSUERS` (spec 002), which the kind overlay of spec 013 sets for the stub issuer and a production deployment never sets; any other `http://` issuer is a start-up failure naming it | |
 | credential forms | `Authorization: Bearer <token>`; basic auth with any username and the token as the password; basic auth with the token as the username and an empty password | |
 | verified-token cache | keyed by the SHA-256 of the token for the shorter of its lifetime and 5 minutes, so a busy client costs one signature check per 5 minutes; at most 65 536 entries, least recently used evicted | |
@@ -460,11 +460,13 @@ describe; and a row of the Outcome table still said the spec stays at
 `testing` on the fuzz run, which spec 013 closed. Both read as the
 tree stands.
 
-One row was added on 2026-09-12 after a review of the three
+Two rows were added on 2026-09-12 after a review of the three
 repositories' authentication seams. A token with no `sub`, or an empty
 one, verified to the empty subject, which is the principal spec 027
 admits as anonymous, so an issuer's token naming nobody reached the
 authorizer as an anonymous request whether or not
 `ORIGO_ANONYMOUS_READ` was set; it is refused with `subject` now
 (`TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`,
-`TestBadCredentialIsNotAnonymous`).
+`TestBadCredentialIsNotAnonymous`). And the discovery document's
+`issuer` was not compared with the URL it was fetched under; it is now,
+and a mismatch fails the fetch (`TestDiscoveryIssuerMustMatch`).

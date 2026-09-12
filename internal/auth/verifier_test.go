@@ -95,6 +95,37 @@ func signClaims(t *testing.T, key *ecdsa.PrivateKey, header string, claims map[s
 	return signing + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+// TestDiscoveryIssuerMustMatch is OIDC Discovery 4.3: a document whose
+// issuer is not the URL it was fetched under yields no keys, and a token
+// naming that URL is issuer_unavailable rather than verified against
+// keys that are not the issuer's.
+func TestDiscoveryIssuerMustMatch(t *testing.T) {
+	clk := newClock()
+	wrongKey := newKey(t)
+	// The stub serves under front.URL and its document says elsewhere.
+	wrong := issuer.NewHandler(issuer.WithKey(wrongKey), issuer.WithIssuer("http://elsewhere.example"), issuer.WithClock(clk.Now))
+	front := httptest.NewServer(wrong.Handler())
+	t.Cleanup(front.Close)
+	ctx := context.Background()
+	if _, err := FetchKeys(ctx, testClient(), front.URL, time.Second); err == nil || !strings.Contains(err.Error(), "issuer") {
+		t.Fatalf("a document naming another issuer was accepted: %v", err)
+	}
+	key := newKey(t)
+	v, err := NewVerifier(VerifierOptions{
+		Issuers: []string{front.URL}, LocalIssuer: localIssuer, LocalKey: &key.PublicKey,
+		Client: testClient(), Now: clk.Now, FetchTimeout: 500 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, _, _ := strings.Cut(wrong.Mint(issuer.Claims{}), ".")
+	now := clk.Now()
+	tok := signClaims(t, wrongKey, header, map[string]any{"iss": front.URL, "sub": "alice", "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})
+	if _, err := v.Verify(ctx, tok); reason(err) != ReasonIssuerUnavailable {
+		t.Fatalf("got %v, want issuer_unavailable", err)
+	}
+}
+
 func reason(err error) string {
 	if r, ok := errors.AsType[*Refusal](err); ok {
 		return r.Reason
