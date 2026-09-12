@@ -14,6 +14,15 @@ author: changkun
 
 # Authentication and delegation
 
+> Amended 2026-09-13. The authorizer envelope below is contract 1.
+> [[028-authorizer-contract-2]] replaces it with the envelope the
+> three open cores share, qualifies subjects by their issuer, adds the
+> owner policy and a configurable audience, and moves the verifier to
+> the shared package; contract 1 stays served for one release. The
+> five rules, the probe id, and the cache and retry rules are unchanged
+> and are the shared contract's. Delegation through `act` is removed
+> by the family's decision D5 and lands with its id-06.
+
 ## Overview
 
 Origo knows who is calling and asks the consumer whether they may. It

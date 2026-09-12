@@ -87,6 +87,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [025](025-agent-client.md) | Agent client: Origo as a command and a skill | large | complete | 003, 007, 009, 012, 020, 026 |
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | complete | 003, 007, 013 |
 | [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | complete | 007, 009, 012, 016 |
+| [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | drafted | 003, 007, 026, 027 |
 
 ## Dependency graph
 

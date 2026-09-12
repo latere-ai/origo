@@ -13,6 +13,11 @@ author: changkun
 
 # Protocol contract
 
+> Note, 2026-09-13. Contract 1 here is the client protocol, unchanged.
+> The contract between a node and the operator's authorizer, which
+> this spec references as the consumer's job, gains a second version in
+> [[028-authorizer-contract-2]]; `Origo-Contract` does not move.
+
 ## Overview
 
 This is the document a platform integrating Origo reads. It names every
