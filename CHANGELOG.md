@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- A token that names no subject is refused with reason `subject`. Before,
+  it was served as an anonymous caller.
+- An issuer whose discovery document names another issuer is treated as
+  unreachable, and `origod check` says so.
+
 ## v0.2.0 - 2026-09-11
 
 - Your installation can serve a repository to somebody with no account, if
