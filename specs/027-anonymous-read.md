@@ -249,35 +249,3 @@ not `true`, the spelling the configuration page and spec 002's other
 switches use, and its rate variable is parsed at start-up whether or
 not the switch is on. The Current state still waited on the release
 that carries the switch; `v0.2.0` carries it.
-
-**The switch reached the installation on 2026-09-11 at 22:27 UTC, and the
-gap until then was unreadable.** `05b7816` was committed at 21:17 UTC;
-`kubectl apply -k deploy/prod/` put it on the node at 22:27:18 UTC, which
-the origod ReplicaSet history dates exactly: revisions 7 and 8, both
-`v0.2.0`, carry no `ORIGO_ANONYMOUS_READ`, and revision 9 carries `"1"`.
-
-Between the release and that apply, a public repository answered 401 to a
-credential-less clone, and was reported as a fault in the authorizer's
-snapshot. It was not one. `Verifier.Middleware` refused at the
-`!v.anonymousRead` test, before the guard, exactly as this spec says an
-installation with the switch off behaves.
-
-The reason it read as a fault is this spec's own central property. A
-refusal of an empty subject is the same 401 with `reason: "missing"`
-everywhere, deliberately, so that a private repository, an unregistered
-id, a refused action, an authorizer outage, and the switch being off are
-indistinguishable to a caller. That holds. What did not hold is that they
-were also indistinguishable to the operator, because the node published
-its own switch state nowhere: not in a log, not on a route, and by design
-not in any answer.
-
-So the `serving` line names it. `anonymous_read` joins the fields already
-on that line in `cmd/origod/node.go`, in the node's own log, where a
-caller never sees it and the existence-hiding property is untouched. Both
-values are asserted, not only the interesting one, because a field that
-appears only when the switch is on says nothing in the case that actually
-went unread.
-
-| Criterion | Test |
-|---|---|
-| the `serving` line names the anonymous-read state, in both states | `cmd/origod`, `TestServingLogNamesTheAnonymousReadState` |
