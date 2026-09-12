@@ -215,8 +215,14 @@ func TestEventIDIsDeterministic(t *testing.T) {
 // Origo-Event: push, and Origo-Delivery equal to the body's id.
 func TestThousandPushesOneEventEach(t *testing.T) {
 	s := sink.New(t)
-	h := newHarnessOn(t, wal.NewMemStore(), s, &clock{t: time.Now()}, "n1")
-	h.d.now = time.Now
+	// The loops need a clock that runs, and the journal is written one
+	// object per UTC day: anchor the clock at midday so the load cannot
+	// cross a midnight and split its lines over two objects, and read
+	// the journal on the same clock.
+	base := time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
+	start := time.Now()
+	h := newHarnessOn(t, wal.NewMemStore(), s, &clock{t: base}, "n1")
+	h.d.now = func() time.Time { return base.Add(time.Since(start)) }
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- h.d.Run(ctx) }()
@@ -270,9 +276,45 @@ func TestThousandPushesOneEventEach(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run: %v", err)
 	}
-	lines, err := h.d.readJournal(context.Background(), "n1", time.Now())
+	lines, err := h.d.readJournal(context.Background(), "n1", h.d.now())
 	if err != nil || len(lines) != n || lines[0] != repoA+" 1" || lines[n-1] != fmt.Sprintf("%s %d", repoA, n) {
 		t.Fatalf("journal: %d lines, %v", len(lines), err)
+	}
+}
+
+// TestJournalDayRollover: the journal is one object per UTC day, so a
+// load that crosses a midnight writes each day's lines to its own
+// object, in enqueue order, and neither day holds the other's lines.
+func TestJournalDayRollover(t *testing.T) {
+	h := newHarness(t, "n1")
+	ctx := context.Background()
+	ix := h.create(repoA, "acme", "app")
+	day1 := h.clock.Now()
+	for seq := 1; seq <= 3; seq++ {
+		if seq == 3 {
+			// Midday to the next midnight is a new day.
+			h.clock.Advance(12 * time.Hour)
+		}
+		c := h.push(repoA, ix, wal.Entry{Refs: mainUpdate(seq)})
+		if err := h.d.Enqueue(ctx, repoA, entryOf(c, mainUpdate(seq), nil)); err != nil {
+			t.Fatal(err)
+		}
+		ix = c.Index
+	}
+	day2 := h.clock.Now()
+	if err := h.d.flushJournal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if dayOf(day1) == dayOf(day2) {
+		t.Fatalf("the clock did not cross a midnight: %s", dayOf(day1))
+	}
+	first, err := h.d.readJournal(ctx, "n1", day1)
+	if err != nil || len(first) != 2 || first[0] != repoA+" 1" || first[1] != repoA+" 2" {
+		t.Fatalf("%s: %v %v", dayOf(day1), first, err)
+	}
+	second, err := h.d.readJournal(ctx, "n1", day2)
+	if err != nil || len(second) != 1 || second[0] != repoA+" 3" {
+		t.Fatalf("%s: %v %v", dayOf(day2), second, err)
 	}
 }
 
