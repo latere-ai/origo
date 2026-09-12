@@ -168,7 +168,7 @@ Defined by [003 protocol contract](../specs/003-protocol-contract.md).
 | Code | Status | Message | Details |
 |---|---|---|---|
 | `invalid_request` | 400 | The request is malformed. | `reason`: the validation failure in the developer register; `field` when one field is at fault |
-| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `issuer_unavailable`, `audience`, `expired`, `nbf`, `iat`, `unknown_key`; spec 007 says which check produces each |
+| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `issuer_unavailable`, `audience`, `expired`, `nbf`, `iat`, `subject`, `unknown_key`; spec 007 says which check produces each |
 | `forbidden` | 403 | You do not have permission to do this. | `action`, `subject`, `reason` from the authorizer |
 | `repo_not_found` | 404 | Repository not found. | `id`, or `owner` and `slug` |
 | `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |

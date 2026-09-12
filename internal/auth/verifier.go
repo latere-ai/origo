@@ -218,6 +218,13 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if c.Iat == nil || now.Sub(unix(*c.Iat)) > MaxTokenAge {
 		return Principal{}, refuse(ReasonIAT)
 	}
+	// A token that names nobody is not a caller. Without this row it
+	// would verify to the empty subject, which is the anonymous
+	// principal of spec 027, and an issuer's token would then reach the
+	// authorizer as an anonymous request whether or not the switch is on.
+	if c.Sub == "" {
+		return Principal{}, refuse(ReasonSubject)
+	}
 	p := Principal{Subject: c.Sub}
 	if c.Act != "" {
 		p.Subject, p.Actor = c.Act, c.Sub

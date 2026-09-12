@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/latere-ai/origo/test/stubs/issuer"
 )
 
 // The route set of spec 027, asserted on the matcher alone. The wiring
@@ -16,13 +19,18 @@ import (
 const anonRepo = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
 
 // testVerifier builds a verifier with the anonymous switch in the state
-// given and no issuer at all, because every request here either carries
-// no credential or carries one that cannot verify.
-func testVerifier(t *testing.T, anonymous bool) *Verifier {
+// given, over the stub issuers named and none by default, because most
+// requests here either carry no credential or carry one that cannot
+// verify.
+func testVerifier(t *testing.T, anonymous bool, stubs ...*issuer.Server) *Verifier {
 	t.Helper()
 	key := newKey(t)
+	var issuers []string
+	for _, s := range stubs {
+		issuers = append(issuers, s.URL())
+	}
 	v, err := NewVerifier(VerifierOptions{
-		LocalIssuer: localIssuer, LocalKey: &key.PublicKey,
+		Issuers: issuers, LocalIssuer: localIssuer, LocalKey: &key.PublicKey,
 		Client: testClient(), AnonymousRead: anonymous,
 	})
 	if err != nil {
@@ -114,7 +122,9 @@ func TestAnonymousSetWithholdsTheRest(t *testing.T) {
 // not verify must be refused with its own reason, never downgraded to the
 // anonymous principal.
 func TestBadCredentialIsNotAnonymous(t *testing.T) {
-	v := testVerifier(t, true)
+	issKey := newKey(t)
+	iss := issuer.New(t, issuer.WithKey(issKey))
+	v := testVerifier(t, true, iss)
 	var reached bool
 	h := v.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		reached = true
@@ -131,18 +141,27 @@ func TestBadCredentialIsNotAnonymous(t *testing.T) {
 	}
 
 	// A credential that is present and does not verify, on the same
-	// route: refused, with its own reason and not the anonymous one.
-	for _, cred := range []string{"Bearer not-a-token", "Bearer " + strings.Repeat("a.", 3)} {
+	// route: refused, with its own reason and not the anonymous one. The
+	// last one verifies in every row but the subject's: a token that
+	// names nobody is refused, not admitted as the anonymous principal.
+	header, _, _ := strings.Cut(iss.Mint(issuer.Claims{}), ".")
+	now := time.Now()
+	nobody := signClaims(t, issKey, header, map[string]any{"iss": iss.URL(), "sub": "", "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})
+	for _, c := range []struct{ cred, reason string }{
+		{"Bearer not-a-token", ReasonMalformed},
+		{"Bearer " + strings.Repeat("a.", 3), ReasonMalformed},
+		{"Bearer " + nobody, ReasonSubject},
+	} {
 		reached = false
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/r/"+anonRepo+".git/git-upload-pack", nil)
-		req.Header.Set("Authorization", cred)
+		req.Header.Set("Authorization", c.cred)
 		h.ServeHTTP(rec, req)
 		if reached {
-			t.Errorf("%q was downgraded to an anonymous request", cred)
+			t.Errorf("%q was downgraded to an anonymous request", c.cred)
 		}
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%q = %d, want 401", cred, rec.Code)
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"reason":"`+c.reason+`"`) {
+			t.Errorf("%q = %d %s, want 401 with reason %q", c.cred, rec.Code, rec.Body.String(), c.reason)
 		}
 	}
 

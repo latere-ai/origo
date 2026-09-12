@@ -33,6 +33,7 @@ const (
 	ReasonExpired           = "expired"
 	ReasonNBF               = "nbf"
 	ReasonIAT               = "iat"
+	ReasonSubject           = "subject"
 )
 
 // Refusal is why a credential was refused: one reason of the table,

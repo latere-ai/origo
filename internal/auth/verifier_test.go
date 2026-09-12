@@ -8,6 +8,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +74,27 @@ func newVerifier(t *testing.T, clk *clock, key *ecdsa.PrivateKey, issuers ...*is
 	return v
 }
 
+// signClaims signs claims as an ES256 token under the header segment of
+// a token the stub minted, so the kid is the stub's: for a row the
+// stub's Mint cannot produce because it fills the claim in.
+func signClaims(t *testing.T, key *ecdsa.PrivateKey, header string, claims map[string]any) string {
+	t.Helper()
+	body, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signing := header + "." + base64.RawURLEncoding.EncodeToString(body)
+	digest := sha256.Sum256([]byte(signing))
+	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	return signing + "." + base64.RawURLEncoding.EncodeToString(sig)
+}
+
 func reason(err error) string {
 	if r, ok := errors.AsType[*Refusal](err); ok {
 		return r.Reason
@@ -80,7 +104,8 @@ func reason(err error) string {
 
 func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	clk := newClock()
-	a := issuer.New(t, issuer.WithClock(clk.Now))
+	aKey := newKey(t)
+	a := issuer.New(t, issuer.WithKey(aKey), issuer.WithClock(clk.Now))
 	b := issuer.New(t, issuer.WithRS256(), issuer.WithClock(clk.Now))
 	key := newKey(t)
 	v := newVerifier(t, clk, key, a, b)
@@ -140,6 +165,10 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		{ReasonExpired, a.Mint(issuer.Claims{Exp: now.Add(-2 * time.Minute).Unix()})},
 		{ReasonNBF, a.Mint(issuer.Claims{Nbf: now.Add(2 * time.Minute).Unix()})},
 		{ReasonIAT, a.Mint(issuer.Claims{Iat: now.Add(-25 * time.Hour).Unix()})},
+		// The stub fills an empty sub in, so the two subject rows are
+		// signed by hand with the issuer's own key.
+		{ReasonSubject, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})},
+		{ReasonSubject, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "sub": "", "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})},
 	}
 	for _, row := range rows {
 		_, err := v.Verify(ctx, row.token)
