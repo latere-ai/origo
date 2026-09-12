@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 
+	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/s3"
 )
 
@@ -25,6 +26,9 @@ type S3Options struct {
 	Secret    string
 	PathStyle bool
 	Client    *http.Client
+	// RetryPolicy bounds individual attempts; the parent context still bounds the call.
+	// Unset fields inherit the S3 defaults (three attempts, 50 ms base, 2 s cap).
+	RetryPolicy retry.Policy
 }
 
 // S3 is a Store over pkg/s3, which sends the five verbs the design needs
@@ -39,7 +43,20 @@ func NewS3(o S3Options) (*S3, error) {
 	if o.Client == nil {
 		return nil, errors.New("wal: S3 needs an HTTP client")
 	}
-	opts := []s3.Option{s3.WithHTTPClient(o.Client)}
+	policy := o.RetryPolicy
+	if policy.MaxAttempts <= 0 {
+		policy.MaxAttempts = s3.DefaultRetry.MaxAttempts
+	}
+	if policy.Base <= 0 {
+		policy.Base = s3.DefaultRetry.Base
+	}
+	if policy.Max <= 0 {
+		policy.Max = s3.DefaultRetry.Max
+	}
+	if policy.Jitter == 0 {
+		policy.Jitter = s3.DefaultRetry.Jitter
+	}
+	opts := []s3.Option{s3.WithHTTPClient(o.Client), s3.WithRetry(policy)}
 	if o.PathStyle {
 		opts = append(opts, s3.WithPathStyle())
 	}

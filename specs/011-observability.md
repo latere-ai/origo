@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -138,12 +138,10 @@ is the public mux's catch-all `/`. The same struct carries the
 repository, the subject, and the actor, which are known only there. A
 probe passes none of them and keeps the hook's own route.
 
-`internal/tracing` is the one package in the module that imports
-`go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/trace`. Every
-other package takes the span helpers it needs from `internal/tracing`
-and imports no OpenTelemetry package; `cmd/origod` reaches the SDK
-through `latere.ai/x/pkg/otel` as well. The rule keeps one seam to
-change when `pkg/otel` gains a tracer of its own, and it is what amends
+`internal/tracing` supplies Origo's scope and attributes through
+`pkg/otel.StartScoped`, `SetAttributes`, and `TraceIDs`. It imports
+OpenTelemetry attribute API types; provider setup and span lifecycle live
+in `pkg/otel`. Test recorders still use the SDK. This preserves
 spec 001's seventh invariant, whose direct dependencies are otherwise
 the standard library and `latere.ai/x/pkg`; the `depcheck` gate of
 `.lateregate.yaml` lists the whole build list of `./cmd/origod` with a
@@ -263,12 +261,9 @@ so a test that asserts on nothing needs no registry.
 Divergences and interpretations, all kept; the Design above states
 each as the rule, so a reader finds one answer:
 
-- A labelled histogram carries its family and no series before its first
-  observation. `latere.ai/x/pkg/metrics` has no way to create a
-  histogram cell with zero observations, only `Observe`, which would
-  record one; a counter is seeded with an `Add` of 0 per label
-  combination as the design says, and the cross product where a metric
-  has two vocabularies. The pkg item below is the gap.
+- Closed histogram vocabularies now expose zero-valued buckets, sum, and
+  count through `Histogram.Init` (2026-09-12). This replaces the initial
+  first-observation-only workaround. Counters retain their `Add(..., 0)` seed.
 - `origo_requests_total` and `origo_request_duration_seconds` carry no
   series before the first request: `route` is the mux pattern, which has
   no vocabulary to seed. `TestMetricsVocabulary` asserts presence by
@@ -335,30 +330,15 @@ of the request's span, a fresh UUID when nothing traced it, which is the
 common case at the default sampling ratio; spec 005's registrations are
 in the table here.
 
-`latere.ai/x/pkg`, two items:
+The two shared-library gaps were resolved on 2026-09-12:
+`Histogram.Init` seeds closed label vocabularies and `otel.StartScoped`
+keeps span lifecycle in pkg while preserving Origo's instrumentation scope.
 
-- `pkg/metrics` has no way to register a labelled histogram's series at
-  zero. `Registry.Histogram` returns a family and `Histogram.Observe` is
-  the only way to create a cell, so a histogram with a label vocabulary
-  cannot read 0 per value before its first observation the way a counter
-  can. An `Init(labels)` on `Histogram`, or a variant of `Histogram`
-  taking the vocabulary, would close it.
-- `pkg/otel` has no tracer. It bootstraps the exporters, wraps a handler,
-  wraps a transport, and reads the ids off a context, but exposes no
-  `Start`, so a consumer that needs a child span imports
-  `go.opentelemetry.io/otel` and `otel/trace` itself and its own
-  dependency gate has to admit them. Origo confines that to
-  `internal/tracing`; a `Start(ctx, name, attrs...)` in `pkg/otel` would
-  keep the SDK behind the library for every consumer.
-
-The OpenTelemetry SDK is on the node's build list from this spec, which
-the Current state above says it would be: `.lateregate.yaml` names it in
-the `depcheck` decision beside `latere.ai/x/pkg`, with one allowance per
-upstream root the OTLP exporters reach. Spec 001's seventh invariant is
-amended to name it as the one further direct dependency, and the Traces
-section above states which packages may import it: `internal/tracing`
-alone, and `cmd/origod` through `latere.ai/x/pkg/otel`. The decisions
-table of `specs/README.md` carries the rule.
+The OpenTelemetry SDK remains on the node's build list through the
+`pkg/otel` exporters; tests use SDK recorders to inspect spans. Production
+`internal/tracing` uses only the attribute API and the shared helpers.
+`.lateregate.yaml` retains the exporter dependencies in its allow-list,
+and the decisions table in `specs/README.md` records the dependency rule.
 
 A review on 2026-09-11 read the Design against the tree and found the
 table and the registry in agreement, which `TestRegisterNamesEveryMetric`

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"latere.ai/x/pkg/retry"
 
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/config"
@@ -122,7 +123,8 @@ func check(ctx context.Context, args []string, getenv config.Getenv, stdout, std
 func requirements(ctx context.Context, cfg *config.Config, getenv config.Getenv) []requirement {
 	client := &http.Client{Transport: storageTransport()}
 	store, storeErr := wal.NewS3(wal.S3Options{
-		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+		RetryPolicy: retry.Policy{Timeout: cfg.StorageTimeout},
+		Endpoint:    cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle, Client: client,
 	})
 	var bucket, conditional requirement
@@ -215,7 +217,8 @@ func permissiveStore(ctx context.Context, cfg *config.Config, client *http.Clien
 	go func() { _ = srv.Serve(listener) }()
 	stop := func() { _ = srv.Close() }
 	store, err := wal.NewS3(wal.S3Options{
-		Endpoint: "http://" + listener.Addr().String(), Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+		RetryPolicy: retry.Policy{Timeout: cfg.StorageTimeout},
+		Endpoint:    "http://" + listener.Addr().String(), Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: true, Client: client,
 	})
 	if err != nil {

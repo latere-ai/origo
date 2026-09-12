@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The fetch allow-list accepts exact single-label names, including `localhost`
+  and bare service names. Address restrictions still apply; single-label
+  wildcards remain invalid.
+- Histograms with a fixed label vocabulary expose zero-valued series on the
+  first metrics scrape, before a request records an observation.
+- A canceled request cannot take a subprocess slot. An anonymous caller's
+  request quota remains in force after its idle bucket expires.
+- Storage, tracing, rate limits, and subprocess admission use the shared
+  library primitives. Storage attempts use the configured timeout while the
+  existing total-call deadline and 50 ms retry backoff remain in force; successful downloads keep
+  their caller's cancellation without a headers-only timer cutting them short.
+
 - A token that names no subject is refused with reason `subject`. Before,
   it was served as an anonymous caller.
 - An issuer whose discovery document names another issuer is treated as

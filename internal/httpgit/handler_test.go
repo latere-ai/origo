@@ -874,8 +874,14 @@ func TestPushPhasesAreObserved(t *testing.T) {
 	}
 	mustGit(t, work, "add", "a.bin")
 	mustGit(t, work, "commit", "-q", "-m", "first")
-	if count, _ := pushHistogram(n.reg); len(count) != 0 {
-		t.Fatalf("observations before a push: %v", count)
+	countBefore, sumBefore := pushHistogram(n.reg)
+	if len(countBefore) != 4 {
+		t.Fatalf("phase vocabulary before a push: %v", countBefore)
+	}
+	for _, phase := range []string{phaseReceive, phaseEntry, phaseIndex, phaseApply} {
+		if countBefore[phase] != 0 || sumBefore[phase] != 0 {
+			t.Fatalf("observations before a push: %v, sums %v", countBefore, sumBefore)
+		}
 	}
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	requestTime := <-requests

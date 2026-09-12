@@ -237,3 +237,17 @@ func expose(reg *pkgmetrics.Registry) string {
 	reg.WritePrometheus(&b)
 	return b.String()
 }
+
+func TestClosedHistogramVocabularyStartsAtZero(t *testing.T) {
+	reg := pkgmetrics.NewRegistry()
+	Register(reg)
+	exposed := expose(reg)
+	for _, line := range []string{
+		`origo_storage_seconds_count{op="get"} 0`,
+		`origo_storage_seconds_sum{op="get"} 0`,
+	} {
+		if !strings.Contains(exposed, line+"\n") {
+			t.Fatalf("missing %s", line)
+		}
+	}
+}

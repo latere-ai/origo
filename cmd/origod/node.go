@@ -20,6 +20,7 @@ import (
 	"latere.ai/x/pkg/health"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/otel"
+	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/wait"
 
 	"github.com/latere-ai/origo/internal/api"
@@ -169,7 +170,8 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	}
 	n.metrics = metrics.Register(n.reg)
 	s3, err := wal.NewS3(wal.S3Options{
-		Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+		RetryPolicy: retry.Policy{Timeout: cfg.StorageTimeout},
+		Endpoint:    cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
 		Key: cfg.S3Key, Secret: cfg.S3Secret, PathStyle: cfg.S3PathStyle,
 		Client: &http.Client{Transport: otel.Transport(storageTransport())},
 	})

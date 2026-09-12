@@ -935,18 +935,17 @@ here and the tracker say the same thing.
 
 ## Items for `latere.ai/x/pkg`
 
-Gaps a spec met in the shared library and worked around here. Each is
-carried to that module's own queue, filed on 2026-09-12 as the issue
-the row names; the workaround stays until it lands.
+Resolved on 2026-09-12. Origo now consumes the shared implementations;
+product-specific labels, HTTP headers, and storage error mapping remain here.
 
-| Item | Found by | Workaround here |
+| Shared API | Found by | Origo integration |
 |---|---|---|
-| `pkg/metrics` cannot register a labelled histogram's series at zero: `Registry.Histogram` returns a family and `Histogram.Observe` is the only way to create a cell. An `Init(labels)`, or a `Histogram` variant taking the vocabulary, would close it ([pkg#10](https://github.com/latere-ai/pkg/issues/10)) | 011 | a labelled histogram carries its family and no series until its first observation; `TestMetricsVocabulary` asserts a 0 series for closed vocabularies only |
-| Neither a token bucket nor a semaphore a caller can wait on with a deadline is in the library. A rate limiter keyed on a caller, refilling at a rate with a burst and evicting an idle key, and a counting semaphore whose `Acquire(ctx, d)` reports whether a slot came free, are both generic and both wanted by any service that admits work ([pkg#13](https://github.com/latere-ai/pkg/issues/13)) | 012 | `internal/limits` holds both, with the values of spec 012's table; the metrics label, the `Retry-After` rendering, and the `lfs/` sum beside them are Origo's own |
-| `pkg/circuitbreaker` has no clock option: `New(threshold, openDuration)` reads `time.Now`, so its open window cannot be advanced in a test. `WithClock(func() time.Time)` as an `Option` on `New`, the way `BackoffConfig.Now` already works for the other breaker, would close it ([pkg#8](https://github.com/latere-ai/pkg/issues/8)) | 015 | `internal/wal/breaker.go` holds a breaker with the package's semantics and a clock function; `circuitbreaker.State` is still the package's type and the gauge's values |
-| `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do` passes one context to every attempt, so "10 seconds per attempt" cannot be expressed from outside the client. A `Timeout` on `retry.Policy`, applied to each attempt's context, would close it ([pkg#9](https://github.com/latere-ai/pkg/issues/9)) | 015 | `wal.BreakerStore` bounds the whole call with `ORIGO_STORAGE_TIMEOUT`, so a slow bucket fails a call after that deadline however many attempts fitted inside it |
-| `pkg/otel` has no tracer: it bootstraps the exporters, wraps a handler and a transport, and reads the ids off a context, but exposes no `Start`, so a consumer that needs a child span imports the OpenTelemetry SDK itself. A `Start(ctx, name, attrs...)` would keep the SDK behind the library ([pkg#11](https://github.com/latere-ai/pkg/issues/11)) | 011 | `internal/tracing` is the one importer, the decision row above |
-| `pkg/hostmatch.ValidPattern` takes an FQDN or an IP literal and refuses a single-label name, so an allow-list cannot carry `localhost` or a bare in-cluster Service name; an option admitting a single label would close it ([pkg#12](https://github.com/latere-ai/pkg/issues/12)) | 016 | the kind overlay lists the Service by its `svc` name, and the tests use a name under `.localhost`, which the resolver answers with loopback and no DNS query |
+| `metrics.Histogram.Init` ([pkg#10](https://github.com/latere-ai/pkg/issues/10)) | 011 | `internal/metrics` initializes every closed histogram vocabulary before the first scrape |
+| `ratelimit.Buckets` and `semaphore.Semaphore` ([pkg#13](https://github.com/latere-ai/pkg/issues/13)) | 012 | `internal/limits` retains constructors and middleware; admission, refill, eviction and permit ownership come from pkg |
+| `circuitbreaker.WithClock`, `Admits`, `RetryAfter` ([pkg#8](https://github.com/latere-ai/pkg/issues/8)) | 015 | `internal/wal` delegates breaker state and rounds cooldowns for its Retry-After contract |
+| `retry.Policy.Timeout` and `s3.WithRetry` ([pkg#9](https://github.com/latere-ai/pkg/issues/9)) | 015 | `wal.S3Options.RetryPolicy` carries attempt bounds; the node and checks apply the configured storage timeout, and `BreakerStore` retains the total-call budget |
+| `otel.StartScoped`, `SetAttributes`, `TraceIDs` ([pkg#11](https://github.com/latere-ai/pkg/issues/11)) | 011 | `internal/tracing` keeps Origo's scope and attributes over the shared span API |
+| `hostmatch.WithSingleLabel` ([pkg#12](https://github.com/latere-ai/pkg/issues/12)) | 016 | explicitly configured exact single-label egress hosts are accepted; wildcard and address restrictions remain |
 
 ## Open source readiness
 
@@ -1097,7 +1096,7 @@ name, or when a spec names something no spec defines.
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027 |
-| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 016 |
+| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016 |
 | variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002 |
 | variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |

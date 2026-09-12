@@ -1,26 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: MIT
 
-// Package tracing starts the spans of spec 011 and is the one package in
-// Origo that reaches the OpenTelemetry SDK.
-//
-// latere.ai/x/pkg/otel bootstraps the exporters, wraps a handler, and
-// wraps a transport, but exposes no tracer, so a child span needs the
-// SDK itself. Confining that import here keeps the rest of the module on
-// the standard library and pkg, and keeps the arrival of the SDK on the
-// node's build list one decision recorded in .lateregate.yaml.
-//
-// Without OTEL_EXPORTER_OTLP_ENDPOINT the global provider is the noop
-// one: Start returns the context it was given and a function that does
-// nothing, and ID answers the empty string.
+// Package tracing supplies Origo's span names and attributes over pkg/otel.
 package tracing
 
 import (
 	"context"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+	pkgotel "latere.ai/x/pkg/otel"
 )
 
 // scope names the instrumentation library on every span Origo creates.
@@ -43,33 +31,23 @@ func Phase(p string) Attr   { return Attr{Key: "origo.phase", Value: p} }
 // that carries it with the function that ends it. The end function is
 // always non-nil, so a caller defers it without a check.
 func Start(ctx context.Context, name string, attrs ...Attr) (context.Context, func()) {
-	ctx, span := otel.Tracer(scope).Start(ctx, name, trace.WithAttributes(keyValues(attrs)...))
-	return ctx, func() { span.End() }
+	ctx, end := pkgotel.StartScoped(ctx, scope, name, keyValues(attrs)...)
+	return ctx, func() { end(nil) }
 }
 
 // Set adds attributes to the span already on ctx. A request's repository
 // and identity are known after the handler has resolved them, which is
 // after the span began.
 func Set(ctx context.Context, attrs ...Attr) {
-	if len(attrs) == 0 {
-		return
-	}
-	span := trace.SpanFromContext(ctx)
-	if !span.SpanContext().IsValid() {
-		return
-	}
-	span.SetAttributes(keyValues(attrs)...)
+	pkgotel.SetAttributes(ctx, keyValues(attrs)...)
 }
 
 // ID reports the trace id of the span on ctx, or "" when ctx carries no
 // sampled span. It is what a request names itself by: the log line's
 // trace_id and the LFS body's request_id (spec 010).
 func ID(ctx context.Context) string {
-	span := trace.SpanFromContext(ctx)
-	if !span.SpanContext().IsValid() {
-		return ""
-	}
-	return span.SpanContext().TraceID().String()
+	id, _ := pkgotel.TraceIDs(ctx)
+	return id
 }
 
 // keyValues drops an attribute with an empty value: a span attribute

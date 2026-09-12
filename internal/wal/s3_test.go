@@ -6,10 +6,16 @@ package wal
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
+	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/s3"
 	"latere.ai/x/pkg/s3/s3test"
 )
@@ -85,5 +91,61 @@ func TestS3TranslatesTheClientErrors(t *testing.T) {
 	}
 	if _, _, err := store.Get(ctx, "absent", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get absent: %v", err)
+	}
+}
+
+func TestS3AttemptTimeoutRetriesBeforeParentDeadline(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			<-r.Context().Done()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	store, err := NewS3(S3Options{Endpoint: server.URL, Region: "region", Bucket: "bucket", Key: "key", Secret: "secret", PathStyle: true, Client: server.Client(), RetryPolicy: retry.Policy{Timeout: 25 * time.Millisecond, MaxAttempts: 2, Base: time.Nanosecond}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if _, err := store.Head(ctx, "key"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts.Load() != 2 || ctx.Err() != nil {
+		t.Fatal("attempt deadline consumed parent budget")
+	}
+}
+
+type retryTimingTransport func(*http.Request) (*http.Response, error)
+
+func (f retryTimingTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestS3AttemptPolicyKeepsExistingBackoff(t *testing.T) {
+	for _, policy := range []retry.Policy{{}, {Timeout: time.Second}} {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			attempts := 0
+			client := &http.Client{Transport: retryTimingTransport(func(*http.Request) (*http.Response, error) {
+				attempts++
+				status := http.StatusServiceUnavailable
+				if attempts == 2 {
+					status = http.StatusOK
+				}
+				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+			})}
+			store, err := NewS3(S3Options{Endpoint: "http://storage.invalid", Region: "region", Bucket: "bucket", Key: "key", Secret: "secret", Client: client, RetryPolicy: policy})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.Head(t.Context(), "key"); err != nil {
+				t.Fatal(err)
+			}
+			elapsed := time.Since(start)
+			if elapsed < 40*time.Millisecond || elapsed > 50*time.Millisecond {
+				t.Fatalf("default S3 retry backoff changed: %v", elapsed)
+			}
+		})
 	}
 }

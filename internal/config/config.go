@@ -416,7 +416,7 @@ func egressAllow(raw string, problems *[]string) ([]string, map[string]netip.Add
 		}
 		host, address, hasPin := strings.Cut(entry, "=")
 		host = NormalizeHost(host)
-		if !hostmatch.ValidPattern(host) {
+		if !hostmatch.ValidPattern(host, hostmatch.WithSingleLabel()) {
 			*problems = append(*problems, fmt.Sprintf("ORIGO_EGRESS_ALLOW: %s is not a hostname or a *. wildcard", entry))
 			continue
 		}

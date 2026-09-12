@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"latere.ai/x/pkg/circuitbreaker"
@@ -115,110 +114,19 @@ const (
 	DefaultStorageTimeout = 10 * time.Second
 )
 
-// breaker is the three-state circuit breaker of
-// latere.ai/x/pkg/circuitbreaker.Breaker with one difference: it reads
-// its clock from a function, so a test advances the open window
-// without waiting for it. It has the package's semantics exactly: it
-// opens on the threshold-th consecutive failure, stays open for the
-// window, then Allow admits one probe and refuses everyone else until
-// the probe reports; a success closes it, a failure reopens it for
-// another window. Its home is pkg/circuitbreaker, as
-// New(threshold, openDuration, WithClock(now)); it lives here until
-// that option exists (spec 015's item for pkg).
-type breaker struct {
-	threshold int
-	openFor   time.Duration
-	now       func() time.Time
-
-	mu       sync.Mutex
-	state    circuitbreaker.State
-	failures int
-	openedAt time.Time
-}
+// breaker delegates admission and cooldown state to pkg; Origo rounds the
+// remaining duration for its Retry-After contract.
+type breaker struct{ *circuitbreaker.Breaker }
 
 func newBreaker(threshold int, openFor time.Duration, now func() time.Time) *breaker {
-	return &breaker{threshold: threshold, openFor: openFor, now: now}
+	return &breaker{circuitbreaker.New(threshold, openFor, circuitbreaker.WithClock(now))}
 }
 
-// Allow reports whether a call may run now. In the open state the
-// first call after the window becomes the probe and moves the breaker
-// to half-open; every other call is refused until the probe reports.
-func (b *breaker) Allow() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	switch b.state {
-	case circuitbreaker.Closed:
-		return true
-	case circuitbreaker.Open:
-		if b.now().Sub(b.openedAt) < b.openFor {
-			return false
-		}
-		b.state = circuitbreaker.HalfOpen
-		return true
-	default:
-		return false
-	}
-}
-
-// Admits reports whether a call would be allowed now without taking
-// the probe slot: closed, or open past its window. A poller asks this
-// and lets its next call be the probe.
-func (b *breaker) Admits() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	switch b.state {
-	case circuitbreaker.Closed:
-		return true
-	case circuitbreaker.Open:
-		return b.now().Sub(b.openedAt) >= b.openFor
-	default:
-		return false
-	}
-}
-
-// RecordSuccess closes the breaker.
-func (b *breaker) RecordSuccess() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.state, b.failures = circuitbreaker.Closed, 0
-}
-
-// RecordFailure counts one failure: the threshold-th consecutive one
-// opens a closed breaker, and a failed probe reopens a half-open one
-// for one more window, never a longer one.
-func (b *breaker) RecordFailure() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.failures++
-	switch b.state {
-	case circuitbreaker.Closed:
-		if b.failures >= b.threshold {
-			b.state, b.openedAt = circuitbreaker.Open, b.now()
-		}
-	case circuitbreaker.HalfOpen:
-		b.state, b.openedAt = circuitbreaker.Open, b.now()
-	}
-}
-
-// State reports the state, the value of origo_storage_breaker_state.
-func (b *breaker) State() circuitbreaker.State {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.state
-}
-
-// Remaining is the whole seconds of the window that remain, at least
-// one second, while the breaker is open or half-open; zero when closed.
-// It is the Retry-After a refusal carries.
 func (b *breaker) Remaining() time.Duration {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.state == circuitbreaker.Closed {
+	if b.State() == circuitbreaker.Closed {
 		return 0
 	}
-	left := b.openFor - b.now().Sub(b.openedAt)
-	left = left.Truncate(time.Second)
-	return max(left, time.Second)
+	return max(b.RetryAfter().Truncate(time.Second), time.Second)
 }
 
 // BreakerOptions configures a BreakerStore.

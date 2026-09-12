@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, internal/api/, internal/config/, cmd/origod/, deploy/, test/stubs/slowproxy/, test/stubs/cmd/, test/e2e/, docs/operations.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -439,19 +439,15 @@ was masked by the indexer's cancelled `index-pack` run, so a missing
 entry read as `context canceled`
 (`TestWorkerErrorIsNotMaskedByTheCancelledIndexer`).
 
-`latere.ai/x/pkg`, two items:
+The shared-library gaps were resolved on 2026-09-12. The breaker now uses
+`circuitbreaker.WithClock`, with `Admits` for non-consuming readiness and
+`RetryAfter` for cooldown observation; Origo alone rounds the HTTP delay.
+`wal.S3Options.RetryPolicy` exposes `retry.Policy.Timeout`. Node and check
+clients apply the configured storage timeout per attempt while the existing
+`BreakerStore` total-call budget remains effective. Accepted GET headers
+stop the attempt timer; the returned body retains parent cancellation.
 
-- `pkg/circuitbreaker` has no clock option: `New(threshold,
-  openDuration)` reads `time.Now`, so its window cannot be advanced in
-  a test. `WithClock(func() time.Time)` as an `Option` on `New`, the
-  way `BackoffConfig.Now` works, would let `internal/wal/breaker.go`
-  go.
-- `pkg/retry` and `pkg/s3` have no per-attempt deadline: `retry.Do`
-  passes one context to every attempt. A `Timeout` on `retry.Policy`,
-  applied to each attempt's context, would make "10 seconds per
-  attempt" expressible from outside the client.
-
-Both open items are settled by the fifteenth review round and are the
+Both design questions were settled by the fifteenth review round and are the
 Design's rules above:
 
 - Readiness stays ready while the write breaker is open, and while the

@@ -205,8 +205,8 @@ func TestOneCallWithThreeAttemptsIsOneFailure(t *testing.T) {
 	if f.Count("HEAD") != 3 {
 		t.Fatalf("the client sent %d attempts", f.Count("HEAD"))
 	}
-	if store.State(ClassRead) != circuitbreaker.Closed || store.read.failures != 1 {
-		t.Fatalf("after one call of three attempts: %s, %d failures", store.State(ClassRead), store.read.failures)
+	if store.State(ClassRead) != circuitbreaker.Closed || store.read.Failures() != 1 {
+		t.Fatalf("after one call of three attempts: %s, %d failures", store.State(ClassRead), store.read.Failures())
 	}
 	f.Fail(3, http.StatusServiceUnavailable)
 	if _, err := store.Head(ctx, "k"); err == nil {

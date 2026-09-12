@@ -64,7 +64,7 @@ depcheck:
     github.com/latere-ai/origo/cmd/origod:
       decision: >-
         the node reaches latere.ai/x/pkg, the OpenTelemetry SDK that
-        pkg/otel and internal/tracing export through (spec 011),
+        pkg/otel exports through (spec 011),
         golang.org/x/crypto/ssh, which internal/sshd terminates the SSH
         transport with (spec 024), and the standard library, so the
         binary carries no cloud SDK and no Kubernetes client (spec 001)

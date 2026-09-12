@@ -164,7 +164,7 @@ its LFS files need a credential to download.`,
 	Title: "Fetching from another host",
 	Intro: "Importing a repository, or verifying one against its prior host, makes the node fetch from a URL a caller supplies. Nothing is fetched from a host you have not listed, so these three are what open that door and how wide.",
 	Variables: []Variable{
-		{"ORIGO_EGRESS_ALLOW", "no", "unset", "comma separated hostnames a fetch may reach, exact or `*.` wildcards. Unset refuses every source. An exact hostname may carry a pinned address as `host=address`, one IP literal that fixes where that name resolves for this node."},
+		{"ORIGO_EGRESS_ALLOW", "no", "unset", "comma separated hostnames a fetch may reach, exact (including `localhost` and bare service names) or `*.` wildcards. Unset refuses every source. An exact hostname may carry a pinned address as `host=address`, one IP literal that fixes where that name resolves for this node."},
 		{"ORIGO_CLUSTER_CIDRS", "no", "unset", "comma separated CIDR ranges of your cluster's own networks, which a fetch must never reach. Loopback, link-local, and metadata addresses are refused whether or not you list them."},
 		{"ORIGO_EGRESS_CA_BUNDLE", "no", "unset", "the path of a PEM file of certificate authorities to trust beside the system roots when a fetch dials a source over TLS. For a source with a private certificate."},
 	},

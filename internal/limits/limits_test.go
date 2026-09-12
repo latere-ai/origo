@@ -542,8 +542,8 @@ func TestTheRateCanBeTurnedOff(t *testing.T) {
 		}
 	}
 	on := New(Options{Logger: slog.New(slog.DiscardHandler)})
-	if on.buckets.perMinute != RequestsPerMinute || on.buckets.burst != float64(RequestsPerMinute) {
-		t.Errorf("the default rate is %d a minute with a burst of %v", on.buckets.perMinute, on.buckets.burst)
+	if a := on.buckets.Allow("defaults"); a.PerMinute != RequestsPerMinute || a.Remaining != RequestsPerMinute-1 {
+		t.Errorf("default quota = %+v", a)
 	}
 }
 
@@ -766,5 +766,27 @@ func TestAnonymousRateDefaults(t *testing.T) {
 	e := newEnv(t, Options{})
 	if e.anonPerMinute != AnonymousRequestsPerMinute {
 		t.Errorf("an unset AnonymousPerMinute gave %d, want the default", e.anonPerMinute)
+	}
+}
+
+func TestSharedSemaphoreRejectsCanceledCaller(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	release, ok := NewSemaphore(1).Acquire(ctx, time.Second)
+	if ok || release != nil {
+		t.Fatal("canceled caller acquired a subprocess slot")
+	}
+}
+
+func TestAnonymousQuotaSurvivesIdleSweep(t *testing.T) {
+	now := time.Unix(100, 0)
+	b := NewBuckets(60, 60, time.Minute, func() time.Time { return now })
+	b.SetRate("anonymous", 1)
+	b.Allow("anonymous")
+	now = now.Add(2 * time.Minute)
+	b.SetRate("anonymous", 1)
+	a := b.Allow("anonymous")
+	if !a.OK || a.PerMinute != 1 || a.Remaining != 0 {
+		t.Fatalf("anonymous quota reset: %+v", a)
 	}
 }

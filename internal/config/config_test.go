@@ -557,3 +557,15 @@ func TestSSHConfigurationIsAllOrNothing(t *testing.T) {
 		}
 	})
 }
+
+func TestEgressAllowsExplicitSingleLabelHosts(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_EGRESS_ALLOW"] = "localhost,postgres,source=10.0.0.2"
+	if _, err := Load(env(m)); err != nil {
+		t.Fatal(err)
+	}
+	m["ORIGO_EGRESS_ALLOW"] = "*.localhost"
+	if _, err := Load(env(m)); err == nil {
+		t.Fatal("single-label wildcard accepted")
+	}
+}

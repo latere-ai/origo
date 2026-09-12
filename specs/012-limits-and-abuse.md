@@ -360,8 +360,10 @@ Design's rules above:
   `TestBoundTokenWriteTakesTheMintersQuota` asserts the refusal in
   place of the fallback.
 
-`latere.ai/x/pkg`: neither a token bucket nor a waiting semaphore is in
-the shared library; the README's items table carries the row.
+The shared-library gap was resolved on 2026-09-12: `pkg/ratelimit` owns
+keyed quotas and idle eviction, and `pkg/semaphore` owns cancellable
+subprocess admission and concurrency-safe release. Origo retains its
+subject mapping, limits table, headers, and refusal counters.
 
 ### The header reported the node's figure, not the subject's (2026-09-10)
 

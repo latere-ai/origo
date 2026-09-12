@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/httpgit/, internal/api/, internal/auth/, internal/repo/, internal/wal/, internal/placement/, internal/config/, deploy/, SECURITY.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-12
 author: changkun
 ---
 
@@ -374,11 +374,11 @@ Divergences and interpretations, all kept and stated in the Design:
   grammar admits it, a label is never a path component a subprocess
   sees, and `FuzzValidLabel` holds the validator to git's path rules
   instead, where `.` and `..` as whole labels are what git refuses.
-- `ORIGO_EGRESS_ALLOW` entries go through `hostmatch.ValidPattern`,
-  which takes an FQDN or an IP literal and refuses a single-label
-  name, so `localhost` cannot be listed; the tests use
-  `source.localhost`, which the resolver answers with loopback and no
-  DNS query (RFC 6761). The README's items table carries the row.
+- `ORIGO_EGRESS_ALLOW` entries opt into `hostmatch.WithSingleLabel` as of
+  2026-09-12, admitting exact `localhost` and bare service names. Wildcards
+  still require the existing multi-label grammar. Resolution and IP-range
+  restrictions remain with the pinned dialer, so admitting a name does not
+  bypass those checks.
 - The pinned dialer resolves inside `DialContext` and filters the
   answer, dialing the first admitted address and skipping a refused
   one among admitted ones, the Design's "refuses every resolved

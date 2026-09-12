@@ -290,7 +290,11 @@ func Register(reg *pkgmetrics.Registry) *Set {
 			}
 			r.counters[m.Name] = c
 		case histogram:
-			r.histograms[m.Name] = reg.Histogram(m.Name, m.Help, m.Buckets)
+			h := reg.Histogram(m.Name, m.Help, m.Buckets)
+			for _, labels := range combinations(m.Labels) {
+				h.Init(labels)
+			}
+			r.histograms[m.Name] = h
 		case gauge:
 			g := &Gauge{labels: m.Labels, srcs: map[string]func() float64{}}
 			reg.Gauge(m.Name, m.Help, g.collect)
