@@ -809,13 +809,7 @@ func (n *node) run(ctx context.Context) error {
 		})
 	}
 
-	// anonymous_read rides on this line because it is the one setting a
-	// caller can never observe. Spec 027 renders every anonymous refusal
-	// as the 401 a request with no credential already gets, so the switch
-	// being off and the repository being private are indistinguishable
-	// from outside, deliberately. That leaves the node's own log as the
-	// only place the state is readable, and it was not readable here.
-	serving := []any{"public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "peers", n.gossip.Peers(), "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "cache_bytes", n.cfg.CacheBytes, "anonymous_read", n.cfg.AnonymousRead, "version", versionpkg.String()}
+	serving := []any{"public", n.publicAddr, "internal", n.internalAddr, "gossip", n.gossipAddr, "peers", n.gossip.Peers(), "node", n.cfg.NodeName, "data_dir", n.cfg.DataDir, "cache_bytes", n.cfg.CacheBytes, "version", versionpkg.String()}
 	if n.ssh != nil {
 		serving = append(serving, "ssh", n.sshAddr, "ssh_host_keys", n.ssh.Fingerprints())
 	}
