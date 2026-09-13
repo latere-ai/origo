@@ -3,9 +3,13 @@
 # missing refuses to start and says which.
 #
 # The key store is auth's, which holds the public keys people register
-# and answers which subject an offered key belongs to. It reads the same
-# bearer the authorizer does, so ORIGO_SSH_KEYS_TOKEN carries the value
-# of ORIGO_AUTHORIZER_TOKEN in a Secret of its own.
+# and answers which subject an offered key belongs to. Since auth v0.25.0
+# it listens for Origo on the in-cluster Service auth-internal, behind no
+# ingress, and the resolve endpoint takes a bearer of its own:
+# ORIGO_SSH_KEYS_TOKEN is a value distinct from ORIGO_AUTHORIZER_TOKEN,
+# set to the same value on auth's side by the operator (rule R8: one
+# bearer per endpoint). The authorizer URL in the origod-auth Secret
+# names the same Service: http://auth-internal.latere.svc.cluster.local/internal/origo/authorize.
 #
 # The host key Secret is made by hand and lives in no manifest: the
 # private halves are generated into a temporary directory, piped through
@@ -35,7 +39,7 @@ spec:
             - name: ORIGO_SSH_HOST_KEYS
               value: /etc/origo/ssh/ssh_host_ed25519_key,/etc/origo/ssh/ssh_host_ecdsa_key
             - name: ORIGO_SSH_KEYS_URL
-              value: http://auth.latere.svc.cluster.local/internal/origo/ssh-keys/resolve
+              value: http://auth-internal.latere.svc.cluster.local/internal/origo/ssh-keys/resolve
             - name: ORIGO_SSH_KEYS_TOKEN
               valueFrom:
                 secretKeyRef:
