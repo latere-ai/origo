@@ -39,11 +39,14 @@ spec:
     complete: [Outcome]
 
 hermetic:
-  # The suite runs with only the Go toolchain on PATH, plus /usr/bin: git is
-  # the one binary origod needs beside itself (spec 002), and the repository
-  # cache and the smart HTTP handlers are tested against the real git.
-  # /usr/bin holds git on macOS and on the Linux runners.
-  allow: [/usr/bin]
+  # The suite runs with only the Go toolchain on PATH, plus /usr/bin and
+  # /bin: git is the one binary origod needs beside itself (spec 002), and
+  # the repository cache and the smart HTTP handlers are tested against the
+  # real git. /usr/bin holds git on macOS and on the Linux runners. /bin
+  # holds sh's coreutils (cat, rm, mkdir) that the two shell tests under
+  # tools/ run; on Linux it is the same directory as /usr/bin, on macOS it
+  # is not.
+  allow: [/usr/bin, /bin]
 
 tempdir:
   allow: {}
