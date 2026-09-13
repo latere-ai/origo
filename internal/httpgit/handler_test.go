@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/httpjson"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
@@ -805,18 +806,18 @@ func TestActClaimIsRefused(t *testing.T) {
 		t.Fatal("the authorizer was not asked")
 	}
 	for _, r := range reqs {
-		if r.Subject != "svc" || r.Actor != "" || r.Repo.ID != repoA {
+		if r.Subject != authz.Subject(iss.URL(), "svc") || r.Resource.ID != repoA {
 			t.Fatalf("authorizer request: %+v", r)
 		}
 	}
-	if reqs[len(reqs)-1].Action != "write" {
+	if reqs[len(reqs)-1].Action != "repo.write" {
 		t.Fatalf("the push was not asked as a write: %+v", reqs[len(reqs)-1])
 	}
 	ix, _, _ := n.log.Newest(context.Background(), repoA, 0, false)
 	rc, _, _ := store.Get(context.Background(), n.log.RepoPrefix(repoA)+ix.Entry, "")
 	hdr, _, _, err := wal.ReadEntryHead(rc)
 	_ = rc.Close()
-	if err != nil || hdr.Subject != "svc" {
+	if err != nil || hdr.Subject != authz.Subject(iss.URL(), "svc") {
 		t.Fatalf("entry header: %+v, %v", hdr, err)
 	}
 	// Without a token git is refused with the challenge on info/refs.

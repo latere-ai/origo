@@ -455,7 +455,7 @@ func TestServerSideOperationsHonourLimits(t *testing.T) {
 
 	// A pack the authorizer's quota_bytes cannot hold is over_quota and
 	// commits nothing.
-	h.authz.Allow(authorizer.Rule{Repo: repoA, Action: "write", QuotaBytes: 1})
+	h.authz.Allow(authorizer.Rule{Resource: repoA, Action: "repo.write", Limits: map[string]any{"quota_bytes": 1}})
 	status, out := o.post("commits", `{"branch":"main","expected_head":"`+o.main+`",`+author+`,"message":"m","changes":[{"path":"q.txt","content":"`+b64(strings.Repeat("q", 4096))+`"}]}`)
 	if status != 413 || code(out) != contract.CodeOverQuota || details(out)["limit"] != limits.LimitRepository {
 		t.Fatalf("over quota: %d %v", status, out)
@@ -761,7 +761,7 @@ func TestAuthorizerRateBucketsTheSubject(t *testing.T) {
 	if h.limits.SubjectRate("alice") != limits.RequestsPerMinute {
 		t.Fatalf("before any decision alice is at %d", h.limits.SubjectRate("alice"))
 	}
-	h.authz.Allow(authorizer.Rule{Subject: "alice", RequestsPerMinute: 6000})
+	h.authz.Allow(authorizer.Rule{Subject: "alice", Limits: map[string]any{"requests_per_minute": 6000}})
 	if status, out := h.do("GET", "/v1/repos/"+o.id, ""); status != 200 {
 		t.Fatalf("read: %d %v", status, out)
 	}
@@ -771,7 +771,7 @@ func TestAuthorizerRateBucketsTheSubject(t *testing.T) {
 
 	// The smart HTTP surface reads the same decision.
 	h.as(auth.Principal{Subject: "bob"})
-	h.authz.Allow(authorizer.Rule{Subject: "bob", RequestsPerMinute: 1200})
+	h.authz.Allow(authorizer.Rule{Subject: "bob", Limits: map[string]any{"requests_per_minute": 1200}})
 	if r := h.get("/r/" + o.id + ".git/info/refs?service=git-upload-pack"); r.status != 200 {
 		t.Fatalf("advertisement: %d %s", r.status, r.body)
 	}
@@ -819,7 +819,7 @@ func TestAuthorizerRateIsWhatTheRateLimitHeadersReport(t *testing.T) {
 	// the middleware has answered, so the response that carries the
 	// decision still reports the node's figure and the next one reports
 	// the override; spec 012 records that one-response window.
-	h.authz.Allow(authorizer.Rule{Subject: "alice", RequestsPerMinute: 6000})
+	h.authz.Allow(authorizer.Rule{Subject: "alice", Limits: map[string]any{"requests_per_minute": 6000}})
 	status, _, header := h.doHeader("GET", "/v1/repos/"+o.id, "")
 	if status != 200 || header.Get(contract.HeaderRateLimit) != node {
 		t.Fatalf("the response that carries the decision: %d, %s %q", status, contract.HeaderRateLimit, header.Get(contract.HeaderRateLimit))

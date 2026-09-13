@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/s3/s3test"
 
 	"github.com/latere-ai/origo/internal/config"
@@ -209,7 +210,7 @@ func TestRequestLogRedactsCredentials(t *testing.T) {
 			t.Errorf("the line has no %s: %v", field, push)
 		}
 	}
-	if push["repo"] != repoOwner+"/"+repoSlug || push["subject"] != "dev" {
+	if push["repo"] != repoOwner+"/"+repoSlug || push["subject"] != authz.Subject(id.issuer.URL(), "dev") {
 		t.Errorf("repo %v, subject %v", push["repo"], push["subject"])
 	}
 	if push["bytes_out"].(float64) <= 0 || push["status"].(float64) != 200 {

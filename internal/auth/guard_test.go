@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/httpjson"
 
 	"github.com/latere-ai/origo/internal/contract"
@@ -70,7 +71,7 @@ func TestRepositoryBoundTokenScope(t *testing.T) {
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
 	h := routes(v, g)
-	signer := NewSigner(key, localIssuer, clk.Now)
+	signer := NewSigner(key, localIssuer, "", clk.Now)
 	read, expires, err := signer.Mint(Principal{Subject: "ci"}, repoA, ScopeRead, 10*time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +121,7 @@ func TestRepositoryBoundTokenScope(t *testing.T) {
 	// An issuer's token goes to the authorizer, and a deny is 403 with
 	// its reason.
 	code, e, _ = do(t, h, "GET", "/r/"+repoA+".git/info/refs?service=git-upload-pack", iss.Mint(issuer.Claims{Sub: "alice"}))
-	if code != 403 || e.Details["reason"] != "the authorizer must not be asked" || e.Details["action"] != "read" || e.Details["subject"] != "alice" {
+	if code != 403 || e.Details["reason"] != "the authorizer must not be asked" || e.Details["action"] != "repo.read" || e.Details["subject"] != authz.Subject(iss.URL(), "alice") {
 		t.Fatalf("authorizer deny: %d %+v", code, e)
 	}
 	// Two calls: the bound token's write asked for its quota figure
@@ -204,7 +205,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 		if rec.Code != c.code {
 			t.Errorf("%s: %d", c.name, rec.Code)
 		}
-		if c.code == 204 && seen.Subject != "alice" {
+		if c.code == 204 && seen.Subject != authz.Subject(iss.URL(), "alice") {
 			t.Errorf("%s: principal %+v", c.name, seen)
 		}
 		if c.code == 401 {
@@ -233,7 +234,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 func TestDecideCarriesTheQuota(t *testing.T) {
 	clk := newClock()
 	stub := authorizer.New(t)
-	stub.Allow(authorizer.Rule{Subject: "alice", QuotaBytes: 4096, TTL: 30})
+	stub.Allow(authorizer.Rule{Subject: "alice", TTL: 30, Limits: map[string]any{"quota_bytes": 4096}})
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
 	ctx := context.Background()
@@ -286,8 +287,8 @@ func TestDecideCarriesTheQuota(t *testing.T) {
 // default of 1, and a deny carries no decision.
 func TestDecideCarriesTheReplicas(t *testing.T) {
 	stub := authorizer.New(t)
-	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "read", Replicas: 3})
-	stub.Deny(authorizer.Rule{Subject: "bob", Repo: repoA, Action: "read"}, "no")
+	stub.Allow(authorizer.Rule{Subject: "alice", Resource: repoA, Action: "repo.read", Limits: map[string]any{"replicas": 3}})
+	stub.Deny(authorizer.Rule{Subject: "bob", Resource: repoA, Action: "repo.read"}, "no")
 	client, err := NewClient(ClientOptions{URL: stub.URL(), Token: stub.Token(), HTTP: &http.Client{Transport: &http.Transport{}}})
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +327,7 @@ func TestDecideCarriesTheReplicas(t *testing.T) {
 func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 	clk := newClock()
 	stub := authorizer.New(t)
-	stub.SetRules(authorizer.Rule{Subject: "ci", Repo: repoA, Action: "write", Allow: true, QuotaBytes: 4096})
+	stub.SetRules(authorizer.Rule{Subject: "ci", Resource: repoA, Action: "repo.write", Allow: true, Limits: map[string]any{"quota_bytes": 4096}})
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
 	bound := Principal{Subject: "ci", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
@@ -336,7 +337,7 @@ func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 		t.Fatalf("write: %+v %v", d, err)
 	}
 	seen := stub.Requests()
-	if len(seen) != 1 || seen[0].Subject != "ci" || seen[0].Action != "write" || seen[0].Repo.ID != repoA {
+	if len(seen) != 1 || seen[0].Subject != "ci" || seen[0].Action != "repo.write" || seen[0].Resource.ID != repoA {
 		t.Fatalf("the quota call: %+v", seen)
 	}
 	// The read path asks nothing and keeps the default.
@@ -349,7 +350,7 @@ func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 	}
 	// A deny, and an allow with no figure, leave the default: the scope,
 	// not the authorizer, decides a bound token's access.
-	stub.Deny(authorizer.Rule{Subject: "ci", Repo: repoB, Action: "write"}, "not the minter")
+	stub.Deny(authorizer.Rule{Subject: "ci", Resource: repoB, Action: "repo.write"}, "not the minter")
 	other := Principal{Subject: "ci", Bound: &Bound{Repo: repoB, Scope: ScopeWrite}}
 	d, err = g.Decide(context.Background(), other, RepoRef{ID: repoB}, ActionWrite)
 	if err != nil || d.QuotaBytes != DefaultQuotaBytes {
@@ -376,7 +377,7 @@ func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 func TestBoundTokenWriteFailsClosedDuringAuthorizerOutage(t *testing.T) {
 	clk := newClock()
 	stub := authorizer.New(t)
-	stub.SetRules(authorizer.Rule{Subject: "ci", Repo: repoA, Action: "write", Allow: true, QuotaBytes: 4096})
+	stub.SetRules(authorizer.Rule{Subject: "ci", Resource: repoA, Action: "repo.write", Allow: true, Limits: map[string]any{"quota_bytes": 4096}})
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
 	bound := Principal{Subject: "ci", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}

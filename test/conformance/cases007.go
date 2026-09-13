@@ -70,11 +70,11 @@ func case007Forbidden(t *testing.T, s *session) {
 	id := s.create(t, "deny")
 	unknown := newID(t)
 	s.setRules(t,
-		authorizer.Rule{Repo: id, Action: "read", Allow: false, Reason: "not welcome"},
-		authorizer.Rule{Repo: unknown, Allow: false, Reason: "not welcome"},
+		authorizer.Rule{Resource: id, Action: "repo.read", Allow: false, Reason: "not welcome"},
+		authorizer.Rule{Resource: unknown, Allow: false, Reason: "not welcome"},
 	)
 	d := expectError(t, s.call(t, "GET", "/v1/repos/"+id, ""), http.StatusForbidden, contract.CodeForbidden)
-	failIf(t, d["reason"] != "not welcome" || d["action"] != "read" || d["subject"] == nil, "deny details: %v", d)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.read" || d["subject"] == nil, "deny details: %v", d)
 	expectError(t, s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-upload-pack", ""), http.StatusForbidden, contract.CodeForbidden)
 	// A deny answers before the repository is looked up.
 	expectError(t, s.call(t, "GET", "/v1/repos/"+unknown, ""), http.StatusForbidden, contract.CodeForbidden)

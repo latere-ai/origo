@@ -233,11 +233,11 @@ func (s *session) writeToken(t *testing.T, id string) string {
 // the cached allow.
 func case019Forbidden(t *testing.T, s *session) {
 	id := newID(t)
-	s.setRules(t, authorizer.Rule{Repo: id, Allow: true, TTL: 1})
+	s.setRules(t, authorizer.Rule{Resource: id, Allow: true, TTL: 1})
 	r := s.call(t, "POST", "/v1/repos", fmt.Sprintf(`{"id":%q,"owner":%q,"slug":%q}`, id, Owner, SlugPrefix+"forbidden-"+id[:8]))
 	s.record(id)
 	expectStatus(t, r, http.StatusCreated)
-	s.setRules(t, authorizer.Rule{Repo: id, Allow: false, Reason: "not welcome"})
+	s.setRules(t, authorizer.Rule{Resource: id, Allow: false, Reason: "not welcome"})
 	time.Sleep(time.Second + 100*time.Millisecond)
 	for _, op := range []struct{ method, path, body string }{
 		{"POST", "/transfer", `{"owner":"nobody"}`},

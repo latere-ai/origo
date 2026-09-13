@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/s3"
 	"latere.ai/x/pkg/s3/s3test"
 
@@ -41,12 +42,12 @@ import (
 // and answers what the test set.
 type fakeAuthorizer struct {
 	mu       sync.Mutex
-	requests []auth.Request
+	requests []authz.Request
 	decision auth.Decision
 	err      error
 }
 
-func (f *fakeAuthorizer) Authorize(_ context.Context, req auth.Request) (auth.Decision, error) {
+func (f *fakeAuthorizer) Authorize(_ context.Context, req authz.Request) (auth.Decision, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, req)
@@ -56,10 +57,10 @@ func (f *fakeAuthorizer) Authorize(_ context.Context, req auth.Request) (auth.De
 	return f.decision, nil
 }
 
-func (f *fakeAuthorizer) seen() []auth.Request {
+func (f *fakeAuthorizer) seen() []authz.Request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]auth.Request(nil), f.requests...)
+	return append([]authz.Request(nil), f.requests...)
 }
 
 // recordingTB is the testing.TB an s3test.Server reports a signature
@@ -346,9 +347,9 @@ func TestVerifyIsAWrite(t *testing.T) {
 	e.do("POST", batchPath, fmt.Sprintf(`{"operation":"download","objects":[{"oid":%q,"size":1}]}`, oid))
 	var actions []auth.Action
 	for _, req := range e.authz.seen() {
-		actions = append(actions, req.Action)
-		if req.Repo.ID != testRepo {
-			t.Errorf("the authorizer saw repo %+v", req.Repo)
+		actions = append(actions, auth.Action(req.Action))
+		if req.Resource.ID != testRepo {
+			t.Errorf("the authorizer saw repo %+v", req.Resource)
 		}
 	}
 	want := []auth.Action{auth.ActionWrite, auth.ActionWrite, auth.ActionRead}
@@ -677,8 +678,8 @@ func TestLabelFormAndUnknownRepository(t *testing.T) {
 	decodeError(t, e.do("POST", "/dev/nothing.git/info/lfs/objects/batch", body), contract.Refuse(http.StatusNotFound, contract.CodeRepoNotFound, nil))
 	last := e.authz.seen()
 	req := last[len(last)-1]
-	if req.Repo.ID != "" || req.Repo.Owner != "dev" || req.Repo.Slug != "nothing" {
-		t.Errorf("the authorizer saw %+v", req.Repo)
+	if req.Resource.ID != "" || req.Resource.String("owner") != "dev" || req.Resource.String("slug") != "nothing" {
+		t.Errorf("the authorizer saw %+v", req.Resource)
 	}
 	// An unknown id answers 404 too, after the allow.
 	unknown := "00000000-0000-4000-8000-000000000000"

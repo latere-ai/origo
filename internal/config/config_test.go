@@ -57,9 +57,12 @@ func complete(t *testing.T) map[string]string {
 	}
 }
 
+// required is the set Load names when nothing is set. The authorizer URL
+// and token are not in it: with no authorizer the node runs the built-in
+// owner policy (Origo spec 028), so both are optional.
 var required = []string{
 	"ORIGO_S3_ENDPOINT", "ORIGO_S3_REGION", "ORIGO_S3_BUCKET", "ORIGO_S3_KEY", "ORIGO_S3_SECRET",
-	"ORIGO_PUBLIC_URL", "ORIGO_OIDC_ISSUERS", "ORIGO_AUTHORIZER_URL", "ORIGO_AUTHORIZER_TOKEN", "ORIGO_TOKEN_KEY",
+	"ORIGO_PUBLIC_URL", "ORIGO_OIDC_ISSUERS", "ORIGO_TOKEN_KEY",
 }
 
 func TestLoadNamesEveryMissingKeyInOneMessage(t *testing.T) {
@@ -74,6 +77,35 @@ func TestLoadNamesEveryMissingKeyInOneMessage(t *testing.T) {
 	}
 	if strings.Count(err.Error(), "missing ") != len(required) {
 		t.Errorf("message %q names the wrong number of keys", err)
+	}
+}
+
+// TestAuthorizerIsOptional is Origo spec 028: the authorizer URL and
+// token are optional, the audience defaults to origo, admin subjects
+// parse, and a URL set with no token is the one error the pair produces.
+func TestAuthorizerIsOptional(t *testing.T) {
+	// No authorizer: the owner policy runs, and the audience defaults.
+	m := complete(t)
+	delete(m, "ORIGO_AUTHORIZER_URL")
+	delete(m, "ORIGO_AUTHORIZER_TOKEN")
+	m["ORIGO_ADMIN_SUBJECTS"] = "https://iss|alice, https://iss|bob"
+	cfg, err := Load(env(m))
+	if err != nil {
+		t.Fatalf("owner-policy config did not load: %v", err)
+	}
+	if cfg.AuthorizerURL != "" || cfg.OIDCAudience != "origo" || len(cfg.AdminSubjects) != 2 {
+		t.Fatalf("owner-policy config: url=%q audience=%q admins=%v", cfg.AuthorizerURL, cfg.OIDCAudience, cfg.AdminSubjects)
+	}
+	// A configured audience overrides the default.
+	m["ORIGO_OIDC_AUDIENCE"] = "code.example"
+	if cfg, err := Load(env(m)); err != nil || cfg.OIDCAudience != "code.example" {
+		t.Fatalf("audience override: %q, %v", cfg.OIDCAudience, err)
+	}
+	// A URL with no token is refused; the token alone is unread.
+	m = complete(t)
+	delete(m, "ORIGO_AUTHORIZER_TOKEN")
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "missing ORIGO_AUTHORIZER_TOKEN") {
+		t.Fatalf("a URL with no token was accepted: %v", err)
 	}
 }
 

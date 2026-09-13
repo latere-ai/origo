@@ -45,8 +45,8 @@ func TestAnonymousClone(t *testing.T) {
 	// allows a read of this repository, which is what auth answers for a
 	// repository whose owner marked it public.
 	n := newNode(t, store, anonymously())
-	n.authz.Allow(authorizer.Rule{Repo: repoA, Action: string(auth.ActionRead)})
-	n.authz.Deny(authorizer.Rule{Repo: repoA, Action: string(auth.ActionWrite)}, "anonymous_subject")
+	n.authz.Allow(authorizer.Rule{Resource: repoA, Action: string(auth.ActionRead)})
+	n.authz.Deny(authorizer.Rule{Resource: repoA, Action: string(auth.ActionWrite)}, "anonymous_subject")
 
 	// Clone by id and by name, with no credential of any kind, and get
 	// the same history the owner pushed.

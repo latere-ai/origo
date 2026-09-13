@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
+
 	"github.com/latere-ai/origo/test/stubs/issuer"
 )
 
@@ -147,7 +149,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	// refused, whatever else it carries.
 	for _, iss := range []*issuer.Server{a, b} {
 		p, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "alice"}))
-		if err != nil || p.Subject != "alice" || p.Bound != nil {
+		if err != nil || p.Subject != authz.Subject(iss.URL(), "alice") || p.Bound != nil {
 			t.Fatalf("%s: %+v, %v", iss.URL(), p, err)
 		}
 	}
@@ -156,7 +158,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	}
 	// A repository-bound token verifies against the node's key with no
 	// fetch: no issuer of the list is asked.
-	signer := NewSigner(key, localIssuer, clk.Now)
+	signer := NewSigner(key, localIssuer, "", clk.Now)
 	local, _, err := signer.Mint(Principal{Subject: "ci"}, "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", ScopeRead, time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +227,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Rotate()
-	if p, err := v.Verify(ctx, cached); err != nil || p.Subject != "carol" {
+	if p, err := v.Verify(ctx, cached); err != nil || p.Subject != authz.Subject(a.URL(), "carol") {
 		t.Fatalf("cached: %+v, %v", p, err)
 	}
 	clk.Advance(3 * time.Minute)
@@ -256,7 +258,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	// A local token with another kid is unknown_key, and one signed by
 	// another key with the right kid is signature.
 	otherKey := newKey(t)
-	otherSigner := NewSigner(otherKey, localIssuer, clk.Now)
+	otherSigner := NewSigner(otherKey, localIssuer, "", clk.Now)
 	tok, _, _ := otherSigner.Mint(Principal{Subject: "x"}, "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f", ScopeRead, time.Minute)
 	if got := reason(func() error { _, err := v.Verify(ctx, tok); return err }()); got != ReasonUnknownKey {
 		t.Fatalf("local token with another kid: %q", got)
@@ -310,7 +312,7 @@ func TestIssuerUnavailableIsRetried(t *testing.T) {
 		t.Fatalf("before the first back-off: %q", got)
 	}
 	clk.Advance(FirstRetryInterval)
-	if p, err := v.Verify(ctx, down.Mint(issuer.Claims{Sub: "late"})); err != nil || p.Subject != "late" {
+	if p, err := v.Verify(ctx, down.Mint(issuer.Claims{Sub: "late"})); err != nil || p.Subject != authz.Subject(down.URL(), "late") {
 		t.Fatalf("after the first back-off: %+v, %v", p, err)
 	}
 	// An hour on, the refresh sees a rotation.
@@ -479,7 +481,7 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	}
 	clk.Advance(time.Millisecond)
 	want++
-	if sub, got := verify("b"); got != "" || sub != "b" || attempts.Load() != want {
+	if sub, got := verify("b"); got != "" || sub != authz.Subject(front.URL, "b") || attempts.Load() != want {
 		t.Fatalf("up, at the pause: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
 	}
 	// Fetched once, the minute cap holds: a token naming a new kid is
@@ -492,7 +494,7 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	}
 	clk.Advance(RetryInterval - FirstRetryInterval)
 	want++
-	if sub, got := verify("c"); got != "" || sub != "c" || attempts.Load() != want {
+	if sub, got := verify("c"); got != "" || sub != authz.Subject(front.URL, "c") || attempts.Load() != want {
 		t.Fatalf("rotated, at the minute: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
 	}
 	// A failed refresh of a fetched set keeps the minute cap: the keys

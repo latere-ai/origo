@@ -99,7 +99,7 @@ func TestAdministrationOperations(t *testing.T) {
 	h.authz.SetRules(
 		authorizer.Rule{Allow: true},
 		authorizer.Rule{Subject: "eve", Allow: false, Reason: "not an administrator"},
-		authorizer.Rule{Subject: "eve", Action: "read", Allow: true},
+		authorizer.Rule{Subject: "eve", Action: "repo.read", Allow: true},
 	)
 	h.as(auth.Principal{Subject: "eve"})
 	for _, path := range []string{"/transfer", "/freeze", "/unfreeze", "/gc"} {

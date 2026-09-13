@@ -53,7 +53,7 @@ func case026Directory(t *testing.T, s *session) {
 	// A read the authorizer denies on one repository hides it from the
 	// page: the directory is the authorizer's answer, filtered by the
 	// same rules a read is.
-	s.setRules(t, authorizer.Rule{Repo: hidden, Action: "read", Allow: false, Reason: "hidden"})
+	s.setRules(t, authorizer.Rule{Resource: hidden, Action: "repo.read", Allow: false, Reason: "hidden"})
 	got = ids(s.call(t, "GET", "/v1/repos?limit=50", ""))
 	failIf(t, !got[seen] || got[hidden], "directory after a deny %v", got)
 

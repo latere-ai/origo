@@ -97,7 +97,7 @@ func TestPushOverQuotaWritesNothing(t *testing.T) {
 	// One mebibyte under lfs/ on repository A and nothing on C, with a
 	// quota of one mebibyte: A is over it by the pack alone.
 	const quota = 1 << 20
-	n.authz.SetRules(authorizer.Rule{Allow: true, QuotaBytes: quota})
+	n.authz.SetRules(authorizer.Rule{Allow: true, Limits: map[string]any{"quota_bytes": quota}})
 	n.create(repoA, "acme", "app")
 	n.create(repoC, "acme", "lean")
 	seedLFS(t, n.log, repoA, quota)

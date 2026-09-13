@@ -68,7 +68,7 @@ func TestDirectoryServesWhatSurvives(t *testing.T) {
 
 	// One authorizer call for the whole page, and it named no repository.
 	seen := h.authz.Requests()
-	if len(seen) != 1 || seen[0].Action != "list" || seen[0].Repo.ID != "" {
+	if len(seen) != 1 || seen[0].Action != "repo.list" || seen[0].Resource.ID != "" {
 		t.Fatalf("the page cost %d authorizer calls: %+v", len(seen), seen)
 	}
 
@@ -109,12 +109,12 @@ func TestDirectoryRefusals(t *testing.T) {
 
 	// A deny is 403 with the authorizer's reason.
 	h.authz.SetDirectory(true)
-	h.authz.Deny(authorizer.Rule{Subject: "alice", Action: "list"}, "not_a_member")
+	h.authz.Deny(authorizer.Rule{Subject: "alice", Action: "repo.list"}, "not_a_member")
 	status, out = h.do(http.MethodGet, "/v1/repos", "")
 	if status != http.StatusForbidden || code(out) != contract.CodeForbidden {
 		t.Fatalf("a denied directory: %d %v", status, out)
 	}
-	if d := details(out); d["reason"] != "not_a_member" || d["action"] != "list" {
+	if d := details(out); d["reason"] != "not_a_member" || d["action"] != "repo.list" {
 		t.Fatalf("the refusal details are %v", d)
 	}
 
@@ -194,7 +194,7 @@ func TestNameModeMatchesTheIdRoute(t *testing.T) {
 	if len(seen) != 2 {
 		t.Fatalf("the two refusals cost %d authorizer calls", len(seen))
 	}
-	if seen[0].Repo.Owner != "acme" || seen[0].Repo.ID != repoA || seen[1].Repo.ID != "" {
+	if seen[0].Resource.String("owner") != "acme" || seen[0].Resource.ID != repoA || seen[1].Resource.ID != "" {
 		t.Fatalf("the authorizer saw %+v", seen)
 	}
 }

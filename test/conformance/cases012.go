@@ -31,7 +31,7 @@ func cases012() []testCase {
 
 func case012OverQuota(t *testing.T, s *session) {
 	id := s.create(t, "quota")
-	s.setRules(t, authorizer.Rule{Repo: id, Allow: true, QuotaBytes: 1024})
+	s.setRules(t, authorizer.Rule{Resource: id, Allow: true, Limits: map[string]any{"quota_bytes": 1024}})
 	work := clone(t, s.repoURL(id))
 	commitFile(t, work, "a.bin", gittest.Bytes(16<<10, 5), "first")
 	out, err := git(t, work, "push", "origin", "HEAD:refs/heads/main")

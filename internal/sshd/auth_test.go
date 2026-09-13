@@ -156,8 +156,8 @@ func TestSSHAuthorizerDecidesTheOperation(t *testing.T) {
 	f := newFixture(t)
 	f.create(repoA, "acme", "app")
 	f.authz.SetRules(
-		authorizer.Rule{Subject: "u_7f3c", Action: "read", Allow: true},
-		authorizer.Rule{Subject: "u_7f3c", Action: "write", Allow: false, Reason: "read only"},
+		authorizer.Rule{Subject: "u_7f3c", Action: "repo.read", Allow: true},
+		authorizer.Rule{Subject: "u_7f3c", Action: "repo.write", Allow: false, Reason: "read only"},
 	)
 
 	if status, _, errOut := f.exec(f.mustDial(), "git-upload-pack '/acme/app.git'", strings.NewReader("0000")); status != 0 {
@@ -179,11 +179,11 @@ func TestSSHAuthorizerDecidesTheOperation(t *testing.T) {
 		if r.Subject != "u_7f3c" {
 			t.Errorf("call carried subject %q; SSH names the key's owner", r.Subject)
 		}
-		if r.Repo.ID != repoA {
-			t.Errorf("call named repository %+v, want the resolved id", r.Repo)
+		if r.Resource.ID != repoA {
+			t.Errorf("call named repository %+v, want the resolved id", r.Resource)
 		}
 	}
-	if requests[0].Action != "read" || requests[1].Action != "write" {
+	if requests[0].Action != "repo.read" || requests[1].Action != "repo.write" {
 		t.Errorf("actions = %q %q, want read then write", requests[0].Action, requests[1].Action)
 	}
 
@@ -285,7 +285,7 @@ func TestSSHRefusalsAreTheTableSentences(t *testing.T) {
 		// 012's repository bound. The refusal is the hook's verdict, so
 		// the client reads the code and the sentence in the sideband and
 		// no entry is written.
-		f.authz.SetRules(authorizer.Rule{Subject: "u_7f3c", Allow: true, QuotaBytes: 1024})
+		f.authz.SetRules(authorizer.Rule{Subject: "u_7f3c", Allow: true, Limits: map[string]any{"quota_bytes": 1024}})
 		sshCommand := f.sshClient(t)
 		host, port, err := splitAddr(f.addr)
 		if err != nil {

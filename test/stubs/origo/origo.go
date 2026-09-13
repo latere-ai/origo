@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/health"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/s3/s3test"
@@ -186,6 +187,13 @@ func (s *Server) URL() string { return s.srv.URL }
 // Token mints a token the stub accepts for the subject.
 func (s *Server) Token(sub string) string {
 	return s.issuer.Mint(issuer.Claims{Sub: sub})
+}
+
+// Subject renders the issuer-qualified subject the authorizer receives
+// for sub (Origo spec 028): the rule table keys on it, not on the bare
+// sub, since two issuers agreeing on a sub are two subjects.
+func (s *Server) Subject(sub string) string {
+	return authz.Subject(s.issuer.URL(), sub)
 }
 
 // Issuer is the stub issuer the node trusts.

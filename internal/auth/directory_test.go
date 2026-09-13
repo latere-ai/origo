@@ -12,10 +12,25 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/test/stubs/authorizer"
 )
+
+// listReq builds a contract-2 list envelope: no repository is named, so
+// the resource carries the kind alone, and the cursor and limit ride in
+// its fields (Origo spec 028).
+func listReq(subject, cursor string, limit int) authz.Request {
+	fields := map[string]any{}
+	if cursor != "" {
+		fields["cursor"] = cursor
+	}
+	if limit > 0 {
+		fields["limit"] = limit
+	}
+	return authz.Request{Subject: subject, Action: string(ActionList), Resource: authz.NewResource(ResourceKind, "", fields)}
+}
 
 // answering serves one fixed body and records every request body it saw.
 type answering struct {
@@ -48,7 +63,7 @@ func newAnswering(t *testing.T, status int, body string) (*Client, *answering) {
 func TestListRequestCarriesNoRepo(t *testing.T) {
 	c, a := newAnswering(t, http.StatusOK, `{"repos":[],"next_cursor":""}`)
 	ctx := context.Background()
-	if _, err := c.List(ctx, ListRequest{Subject: "alice", Cursor: "c1", Limit: 7}); err != nil {
+	if _, err := c.List(ctx, listReq("alice", "c1", 7)); err != nil {
 		t.Fatal(err)
 	}
 	var sent map[string]any
@@ -56,25 +71,37 @@ func TestListRequestCarriesNoRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := sent["repo"]; ok {
-		t.Errorf("the list request carries a repo object: %s", a.seen[0])
+		t.Errorf("the list request carries a contract-1 repo object: %s", a.seen[0])
 	}
-	for field, want := range map[string]any{"subject": "alice", "action": "list", "cursor": "c1", "limit": float64(7)} {
-		if sent[field] != want {
-			t.Errorf("%s is %v, want %v", field, sent[field], want)
-		}
+	if sent["subject"] != "alice" || sent["action"] != "repo.list" {
+		t.Errorf("the list envelope is %s", a.seen[0])
+	}
+	// A list names no repository: its resource carries the kind, and the
+	// cursor and limit ride in the resource (Origo spec 028).
+	if res, _ := sent["resource"].(map[string]any); res == nil || res["kind"] != "Repository" || res["id"] != nil || res["cursor"] != "c1" || res["limit"] != float64(7) {
+		t.Errorf("the list resource is %v", sent["resource"])
 	}
 
 	c2, a2 := newAnswering(t, http.StatusOK, `{"allow":true}`)
 	if _, err := c2.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a2.seen[0], `"repo":{"id":"`+repoA) {
-		t.Errorf("the read request lost its repo object: %s", a2.seen[0])
+	var read map[string]any
+	if err := json.Unmarshal([]byte(a2.seen[0]), &read); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := read["repo"]; ok {
+		t.Errorf("the read request carries a contract-1 repo object: %s", a2.seen[0])
+	}
+	if rr, _ := read["resource"].(map[string]any); rr == nil || rr["id"] != repoA || rr["kind"] != "Repository" {
+		t.Errorf("the read resource is %v", read["resource"])
 	}
 
-	// The limit defaults to spec 026's figure when the caller sends none.
+	// The limit defaults to spec 026's figure when the caller sends none:
+	// the guard fills it before the envelope is built (Origo spec 028).
 	c3, a3 := newAnswering(t, http.StatusOK, `{"repos":[]}`)
-	if _, err := c3.List(ctx, ListRequest{Subject: "alice"}); err != nil {
+	g := NewGuard(c3, nil)
+	if _, err := g.Directory(ctx, Principal{Subject: "alice"}, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(a3.seen[0], `"limit":50`) {
@@ -88,7 +115,7 @@ func TestDirectoryAnswersAreDistinguished(t *testing.T) {
 	ctx := context.Background()
 	page := `{"repos":[{"id":"` + repoA + `","owner":"acme","slug":"app"}],"next_cursor":"n1"}`
 	c, _ := newAnswering(t, http.StatusOK, page)
-	got, err := c.List(ctx, ListRequest{Subject: "alice"})
+	got, err := c.List(ctx, listReq("alice", "", 0))
 	switch {
 	case err != nil:
 		t.Fatal(err)
@@ -102,19 +129,19 @@ func TestDirectoryAnswersAreDistinguished(t *testing.T) {
 
 	// An empty page is a valid answer and not an absent directory.
 	c, _ = newAnswering(t, http.StatusOK, `{"repos":[]}`)
-	got, err = c.List(ctx, ListRequest{Subject: "alice"})
+	got, err = c.List(ctx, listReq("alice", "", 0))
 	if err != nil || !got.Supported || !got.Allowed || len(got.Repos) != 0 {
 		t.Fatalf("the empty page is %+v, %v", got, err)
 	}
 
 	c, _ = newAnswering(t, http.StatusOK, `{"allow":false,"reason":"no_directory_for_you"}`)
-	got, err = c.List(ctx, ListRequest{Subject: "alice"})
+	got, err = c.List(ctx, listReq("alice", "", 0))
 	if err != nil || !got.Supported || got.Allowed || got.Reason != "no_directory_for_you" {
 		t.Fatalf("the deny is %+v, %v", got, err)
 	}
 
 	c, _ = newAnswering(t, http.StatusOK, `{"directory":false}`)
-	got, err = c.List(ctx, ListRequest{Subject: "alice"})
+	got, err = c.List(ctx, listReq("alice", "", 0))
 	if err != nil || got.Supported {
 		t.Fatalf("{\"directory\": false} is %+v, %v", got, err)
 	}
@@ -122,13 +149,13 @@ func TestDirectoryAnswersAreDistinguished(t *testing.T) {
 	// Everything else is an outage, never an answer.
 	for _, body := range []string{`{}`, `{"allow":true}`, `{"directory":true}`, `not json`} {
 		c, _ = newAnswering(t, http.StatusOK, body)
-		if _, err := c.List(ctx, ListRequest{Subject: "alice"}); !isUnavailable(err) {
+		if _, err := c.List(ctx, listReq("alice", "", 0)); !isUnavailable(err) {
 			t.Errorf("body %q gave %v, want an *Unavailable", body, err)
 		}
 	}
 	for _, status := range []int{http.StatusNotImplemented, http.StatusInternalServerError, http.StatusForbidden} {
 		c, _ = newAnswering(t, status, `{"repos":[]}`)
-		if _, err := c.List(ctx, ListRequest{Subject: "alice"}); !isUnavailable(err) {
+		if _, err := c.List(ctx, listReq("alice", "", 0)); !isUnavailable(err) {
 			t.Errorf("status %d gave %v, want an *Unavailable", status, err)
 		}
 	}
@@ -165,7 +192,7 @@ func TestDirectoryIsNotCached(t *testing.T) {
 	c := newClient(t, "http://authorizer.invalid/", "tok", transport, newClock(), pkgmetrics.NewRegistry())
 	ctx := context.Background()
 	for range 3 {
-		if _, err := c.List(ctx, ListRequest{Subject: "alice"}); err != nil {
+		if _, err := c.List(ctx, listReq("alice", "", 0)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -209,7 +236,7 @@ func TestGuardWithoutAListerHasNoDirectory(t *testing.T) {
 
 type allowAll struct{}
 
-func (allowAll) Authorize(context.Context, Request) (Decision, error) {
+func (allowAll) Authorize(context.Context, authz.Request) (Decision, error) {
 	return Decision{Allow: true, TTL: DefaultTTL, Replicas: DefaultReplicas, QuotaBytes: DefaultQuotaBytes}, nil
 }
 
@@ -229,7 +256,7 @@ func TestDirectoryMetricRecordsRefusalsAsDenies(t *testing.T) {
 	} {
 		reg := pkgmetrics.NewRegistry()
 		c := newClient(t, "http://authorizer.invalid/", "tok", &handlerTransport{h: &answering{status: row.status, body: row.body}}, newClock(), reg)
-		_, _ = c.List(ctx, ListRequest{Subject: "alice"})
+		_, _ = c.List(ctx, listReq("alice", "", 0))
 		hist := reg.Histogram("origo_authorizer_seconds", "", nil)
 		if got := hist.Count(map[string]string{"result": row.want}); got != 1 {
 			t.Errorf("body %q recorded result=%s %d times", row.body, row.want, got)
@@ -245,7 +272,7 @@ func TestStubDirectory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	got, err := c.List(ctx, ListRequest{Subject: "alice"})
+	got, err := c.List(ctx, listReq("alice", "", 0))
 	if err != nil || got.Supported {
 		t.Fatalf("an unset directory gave %+v, %v", got, err)
 	}
@@ -255,41 +282,41 @@ func TestStubDirectory(t *testing.T) {
 		{ID: repoB, Owner: "acme", Slug: "lib"},
 	}
 	stub.SetDirectory(true, entries...)
-	got, err = c.List(ctx, ListRequest{Subject: "alice"})
+	got, err = c.List(ctx, listReq("alice", "", 0))
 	if err != nil || len(got.Repos) != 2 {
 		t.Fatalf("the directory is %+v, %v", got, err)
 	}
 
 	// A rule that denies one repository denies it in the directory too.
-	stub.Deny(authorizer.Rule{Subject: "alice", Repo: repoB}, "insufficient_role")
-	got, err = c.List(ctx, ListRequest{Subject: "alice"})
+	stub.Deny(authorizer.Rule{Subject: "alice", Resource: repoB}, "insufficient_role")
+	got, err = c.List(ctx, listReq("alice", "", 0))
 	if err != nil || len(got.Repos) != 1 || got.Repos[0].ID != repoA {
 		t.Fatalf("the filtered directory is %+v, %v", got, err)
 	}
 	// Another subject the rule does not name still sees both.
-	got, err = c.List(ctx, ListRequest{Subject: "bob"})
+	got, err = c.List(ctx, listReq("bob", "", 0))
 	if err != nil || len(got.Repos) != 2 {
 		t.Fatalf("bob's directory is %+v, %v", got, err)
 	}
 
 	// Paging: one entry a page, and the cursor carries the reader on.
-	first, err := c.List(ctx, ListRequest{Subject: "bob", Limit: 1})
+	first, err := c.List(ctx, listReq("bob", "", 1))
 	if err != nil || len(first.Repos) != 1 || first.Repos[0].ID != repoA || first.NextCursor != repoA {
 		t.Fatalf("the first page is %+v, %v", first, err)
 	}
-	second, err := c.List(ctx, ListRequest{Subject: "bob", Limit: 1, Cursor: first.NextCursor})
+	second, err := c.List(ctx, listReq("bob", first.NextCursor, 1))
 	if err != nil || len(second.Repos) != 1 || second.Repos[0].ID != repoB || second.NextCursor != "" {
 		t.Fatalf("the second page is %+v, %v", second, err)
 	}
 
 	// The stub records a list request like any other.
 	seen := stub.Requests()
-	if len(seen) == 0 || seen[len(seen)-1].Action != "list" || seen[len(seen)-1].Repo.ID != "" {
+	if len(seen) == 0 || seen[len(seen)-1].Action != "repo.list" || seen[len(seen)-1].Resource.ID != "" {
 		t.Fatalf("the last recorded request is %+v", seen[len(seen)-1])
 	}
 
 	stub.SetDirectory(false)
-	if got, err := c.List(ctx, ListRequest{Subject: "bob"}); err != nil || got.Supported {
+	if got, err := c.List(ctx, listReq("bob", "", 0)); err != nil || got.Supported {
 		t.Fatalf("a withdrawn directory gave %+v, %v", got, err)
 	}
 }

@@ -271,10 +271,10 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		if err != nil {
 			return nil, err
 		}
-		logger.Info("authorization", "mode", "authorizer", "url", cfg.AuthorizerURL)
+		logger.Info("authorizer configured", "mode", "endpoint", "url", cfg.AuthorizerURL)
 	} else {
 		authorizer = auth.NewOwnerPolicy(cfg.AdminSubjects, walObjects{log: n.log})
-		logger.Info("authorization", "mode", "owner policy", "admin_subjects", len(cfg.AdminSubjects))
+		logger.Info("authorizer configured", "mode", "owner policy", "admin_subjects", len(cfg.AdminSubjects))
 	}
 	guard := auth.NewGuard(authorizer, logger)
 	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), cfg.OIDCAudience, nil)

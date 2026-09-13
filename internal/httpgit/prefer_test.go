@@ -36,7 +36,7 @@ func TestOrigoPreferNamesThePreferredNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	authz := authorizer.New(t)
-	authz.Allow(authorizer.Rule{Subject: "alice", Replicas: 2})
+	authz.Allow(authorizer.Rule{Subject: "alice", Limits: map[string]any{"replicas": 2}})
 	authz.Deny(authorizer.Rule{Subject: "eve"}, "no")
 	client, err := auth.NewClient(auth.ClientOptions{URL: authz.URL(), Token: authz.Token(), HTTP: &http.Client{Transport: &http.Transport{}}})
 	if err != nil {

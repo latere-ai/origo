@@ -287,7 +287,7 @@ func TestSSHRefusesEverythingButTheTwoServices(t *testing.T) {
 
 	// The one authorizer call of the whole test is the second-exec case's
 	// first exec, which is a real read, and it never became a write.
-	if got := f.authz.Requests(); len(got) != 1 || got[0].Action != "read" {
+	if got := f.authz.Requests(); len(got) != 1 || got[0].Action != "repo.read" {
 		t.Errorf("the authorizer saw %+v", got)
 	}
 	if n := f.sessions("receive-pack", "ok"); n != 0 {

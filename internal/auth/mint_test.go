@@ -57,7 +57,7 @@ func TestParseKeyReadsTheFormsOpensslWrites(t *testing.T) {
 func TestSignerMintsAndServesItsKey(t *testing.T) {
 	clk := newClock()
 	key := newKey(t)
-	s := NewSigner(key, localIssuer+"/", clk.Now)
+	s := NewSigner(key, localIssuer+"/", "", clk.Now)
 	if s.KID() != KeyID(&key.PublicKey) || !s.Public().Equal(&key.PublicKey) {
 		t.Fatal("kid or public key")
 	}
@@ -70,7 +70,7 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := parsed.Claims
-	if parsed.Alg != "ES256" || parsed.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(AudienceOrigo) || c.Sub != "alice" || c.Delegated || c.Repo != repoA || c.Scope != "write" {
+	if parsed.Alg != "ES256" || parsed.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(DefaultAudience) || c.Sub != "alice" || c.Delegated || c.Repo != repoA || c.Scope != "write" {
 		t.Fatalf("claims: %+v %+v", parsed, c)
 	}
 	if c.Iat == nil || c.Exp == nil || *c.Iat != float64(clk.Now().Unix()) || *c.Exp != float64(exp.Unix()) {
@@ -117,7 +117,7 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	if u := newUUID(); len(u) != 36 || strings.Count(u, "-") != 4 {
 		t.Fatalf("uuid %q", u)
 	}
-	if s2 := NewSigner(key, localIssuer, nil); s2.now == nil {
+	if s2 := NewSigner(key, localIssuer, "", nil); s2.now == nil {
 		t.Fatal("default clock")
 	}
 }

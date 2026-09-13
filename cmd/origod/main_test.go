@@ -265,7 +265,7 @@ func TestInternalListenerServesProbes(t *testing.T) {
 		// the authorizer allowed it.
 		t.Fatalf("with token: %d", resp.StatusCode)
 	}
-	if reqs := id.authz.Requests(); len(reqs) != 1 || reqs[0].Subject != "dev" || reqs[0].Action != "admin" || reqs[0].Repo.Slug != "app" {
+	if reqs := id.authz.Requests(); len(reqs) != 1 || reqs[0].Sub != "dev" || reqs[0].Action != "repo.admin" || reqs[0].Resource.String("slug") != "app" {
 		t.Fatalf("authorizer: %+v", reqs)
 	}
 	req, _ = http.NewRequestWithContext(context.Background(), "GET", "http://"+public+"/nope", nil)
@@ -732,7 +732,7 @@ func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 	}
 	// A token the node minted itself is accepted on the route its scope
 	// allows and refused on the others by scope, not by the verifier.
-	signer := auth.NewSigner(id.key, env["ORIGO_PUBLIC_URL"], nil)
+	signer := auth.NewSigner(id.key, env["ORIGO_PUBLIC_URL"], "", nil)
 	bound, _, err := signer.Mint(auth.Principal{Subject: "ci"}, repoA, auth.ScopeRead, time.Minute)
 	if err != nil {
 		t.Fatal(err)

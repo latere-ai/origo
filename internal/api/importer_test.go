@@ -387,7 +387,7 @@ func TestImportFailurePaths(t *testing.T) {
 	// rule goes on a node of its own, because an allow is cached for
 	// its ttl (spec 007) and this one must be the first answer.
 	tight := newHarness(t, egress, withStore(store), withNow(fixedClock()))
-	tight.authz.SetRules(authorizer.Rule{Allow: true, QuotaBytes: 1})
+	tight.authz.SetRules(authorizer.Rule{Allow: true, Limits: map[string]any{"quota_bytes": 1}})
 	if status, _ := tight.do("POST", "/v1/repos/"+repoB+"/import", `{"source":"`+src+`","token":"`+stub.Token()+`"}`); status != 202 {
 		t.Fatal("import over quota")
 	}

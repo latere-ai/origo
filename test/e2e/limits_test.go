@@ -25,8 +25,8 @@ func TestE2EPushOverQuota(t *testing.T) {
 	const quota = 1 << 20
 	full, lean := newID(t), newID(t)
 	s.authz.SetRules(
-		authorizer.Rule{Repo: full, Allow: true, QuotaBytes: quota},
-		authorizer.Rule{Repo: lean, Allow: true, QuotaBytes: quota},
+		authorizer.Rule{Resource: full, Allow: true, Limits: map[string]any{"quota_bytes": quota}},
+		authorizer.Rule{Resource: lean, Allow: true, Limits: map[string]any{"quota_bytes": quota}},
 	)
 	n := startNode(t, s, "", nil)
 	n.createRepo(full, "acme", "full-"+full[:8])

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"github.com/latere-ai/origo/internal/metrics"
@@ -65,8 +66,8 @@ func newClient(t *testing.T, url, token string, transport http.RoundTripper, clk
 	return c
 }
 
-func request(subject, id string, action Action) Request {
-	return Request{Subject: subject, Repo: RepoRef{ID: id}, Action: action}
+func request(subject, id string, action Action) authz.Request {
+	return authz.Request{Subject: subject, Action: string(action), Resource: authz.NewResource(ResourceKind, id, nil)}
 }
 
 func TestAuthorizerAnswersAndCaches(t *testing.T) {
@@ -78,8 +79,8 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 	reg := pkgmetrics.NewRegistry()
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, reg)
 	ctx := context.Background()
-	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "read", TTL: 30, Replicas: 3, QuotaBytes: 1024})
-	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "write", TTL: 9000})
+	stub.Allow(authorizer.Rule{Subject: "alice", Resource: repoA, Action: "repo.read", TTL: 30, Limits: map[string]any{"replicas": 3, "quota_bytes": 1024}})
+	stub.Allow(authorizer.Rule{Subject: "alice", Resource: repoA, Action: "repo.write", TTL: 9000})
 	stub.Deny(authorizer.Rule{Subject: "eve"}, "not welcome")
 
 	d, err := c.Authorize(ctx, request("alice", repoA, ActionRead))
@@ -98,11 +99,11 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 	if err != nil || d.Allow || d.Reason != "not welcome" {
 		t.Fatalf("deny: %+v, %v", d, err)
 	}
-	if got := stub.Requests(); len(got) != 4 || got[0].Subject != "alice" || got[0].Repo.ID != repoA || got[0].Action != "read" {
+	if got := stub.Requests(); len(got) != 4 || got[0].Subject != "alice" || got[0].Resource.ID != repoA || got[0].Action != "repo.read" {
 		t.Fatalf("requests: %+v", got)
 	}
 	// Cached: the same four answer without a call, until each ttl.
-	for _, r := range []Request{request("alice", repoA, ActionRead), request("bob", repoA, ActionAdmin), request("eve", repoA, ActionRead)} {
+	for _, r := range []authz.Request{request("alice", repoA, ActionRead), request("bob", repoA, ActionAdmin), request("eve", repoA, ActionRead)} {
 		if _, err := c.Authorize(ctx, r); err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +123,7 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 		t.Fatal("a 30 second allow outlived its ttl")
 	}
 	// An unresolved name is never cached.
-	byName := Request{Subject: "alice", Repo: RepoRef{Owner: "acme", Slug: "app"}, Action: ActionRead}
+	byName := authz.Request{Subject: "alice", Action: string(ActionRead), Resource: authz.NewResource(ResourceKind, "", map[string]any{"owner": "acme", "slug": "app"})}
 	for range 2 {
 		if _, err := c.Authorize(ctx, byName); err != nil {
 			t.Fatal(err)
@@ -251,7 +252,9 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	if _, err := newClient(t, stub.URL(), stub.Token(), cancelT, clk, nil).Authorize(cancelled, request("a", repoB, ActionRead)); err == nil || cancelT.attempts.Load() != 1 {
 		t.Fatalf("cancelled: %v, %d attempts", err, cancelT.attempts.Load())
 	}
-	if retryable(errors.New("plain")) || retryable(&Unavailable{Status: 500}) || (&Unavailable{URL: "u"}).Error() == "" {
+	// The retry classification itself is the shared package's; here the
+	// adapter's exported wrapper is exercised through the outage above.
+	if Retryable(errors.New("plain")) || (&Unavailable{URL: "u"}).Error() == "" {
 		t.Fatal("retryable classification")
 	}
 }
@@ -379,11 +382,6 @@ func TestClosedIdleConnectionIsRetried(t *testing.T) {
 	if err != nil || !d.Allow || counting.attempts.Load() != 3 {
 		t.Fatalf("closed idle connection: %+v, %v, %d attempts", d, err, counting.attempts.Load())
 	}
-	// The classification, on the error as http.Client.Do shapes it.
-	shaped := &Unavailable{URL: url, Err: fmt.Errorf("Post %q: %w", url, errors.New(serverClosedIdle))}
-	if !retryable(shaped) || retryable(&Unavailable{URL: url, Err: errors.New("http: server closed idle connection early")}) {
-		t.Fatal("closed idle classification")
-	}
 }
 
 func TestCachesAreBounded(t *testing.T) {
@@ -418,7 +416,7 @@ func TestCachesAreBounded(t *testing.T) {
 	// are written the way Verify writes them, then one real token lands.
 	key := newKey(t)
 	v := newVerifier(t, clk, key)
-	signer := NewSigner(key, localIssuer, clk.Now)
+	signer := NewSigner(key, localIssuer, "", clk.Now)
 	until := clk.Now().Add(time.Hour)
 	var firstKey [32]byte
 	for i := range CacheEntries {
@@ -450,7 +448,7 @@ func TestCacheKeyComponents(t *testing.T) {
 	stub := authorizer.New(t)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	ctx := context.Background()
-	for _, r := range []Request{request("alice", repoA, ActionWrite), request("alice", repoA, ActionWrite),
+	for _, r := range []authz.Request{request("alice", repoA, ActionWrite), request("alice", repoA, ActionWrite),
 		request("bob", repoA, ActionWrite), request("alice", repoB, ActionWrite), request("alice", repoA, ActionRead)} {
 		if _, err := c.Authorize(ctx, r); err != nil {
 			t.Fatal(err)

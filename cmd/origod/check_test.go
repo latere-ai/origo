@@ -132,7 +132,7 @@ func TestCheckReportsEachRequirement(t *testing.T) {
 		env := checkEnv(t)
 		env["ORIGO_AUTHORIZER_URL"] = answering(t, http.StatusOK, `{"allow":true}`)
 		code, lines := report(t, env)
-		requires(t, lines, "authorizer", "probe id allowed")
+		requires(t, lines, "authorizer", "allowed the probe id")
 		if code != 1 {
 			t.Errorf("exit %d", code)
 		}
@@ -271,7 +271,7 @@ func TestSubcommandDispatch(t *testing.T) {
 	}
 	errOut.Reset()
 	if code := run(context.Background(), []string{"check"}, getenv(nil), &out, &errOut); code != 1 ||
-		!strings.Contains(errOut.String(), "configuration: missing ORIGO_AUTHORIZER_TOKEN") {
+		!strings.Contains(errOut.String(), "configuration: missing ORIGO_OIDC_ISSUERS") {
 		t.Fatalf("check without a configuration: %d %q", code, errOut.String())
 	}
 	errOut.Reset()

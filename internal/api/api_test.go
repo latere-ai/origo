@@ -245,7 +245,7 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 	h := &harness{t: t, store: store, log: l, cache: cache, authz: authz, key: key, principal: auth.Principal{Subject: "alice"}}
 	h.guard = auth.NewGuard(client, logger)
-	h.signer = auth.NewSigner(key, issuer, nil)
+	h.signer = auth.NewSigner(key, issuer, "", nil)
 	var dispatcher *events.Dispatcher
 	if cfg.sink != nil {
 		dispatcher, err = events.New(events.Options{Log: l, Node: "n1", URL: cfg.sink.URL(), Secret: cfg.sink.Secret(), Logger: logger})
@@ -600,7 +600,7 @@ func TestDenyBeforeLookup(t *testing.T) {
 			t.Errorf("eve %s %s: %d %v", r.method, r.path, status, out)
 		}
 		reqs := h.authz.Requests()
-		if len(reqs) != before+1 || reqs[before].Repo.ID != r.id || reqs[before].Repo.Owner != r.owner || reqs[before].Repo.Slug != r.slug {
+		if len(reqs) != before+1 || reqs[before].Resource.ID != r.id || reqs[before].Resource.String("owner") != r.owner || reqs[before].Resource.String("slug") != r.slug {
 			t.Errorf("eve %s %s: authorizer saw %+v", r.method, r.path, reqs[len(reqs)-1])
 		}
 		got := reset()
@@ -691,7 +691,7 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 	}
 	// Minting is an admin action on the repository, and a bound token
 	// never mints.
-	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "admin" || reqs[len(reqs)-1].Repo.ID != repoA {
+	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "repo.admin" || reqs[len(reqs)-1].Resource.ID != repoA {
 		t.Fatalf("authorizer: %+v", reqs[len(reqs)-1])
 	}
 	h.as(p)
@@ -786,7 +786,7 @@ func TestOrigoPreferOnEveryRepositoryResponse(t *testing.T) {
 	set := placement.NewSet("origod-0", nil)
 	set.Heard("origod-1", time.Now())
 	h := newHarness(t, withPlacement(set))
-	h.authz.Allow(authorizer.Rule{Subject: "alice", Replicas: 2})
+	h.authz.Allow(authorizer.Rule{Subject: "alice", Limits: map[string]any{"replicas": 2}})
 	h.authz.Deny(authorizer.Rule{Subject: "eve"}, "no")
 	two := strings.Join(set.Prefer(repoA, 2), ",")
 	one := set.Prefer(repoA, 1)[0]

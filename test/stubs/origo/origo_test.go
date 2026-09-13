@@ -122,7 +122,7 @@ func TestStubServesTheContract(t *testing.T) {
 	}
 	// The stubs decide: a deny is a 403, the sink is there for spec 008,
 	// and a failing bucket is a 503 storage_unavailable.
-	s.Authorizer().Deny(authorizer.Rule{Subject: "eve"}, "not welcome")
+	s.Authorizer().Deny(authorizer.Rule{Subject: s.Subject("eve")}, "not welcome")
 	if status, body, _ := call(t, s.URL(), s.Token("eve"), "GET", "/v1/repos/"+repoA, ""); status != 403 || code(body) != "forbidden" {
 		t.Fatalf("deny: %d %v", status, body)
 	}
