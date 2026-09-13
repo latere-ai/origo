@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The stub issuer of spec 013 is the family's `authkit/issuertest` from
+  `latere.ai/x/pkg`, wrapped with Origo's defaults (ES256, audience
+  `origo`); `test/stubs/issuer` keeps its name and API for the tests and
+  the origo-stubs binary. One stub issuer now serves every repository's
+  tests and the conformance suite.
+
 ## v0.2.1 - 2026-09-13
 
 - The stub issuer of spec 013 serves `POST /actor-tokens`: a bearer it

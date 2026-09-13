@@ -180,7 +180,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 		seen = FromContext(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	token := iss.Mint(issuer.Claims{Sub: "svc", Act: "alice"})
+	token := iss.Mint(issuer.Delegated("svc", "alice"))
 	cases := []struct {
 		name string
 		set  func(*http.Request)

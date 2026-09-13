@@ -150,7 +150,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 			t.Fatalf("%s: %+v, %v", iss.URL(), p, err)
 		}
 	}
-	p, err := v.Verify(ctx, a.Mint(issuer.Claims{Sub: "svc", Act: "bob"}))
+	p, err := v.Verify(ctx, a.Mint(issuer.Delegated("svc", "bob")))
 	if err != nil || p.Subject != "bob" || p.Actor != "svc" {
 		t.Fatalf("act: %+v, %v", p, err)
 	}
@@ -380,7 +380,9 @@ func TestJWKSParsingSkipsWhatItCannotUse(t *testing.T) {
 func FuzzParseToken(f *testing.F) {
 	iss := issuer.NewHandler(issuer.WithIssuer("http://fuzz.example"))
 	defer iss.Close()
-	valid := iss.Mint(issuer.Claims{Sub: "alice", Act: "svc", Nbf: 1})
+	delegated := issuer.Delegated("alice", "svc")
+	delegated.Nbf = 1
+	valid := iss.Mint(delegated)
 	f.Add(valid)
 	f.Add("")
 	f.Add("a.b.c")

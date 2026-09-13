@@ -773,7 +773,7 @@ func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
 	n.h.Register(mux)
 	srv := httptest.NewServer(contract.Middleware(v.Middleware(mux)))
 	t.Cleanup(srv.Close)
-	token := iss.Mint(issuer.Claims{Sub: "svc", Act: "alice"})
+	token := iss.Mint(issuer.Delegated("svc", "alice"))
 	u, _ := url.Parse(srv.URL)
 	u.User = url.UserPassword("x", token)
 	work := clone(t, u.String()+"/r/"+repoA+".git")
