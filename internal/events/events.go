@@ -118,11 +118,11 @@ type Update struct {
 	Forced bool   `json:"forced"`
 }
 
-// Pusher is the identity of a push or an operation: the effective
-// subject and, when a service acted on its behalf, the actor.
+// Pusher is the identity of a push or an operation: the subject of the
+// token that made it. No token carries a chain (the family's D5), so
+// there is no other party to name.
 type Pusher struct {
-	Sub   string `json:"sub"`
-	Actor string `json:"actor"`
+	Sub string `json:"sub"`
 }
 
 // Push is the payload of a push event, spec 003's with kind and the two
@@ -185,7 +185,7 @@ func build(repo string, m *wal.Meta, e Entry) (Push, bool) {
 	}
 	p := Push{
 		ID: PushID(repo, e.Header.Seq), Kind: KindPush, Repo: repo, Seq: e.Header.Seq,
-		Owner: m.Owner, Slug: m.Slug, Pusher: Pusher{Sub: e.Header.Subject, Actor: e.Header.Actor},
+		Owner: m.Owner, Slug: m.Slug, Pusher: Pusher{Sub: e.Header.Subject},
 		At: e.Header.At.UTC(), KindDetail: detail, Updates: make([]Update, 0, len(e.Refs)),
 	}
 	for _, u := range e.Refs {

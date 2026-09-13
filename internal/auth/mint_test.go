@@ -61,7 +61,7 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	if s.KID() != KeyID(&key.PublicKey) || !s.Public().Equal(&key.PublicKey) {
 		t.Fatal("kid or public key")
 	}
-	tok, exp, err := s.Mint(Principal{Subject: "alice", Actor: "svc"}, repoA, ScopeWrite, 90*time.Second)
+	tok, exp, err := s.Mint(Principal{Subject: "alice"}, repoA, ScopeWrite, 90*time.Second)
 	if err != nil || !exp.Equal(clk.Now().Add(90*time.Second)) {
 		t.Fatalf("%v %v", exp, err)
 	}
@@ -70,7 +70,7 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := parsed.Claims
-	if parsed.Alg != "ES256" || parsed.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(AudienceOrigo) || c.Sub != "svc" || c.Act != "alice" || c.Repo != repoA || c.Scope != "write" {
+	if parsed.Alg != "ES256" || parsed.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(AudienceOrigo) || c.Sub != "alice" || c.Delegated || c.Repo != repoA || c.Scope != "write" {
 		t.Fatalf("claims: %+v %+v", parsed, c)
 	}
 	if c.Iat == nil || c.Exp == nil || *c.Iat != float64(clk.Now().Unix()) || *c.Exp != float64(exp.Unix()) {
@@ -79,14 +79,13 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(c.JTI) {
 		t.Fatalf("jti %q", c.JTI)
 	}
-	// Without an actor, sub is the subject and act is absent.
 	tok2, _, _ := s.Mint(Principal{Subject: "bob"}, repoA, ScopeRead, time.Hour)
 	p2, _ := ParseToken(tok2)
-	if p2.Claims.Sub != "bob" || p2.Claims.Act != "" || p2.Claims.Scope != "read" {
-		t.Fatalf("no actor: %+v", p2.Claims)
+	if p2.Claims.Sub != "bob" || p2.Claims.Scope != "read" {
+		t.Fatalf("read token: %+v", p2.Claims)
 	}
 	// The JWKS verifies what the signer minted, and a verifier holding the
-	// public key names the same subject and actor as the minter had.
+	// public key names the same subject as the minter had.
 	rec := httptest.NewRecorder()
 	s.JWKS().ServeHTTP(rec, httptest.NewRequest("GET", "/.well-known/jwks.json", nil))
 	keys, err := parseJWKS(rec.Body.Bytes())
@@ -95,7 +94,7 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	}
 	v := newVerifier(t, clk, key)
 	p, err := v.Verify(context.Background(), tok)
-	if err != nil || p.Subject != "alice" || p.Actor != "svc" || p.Bound.Repo != repoA || p.Bound.Scope != ScopeWrite {
+	if err != nil || p.Subject != "alice" || p.Bound.Repo != repoA || p.Bound.Scope != ScopeWrite {
 		t.Fatalf("verified: %+v, %v", p, err)
 	}
 	// The body's limits.

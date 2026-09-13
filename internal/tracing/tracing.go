@@ -14,17 +14,16 @@ import (
 // scope names the instrumentation library on every span Origo creates.
 const scope = "github.com/latere-ai/origo"
 
-// Attr is one span attribute. Repository id, subject, and actor travel
-// here and never on a metric label (spec 011).
+// Attr is one span attribute. Repository id and subject travel here and
+// never on a metric label (spec 011).
 type Attr struct {
 	Key   string
 	Value string
 }
 
-// Repo, Subject, and Actor are the attributes spec 011 names.
+// Repo and Subject are the attributes spec 011 names.
 func Repo(id string) Attr   { return Attr{Key: "origo.repo", Value: id} }
 func Subject(s string) Attr { return Attr{Key: "origo.subject", Value: s} }
-func Actor(a string) Attr   { return Attr{Key: "origo.actor", Value: a} }
 func Phase(p string) Attr   { return Attr{Key: "origo.phase", Value: p} }
 
 // Start opens a child span of the span on ctx and returns the context

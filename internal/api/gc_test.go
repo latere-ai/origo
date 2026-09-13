@@ -93,7 +93,7 @@ func TestGcRoutesToThePrimary(t *testing.T) {
 	if !reflect.DeepEqual(compacted["before"], got) || !reflect.DeepEqual(compacted["after"], want) {
 		t.Fatalf("compacted event %v, want before %v after %v", compacted, got, want)
 	}
-	if p, _ := compacted["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "" {
+	if p, _ := compacted["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != nil {
 		t.Fatalf("compacted pusher %v", compacted["pusher"])
 	}
 	ix := mustIndex(t, home.log, repoA)

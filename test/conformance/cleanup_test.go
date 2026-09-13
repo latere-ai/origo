@@ -42,7 +42,7 @@ func get(t *testing.T, base, token, id string) (int, string) {
 // 200, because Run deletes by id and never by prefix.
 func TestRunCleansUp(t *testing.T) {
 	s := origo.New(t)
-	token := s.Token("dev", "")
+	token := s.Token("dev")
 	beside := "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", s.URL()+"/v1/repos",
 		strings.NewReader(fmt.Sprintf(`{"id":%q,"owner":%q,"slug":"%sbeside"}`, beside, conformance.Owner, conformance.SlugPrefix)))

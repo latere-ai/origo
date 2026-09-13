@@ -430,9 +430,9 @@ func TestRepositoryLifecycle(t *testing.T) {
 		t.Fatalf("patch unknown: %d %v", status, out)
 	}
 
-	// The subject and the actor of the caller are in the entry a patch
-	// of the default branch commits.
-	h.as(auth.Principal{Subject: "bob", Actor: "svc"})
+	// The subject of the caller is in the entry a patch of the default
+	// branch commits.
+	h.as(auth.Principal{Subject: "bob"})
 	if status, _ := h.do("PATCH", "/v1/repos/"+repoA, `{"default_branch":"trunk"}`); status != 200 {
 		t.Fatal("patch as bob")
 	}
@@ -440,7 +440,7 @@ func TestRepositoryLifecycle(t *testing.T) {
 	rc, _, _ := h.store.Get(context.Background(), h.log.RepoPrefix(repoA)+ix.Entry, "")
 	hdr, _, _, err := wal.ReadEntryHead(rc)
 	_ = rc.Close()
-	if err != nil || hdr.Subject != "bob" || hdr.Actor != "svc" {
+	if err != nil || hdr.Subject != "bob" {
 		t.Fatalf("entry header: %+v, %v", hdr, err)
 	}
 	h.as(auth.Principal{Subject: "alice"})
@@ -587,13 +587,16 @@ func TestDenyBeforeLookup(t *testing.T) {
 	}
 	// The denied caller: 403 everywhere, one authorizer request carrying
 	// what the path names, and no store read but the name resolution. A
-	// distinct actor per route keeps the client's cache out of the count.
+	// distinct denied subject per route keeps the client's cache out of
+	// the count.
 	for i, r := range append(byID, byName...) {
-		h.as(auth.Principal{Subject: "eve", Actor: fmt.Sprintf("run-%d", i)})
+		eve := fmt.Sprintf("eve-%d", i)
+		h.authz.Deny(authorizer.Rule{Subject: eve}, "eve is denied")
+		h.as(auth.Principal{Subject: eve})
 		reset()
 		before := len(h.authz.Requests())
 		status, out := h.do(r.method, r.path, r.body)
-		if status != 403 || code(out) != contract.CodeForbidden || details(out)["reason"] != "eve is denied" || details(out)["subject"] != "eve" {
+		if status != 403 || code(out) != contract.CodeForbidden || details(out)["reason"] != "eve is denied" || details(out)["subject"] != eve {
 			t.Errorf("eve %s %s: %d %v", r.method, r.path, status, out)
 		}
 		reqs := h.authz.Requests()
@@ -613,7 +616,7 @@ func TestDenyBeforeLookup(t *testing.T) {
 	// asked before the first store read.
 	h.authz.ClearRequests()
 	for i, r := range append(byID[:9], byName[:3]...) {
-		h.as(auth.Principal{Subject: "alice", Actor: fmt.Sprintf("run-%d", i)})
+		h.as(auth.Principal{Subject: fmt.Sprintf("alice-%d", i)})
 		var seenAtFirstOp int
 		h.store.SetFault(func(op, key string) error {
 			mu.Lock()
@@ -642,7 +645,8 @@ func TestDenyBeforeLookup(t *testing.T) {
 		}
 	}
 	// The cache: a second denied request within 5 seconds is no call.
-	h.as(auth.Principal{Subject: "eve", Actor: "cached"})
+	h.authz.Deny(authorizer.Rule{Subject: "eve"}, "eve is denied")
+	h.as(auth.Principal{Subject: "eve"})
 	n := len(h.authz.Requests())
 	h.do("GET", "/v1/repos/"+repoA, "")
 	h.do("GET", "/v1/repos/"+repoA, "")
@@ -665,7 +669,7 @@ func TestDenyBeforeLookup(t *testing.T) {
 func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 	h := newHarness(t)
 	h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`)
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":600}`)
 	token, _ := out["token"].(string)
 	if status != 201 || token == "" || out["expires_at"] == nil {
@@ -682,12 +686,12 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := v.Verify(context.Background(), token)
-	if err != nil || p.Subject != "alice" || p.Actor != "svc" || p.Bound == nil || p.Bound.Repo != repoA || p.Bound.Scope != auth.ScopeRead {
+	if err != nil || p.Subject != "alice" || p.Bound == nil || p.Bound.Repo != repoA || p.Bound.Scope != auth.ScopeRead {
 		t.Fatalf("verified: %+v, %v", p, err)
 	}
 	// Minting is an admin action on the repository, and a bound token
 	// never mints.
-	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "admin" || reqs[len(reqs)-1].Repo.ID != repoA || reqs[len(reqs)-1].Actor != "svc" {
+	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "admin" || reqs[len(reqs)-1].Repo.ID != repoA {
 		t.Fatalf("authorizer: %+v", reqs[len(reqs)-1])
 	}
 	h.as(p)
@@ -730,7 +734,7 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 func TestLifecycleEventsAreEmitted(t *testing.T) {
 	s := sink.New(t)
 	h := newHarness(t, withSink(s))
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	if status, _ := h.do("POST", "/v1/repos", `{"id":"`+repoA+`","owner":"acme","slug":"app"}`); status != 201 {
 		t.Fatalf("create: %d", status)
 	}
@@ -745,7 +749,7 @@ func TestLifecycleEventsAreEmitted(t *testing.T) {
 	if err := json.Unmarshal(got[0].Body, &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Seq != 1 || p.KindDetail != events.DetailDefaultBranch || len(p.Updates) != 1 || p.Updates[0] != (events.Update{Ref: "HEAD", Before: "ref: refs/heads/main", After: "ref: refs/heads/dev"}) || p.Pusher != (events.Pusher{Sub: "alice", Actor: "svc"}) || !got[0].Verified {
+	if p.Seq != 1 || p.KindDetail != events.DetailDefaultBranch || len(p.Updates) != 1 || p.Updates[0] != (events.Update{Ref: "HEAD", Before: "ref: refs/heads/main", After: "ref: refs/heads/dev"}) || p.Pusher != (events.Pusher{Sub: "alice"}) || !got[0].Verified {
 		t.Fatalf("event %+v", p)
 	}
 	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {

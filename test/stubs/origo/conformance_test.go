@@ -20,7 +20,7 @@ import (
 func TestStubConforms(t *testing.T) {
 	s := origo.New(t)
 	report := conformance.Run(t, conformance.Target{
-		URL: s.URL(), Token: s.Token("dev", ""),
+		URL: s.URL(), Token: s.Token("dev"),
 		Issuer: s.Issuer().URL(), Authorizer: s.Authorizer().URL(), EventsSink: s.Sink().URL(),
 		Fault: s.Fault(),
 	})

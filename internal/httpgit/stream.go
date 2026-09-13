@@ -250,7 +250,7 @@ func (h *Handler) receiveStream(ctx context.Context, id string, rp *repo.Repo, q
 		h.observe(phaseApply, started)
 		endApply()
 		h.pushes.Inc(nil)
-		h.logger.InfoContext(ctx, "push", "repo", id, "transport", "stream", "seq", committed.Index.Seq, "refs", len(refs), "forced", len(forced), "subject", auth.Subject(ctx), "actor", auth.Actor(ctx))
+		h.logger.InfoContext(ctx, "push", "repo", id, "transport", "stream", "seq", committed.Index.Seq, "refs", len(refs), "forced", len(forced), "subject", auth.Subject(ctx))
 		_ = h.events.Enqueue(ctx, id, events.Entry{Header: committed.Header, Refs: refs, Forced: forced})
 		if h.compact != nil {
 			h.compact.After(id, committed.Index)

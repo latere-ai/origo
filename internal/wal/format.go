@@ -77,7 +77,6 @@ type Header struct {
 	Seq        uint64    `json:"seq"`
 	At         time.Time `json:"at"`
 	Subject    string    `json:"subject"`
-	Actor      string    `json:"actor"`
 	PackBytes  int64     `json:"pack_bytes"`
 	PackSHA256 string    `json:"pack_sha256"`
 	// PushOptions are the options the client sent with a push, such as
@@ -274,11 +273,20 @@ func ParseHeader(line []byte) (Header, error) {
 	if len(line) > maxHeaderLine {
 		return h, errors.New("wal: header exceeds 4 KiB")
 	}
+	// An entry written before 2026-09-13 carries an actor field, which
+	// the family's decision D5 removed; a reader accepts the key and
+	// records nothing from it, so a log written under the earlier shape
+	// still reads. Every other unknown field is refused.
+	var wire struct {
+		Header
+		Actor string `json:"actor"`
+	}
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&h); err != nil {
+	if err := dec.Decode(&wire); err != nil {
 		return h, fmt.Errorf("wal: header: %w", err)
 	}
+	h = wire.Header
 	if err := checkVersion("header", h.V); err != nil {
 		return h, err
 	}

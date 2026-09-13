@@ -76,7 +76,7 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 		}
 		return d, nil
 	}
-	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: action})
+	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Repo: repo, Action: action})
 	if err != nil {
 		return Decision{}, err
 	}
@@ -103,12 +103,12 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 	if !ok {
 		return Directory{}, nil
 	}
-	return lister.List(ctx, ListRequest{Subject: p.Subject, Actor: p.Actor, Cursor: cursor, Limit: limit})
+	return lister.List(ctx, ListRequest{Subject: p.Subject, Cursor: cursor, Limit: limit})
 }
 
 // quota is spec 012's rule for a repository-bound token's writes: the
 // token carries no quota claim, so the figure is the minting subject's,
-// asked of the authorizer with the token's own subject and actor on the
+// asked of the authorizer with the token's own subject on the
 // bound repository and cached like any other allow, and a bound token's
 // uploads are held to the figure its minter's pushes are.
 //
@@ -123,7 +123,7 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 // bound token would make the token the way around spec 007's outage
 // rule.
 func (g *Guard) quota(ctx context.Context, p Principal, repo RepoRef) (int64, error) {
-	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Actor: p.Actor, Repo: repo, Action: ActionWrite})
+	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Repo: repo, Action: ActionWrite})
 	switch {
 	case err != nil:
 		return 0, err

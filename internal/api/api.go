@@ -430,7 +430,7 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 		}
 		// HEAD moves through the log like any reference, so every node
 		// applies it on its next currency check.
-		entry := wal.Entry{Kind: wal.KindPush, Subject: auth.Subject(r.Context()), Actor: auth.Actor(r.Context()), Refs: []wal.RefUpdate{{
+		entry := wal.Entry{Kind: wal.KindPush, Subject: auth.Subject(r.Context()), Refs: []wal.RefUpdate{{
 			Ref: "HEAD", Old: ix.Refs["HEAD"], New: "ref: refs/heads/" + *req.DefaultBranch,
 		}}}
 		c, err := h.log.Commit(r.Context(), m.ID, ix, entry, noCatchUp)
@@ -454,7 +454,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ix.DeletedAt == nil {
-		entry := wal.Entry{Kind: wal.KindDelete, Deleted: true, Subject: auth.Subject(r.Context()), Actor: auth.Actor(r.Context())}
+		entry := wal.Entry{Kind: wal.KindDelete, Deleted: true, Subject: auth.Subject(r.Context())}
 		c, err := h.log.Commit(r.Context(), m.ID, ix, entry, noCatchUp)
 		if err != nil {
 			h.storageError(w, r, err)
@@ -481,7 +481,7 @@ func (h *Handler) undelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ix.DeletedAt != nil {
-		entry := wal.Entry{Kind: wal.KindPush, Subject: auth.Subject(r.Context()), Actor: auth.Actor(r.Context())}
+		entry := wal.Entry{Kind: wal.KindPush, Subject: auth.Subject(r.Context())}
 		c, err := h.log.Commit(r.Context(), m.ID, ix, entry, noCatchUp)
 		if err != nil {
 			h.storageError(w, r, err)

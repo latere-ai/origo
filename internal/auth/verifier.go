@@ -225,10 +225,12 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if c.Sub == "" {
 		return Principal{}, refuse(ReasonSubject)
 	}
-	p := Principal{Subject: c.Sub}
-	if c.Act != "" {
-		p.Subject, p.Actor = c.Act, c.Sub
+	// A token that carries an act claim names two parties, and no token
+	// carries a chain: the caller is the token's sub and nobody else.
+	if c.Delegated {
+		return Principal{}, refuse(ReasonDelegation)
 	}
+	p := Principal{Subject: c.Sub}
 	if local {
 		p.Bound = &Bound{Repo: c.Repo, Scope: Scope(c.Scope)}
 	}

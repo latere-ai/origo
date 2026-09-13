@@ -129,14 +129,14 @@ func TestSSHCloneFetchPushWithRealGit(t *testing.T) {
 	if err != nil || ix.Seq != 1 || ix.Refs["refs/heads/main"] != first {
 		t.Fatalf("after the push: %+v, %v", ix, err)
 	}
-	// The entry carries the subject the key resolved to and no actor.
+	// The entry carries the subject the key resolved to.
 	rc, _, err := f.store.Get(context.Background(), f.log.RepoPrefix(repoA)+ix.Entry, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	hdr, refs, _, err := wal.ReadEntryHead(rc)
 	_ = rc.Close()
-	if err != nil || hdr.Subject != "u_7f3c" || hdr.Actor != "" || len(refs) != 1 {
+	if err != nil || hdr.Subject != "u_7f3c" || len(refs) != 1 {
 		t.Fatalf("entry header %+v refs %+v, %v", hdr, refs, err)
 	}
 

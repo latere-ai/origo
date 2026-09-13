@@ -44,7 +44,9 @@ type RepoRef struct {
 	Slug  string `json:"slug"`
 }
 
-// Request is the body of one authorizer call.
+// Request is the body of one authorizer call. Actor is contract 1's
+// field and is always empty: no token carries a chain (D5), and the
+// field leaves the envelope with contract 2 (spec 028).
 type Request struct {
 	Subject string  `json:"subject"`
 	Actor   string  `json:"actor"`
@@ -176,7 +178,7 @@ type ClientOptions struct {
 
 // Client is the authorizer client: one call per decision, one retry
 // when the connection failed before a response line arrived, and a
-// cache per (subject, actor, repo id, action).
+// cache per (subject, repo id, action).
 type Client struct {
 	url     string
 	token   string
@@ -188,8 +190,8 @@ type Client struct {
 }
 
 type cacheKey struct {
-	subject, actor, repo string
-	action               Action
+	subject, repo string
+	action        Action
 }
 
 type cachedDecision struct {
@@ -224,7 +226,7 @@ func NewClient(o ClientOptions) (*Client, error) {
 // Authorize answers from the cache or asks the authorizer. An answer for
 // an unresolved name (empty id) is never cached.
 func (c *Client) Authorize(ctx context.Context, req Request) (Decision, error) {
-	key := cacheKey{req.Subject, req.Actor, req.Repo.ID, req.Action}
+	key := cacheKey{req.Subject, req.Repo.ID, req.Action}
 	now := c.now()
 	if req.Repo.ID != "" {
 		if e, ok := c.cache.Get(key); ok && now.Before(e.until) {

@@ -48,7 +48,7 @@ func newAnswering(t *testing.T, status int, body string) (*Client, *answering) {
 func TestListRequestCarriesNoRepo(t *testing.T) {
 	c, a := newAnswering(t, http.StatusOK, `{"repos":[],"next_cursor":""}`)
 	ctx := context.Background()
-	if _, err := c.List(ctx, ListRequest{Subject: "alice", Actor: "svc", Cursor: "c1", Limit: 7}); err != nil {
+	if _, err := c.List(ctx, ListRequest{Subject: "alice", Cursor: "c1", Limit: 7}); err != nil {
 		t.Fatal(err)
 	}
 	var sent map[string]any
@@ -58,14 +58,14 @@ func TestListRequestCarriesNoRepo(t *testing.T) {
 	if _, ok := sent["repo"]; ok {
 		t.Errorf("the list request carries a repo object: %s", a.seen[0])
 	}
-	for field, want := range map[string]any{"subject": "alice", "actor": "svc", "action": "list", "cursor": "c1", "limit": float64(7)} {
+	for field, want := range map[string]any{"subject": "alice", "action": "list", "cursor": "c1", "limit": float64(7)} {
 		if sent[field] != want {
 			t.Errorf("%s is %v, want %v", field, sent[field], want)
 		}
 	}
 
 	c2, a2 := newAnswering(t, http.StatusOK, `{"allow":true}`)
-	if _, err := c2.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil {
+	if _, err := c2.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(a2.seen[0], `"repo":{"id":"`+repoA) {
@@ -146,13 +146,13 @@ func TestDecisionStillNeedsAllow(t *testing.T) {
 	ctx := context.Background()
 	for _, body := range []string{`{}`, `{"reason":"nope"}`, `{"repos":[]}`, `{"directory":false}`, `{"ttl":60}`} {
 		c, _ := newAnswering(t, http.StatusOK, body)
-		if _, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); !isUnavailable(err) {
+		if _, err := c.Authorize(ctx, request("alice", repoA, ActionRead)); !isUnavailable(err) {
 			t.Errorf("a decision body %q gave %v, want an *Unavailable", body, err)
 		}
 	}
 	// And a directory answer never reaches the decision path as an allow.
 	c, _ := newAnswering(t, http.StatusOK, `{"repos":[{"id":"`+repoA+`"}]}`)
-	if d, err := c.Authorize(ctx, request("alice", "", repoA, ActionWrite)); err == nil || d.Allow {
+	if d, err := c.Authorize(ctx, request("alice", repoA, ActionWrite)); err == nil || d.Allow {
 		t.Errorf("a directory body decided a write: %+v, %v", d, err)
 	}
 }

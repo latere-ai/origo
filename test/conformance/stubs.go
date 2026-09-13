@@ -18,8 +18,8 @@ import (
 // same cases run against the in-process stubs and against the stack's
 // host ports.
 
-// mint asks the stub issuer for a token of the subject, acting for act
-// when it is not empty.
+// mint asks the stub issuer for a token of the subject, carrying an act
+// claim naming act when it is not empty: the shape the node refuses.
 func (s *session) mint(t testing.TB, sub, act string) string {
 	t.Helper()
 	body := fmt.Sprintf(`{"sub":%q}`, sub)

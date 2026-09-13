@@ -402,7 +402,7 @@ func TestEmitIsIdempotent(t *testing.T) {
 	h.create(repoA, "acme", "app")
 	ctx := context.Background()
 	at := h.clock.Now()
-	pusher := Pusher{Sub: "alice", Actor: "svc"}
+	pusher := Pusher{Sub: "alice"}
 	for range 2 {
 		if err := h.d.Emit(ctx, repoA, "frozen", at, pusher, nil); err != nil {
 			t.Fatal(err)
@@ -419,7 +419,7 @@ func TestEmitIsIdempotent(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal(got[0].Body, &body)
-	if body["id"] != id || body["kind"] != "frozen" || body["repo"] != repoA || body["owner"] != "acme" || body["slug"] != "app" || body["at"] != at.Format(time.RFC3339) || body["pusher"].(map[string]any)["actor"] != "svc" {
+	if body["id"] != id || body["kind"] != "frozen" || body["repo"] != repoA || body["owner"] != "acme" || body["slug"] != "app" || body["at"] != at.Format(time.RFC3339) || body["pusher"].(map[string]any)["sub"] != "alice" {
 		t.Fatalf("payload %v", body)
 	}
 	// A third Emit after the delivery writes the key again, and the
@@ -636,16 +636,14 @@ func TestRepairReadsOnlyDeadJournals(t *testing.T) {
 	}
 }
 
-// TestPusherCarriesSubjectAndActor: a push with a service token
-// carrying act delivers pusher.sub equal to act and pusher.actor equal
-// to the token's sub, one without act delivers actor empty.
-func TestPusherCarriesSubjectAndActor(t *testing.T) {
+// TestPusherCarriesTheSubject: a push delivers pusher.sub equal to the
+// entry's subject, and the pusher names nobody else: no token carries a
+// chain, so there is no actor field to deliver.
+func TestPusherCarriesTheSubject(t *testing.T) {
 	h := newHarness(t, "n1")
 	ix := h.create(repoA, "acme", "app")
 	ctx := context.Background()
-	// The verifier of spec 007 sets Subject to act and Actor to sub; the
-	// entry header carries both and the event copies them.
-	c := h.push(repoA, ix, wal.Entry{Refs: mainUpdate(1), Subject: "alice", Actor: "svc"})
+	c := h.push(repoA, ix, wal.Entry{Refs: mainUpdate(1), Subject: "alice"})
 	c2 := h.push(repoA, c.Index, wal.Entry{Refs: mainUpdate(2), Subject: "bob"})
 	for _, x := range []struct {
 		c    *wal.Committed
@@ -663,11 +661,11 @@ func TestPusherCarriesSubjectAndActor(t *testing.T) {
 	var p1, p2 Push
 	_ = json.Unmarshal(got[0].Body, &p1)
 	_ = json.Unmarshal(got[1].Body, &p2)
-	if p1.Pusher != (Pusher{Sub: "alice", Actor: "svc"}) || p2.Pusher != (Pusher{Sub: "bob"}) {
+	if p1.Pusher != (Pusher{Sub: "alice"}) || p2.Pusher != (Pusher{Sub: "bob"}) {
 		t.Fatalf("pushers %+v %+v", p1.Pusher, p2.Pusher)
 	}
-	if !strings.Contains(string(got[1].Body), `"actor":""`) {
-		t.Fatalf("actor absent rather than empty: %s", got[1].Body)
+	if strings.Contains(string(got[0].Body), `"actor"`) {
+		t.Fatalf("the pusher names an actor: %s", got[0].Body)
 	}
 }
 
@@ -1084,7 +1082,7 @@ func TestVerifiedEventPayload(t *testing.T) {
 	h.create(repoA, "acme", "app")
 	ctx := context.Background()
 	at := h.clock.Now()
-	pusher := Pusher{Sub: "alice", Actor: "svc"}
+	pusher := Pusher{Sub: "alice"}
 	extra := map[string]any{
 		"equal": false,
 		"refs": map[string]any{"source": 42, "origo": 41, "differing": []any{

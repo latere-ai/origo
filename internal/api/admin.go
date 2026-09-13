@@ -47,7 +47,7 @@ func (h *Handler) registerAdmin(mux *http.ServeMux) {
 // pusher is the identity of the caller, the field every event kind
 // carries in the shape the push event uses.
 func pusher(r *http.Request) events.Pusher {
-	return events.Pusher{Sub: auth.Subject(r.Context()), Actor: auth.Actor(r.Context())}
+	return events.Pusher{Sub: auth.Subject(r.Context())}
 }
 
 // emit sends one event of the kind and logs a failure; the dispatcher

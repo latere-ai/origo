@@ -204,7 +204,7 @@ func TestRequestLogRedactsCredentials(t *testing.T) {
 	if push == nil {
 		t.Fatalf("no request line for the push:\n%s", out.String())
 	}
-	for _, field := range []string{"route", "method", "status", "duration_ms", "repo", "subject", "actor", "bytes_in", "bytes_out", "trace_id"} {
+	for _, field := range []string{"route", "method", "status", "duration_ms", "repo", "subject", "bytes_in", "bytes_out", "trace_id"} {
 		if _, ok := push[field]; !ok {
 			t.Errorf("the line has no %s: %v", field, push)
 		}

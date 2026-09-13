@@ -26,7 +26,7 @@ func recording(t *testing.T) *tracetest.SpanRecorder {
 
 func TestStartNestsSpansAndCarriesAttributes(t *testing.T) {
 	rec := recording(t)
-	ctx, end := Start(context.Background(), "receive", Repo("r1"), Subject("alice"), Actor(""))
+	ctx, end := Start(context.Background(), "receive", Repo("r1"), Subject("alice"))
 	if ID(ctx) == "" {
 		t.Fatal("the context carries no trace id")
 	}
@@ -34,7 +34,7 @@ func TestStartNestsSpansAndCarriesAttributes(t *testing.T) {
 	if ID(child) != ID(ctx) {
 		t.Fatalf("child trace id %q, parent %q", ID(child), ID(ctx))
 	}
-	Set(child, Actor("bob"))
+	Set(child, Subject("bob"))
 	endChild()
 	end()
 
@@ -62,7 +62,7 @@ func TestStartNestsSpansAndCarriesAttributes(t *testing.T) {
 	for _, kv := range spans[0].Attributes() {
 		child0[string(kv.Key)] = kv.Value.AsString()
 	}
-	if child0["origo.phase"] != "entry" || child0["origo.actor"] != "bob" {
+	if child0["origo.phase"] != "entry" || child0["origo.subject"] != "bob" {
 		t.Fatalf("child attributes %v", child0)
 	}
 }

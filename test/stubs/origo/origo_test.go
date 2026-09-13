@@ -17,6 +17,7 @@ import (
 
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"github.com/latere-ai/origo/test/stubs/issuer"
 	"github.com/latere-ai/origo/test/stubs/origo"
 )
 
@@ -65,7 +66,7 @@ func commitFile(t *testing.T, dir, name, content, message string) {
 // real git and net/http in-process, with the stubs deciding.
 func TestStubServesTheContract(t *testing.T) {
 	s := origo.New(t)
-	token := s.Token("dev", "")
+	token := s.Token("dev")
 	// The unauthenticated paths and the contract header.
 	if status, body, h := call(t, s.URL(), "", "GET", "/version", ""); status != 200 || body["version"] == nil || h.Get("Origo-Contract") == "" {
 		t.Fatalf("/version: %d %v %v", status, body, h)
@@ -122,15 +123,17 @@ func TestStubServesTheContract(t *testing.T) {
 	// The stubs decide: a deny is a 403, the sink is there for spec 008,
 	// and a failing bucket is a 503 storage_unavailable.
 	s.Authorizer().Deny(authorizer.Rule{Subject: "eve"}, "not welcome")
-	if status, body, _ := call(t, s.URL(), s.Token("eve", ""), "GET", "/v1/repos/"+repoA, ""); status != 403 || code(body) != "forbidden" {
+	if status, body, _ := call(t, s.URL(), s.Token("eve"), "GET", "/v1/repos/"+repoA, ""); status != 403 || code(body) != "forbidden" {
 		t.Fatalf("deny: %d %v", status, body)
 	}
-	if status, body, _ := call(t, s.URL(), s.Token("bob", "svc"), "GET", "/v1/repos/"+repoA, ""); status != 200 || body["id"] != repoA {
-		t.Fatalf("acting for: %d %v", status, body)
+	// A token carrying an act claim names two parties and is refused at
+	// the door (the family's D5); the authorizer is not asked.
+	asked := len(s.Authorizer().Requests())
+	if status, body, _ := call(t, s.URL(), s.Issuer().Mint(issuer.Claims{Sub: "svc", Extra: map[string]any{"act": "bob"}}), "GET", "/v1/repos/"+repoA, ""); status != 401 || code(body) != "unauthenticated" {
+		t.Fatalf("a token carrying act: %d %v", status, body)
 	}
-	// sub is the caller and act the subject it acts for (spec 007).
-	if reqs := s.Authorizer().Requests(); reqs[len(reqs)-1].Subject != "svc" || reqs[len(reqs)-1].Actor != "bob" {
-		t.Fatalf("act on the authorizer request: %+v", reqs[len(reqs)-1])
+	if len(s.Authorizer().Requests()) != asked {
+		t.Fatal("the authorizer was asked about a refused token")
 	}
 	if s.Sink().URL() == "" || s.Issuer().URL() == "" || s.Store() == nil || s.Log() == nil {
 		t.Fatal("handles")

@@ -183,10 +183,9 @@ func New(t testing.TB) *Server {
 // of every repository-bound token.
 func (s *Server) URL() string { return s.srv.URL }
 
-// Token mints a token the stub accepts for the subject, acting for act
-// when it is not empty.
-func (s *Server) Token(sub, act string) string {
-	return s.issuer.Mint(issuer.Delegated(sub, act))
+// Token mints a token the stub accepts for the subject.
+func (s *Server) Token(sub string) string {
+	return s.issuer.Mint(issuer.Claims{Sub: sub})
 }
 
 // Issuer is the stub issuer the node trusts.

@@ -65,8 +65,8 @@ func newClient(t *testing.T, url, token string, transport http.RoundTripper, clk
 	return c
 }
 
-func request(subject, actor, id string, action Action) Request {
-	return Request{Subject: subject, Actor: actor, Repo: RepoRef{ID: id}, Action: action}
+func request(subject, id string, action Action) Request {
+	return Request{Subject: subject, Repo: RepoRef{ID: id}, Action: action}
 }
 
 func TestAuthorizerAnswersAndCaches(t *testing.T) {
@@ -82,19 +82,19 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 	stub.Allow(authorizer.Rule{Subject: "alice", Repo: repoA, Action: "write", TTL: 9000})
 	stub.Deny(authorizer.Rule{Subject: "eve"}, "not welcome")
 
-	d, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead))
+	d, err := c.Authorize(ctx, request("alice", repoA, ActionRead))
 	if err != nil || !d.Allow || d.TTL != 30*time.Second || d.Replicas != 3 || d.QuotaBytes != 1024 {
 		t.Fatalf("allow with figures: %+v, %v", d, err)
 	}
-	d, err = c.Authorize(ctx, request("alice", "", repoA, ActionWrite))
+	d, err = c.Authorize(ctx, request("alice", repoA, ActionWrite))
 	if err != nil || !d.Allow || d.TTL != MaxTTL {
 		t.Fatalf("ttl capped: %+v, %v", d, err)
 	}
-	d, err = c.Authorize(ctx, request("bob", "", repoA, ActionAdmin))
+	d, err = c.Authorize(ctx, request("bob", repoA, ActionAdmin))
 	if err != nil || !d.Allow || d.TTL != DefaultTTL || d.Replicas != DefaultReplicas || d.QuotaBytes != DefaultQuotaBytes {
 		t.Fatalf("defaults: %+v, %v", d, err)
 	}
-	d, err = c.Authorize(ctx, request("eve", "", repoA, ActionRead))
+	d, err = c.Authorize(ctx, request("eve", repoA, ActionRead))
 	if err != nil || d.Allow || d.Reason != "not welcome" {
 		t.Fatalf("deny: %+v, %v", d, err)
 	}
@@ -102,7 +102,7 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 		t.Fatalf("requests: %+v", got)
 	}
 	// Cached: the same four answer without a call, until each ttl.
-	for _, r := range []Request{request("alice", "", repoA, ActionRead), request("bob", "", repoA, ActionAdmin), request("eve", "", repoA, ActionRead)} {
+	for _, r := range []Request{request("alice", repoA, ActionRead), request("bob", repoA, ActionAdmin), request("eve", repoA, ActionRead)} {
 		if _, err := c.Authorize(ctx, r); err != nil {
 			t.Fatal(err)
 		}
@@ -111,14 +111,14 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 		t.Fatalf("cached answers called the authorizer: %d", len(stub.Requests()))
 	}
 	clk.Advance(DenyTTL + time.Second)
-	if _, err := c.Authorize(ctx, request("eve", "", repoA, ActionRead)); err != nil || len(stub.Requests()) != 5 {
+	if _, err := c.Authorize(ctx, request("eve", repoA, ActionRead)); err != nil || len(stub.Requests()) != 5 {
 		t.Fatalf("deny cached past 5 seconds: %v, %d", err, len(stub.Requests()))
 	}
-	if _, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil || len(stub.Requests()) != 5 {
+	if _, err := c.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil || len(stub.Requests()) != 5 {
 		t.Fatal("a 30 second allow expired early")
 	}
 	clk.Advance(30 * time.Second)
-	if _, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil || len(stub.Requests()) != 6 {
+	if _, err := c.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil || len(stub.Requests()) != 6 {
 		t.Fatal("a 30 second allow outlived its ttl")
 	}
 	// An unresolved name is never cached.
@@ -137,7 +137,7 @@ func TestAuthorizerAnswersAndCaches(t *testing.T) {
 	}
 	// The bearer travels.
 	wrong := newClient(t, stub.URL(), "wrong", &http.Transport{}, clk, nil)
-	if _, err := wrong.Authorize(ctx, request("x", "", repoB, ActionRead)); err == nil {
+	if _, err := wrong.Authorize(ctx, request("x", repoB, ActionRead)); err == nil {
 		t.Fatal("a wrong bearer was answered")
 	}
 	if _, err := NewClient(ClientOptions{URL: "x"}); err == nil {
@@ -164,7 +164,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	}
 	// A 500 is sent one request and not retried.
 	stub.Fail(500)
-	u := unavailable(func() error { _, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); return err }())
+	u := unavailable(func() error { _, err := c.Authorize(ctx, request("alice", repoA, ActionRead)); return err }())
 	if u.Status != 500 || u.URL != stub.URL() || len(stub.Requests()) != 1 || !strings.Contains(u.Error(), "500") {
 		t.Fatalf("500: %+v, %d requests", u, len(stub.Requests()))
 	}
@@ -173,7 +173,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	t.Cleanup(bad.Close)
 	badT := &countingTransport{next: &http.Transport{}}
 	if u := unavailable(func() error {
-		_, err := newClient(t, bad.URL, "t", badT, clk, nil).Authorize(ctx, request("a", "", repoA, ActionRead))
+		_, err := newClient(t, bad.URL, "t", badT, clk, nil).Authorize(ctx, request("a", repoA, ActionRead))
 		return err
 	}()); u.Status != 200 || u.Err == nil || badT.attempts.Load() != 1 {
 		t.Fatalf("bad body: %+v, %d attempts", u, badT.attempts.Load())
@@ -181,7 +181,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	noAllow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"ttl":1}`)) }))
 	t.Cleanup(noAllow.Close)
 	if u := unavailable(func() error {
-		_, err := newClient(t, noAllow.URL, "t", &http.Transport{}, clk, nil).Authorize(ctx, request("a", "", repoA, ActionRead))
+		_, err := newClient(t, noAllow.URL, "t", &http.Transport{}, clk, nil).Authorize(ctx, request("a", repoA, ActionRead))
 		return err
 	}()); !strings.Contains(u.Error(), "no allow field") {
 		t.Fatalf("no allow: %+v", u)
@@ -195,7 +195,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	_ = ln.Close()
 	refusedT := &countingTransport{next: &http.Transport{}}
 	refused := newClient(t, refusedURL, "t", refusedT, clk, reg)
-	if u := unavailable(func() error { _, err := refused.Authorize(ctx, request("a", "", repoA, ActionRead)); return err }()); u.Err == nil || u.Status != 0 || refusedT.attempts.Load() != 2 {
+	if u := unavailable(func() error { _, err := refused.Authorize(ctx, request("a", repoA, ActionRead)); return err }()); u.Err == nil || u.Status != 0 || refusedT.attempts.Load() != 2 {
 		t.Fatalf("refused: %+v, %d attempts", u, refusedT.attempts.Load())
 	}
 	// A connection the server closes before any response line is two
@@ -219,7 +219,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	}()
 	closingT := &countingTransport{next: &http.Transport{}}
 	if u := unavailable(func() error {
-		_, err := newClient(t, "http://"+closing.Addr().String(), "t", closingT, clk, nil).Authorize(ctx, request("a", "", repoA, ActionRead))
+		_, err := newClient(t, "http://"+closing.Addr().String(), "t", closingT, clk, nil).Authorize(ctx, request("a", repoA, ActionRead))
 		return err
 	}()); u.Err == nil || closingT.attempts.Load() != 2 {
 		t.Fatalf("closed: %+v, %d attempts", u, closingT.attempts.Load())
@@ -231,13 +231,13 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	hungT := &countingTransport{next: &http.Transport{}}
 	hung := newClient(t, stub.URL(), stub.Token(), hungT, clk, reg)
 	start := time.Now()
-	u = unavailable(func() error { _, err := hung.Authorize(ctx, request("alice", "", repoA, ActionRead)); return err }())
+	u = unavailable(func() error { _, err := hung.Authorize(ctx, request("alice", repoA, ActionRead)); return err }())
 	if elapsed := time.Since(start); elapsed > 2*time.Second || !errors.Is(u.Err, context.DeadlineExceeded) || hungT.attempts.Load() != 1 {
 		t.Fatalf("hung: %v after %v, %d attempts", u, elapsed, hungT.attempts.Load())
 	}
 	// The first request after it recovers is served, no restart.
 	stub.Resume()
-	if d, err := hung.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil || !d.Allow {
+	if d, err := hung.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil || !d.Allow {
 		t.Fatalf("after recovery: %+v, %v", d, err)
 	}
 	hist := reg.Histogram("origo_authorizer_seconds", "", nil)
@@ -248,7 +248,7 @@ func TestAuthorizerOutageDeniesAndRecovers(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 	cancelT := &countingTransport{next: &http.Transport{}}
-	if _, err := newClient(t, stub.URL(), stub.Token(), cancelT, clk, nil).Authorize(cancelled, request("a", "", repoB, ActionRead)); err == nil || cancelT.attempts.Load() != 1 {
+	if _, err := newClient(t, stub.URL(), stub.Token(), cancelT, clk, nil).Authorize(cancelled, request("a", repoB, ActionRead)); err == nil || cancelT.attempts.Load() != 1 {
 		t.Fatalf("cancelled: %v, %d attempts", err, cancelT.attempts.Load())
 	}
 	if retryable(errors.New("plain")) || retryable(&Unavailable{Status: 500}) || (&Unavailable{URL: "u"}).Error() == "" {
@@ -368,11 +368,11 @@ func TestClosedIdleConnectionIsRetried(t *testing.T) {
 			t.Error("the transport did not close the idle connection the server closed")
 		}
 	}})
-	if d, err := c.Authorize(ctx, request("alice", "", repoA, ActionRead)); err != nil || !d.Allow || counting.attempts.Load() != 1 {
+	if d, err := c.Authorize(ctx, request("alice", repoA, ActionRead)); err != nil || !d.Allow || counting.attempts.Load() != 1 {
 		t.Fatalf("first call: %+v, %v, %d attempts", d, err, counting.attempts.Load())
 	}
 	// A second subject, so the answer is not the cache's.
-	d, err := c.Authorize(ctx, request("bob", "", repoA, ActionRead))
+	d, err := c.Authorize(ctx, request("bob", repoA, ActionRead))
 	if reused.Load() != 1 {
 		t.Fatalf("the second call did not reuse the connection: %d", reused.Load())
 	}
@@ -395,9 +395,9 @@ func TestCachesAreBounded(t *testing.T) {
 	transport := &handlerTransport{h: stub.Handler()}
 	c := newClient(t, "http://authorizer.test/", stub.Token(), transport, clk, nil)
 	ctx := context.Background()
-	first := request("subject-0", "", repoA, ActionRead)
+	first := request("subject-0", repoA, ActionRead)
 	for i := range CacheEntries + 1 {
-		if _, err := c.Authorize(ctx, request(fmt.Sprintf("subject-%d", i), "", repoA, ActionRead)); err != nil {
+		if _, err := c.Authorize(ctx, request(fmt.Sprintf("subject-%d", i), repoA, ActionRead)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -409,7 +409,7 @@ func TestCachesAreBounded(t *testing.T) {
 	if _, err := c.Authorize(ctx, first); err != nil || transport.attempts.Load() != CacheEntries+2 {
 		t.Fatalf("first entry still cached: %d calls", transport.attempts.Load())
 	}
-	if _, err := c.Authorize(ctx, request(fmt.Sprintf("subject-%d", CacheEntries), "", repoA, ActionRead)); err != nil || transport.attempts.Load() != CacheEntries+2 {
+	if _, err := c.Authorize(ctx, request(fmt.Sprintf("subject-%d", CacheEntries), repoA, ActionRead)); err != nil || transport.attempts.Load() != CacheEntries+2 {
 		t.Fatalf("newest entry evicted: %d calls", transport.attempts.Load())
 	}
 
@@ -443,27 +443,20 @@ func TestCachesAreBounded(t *testing.T) {
 	}
 }
 
-func TestCacheKeyIncludesActor(t *testing.T) {
+// TestCacheKeyComponents: the cache is keyed by subject, repository and
+// action, and each component alone distinguishes two calls.
+func TestCacheKeyComponents(t *testing.T) {
 	clk := newClock()
 	stub := authorizer.New(t)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	ctx := context.Background()
-	for _, actor := range []string{"svc-1", "svc-2", "svc-1", "svc-2"} {
-		if _, err := c.Authorize(ctx, request("alice", actor, repoA, ActionWrite)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	reqs := stub.Requests()
-	if len(reqs) != 2 || reqs[0].Actor != "svc-1" || reqs[1].Actor != "svc-2" || c.CacheLen() != 2 {
-		t.Fatalf("%d calls, %d entries: %+v", len(reqs), c.CacheLen(), reqs)
-	}
-	// The other three components each key the cache as well.
-	for _, r := range []Request{request("bob", "svc-1", repoA, ActionWrite), request("alice", "svc-1", repoB, ActionWrite), request("alice", "svc-1", repoA, ActionRead)} {
+	for _, r := range []Request{request("alice", repoA, ActionWrite), request("alice", repoA, ActionWrite),
+		request("bob", repoA, ActionWrite), request("alice", repoB, ActionWrite), request("alice", repoA, ActionRead)} {
 		if _, err := c.Authorize(ctx, r); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(stub.Requests()) != 5 || c.CacheLen() != 5 {
+	if len(stub.Requests()) != 4 || c.CacheLen() != 4 {
 		t.Fatalf("%d calls, %d entries", len(stub.Requests()), c.CacheLen())
 	}
 }

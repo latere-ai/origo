@@ -10,6 +10,34 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Removed
+
+- The `act` claim (the family's decision D5). The verifier refuses a
+  token that carries one with 401 `unauthenticated`,
+  `details.reason: "delegation"`, before the authorizer is asked; the
+  minter copies no such claim into a repository-bound token; the entry
+  header and the push event's `pusher` name the subject alone; the
+  `Origo-Actor:` trailer is gone from server-side operations; and the
+  span attribute `origo.actor` and the `actor` log field are gone. A
+  service acting for a person presents the token the person's issuer
+  minted for Origo. Contract 1's `actor` field stays in the authorizer
+  envelope, always empty, until contract 2 drops it (spec 028). An entry
+  written before this release still reads: the header parser accepts the
+  `actor` key and records nothing from it.
+- The conformance case `007/delegation` now asserts the refusal, and the
+  stub's `Token` takes the subject alone.
+
+### Changed
+
+- The production overlay reaches auth's Origo endpoints on the in-cluster
+  Service `auth-internal` (auth v0.25.0 serves `/internal/origo/*` there,
+  behind no ingress), and the SSH key resolve endpoint takes its own
+  bearer, `ORIGO_SSH_KEYS_TOKEN`, distinct from `ORIGO_AUTHORIZER_TOKEN`.
+  The operator points `ORIGO_AUTHORIZER_URL` in the `origod-auth` Secret
+  at `http://auth-internal.latere.svc.cluster.local/internal/origo/authorize`
+  and sets the new key token on both sides; until then the node's calls
+  to auth answer 404.
+
 ## v0.2.2 - 2026-09-13
 
 ### Changed

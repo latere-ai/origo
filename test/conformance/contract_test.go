@@ -241,7 +241,7 @@ func TestSameAnswersOnStubAndStack(t *testing.T) {
 	// it compare equal.
 	id := newID(t)
 	stub := origo.New(t)
-	fromStub := consumerFlow(t, stub.URL(), stub.Token("dev", ""), id)
+	fromStub := consumerFlow(t, stub.URL(), stub.Token("dev"), id)
 	token := os.Getenv("ORIGO_TEST_ADMIN_TOKEN")
 	if token == "" {
 		token = mintAt(t, fmt.Sprintf("http://localhost:%d", portIssuer), "conformance-same-answers")

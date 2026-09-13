@@ -356,7 +356,6 @@ func (l *Log) Newest(ctx context.Context, repo string, held uint64, haveHeld boo
 type Entry struct {
 	Kind    Kind
 	Subject string
-	Actor   string
 	// Refs is the reference transaction. Old must equal the current value
 	// of every reference named, or the commit refuses with a
 	// ConflictError; that is git's own rule for a push.
@@ -529,7 +528,7 @@ func (l *Log) writeEntry(ctx context.Context, repo string, seq uint64, e Entry) 
 		return "", Header{}, err
 	}
 	h := Header{
-		V: Version, Kind: e.Kind, Seq: seq, At: l.now().UTC(), Subject: e.Subject, Actor: e.Actor,
+		V: Version, Kind: e.Kind, Seq: seq, At: l.now().UTC(), Subject: e.Subject,
 		PackBytes: e.Pack.Size, PackSHA256: e.Pack.SHA256, PushOptions: e.PushOptions,
 	}
 	if e.Pack.Size == 0 {

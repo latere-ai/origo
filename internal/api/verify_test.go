@@ -58,7 +58,7 @@ func TestVerifyDetectsADivergedReference(t *testing.T) {
 	stub, egress := importStub(t)
 	s := sink.New(t)
 	h := newHarness(t, egress, withSink(s), withNow(fixedClock()))
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	h.seed(f)
 	src := sourceOfCopy(t, h, stub, repoA, "mirror")
 

@@ -33,7 +33,7 @@ import (
 func TestReleaseFixtureRoundTrip(t *testing.T) {
 	stub := origo.New(t)
 	ctx := context.Background()
-	target := conformance.Target{URL: stub.URL(), Token: stub.Token("dev", "")}
+	target := conformance.Target{URL: stub.URL(), Token: stub.Token("dev")}
 	f := conformance.PushReleaseFixture(t, target)
 	if f.Version != "dev" || f.Owner != conformance.Owner || strings.HasPrefix(f.Slug, conformance.SlugPrefix) || len(f.RevList) < 4 {
 		t.Fatalf("manifest %+v", f)
@@ -71,7 +71,7 @@ func TestReleaseFixtureRoundTrip(t *testing.T) {
 	if len(copied) != len(keys) {
 		t.Fatalf("%d objects under the copy, %d under the original", len(copied), len(keys))
 	}
-	if got := conformance.RevList(t, stub.URL(), stub.Token("dev", ""), id); !slices.Equal(got, f.RevList) {
+	if got := conformance.RevList(t, stub.URL(), stub.Token("dev"), id); !slices.Equal(got, f.RevList) {
 		t.Fatalf("rev-list of the copy %v, want %v", got, f.RevList)
 	}
 	// The archive is what it was.
@@ -86,17 +86,17 @@ func TestReleaseFixtureRoundTrip(t *testing.T) {
 	if left := list(t, stub.Store(), conformance.RepoPrefix(config.Prefix, id)); len(left) != 0 {
 		t.Fatalf("%d objects left under the copy", len(left))
 	}
-	if got := conformance.RevList(t, stub.URL(), stub.Token("dev", ""), f.ID); !slices.Equal(got, f.RevList) {
+	if got := conformance.RevList(t, stub.URL(), stub.Token("dev"), f.ID); !slices.Equal(got, f.RevList) {
 		t.Fatalf("the original after the delete: %v", got)
 	}
 
 	// A run of the suite creates and deletes its own repositories and
 	// leaves the fixture.
-	report := conformance.Run(t, conformance.Target{URL: stub.URL(), Token: stub.Token("dev", ""), Issuer: stub.Issuer().URL(), Authorizer: stub.Authorizer().URL(), EventsSink: stub.Sink().URL(), Fault: stub.Fault()})
+	report := conformance.Run(t, conformance.Target{URL: stub.URL(), Token: stub.Token("dev"), Issuer: stub.Issuer().URL(), Authorizer: stub.Authorizer().URL(), EventsSink: stub.Sink().URL(), Fault: stub.Fault()})
 	if len(report.Failed) != 0 || slices.Contains(report.Created, f.ID) {
 		t.Fatalf("the run failed %v or created the fixture %v", report.Failed, report.Created)
 	}
-	if got := conformance.RevList(t, stub.URL(), stub.Token("dev", ""), f.ID); !slices.Equal(got, f.RevList) {
+	if got := conformance.RevList(t, stub.URL(), stub.Token("dev"), f.ID); !slices.Equal(got, f.RevList) {
 		t.Fatalf("the fixture after a run: %v", got)
 	}
 }

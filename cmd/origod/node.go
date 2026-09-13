@@ -601,7 +601,7 @@ func (n *node) requestLog(next http.Handler) http.Handler {
 		n.logger.InfoContext(ctx, "request",
 			"route", route, "method", r.Method, "status", out.status,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"repo", d.repo, "subject", d.subject, "actor", d.actor,
+			"repo", d.repo, "subject", d.subject,
 			"bytes_in", in.n, "bytes_out", out.n, "trace_id", tracing.ID(ctx))
 	})
 }
@@ -613,7 +613,6 @@ type details struct {
 	route   string
 	repo    string
 	subject string
-	actor   string
 }
 
 type detailsKey struct{}
@@ -633,10 +632,10 @@ func detailsFrom(ctx context.Context) *details {
 func capture(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		tracing.Set(ctx, tracing.Subject(auth.Subject(ctx)), tracing.Actor(auth.Actor(ctx)))
+		tracing.Set(ctx, tracing.Subject(auth.Subject(ctx)))
 		next.ServeHTTP(w, r)
 		d := detailsFrom(ctx)
-		d.subject, d.actor, d.repo, d.route = auth.Subject(ctx), auth.Actor(ctx), repoOf(r), routeOf(r)
+		d.subject, d.repo, d.route = auth.Subject(ctx), repoOf(r), routeOf(r)
 		tracing.Set(ctx, tracing.Repo(d.repo))
 	})
 }

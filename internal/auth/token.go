@@ -34,6 +34,10 @@ const (
 	ReasonNBF               = "nbf"
 	ReasonIAT               = "iat"
 	ReasonSubject           = "subject"
+	// ReasonDelegation refuses a token carrying an act claim: no token
+	// carries a chain (the family's decision D5), and a service acting
+	// for a person presents the token its issuer minted for that person.
+	ReasonDelegation = "delegation"
 )
 
 // Refusal is why a credential was refused: one reason of the table,
@@ -71,7 +75,6 @@ func (a *Audience) UnmarshalJSON(b []byte) error {
 type Claims struct {
 	Iss   string   `json:"iss"`
 	Sub   string   `json:"sub"`
-	Act   string   `json:"act"`
 	Aud   Audience `json:"aud"`
 	Exp   *float64 `json:"exp"`
 	Nbf   *float64 `json:"nbf"`
@@ -79,6 +82,9 @@ type Claims struct {
 	Repo  string   `json:"repo"`
 	Scope string   `json:"scope"`
 	JTI   string   `json:"jti"`
+	// Delegated records that the payload carried an act claim, which the
+	// verifier refuses. It is not a claim the node reads for meaning.
+	Delegated bool `json:"-"`
 }
 
 // Token is a parsed and not yet verified JWT.
@@ -113,6 +119,13 @@ func ParseToken(raw string) (*Token, error) {
 	if err := decodeSegment(parts[1], &t.Claims); err != nil {
 		return nil, refuse(ReasonMalformed)
 	}
+	var present struct {
+		Act *json.RawMessage `json:"act"`
+	}
+	if err := decodeSegment(parts[1], &present); err != nil {
+		return nil, refuse(ReasonMalformed)
+	}
+	t.Claims.Delegated = present.Act != nil
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
 		return nil, refuse(ReasonMalformed)

@@ -71,7 +71,7 @@ func TestRepositoryBoundTokenScope(t *testing.T) {
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
 	h := routes(v, g)
 	signer := NewSigner(key, localIssuer, clk.Now)
-	read, expires, err := signer.Mint(Principal{Subject: "ci", Actor: "svc"}, repoA, ScopeRead, 10*time.Minute)
+	read, expires, err := signer.Mint(Principal{Subject: "ci"}, repoA, ScopeRead, 10*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 		seen = FromContext(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	token := iss.Mint(issuer.Delegated("svc", "alice"))
+	token := iss.Mint(issuer.Claims{Sub: "alice"})
 	cases := []struct {
 		name string
 		set  func(*http.Request)
@@ -204,7 +204,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 		if rec.Code != c.code {
 			t.Errorf("%s: %d", c.name, rec.Code)
 		}
-		if c.code == 204 && (seen.Subject != "alice" || seen.Actor != "svc") {
+		if c.code == 204 && seen.Subject != "alice" {
 			t.Errorf("%s: principal %+v", c.name, seen)
 		}
 		if c.code == 401 {
@@ -222,7 +222,7 @@ func TestMiddlewareReadsEveryCredentialForm(t *testing.T) {
 	if !strings.Contains(string(body), `"reason":"malformed"`) {
 		t.Fatalf("%s", body)
 	}
-	if Subject(context.Background()) != "" || Actor(context.Background()) != "" {
+	if Subject(context.Background()) != "" {
 		t.Fatal("principal without a context value")
 	}
 }
@@ -329,14 +329,14 @@ func TestBoundTokenWriteTakesTheMintersQuota(t *testing.T) {
 	stub.SetRules(authorizer.Rule{Subject: "ci", Repo: repoA, Action: "write", Allow: true, QuotaBytes: 4096})
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
 	g := NewGuard(c, slog.New(slog.DiscardHandler))
-	bound := Principal{Subject: "ci", Actor: "svc", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
+	bound := Principal{Subject: "ci", Bound: &Bound{Repo: repoA, Scope: ScopeWrite}}
 
 	d, err := g.Decide(context.Background(), bound, RepoRef{ID: repoA}, ActionWrite)
 	if err != nil || d.QuotaBytes != 4096 {
 		t.Fatalf("write: %+v %v", d, err)
 	}
 	seen := stub.Requests()
-	if len(seen) != 1 || seen[0].Subject != "ci" || seen[0].Actor != "svc" || seen[0].Action != "write" || seen[0].Repo.ID != repoA {
+	if len(seen) != 1 || seen[0].Subject != "ci" || seen[0].Action != "write" || seen[0].Repo.ID != repoA {
 		t.Fatalf("the quota call: %+v", seen)
 	}
 	// The read path asks nothing and keeps the default.

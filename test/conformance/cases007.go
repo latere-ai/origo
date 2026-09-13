@@ -92,23 +92,20 @@ func case007AuthorizerUnavailable(t *testing.T, s *session) {
 	}
 }
 
-// case007Delegation mints a service token acting for a subject: the
-// request is decided for the subject with the service as the actor,
-// which the push event's pusher shows.
+// case007Delegation mints a service token carrying an act claim: no
+// token carries a chain (the family's D5), so the node refuses it at the
+// door with the reason delegation and asks the authorizer nothing, and a
+// plain service token of the same issuer is served.
 func case007Delegation(t *testing.T, s *session) {
-	token := s.mint(t, "conformance-service", "conformance-user")
 	id := s.create(t, "act")
-	expectStatus(t, s.as(t, token, "GET", "/v1/repos/"+id, ""), http.StatusOK)
-	work := clone(t, s.repoURLAs(token, id))
-	commitFile(t, work, "a.txt", []byte("a"), "first")
-	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
-	if d, ok := s.expectEvent(t, id, "push", 1); ok {
-		pusher, _ := event(t, d)["pusher"].(map[string]any)
-		failIf(t, pusher["sub"] != "conformance-user" || pusher["actor"] != "conformance-service", "pusher: %v", pusher)
-	}
-	// A repository-bound token minted by the delegate carries the same
-	// subject and actor.
-	r := s.as(t, token, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`)
+	delegated := s.mint(t, "conformance-service", "conformance-user")
+	d := expectError(t, s.as(t, delegated, "GET", "/v1/repos/"+id, ""), http.StatusUnauthorized, contract.CodeUnauthenticated)
+	failIf(t, d["reason"] != "delegation", "refusal details: %v", d)
+	plain := s.mint(t, "conformance-service", "")
+	expectStatus(t, s.as(t, plain, "GET", "/v1/repos/"+id, ""), http.StatusOK)
+	// A repository-bound token minted by the service carries the service
+	// alone.
+	r := s.as(t, plain, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`)
 	expectStatus(t, r, http.StatusCreated)
 	bound, _ := r.json["token"].(string)
 	expectStatus(t, s.as(t, bound, "GET", "/v1/repos/"+id, ""), http.StatusOK)

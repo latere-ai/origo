@@ -176,8 +176,8 @@ func TestSSHAuthorizerDecidesTheOperation(t *testing.T) {
 		t.Fatalf("the authorizer saw %d requests, want two", len(requests))
 	}
 	for _, r := range requests {
-		if r.Subject != "u_7f3c" || r.Actor != "" {
-			t.Errorf("call carried subject %q actor %q; SSH has no delegation", r.Subject, r.Actor)
+		if r.Subject != "u_7f3c" {
+			t.Errorf("call carried subject %q; SSH names the key's owner", r.Subject)
 		}
 		if r.Repo.ID != repoA {
 			t.Errorf("call named repository %+v, want the resolved id", r.Repo)

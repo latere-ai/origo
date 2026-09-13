@@ -47,13 +47,3 @@ func New(t testing.TB, opts ...Option) *Server { return issuertest.New(t, origoD
 
 // NewHandler builds a stub without a listener, for the origo-stubs binary.
 func NewHandler(opts ...Option) *Server { return issuertest.NewHandler(origoDefaults(opts)...) }
-
-// Delegated mints a token for sub carrying an act claim, the shape spec
-// 007's verification table refuses; an empty act mints a plain token.
-func Delegated(sub, act string) Claims {
-	c := Claims{Sub: sub}
-	if act != "" {
-		c.Extra = map[string]any{"act": act}
-	}
-	return c
-}

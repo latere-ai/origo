@@ -655,7 +655,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		h.observe(phaseApply, started)
 		endApply()
 		h.pushes.Inc(nil)
-		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "forced", len(forced), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()), "actor", auth.Actor(r.Context()))
+		h.logger.InfoContext(r.Context(), "push", "repo", id, "seq", committed.Index.Seq, "refs", len(req.Commands), "forced", len(forced), "pack_bytes", req.PackSize, "subject", auth.Subject(r.Context()))
 		// The entry is in the log whatever git did after the verdict, so
 		// the event is enqueued for it; a failed enqueue is logged by the
 		// dispatcher and the repair sweep covers the push.
@@ -743,7 +743,7 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 		}
 	}
 	entry := wal.Entry{
-		Kind: wal.KindPush, Subject: auth.Subject(ctx), Actor: auth.Actor(ctx), Refs: refs, Pack: pack,
+		Kind: wal.KindPush, Subject: auth.Subject(ctx), Refs: refs, Pack: pack,
 		PushOptions: req.Options,
 	}
 	committed, err := h.log.Commit(ctx, id, rp.Index, entry, func(ctx context.Context, ix *wal.Index) error {

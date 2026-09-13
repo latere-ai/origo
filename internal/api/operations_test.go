@@ -850,12 +850,12 @@ func TestAuthorizerRateIsWhatTheRateLimitHeadersReport(t *testing.T) {
 	h.as(auth.Principal{Subject: "alice"})
 }
 
-// TestOperationsOnAnEmptyRepositoryAndAnActor covers the first commit
-// of a repository with no history, the actor trailer, and the refusal
+// TestOperationsOnAnEmptyRepository covers the first commit of a
+// repository with no history, the one subject trailer, and the refusal
 // of from: null on a repository that already has one.
-func TestOperationsOnAnEmptyRepositoryAndAnActor(t *testing.T) {
+func TestOperationsOnAnEmptyRepository(t *testing.T) {
 	h := newHarness(t)
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	empty := newID(7)
 	if status, out := h.do("POST", "/v1/repos", `{"id":"`+empty+`","owner":"acme","slug":"empty"}`); status != 201 {
 		t.Fatalf("create: %d %v", status, out)
@@ -872,7 +872,7 @@ func TestOperationsOnAnEmptyRepositoryAndAnActor(t *testing.T) {
 		t.Fatalf("the first commit has parents: %v", first["parents"])
 	}
 	trailers, _ := first["trailers"].([]any)
-	if len(trailers) != 2 || trailers[1].(map[string]any)["key"] != "Origo-Actor" || trailers[1].(map[string]any)["value"] != "svc" {
+	if len(trailers) != 1 || trailers[0].(map[string]any)["key"] != "Origo-Subject" || trailers[0].(map[string]any)["value"] != "alice" {
 		t.Fatalf("trailers: %v", trailers)
 	}
 	// The same request on a repository that has history is refused.

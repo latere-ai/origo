@@ -57,10 +57,10 @@ type operation struct {
 	haves  []string
 	dryRun bool
 	author identityRequest
-	// subject and actor are the effective identity of the request,
+	// subject is the identity of the request,
 	// read once: they name the entry's writer, the commit's trailers,
 	// and the log line.
-	subject, actor string
+	subject string
 }
 
 // mergeConflict is a merge, cherry-pick, or revert git could not apply.
@@ -80,7 +80,7 @@ func (e *mergeConflict) Error() string {
 func (o *operation) run(w http.ResponseWriter, r *http.Request, branch string, c *common, build func(*operation) (string, error)) {
 	h := o.h
 	o.w, o.r, o.branch, o.dryRun, o.author = w, r, branch, c.DryRun, *c.Author
-	o.subject, o.actor = auth.Subject(r.Context()), auth.Actor(r.Context())
+	o.subject = auth.Subject(r.Context())
 	expectedHead := c.ExpectedHead
 	ctx, cancel := context.WithTimeout(r.Context(), o.budget)
 	defer cancel()
@@ -249,8 +249,8 @@ func (o *operation) resolve(name, peel string) (string, error) {
 }
 
 // commitTree writes the commit object: the author from the request, the
-// committer Origo at the host of ORIGO_PUBLIC_URL, and the effective
-// subject and actor in the trailers spec 020 names.
+// committer Origo at the host of ORIGO_PUBLIC_URL, and the subject in
+// the trailer spec 020 names.
 func (o *operation) commitTree(tree, message string, parents ...string) (string, error) {
 	name, email := o.h.committer()
 	at := o.h.now().UTC().Format(time.RFC3339)
@@ -280,15 +280,12 @@ func (o *operation) commitTree(tree, message string, parents ...string) (string,
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// message is the commit message with the trailers that record who the
+// message is the commit message with the trailer that records who the
 // operation was made for.
 func (o *operation) message(body string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(body, "\n"))
 	b.WriteString("\n\nOrigo-Subject: " + o.subject + "\n")
-	if o.actor != "" {
-		b.WriteString("Origo-Actor: " + o.actor + "\n")
-	}
 	return b.String()
 }
 
@@ -614,7 +611,7 @@ func (o *operation) finish(tip string, expectedHead *string) {
 	}
 	refs := []wal.RefUpdate{{Ref: o.branch, Old: old, New: tip}}
 	entry := wal.Entry{
-		Kind: wal.KindPush, Subject: o.subject, Actor: o.actor,
+		Kind: wal.KindPush, Subject: o.subject,
 		Refs: refs, Pack: pack, PushOptions: []string{"origo.operation=" + o.name},
 	}
 	committed, err := o.h.log.Commit(o.ctx, o.id, o.base, entry, func(ctx context.Context, ix *wal.Index) error {
@@ -635,7 +632,7 @@ func (o *operation) finish(tip string, expectedHead *string) {
 	}
 	o.h.logger.InfoContext(o.ctx, "server-side operation", "repo", o.id, "operation", o.name,
 		"seq", committed.Index.Seq, "ref", o.branch, "commit", tip, "pack_bytes", pack.Size,
-		"subject", o.subject, "actor", o.actor)
+		"subject", o.subject)
 	_ = o.h.events.Enqueue(o.ctx, o.id, events.Entry{Header: committed.Header, Refs: refs})
 	seq := committed.Index.Seq
 	res.EntrySeq = &seq

@@ -751,10 +751,11 @@ func TestGitFailuresAreReported(t *testing.T) {
 	}
 }
 
-// TestActClaimIsRecordedOnEntryAndAuthorizer: a service token carrying
-// act sets the effective subject; the authorizer request carries both
-// and the entry header records subject and actor.
-func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
+// TestActClaimIsRefused: no token carries a chain. A token with an act
+// claim is refused at the door with the reason delegation, before the
+// authorizer is asked; a plain token of the same issuer pushes, and the
+// entry header names its subject and nobody else.
+func TestActClaimIsRefused(t *testing.T) {
 	store := wal.NewMemStore()
 	n := newNode(t, store)
 	n.create(repoA, "acme", "app")
@@ -773,33 +774,53 @@ func TestActClaimIsRecordedOnEntryAndAuthorizer(t *testing.T) {
 	n.h.Register(mux)
 	srv := httptest.NewServer(contract.Middleware(v.Middleware(mux)))
 	t.Cleanup(srv.Close)
-	token := iss.Mint(issuer.Delegated("svc", "alice"))
+
+	n.authz.ClearRequests()
+	delegated := iss.Mint(issuer.Claims{Sub: "svc", Extra: map[string]any{"act": "alice"}})
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/r/"+repoA+".git/info/refs?service=git-upload-pack", nil)
+	req.Header.Set("Authorization", "Bearer "+delegated)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 401 || !strings.Contains(string(body), `"reason":"`+auth.ReasonDelegation+`"`) {
+		t.Fatalf("a token carrying act: %d %s", resp.StatusCode, body)
+	}
+	if len(n.authz.Requests()) != 0 {
+		t.Fatal("the authorizer was asked about a refused token")
+	}
+
+	token := iss.Mint(issuer.Claims{Sub: "svc"})
 	u, _ := url.Parse(srv.URL)
 	u.User = url.UserPassword("x", token)
 	work := clone(t, u.String()+"/r/"+repoA+".git")
 	_ = os.WriteFile(filepath.Join(work, "a.txt"), []byte("a"), 0o644)
 	mustGit(t, work, "add", "a.txt")
 	mustGit(t, work, "commit", "-q", "-m", "a")
-	n.authz.ClearRequests()
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
 	reqs := n.authz.Requests()
 	if len(reqs) == 0 {
 		t.Fatal("the authorizer was not asked")
 	}
 	for _, r := range reqs {
-		if r.Subject != "alice" || r.Actor != "svc" || r.Repo.ID != repoA || r.Action != "write" {
+		if r.Subject != "svc" || r.Actor != "" || r.Repo.ID != repoA {
 			t.Fatalf("authorizer request: %+v", r)
 		}
+	}
+	if reqs[len(reqs)-1].Action != "write" {
+		t.Fatalf("the push was not asked as a write: %+v", reqs[len(reqs)-1])
 	}
 	ix, _, _ := n.log.Newest(context.Background(), repoA, 0, false)
 	rc, _, _ := store.Get(context.Background(), n.log.RepoPrefix(repoA)+ix.Entry, "")
 	hdr, _, _, err := wal.ReadEntryHead(rc)
 	_ = rc.Close()
-	if err != nil || hdr.Subject != "alice" || hdr.Actor != "svc" {
+	if err != nil || hdr.Subject != "svc" {
 		t.Fatalf("entry header: %+v, %v", hdr, err)
 	}
 	// Without a token git is refused with the challenge on info/refs.
-	resp, err := srv.Client().Get(srv.URL + "/r/" + repoA + ".git/info/refs?service=git-upload-pack")
+	resp, err = srv.Client().Get(srv.URL + "/r/" + repoA + ".git/info/refs?service=git-upload-pack")
 	if err != nil {
 		t.Fatal(err)
 	}

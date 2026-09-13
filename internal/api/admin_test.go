@@ -172,7 +172,7 @@ func TestPurgedRepositoryIsGone(t *testing.T) {
 func TestRenameAndTransferEvents(t *testing.T) {
 	s := sink.New(t)
 	h := newHarness(t, withSink(s))
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	h.create(repoA, "acme", "app")
 
 	if status, _ := h.do("PATCH", "/v1/repos/"+repoA, `{"owner":"beta"}`); status != 200 {
@@ -183,7 +183,7 @@ func TestRenameAndTransferEvents(t *testing.T) {
 	if from["owner"] != "acme" || from["slug"] != "app" || to["owner"] != "beta" || to["slug"] != "app" {
 		t.Fatalf("renamed %v", renamed)
 	}
-	if p := renamed["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "svc" {
+	if p := renamed["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != nil {
 		t.Fatalf("renamed pusher %v", renamed["pusher"])
 	}
 
@@ -198,7 +198,7 @@ func TestRenameAndTransferEvents(t *testing.T) {
 	if transferred["owner"] != "gamma" || transferred["slug"] != "app" || transferred["repo"] != repoA {
 		t.Fatalf("transferred shared fields %v", transferred)
 	}
-	if p := transferred["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "svc" {
+	if p := transferred["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != nil {
 		t.Fatalf("transferred pusher %v", transferred["pusher"])
 	}
 	// A rename that changes nothing emits nothing.
@@ -264,7 +264,7 @@ func TestAdministrationEvents(t *testing.T) {
 	// Every kind carries the caller as pusher, the field spec 019 shares
 	// with the push event, whether or not the kind has extra fields.
 	for name, ev := range map[string]map[string]any{"frozen": frozen, "unfrozen": unfrozen, "deleted": deleted, "undeleted": undeleted} {
-		if p, _ := ev["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "" {
+		if p, _ := ev["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != nil {
 			t.Fatalf("%s pusher %v", name, ev["pusher"])
 		}
 	}

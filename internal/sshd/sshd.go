@@ -13,9 +13,9 @@
 // push over HTTP.
 //
 // Three things are this package's alone. It stores no key: the operator's
-// endpoint is the whole store contract. It carries no delegation: a
-// public key signs nothing but the session, so the actor of every
-// SSH-originated authorizer call and of every SSH entry is empty. And
+// endpoint is the whole store contract. It names one caller: a public
+// key signs nothing but the session, so the subject of every
+// SSH-originated call is the key's owner and nobody else. And
 // its command surface is a maintained list of two entries, so a shell, a
 // subsystem, a second session, a forwarded port, and an agent socket are
 // refused before anything is opened.
@@ -498,9 +498,8 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 		s.refuse(ch, refuseInvalid, 0)
 		return
 	}
-	// Delegation does not exist over SSH: a public key signs nothing but
-	// the session, so the actor is empty on every call and on every
-	// entry an SSH push commits.
+	// A public key signs nothing but the session, so the subject of every
+	// call and of every entry an SSH push commits is the key's owner.
 	principal := auth.Principal{Subject: subject}
 	ctx = auth.WithPrincipal(ctx, principal)
 

@@ -143,16 +143,16 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	ctx := context.Background()
 
 	// Both issuers' tokens verify, ES256 and RS256, in the three
-	// credential forms, and act sets the effective subject.
+	// credential forms; a token carrying act names two parties and is
+	// refused, whatever else it carries.
 	for _, iss := range []*issuer.Server{a, b} {
 		p, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "alice"}))
-		if err != nil || p.Subject != "alice" || p.Actor != "" || p.Bound != nil {
+		if err != nil || p.Subject != "alice" || p.Bound != nil {
 			t.Fatalf("%s: %+v, %v", iss.URL(), p, err)
 		}
 	}
-	p, err := v.Verify(ctx, a.Mint(issuer.Delegated("svc", "bob")))
-	if err != nil || p.Subject != "bob" || p.Actor != "svc" {
-		t.Fatalf("act: %+v, %v", p, err)
+	if _, err := v.Verify(ctx, a.Mint(delegated("svc", "bob"))); !reasonIs(err, ReasonDelegation) {
+		t.Fatalf("a token carrying act must be refused with %q: %v", ReasonDelegation, err)
 	}
 	// A repository-bound token verifies against the node's key with no
 	// fetch: no issuer of the list is asked.
@@ -162,7 +162,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := newVerifier(t, clk, key, a)
-	p, err = fresh.Verify(ctx, local)
+	p, err := fresh.Verify(ctx, local)
 	if err != nil || p.Subject != "ci" || p.Bound == nil || p.Bound.Repo != "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f" || p.Bound.Scope != ScopeRead {
 		t.Fatalf("local token: %+v, %v", p, err)
 	}
@@ -191,6 +191,7 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		{ReasonSignature, a.Mint(issuer.Claims{Alg: "RS256"})},
 		{ReasonIssuer, other.Mint(issuer.Claims{})},
 		{ReasonUnknownKey, a.Mint(issuer.Claims{Kid: "nope"})},
+		{ReasonDelegation, a.Mint(delegated("svc", "alice"))},
 		{ReasonAudience, a.Mint(issuer.Claims{Aud: issuer.StringList{"other"}})},
 		{ReasonAudience, a.Mint(issuer.Claims{Aud: issuer.StringList{"other", "another"}})},
 		{ReasonExpired, a.Mint(issuer.Claims{Exp: now.Add(-2 * time.Minute).Unix()})},
@@ -380,9 +381,9 @@ func TestJWKSParsingSkipsWhatItCannotUse(t *testing.T) {
 func FuzzParseToken(f *testing.F) {
 	iss := issuer.NewHandler(issuer.WithIssuer("http://fuzz.example"))
 	defer iss.Close()
-	delegated := issuer.Delegated("alice", "svc")
-	delegated.Nbf = 1
-	valid := iss.Mint(delegated)
+	chained := delegated("alice", "svc")
+	chained.Nbf = 1
+	valid := iss.Mint(chained)
 	f.Add(valid)
 	f.Add("")
 	f.Add("a.b.c")
@@ -507,4 +508,18 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	if _, got := verify("d"); got != ReasonUnknownKey || attempts.Load() != want {
 		t.Fatalf("fetched set, 32 s after a failure: %q, %d attempts, want %d", got, attempts.Load(), want)
 	}
+}
+
+// delegated builds the claims of a token that names two parties, the shape
+// the verification table refuses: no token carries a chain (the family's
+// D5). The stub issuer mints whatever it is handed, so the refusal is
+// provable without the node ever being able to produce this shape.
+func delegated(sub, act string) issuer.Claims {
+	return issuer.Claims{Sub: sub, Extra: map[string]any{"act": act}}
+}
+
+// reasonIs reports whether err is a refusal for the reason.
+func reasonIs(err error, reason string) bool {
+	var r *Refusal
+	return errors.As(err, &r) && r.Reason == reason
 }

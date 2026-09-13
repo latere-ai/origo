@@ -142,8 +142,9 @@ func (s *Signer) KID() string { return s.kid }
 // Public is the key the tokens verify with.
 func (s *Signer) Public() *ecdsa.PublicKey { return &s.key.PublicKey }
 
-// Mint signs a token bound to repo with the scope for ttl, on behalf of
-// the minter: sub is the minter's effective subject and act its actor.
+// Mint signs a token bound to repo with the scope for ttl, for the
+// minter: sub is the minter's subject, and the token carries no other
+// party.
 func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Duration) (string, time.Time, error) {
 	if scope != ScopeRead && scope != ScopeWrite {
 		return "", time.Time{}, fmt.Errorf("scope must be %s or %s", ScopeRead, ScopeWrite)
@@ -156,12 +157,6 @@ func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Durat
 	claims := map[string]any{
 		"iss": s.issuer, "aud": []string{AudienceOrigo}, "sub": minter.Subject,
 		"repo": repo, "scope": string(scope), "iat": now.Unix(), "exp": exp.Unix(), "jti": newUUID(),
-	}
-	if minter.Actor != "" {
-		// The minter acted for the subject: the token carries the same
-		// sub and act, so its verified subject and actor are the
-		// minter's and the entry a build pushes names both.
-		claims["sub"], claims["act"] = minter.Actor, minter.Subject
 	}
 	body, err := json.Marshal(claims)
 	if err != nil {

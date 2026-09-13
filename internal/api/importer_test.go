@@ -74,7 +74,7 @@ func TestExportRoundTrip(t *testing.T) {
 	s := sink.New(t)
 	spy := newSpyGit(t)
 	h := newHarness(t, egress, withSink(s), withGit(spy.bin()), withNow(fixedClock()))
-	h.as(auth.Principal{Subject: "alice", Actor: "svc"})
+	h.as(auth.Principal{Subject: "alice"})
 	h.seed(f)
 
 	// The export of the seeded repository becomes a repository of the
@@ -132,7 +132,7 @@ func TestExportRoundTrip(t *testing.T) {
 	if ev["source"] != src || ev["refs"] != float64(st.Refs) || ev["bytes"] != float64(st.Bytes) {
 		t.Fatalf("imported %v", ev)
 	}
-	if p := ev["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != "svc" {
+	if p := ev["pusher"].(map[string]any); p["sub"] != "alice" || p["actor"] != nil {
 		t.Fatalf("imported pusher %v", ev["pusher"])
 	}
 	// Every request the stub saw carried the bearer and nothing logged
