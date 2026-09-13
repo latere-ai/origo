@@ -175,18 +175,36 @@ whose `aud` contains `origo`; how a client asks your provider for that
 audience is the provider's own, and the first clone at the end of this
 page is where you find out whether you asked correctly.
 
-**The authorization endpoint.** One `POST` endpoint you run. Origo sends
-it a subject, an action, and a repository, and it answers whether that is
-allowed:
+**The authorization endpoint.** One `POST` endpoint you run, or none.
+Leave `ORIGO_AUTHORIZER_URL` unset and Origo runs a built-in owner
+policy: a subject reaches the repositories it created, the subjects in
+`ORIGO_ADMIN_SUBJECTS` reach everything, and a self-hosted node needs no
+service to be useful. Set the URL and Origo asks your endpoint instead.
+It sends the endpoint a subject, an action, and a repository, and the
+endpoint answers whether that is allowed:
 
 ```
 POST <your endpoint>
 Authorization: Bearer <the value you put in ORIGO_AUTHORIZER_TOKEN>
-{"subject": "user_42", "actor": "", "repo": {"id": "…", "owner": "…", "slug": "…"}, "action": "read"}
+Content-Type: application/json
+{
+  "subject":  "https://issuer.example|user_42",
+  "issuer":   "https://issuer.example",
+  "sub":      "user_42",
+  "claims":   { …every verified claim of the token, verbatim… },
+  "action":   "repo.read",
+  "resource": {"kind": "Repository", "id": "…", "owner": "…", "slug": "…"},
+  "request":  {"id": "…", "ip": "203.0.113.4", "user_agent": "git/2.47"}
+}
 
-200 {"allow": true, "ttl": 60}
+200 {"allow": true, "ttl": 60, "limits": {"replicas": 1, "quota_bytes": 53687091200}}
 200 {"allow": false, "reason": "not a member"}
 ```
+
+The subject is `<issuer>|<sub>`: two issuers that agree on a `sub` are
+two subjects. The action is one of `repo.read`, `repo.write`,
+`repo.admin`, and `repo.list`. The three figures ride under `limits`.
+This is authorizer contract 2 ([[028-authorizer-contract-2]]).
 
 Five rules make an endpoint safe to run. An endpoint that keeps them
 serves any installation, and one that breaks any of them fails somewhere
@@ -818,7 +836,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | `fail bucket` | the endpoint, region, credentials, or bucket name is wrong, or the network refuses the connection | check the four values in the `origod-s3` Secret, then reach the endpoint from a pod in the namespace |
 | `fail conditional-create` | the store accepted a second create of a key that exists | this store cannot host Origo safely. Ask your provider about `If-None-Match: *` on `PUT`, or move the bucket |
 | `fail issuer` | the discovery document or the key set did not answer over HTTPS | open `<issuer>/.well-known/openid-configuration` from a pod in the namespace |
-| `fail authorizer: probe id allowed` | your endpoint allows the reserved probe id, so it is not reading the request | deny that id for every subject, then run the check again |
+| `fail authorizer: … allowed the probe id` | your endpoint allows the reserved probe id, so it is not reading the request | deny that id for every subject, then run the check again |
 | `fail authorizer` with a status | your endpoint refused Origo's bearer or returned an error | check `ORIGO_AUTHORIZER_TOKEN` on both sides |
 | `fail disk` | the cache directory is not writable, or `ORIGO_CACHE_BYTES` exceeds the file system | check the volume in your overlay |
 | the pod is ready and `/readyz` is 503 | the bucket or the disk stopped answering after start-up | the node's log names the check that fails |

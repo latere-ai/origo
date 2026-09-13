@@ -70,12 +70,14 @@ var Groups = []Group{{
 	},
 }, {
 	Title: "Identity and authorization",
-	Intro: "Every request carries a bearer token, and every request that names a repository is authorized by an endpoint you run. You supply both: an OIDC issuer that mints the tokens and an authorization endpoint that answers what a subject may do. Neither has a default, and a node without them does not start.",
+	Intro: "Every request carries a bearer token, and every request that names a repository is authorized. You supply an OIDC issuer that mints the tokens. Authorization is either an endpoint you run or the built-in owner policy: set `ORIGO_AUTHORIZER_URL` and Origo asks that endpoint, or leave it unset and Origo lets a subject reach the repositories it created, so a self-hosted node needs no service to be useful.",
 	Variables: []Variable{
 		{"ORIGO_OIDC_ISSUERS", "yes", "none", "comma separated issuer URLs whose tokens are accepted. Each must serve OpenID discovery and a key set over HTTPS."},
 		{"ORIGO_OIDC_INSECURE_ISSUERS", "no", "unset", "issuers from the list above that may use `http://` on a host that is not a loopback address. For a test stack only; never set it in production."},
-		{"ORIGO_AUTHORIZER_URL", "yes", "none", "your authorization endpoint, an absolute `http` or `https` URL. Origo asks it before every repository operation and caches the answer briefly."},
-		{"ORIGO_AUTHORIZER_TOKEN", "yes", "none", "the bearer Origo presents to that endpoint, so it can tell Origo from anything else that reaches it."},
+		{"ORIGO_OIDC_AUDIENCE", "no", "`origo`", "the audience every accepted token must carry. The default is the service's own name; set it when the issuer mints for a different audience."},
+		{"ORIGO_AUTHORIZER_URL", "no", "unset", "your authorization endpoint, an absolute `http` or `https` URL. Origo asks it before every repository operation and caches the answer briefly. Unset, Origo runs the built-in owner policy instead."},
+		{"ORIGO_AUTHORIZER_TOKEN", "with `ORIGO_AUTHORIZER_URL`", "none", "the bearer Origo presents to that endpoint, so it can tell Origo from anything else that reaches it. Read only when the endpoint is set."},
+		{"ORIGO_ADMIN_SUBJECTS", "no", "unset", "comma separated issuer-qualified subjects (`<issuer>|<sub>`) the built-in owner policy allows every action on every repository. Read only when no authorizer endpoint is set."},
 		{"ORIGO_TOKEN_KEY", "yes", "none", "a PEM-encoded ECDSA P-256 private key, the whole `openssl ecparam -genkey -name prime256v1` output. It signs the repository-bound tokens Origo mints. Every node of one installation holds the same key; replacing it invalidates every outstanding repository-bound token."},
 		{"ORIGO_DEV_TOKEN", "no; refused", "none", "an early fixed bearer, removed. A node that has it set refuses to start, so a deployment that still carries it is found rather than silently trusted."},
 	},

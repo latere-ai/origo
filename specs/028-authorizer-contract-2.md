@@ -1,6 +1,6 @@
 ---
 title: "Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy"
-status: drafted
+status: in-progress
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/auth/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-14
 author: changkun
 ---
 
@@ -167,11 +167,41 @@ registry to sit beside the node's name index.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Every operation reaches the authorizer with the row's `action`, a `resource` of kind `Repository`, `issuer` and `sub` apart, every claim of the token in `claims`, and a `request` block; no code path builds the contract 1 body | `TestAuthorizerEnvelope`, table-driven over every handler; `TestContractOneIsGone`, which finds no `"repo":` or `"actor":` key in the client | not built |
-| The three figures are read from `limits` and reach the consumers spec 007 names | `TestFiguresReachTheirConsumers` | not built |
-| A subject is `<iss>\|<sub>` in the authorizer request, the entry header, the event, and `origo`'s output; two issuers agreeing on a `sub` are two subjects | `TestSubjectsAreIssuerQualified` | not built |
-| With no authorizer configured the owner policy holds every rule of its list, denies the probe and anonymous, and `ORIGO_ADMIN_SUBJECTS` acts on everything | `TestOwnerPolicy`, table-driven | not built |
-| `ORIGO_OIDC_AUDIENCE` changes the accepted audience and defaults to `origo` | `TestAudienceIsConfigurable` | not built |
-| Every row of spec 007's verification table holds through the shared verifier with the same reason | `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` unchanged | not built |
-| `origod check` sends the probe in contract 2 and reads an allow as an endpoint that does not read the request | `TestCheckProbesTheAuthorizer` | not built |
-| The conformance suite's authorizer group passes against the shared stub in contract 2 | `test/conformance`, the authorizer group | not built |
+| Every operation reaches the authorizer with the row's `action`, a `resource` of kind `Repository`, `issuer` and `sub` apart, every claim of the token in `claims`, and a `request` block; no code path builds the contract 1 body | `TestAuthorizerEnvelope`, table-driven over every handler; `TestContractOneIsGone`, which finds no `"repo":` or `"actor":` key in the client | built |
+| The three figures are read from `limits` and reach the consumers spec 007 names | `TestFiguresReachTheirConsumers` | built |
+| A subject is `<iss>\|<sub>` in the authorizer request, the entry header, the event, and `origo`'s output; two issuers agreeing on a `sub` are two subjects | `TestSubjectsAreIssuerQualified` | built |
+| With no authorizer configured the owner policy holds every rule of its list, denies the probe and anonymous, and `ORIGO_ADMIN_SUBJECTS` acts on everything | `TestOwnerPolicy`, table-driven | built |
+| `ORIGO_OIDC_AUDIENCE` changes the accepted audience and defaults to `origo` | `TestAudienceIsConfigurable` | built |
+| Every row of spec 007's verification table holds through the shared verifier with the same reason | `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` unchanged | built |
+| `origod check` sends the probe in contract 2 and reads an allow as an endpoint that does not read the request | `TestCheckProbesTheAuthorizer` | built |
+| The conformance suite's authorizer group passes against the shared stub in contract 2 | `test/conformance`, the authorizer group | built |
+
+## State on 2026-09-14
+
+The node's side of contract 2 is built and its tests are green. What
+shipped: the shared envelope (`latere.ai/x/pkg/authz`), issuer-qualified
+subjects rendered in the verifier and carried through entry headers and
+events, the three figures decoded out of `limits` in one seam, the
+built-in owner policy over `wal.Meta.Creator` for a node with no
+authorizer, `ORIGO_OIDC_AUDIENCE` (default `origo`) and
+`ORIGO_ADMIN_SUBJECTS`, an optional `ORIGO_AUTHORIZER_URL`, and
+`test/stubs/authorizer` as a thin wrapper over `authz/stub`. All eight
+acceptance rows pass.
+
+Two departures from the design above, both deliberate:
+
+- **The verifier stays Origo's own.** The design says it becomes
+  `latere.ai/x/pkg/authkit/jwt` with the family's C5 options. C5 has not
+  shipped: authkit/jwt on `pkg` main is RS256-only, one issuer by exact
+  string, with no ES256, no token-size bound, no `iat` age, no local
+  issuer with a fixed key, and no reason table. Until C5 adds those,
+  Origo keeps `internal/auth`'s verifier; its behaviour is unchanged and
+  `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` is the proof. The
+  audience became configurable in place. This is the one waiver.
+
+- **Release is coupled and not yet cut.** Contract 1 is removed in the
+  same release that ships contract 2, and auth's authorizer for Origo
+  changes to contract 2 in the same coordinated batch (the identity
+  epic's id-06 git-plane move to `platformd`). The node code and its
+  overlay audience variable are ready; the tag waits for that batch.
+  Moving to `complete` waits for the release.
