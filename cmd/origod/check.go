@@ -40,15 +40,6 @@ import (
 // is missing or malformed fails config.Load before any of this runs.
 // These are the answers only the outside world can give.
 
-// The probe identity the authorizer requirement uses: an empty subject
-// and the repository id the authorizer contract reserves, which every
-// authorizer must deny. A deployment whose endpoint allows it would
-// allow anything.
-const (
-	probeRepoID  = "00000000-0000-0000-0000-000000000001"
-	probeSubject = ""
-)
-
 // gitFloor is the oldest git the node's operations are written against.
 // The released image carries a newer one; the floor is what the features
 // need, not what the image ships.
@@ -250,18 +241,19 @@ func checkIssuers(ctx context.Context, cfg *config.Config, client *http.Client) 
 // endpoint answers without reading the request, which would let any
 // subject reach any repository.
 func checkAuthorizer(ctx context.Context, cfg *config.Config, client *http.Client) requirement {
+	// Unset, the node runs the built-in owner policy and asks no endpoint
+	// (Origo spec 028), so there is nothing to probe.
+	if cfg.AuthorizerURL == "" {
+		return okWith("authorizer", "owner policy")
+	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	c, err := auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: client, Timeout: checkTimeout})
 	if err != nil {
 		return fail("authorizer", err)
 	}
-	decision, err := c.Authorize(ctx, auth.Request{Subject: probeSubject, Repo: auth.RepoRef{ID: probeRepoID}, Action: auth.ActionRead})
-	switch {
-	case err != nil:
+	if err := c.Check(ctx); err != nil {
 		return fail("authorizer", err)
-	case decision.Allow:
-		return fail("authorizer", "probe id allowed")
 	}
 	return ok("authorizer")
 }

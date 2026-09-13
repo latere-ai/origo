@@ -5,10 +5,12 @@ package auth
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/internal/tracing"
 )
 
 // Credential reads the token from the request in the three forms spec
@@ -51,8 +53,21 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 			}
 			p = Principal{Subject: AnonymousSubject}
 		}
-		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
+		ctx := WithCaller(WithPrincipal(r.Context(), p), callerOf(r))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// callerOf reads the request block the authorizer envelope carries
+// (Origo spec 028): the request's trace id, the peer address with its
+// port removed, and the user agent. The trace id is the same id spec 011
+// logs, so an operator's authorizer and the node's log name one request.
+func callerOf(r *http.Request) Caller {
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	return Caller{ID: tracing.ID(r.Context()), IP: ip, UserAgent: r.UserAgent()}
 }
 
 // Unauthenticated writes the 401 for a refused credential.

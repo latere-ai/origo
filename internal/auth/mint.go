@@ -79,11 +79,12 @@ func KeyID(pub *ecdsa.PublicKey) string {
 // Signer mints repository-bound tokens with ORIGO_TOKEN_KEY and serves
 // the public key set.
 type Signer struct {
-	key    *ecdsa.PrivateKey
-	kid    string
-	issuer string
-	now    func() time.Time
-	jwks   []byte
+	key      *ecdsa.PrivateKey
+	kid      string
+	issuer   string
+	audience string
+	now      func() time.Time
+	jwks     []byte
 }
 
 // Issuer is the value the signer's tokens carry as iss, which is
@@ -91,12 +92,17 @@ type Signer struct {
 // server-side operation (spec 020).
 func (s *Signer) Issuer() string { return s.issuer }
 
-// NewSigner builds a signer whose tokens carry issuer as iss.
-func NewSigner(key *ecdsa.PrivateKey, issuer string, now func() time.Time) *Signer {
+// NewSigner builds a signer whose tokens carry issuer as iss and
+// audience as aud. An empty audience is DefaultAudience, so a caller that
+// runs the default need not name it.
+func NewSigner(key *ecdsa.PrivateKey, issuer, audience string, now func() time.Time) *Signer {
 	if now == nil {
 		now = time.Now
 	}
-	s := &Signer{key: key, kid: KeyID(&key.PublicKey), issuer: strings.TrimRight(issuer, "/"), now: now}
+	if audience == "" {
+		audience = DefaultAudience
+	}
+	s := &Signer{key: key, kid: KeyID(&key.PublicKey), issuer: strings.TrimRight(issuer, "/"), audience: audience, now: now}
 	// The uncompressed point: 0x04, then x and y of 32 bytes each.
 	point, err := key.PublicKey.Bytes()
 	if err != nil {
@@ -155,7 +161,7 @@ func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Durat
 	now := s.now().UTC().Truncate(time.Second)
 	exp := now.Add(ttl)
 	claims := map[string]any{
-		"iss": s.issuer, "aud": []string{AudienceOrigo}, "sub": minter.Subject,
+		"iss": s.issuer, "aud": []string{s.audience}, "sub": minter.Subject,
 		"repo": repo, "scope": string(scope), "iat": now.Unix(), "exp": exp.Unix(), "jti": newUUID(),
 	}
 	body, err := json.Marshal(claims)

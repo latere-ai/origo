@@ -92,6 +92,12 @@ type Token struct {
 	Alg    string
 	KID    string
 	Claims Claims
+	// Raw is every claim of the payload, verbatim, as it decoded. The
+	// verifier hands it to the authorizer in the envelope's claims field
+	// (Origo spec 028): the node reads the typed Claims, the authorizer
+	// reads whatever its policy needs. It is nil until ParseToken fills
+	// it and carries the same object the signature covered.
+	Raw map[string]any
 
 	signingInput []byte
 	signature    []byte
@@ -126,6 +132,9 @@ func ParseToken(raw string) (*Token, error) {
 		return nil, refuse(ReasonMalformed)
 	}
 	t.Claims.Delegated = present.Act != nil
+	if err := decodeSegment(parts[1], &t.Raw); err != nil {
+		return nil, refuse(ReasonMalformed)
+	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
 		return nil, refuse(ReasonMalformed)

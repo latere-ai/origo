@@ -256,18 +256,28 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// keys at start and keeps them fresh.
 	authClient := &http.Client{Transport: outboundTransport()}
 	n.verifier, err = auth.NewVerifier(auth.VerifierOptions{
-		Issuers: cfg.OIDCIssuers, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
+		Issuers: cfg.OIDCIssuers, Audience: cfg.OIDCAudience, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
 		Client: authClient, Logger: logger, AnonymousRead: cfg.AnonymousRead,
 	})
 	if err != nil {
 		return nil, err
 	}
-	authorizer, err := auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: authClient, Metrics: n.metrics})
-	if err != nil {
-		return nil, err
+	// The authorizer is the operator's endpoint when ORIGO_AUTHORIZER_URL
+	// is set, and the built-in owner policy over the node's own metadata
+	// otherwise (Origo spec 028), so a self-hosted node needs no service.
+	var authorizer auth.Authorizer
+	if cfg.AuthorizerURL != "" {
+		authorizer, err = auth.NewClient(auth.ClientOptions{URL: cfg.AuthorizerURL, Token: cfg.AuthorizerToken, HTTP: authClient, Metrics: n.metrics})
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("authorization", "mode", "authorizer", "url", cfg.AuthorizerURL)
+	} else {
+		authorizer = auth.NewOwnerPolicy(cfg.AdminSubjects, walObjects{log: n.log})
+		logger.Info("authorization", "mode", "owner policy", "admin_subjects", len(cfg.AdminSubjects))
 	}
 	guard := auth.NewGuard(authorizer, logger)
-	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), nil)
+	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), cfg.OIDCAudience, nil)
 	n.background = append(n.background, n.verifier.Run)
 	if err := n.newEvents(); err != nil {
 		return nil, err

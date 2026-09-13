@@ -277,7 +277,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if !h.guard.Allow(w, r, auth.RepoRef{ID: req.ID, Owner: req.Owner, Slug: req.Slug}, auth.ActionAdmin) {
 		return
 	}
-	ix, err := h.log.CreateRepo(r.Context(), wal.Meta{ID: req.ID, Owner: req.Owner, Slug: req.Slug}, req.DefaultBranch)
+	// The creating subject is recorded once, so the built-in owner policy
+	// can decide who owns the repository (Origo spec 028); an external
+	// authorizer keeps its own record and ignores it.
+	ix, err := h.log.CreateRepo(r.Context(), wal.Meta{ID: req.ID, Owner: req.Owner, Slug: req.Slug, Creator: auth.Subject(r.Context())}, req.DefaultBranch)
 	if err != nil {
 		switch {
 		case errors.Is(err, wal.ErrExists):

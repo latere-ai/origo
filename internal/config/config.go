@@ -83,8 +83,18 @@ type Config struct {
 	// Spec 007 identity and authorization. Required.
 	OIDCIssuers         []string
 	OIDCInsecureIssuers []string
-	AuthorizerURL       string
-	AuthorizerToken     string
+	// OIDCAudience is ORIGO_OIDC_AUDIENCE, the aud a token must carry
+	// (Origo spec 028). DefaultAudience when unset.
+	OIDCAudience string
+	// AuthorizerURL is optional (Origo spec 028): with it unset the node
+	// runs the built-in owner policy over AdminSubjects, and needs no
+	// external service to be usable.
+	AuthorizerURL   string
+	AuthorizerToken string
+	// AdminSubjects is ORIGO_ADMIN_SUBJECTS: the issuer-qualified subjects
+	// the owner policy allows every action. Read and unused with an
+	// authorizer configured (Origo spec 028).
+	AdminSubjects []string
 	// TokenKey is the ECDSA P-256 key of ORIGO_TOKEN_KEY that signs
 	// repository-bound tokens; required in every mode.
 	TokenKey *ecdsa.PrivateKey
@@ -218,7 +228,7 @@ func Load(getenv Getenv) (*Config, error) {
 		S3Secret:        missing("ORIGO_S3_SECRET"),
 		S3PathStyle:     getenv("ORIGO_S3_PATH_STYLE") == "1",
 		DataDir:         orDefault(getenv("ORIGO_DATA_DIR"), DefaultDataDir),
-		AuthorizerToken: missing("ORIGO_AUTHORIZER_TOKEN"),
+		AuthorizerToken: getenv("ORIGO_AUTHORIZER_TOKEN"),
 		EventsURL:       getenv("ORIGO_EVENTS_URL"),
 		EventsSecret:    getenv("ORIGO_EVENTS_SECRET"),
 		NodeName:        getenv("ORIGO_NODE_NAME"),
@@ -253,13 +263,22 @@ func Load(getenv Getenv) (*Config, error) {
 			problems = append(problems, problem)
 		}
 	}
-	if raw := missing("ORIGO_AUTHORIZER_URL"); raw != "" {
+	// The authorizer is optional (Origo spec 028): unset, the node runs
+	// the owner policy, so ORIGO_AUTHORIZER_URL is read with getenv and
+	// not named among the missing required keys.
+	if raw := getenv("ORIGO_AUTHORIZER_URL"); raw != "" {
 		if u, err := url.Parse(raw); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			problems = append(problems, "ORIGO_AUTHORIZER_URL must be an absolute http or https URL")
 		} else {
 			cfg.AuthorizerURL = raw
 		}
 	}
+	// The token is required with an authorizer and unread without one.
+	if cfg.AuthorizerURL != "" && cfg.AuthorizerToken == "" {
+		problems = append(problems, "missing ORIGO_AUTHORIZER_TOKEN")
+	}
+	cfg.OIDCAudience = orDefault(getenv("ORIGO_OIDC_AUDIENCE"), auth.DefaultAudience)
+	cfg.AdminSubjects = list(getenv("ORIGO_ADMIN_SUBJECTS"))
 	if raw := missing("ORIGO_TOKEN_KEY"); raw != "" {
 		key, err := auth.ParseKey(raw)
 		if err != nil {

@@ -111,7 +111,7 @@ func New(t testing.TB) *Server {
 		t.Fatal(err)
 	}
 	guard := auth.NewGuard(authzClient, logger)
-	signer := auth.NewSigner(key, url, nil)
+	signer := auth.NewSigner(key, url, "", nil)
 
 	// The rest of what cmd/origod wires, so the stub serves the whole
 	// contract: the limits of spec 012 with the spec's defaults, the

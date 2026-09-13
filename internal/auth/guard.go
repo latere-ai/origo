@@ -9,8 +9,48 @@ import (
 	"log/slog"
 	"net/http"
 
+	"latere.ai/x/pkg/authz"
+
 	"github.com/latere-ai/origo/internal/contract"
 )
+
+// envelope renders one request into the shared authorizer envelope
+// (Origo spec 028): the rendered subject with its issuer and sub apart,
+// every verified claim of the token, the action, the resource, and the
+// caller block from the context.
+func envelope(ctx context.Context, p Principal, repo RepoRef, action Action) authz.Request {
+	return authz.Request{
+		Subject:  p.Subject,
+		Issuer:   p.Issuer,
+		Sub:      p.Sub,
+		Claims:   p.Claims,
+		Action:   string(action),
+		Resource: repo.resource(),
+		Request:  CallerFromContext(ctx),
+	}
+}
+
+// listEnvelope renders spec 026's directory question: no repository is
+// named, so the resource carries the kind alone, and the cursor and the
+// limit ride in its fields.
+func listEnvelope(ctx context.Context, p Principal, cursor string, limit int) authz.Request {
+	fields := map[string]any{}
+	if cursor != "" {
+		fields["cursor"] = cursor
+	}
+	if limit > 0 {
+		fields["limit"] = limit
+	}
+	return authz.Request{
+		Subject:  p.Subject,
+		Issuer:   p.Issuer,
+		Sub:      p.Sub,
+		Claims:   p.Claims,
+		Action:   string(ActionList),
+		Resource: authz.NewResource(ResourceKind, "", fields),
+		Request:  CallerFromContext(ctx),
+	}
+}
 
 // Denied is a refused request: the authorizer's reason, or the scope of
 // a repository-bound token.
@@ -76,7 +116,7 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 		}
 		return d, nil
 	}
-	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Repo: repo, Action: action})
+	d, err := g.authorizer.Authorize(ctx, envelope(ctx, p, repo, action))
 	if err != nil {
 		return Decision{}, err
 	}
@@ -103,7 +143,10 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 	if !ok {
 		return Directory{}, nil
 	}
-	return lister.List(ctx, ListRequest{Subject: p.Subject, Cursor: cursor, Limit: limit})
+	if limit <= 0 {
+		limit = DefaultListLimit
+	}
+	return lister.List(ctx, listEnvelope(ctx, p, cursor, limit))
 }
 
 // quota is spec 012's rule for a repository-bound token's writes: the
@@ -123,7 +166,7 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 // bound token would make the token the way around spec 007's outage
 // rule.
 func (g *Guard) quota(ctx context.Context, p Principal, repo RepoRef) (int64, error) {
-	d, err := g.authorizer.Authorize(ctx, Request{Subject: p.Subject, Repo: repo, Action: ActionWrite})
+	d, err := g.authorizer.Authorize(ctx, envelope(ctx, p, repo, ActionWrite))
 	switch {
 	case err != nil:
 		return 0, err

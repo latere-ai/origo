@@ -17,9 +17,16 @@ import (
 // the consumer chose and the labels it uses in clone URLs. Origo never
 // interprets owner or slug (spec 003).
 type Meta struct {
-	ID        string    `json:"id"`
-	Owner     string    `json:"owner"`
-	Slug      string    `json:"slug"`
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Slug  string `json:"slug"`
+	// Creator is the rendered subject that created the repository (Origo
+	// spec 028), recorded once at creation. The built-in owner policy
+	// reads it to decide who owns the repository; an external authorizer
+	// keeps its own record and does not need it. Entries written before
+	// contract 2 carry none, and a policy reads an absent creator as
+	// nobody's, not as the empty subject's.
+	Creator   string    `json:"creator,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

@@ -13,14 +13,18 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/cache"
 	"latere.ai/x/pkg/wait"
 )
 
 // Verification values of spec 007.
 const (
-	// AudienceOrigo is the audience every accepted token carries.
-	AudienceOrigo = "origo"
+	// DefaultAudience is the audience a token carries when the operator
+	// sets no ORIGO_OIDC_AUDIENCE (Origo spec 028). The family chose the
+	// consolidated model, so the default stays the service's own name and
+	// does not move to a shared constant.
+	DefaultAudience = "origo"
 	// ClockSkew is the tolerance on exp and nbf of an issuer's token,
 	// for the difference between the issuer's clock and the node's. A
 	// repository-bound token was minted on the node's own clock, so it
@@ -40,6 +44,9 @@ const (
 type VerifierOptions struct {
 	// Issuers are the URLs of ORIGO_OIDC_ISSUERS, trailing slash removed.
 	Issuers []string
+	// Audience is ORIGO_OIDC_AUDIENCE: the aud a token must carry.
+	// DefaultAudience when empty.
+	Audience string
 	// LocalIssuer is ORIGO_PUBLIC_URL: the iss of a repository-bound
 	// token, verified against LocalKey with no fetch.
 	LocalIssuer string
@@ -70,6 +77,7 @@ type Verifier struct {
 	local    string
 	localKey *ecdsa.PublicKey
 	localKID string
+	audience string
 	client   *http.Client
 	timeout  time.Duration
 	now      func() time.Time
@@ -97,8 +105,11 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	}
 	v := &Verifier{
 		issuers: make(map[string]*keySet, len(o.Issuers)), local: strings.TrimRight(o.LocalIssuer, "/"),
-		localKey: o.LocalKey, localKID: KeyID(o.LocalKey), client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
+		localKey: o.LocalKey, localKID: KeyID(o.LocalKey), audience: o.Audience, client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
 		anonymousRead: o.AnonymousRead,
+	}
+	if v.audience == "" {
+		v.audience = DefaultAudience
 	}
 	if v.timeout == 0 {
 		v.timeout = DefaultFetchTimeout
@@ -202,7 +213,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 		}
 	}
 	c := t.Claims
-	if !c.HasAudience(AudienceOrigo) {
+	if !c.HasAudience(v.audience) {
 		return Principal{}, refuse(ReasonAudience)
 	}
 	skew := ClockSkew
@@ -230,7 +241,16 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if c.Delegated {
 		return Principal{}, refuse(ReasonDelegation)
 	}
-	p := Principal{Subject: c.Sub}
+	// The rendered subject the authorizer, the entry header, and the event
+	// record (Origo spec 028). A repository-bound token's sub is the
+	// minter's rendered subject already, and its iss is ORIGO_PUBLIC_URL,
+	// so rendering it again would nest: the node renders a local token's
+	// subject as the sub it carries. An issuer's token renders <iss>|<sub>.
+	subject := c.Sub
+	if !local {
+		subject = authz.Subject(iss, c.Sub)
+	}
+	p := Principal{Subject: subject, Issuer: iss, Sub: c.Sub, Claims: t.Raw}
 	if local {
 		p.Bound = &Bound{Repo: c.Repo, Scope: Scope(c.Scope)}
 	}
