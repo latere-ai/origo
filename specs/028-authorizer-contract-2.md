@@ -27,7 +27,11 @@ endpoint (latere-ai/specs, `decisions/2026-09-13-one-platform-open-cores.md`).
 This spec is Origo's side of that decision: the shared envelope as
 Origo's authorizer contract 2, subjects qualified by their issuer, a
 built-in owner policy, a configurable audience, and the shared
-verifier, with contract 1 served beside contract 2 for one release.
+verifier. Contract 2 replaces contract 1 in one release: the family
+runs no compatibility windows between its own components
+(latere-ai/specs, `decisions/2026-09-13-no-compatibility-windows.md`),
+and the one authorizer Origo has, auth today, changes in the same
+batch.
 
 The client protocol contract of [[003-protocol-contract]], the one a
 git client and an API caller code against, is unchanged and stays
@@ -87,7 +91,7 @@ Content-Type: application/json
 | `repo` | `{id, owner, slug}` | `resource: {kind: "Repository", id, owner, slug}`; `repo.list` carries `{kind: "Repository"}` and no id |
 | `request` | absent | `id`, `ip`, `user_agent` |
 | figures | `ttl`, `replicas`, `quota_bytes`, `requests_per_minute` at the top level | `ttl` at the top level; the three figures under `limits` |
-| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged; the family record names the day `filter` over the node's own name index replaces it |
+| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged, and `next_cursor` stays the authorizer's value passed through: issue #1 stays open until `filter` over the node's own name index replaces the directory answer, which the family record dates to the registry's move to `platformd` |
 
 The five rules of spec 007 hold word for word. The probe id
 `00000000-0000-0000-0000-000000000001` is unchanged and is the
@@ -135,13 +139,14 @@ passes are `latere.ai/x/pkg/authz`; Origo adds its action vocabulary
 and its `resource` shape. `test/stubs/authorizer` becomes that
 package's stub with Origo's rule table.
 
-### Two contracts for one release
+### One contract, one release
 
-`ORIGO_AUTHORIZER_CONTRACT` selects the envelope: `1` in the release
-that ships this spec, `2` the release after, and the variable removed
-with contract 1 in the one after that. `origod check` sends the probe
-in the configured contract. The conformance suite runs its authorizer
-group in both while both exist.
+Contract 1's envelope, its `actor` field, its bare-`sub` subjects and
+the constant audience are removed in the release that ships contract
+2; nothing selects between them. The stub authorizer, `origod check`
+and the conformance suite speak contract 2 alone. auth's authorizer
+for Origo changes to contract 2 in the same coordinated batch, so the
+installation's authorizer and node roll together.
 
 ## Not in this spec
 
@@ -155,11 +160,11 @@ registry to sit beside the node's name index.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| Under contract 2 every operation reaches the authorizer with the row's `action`, a `resource` of kind `Repository`, `issuer` and `sub` apart, every claim of the token in `claims`, and a `request` block; under contract 1 the spec 007 body is unchanged byte for byte | `TestAuthorizerEnvelopeByContract`, table-driven over every handler and both contracts | not built |
-| The three figures are read from `limits` under contract 2 and from the top level under contract 1, and reach the same consumers | `TestFiguresReachTheirConsumers` | not built |
+| Every operation reaches the authorizer with the row's `action`, a `resource` of kind `Repository`, `issuer` and `sub` apart, every claim of the token in `claims`, and a `request` block; no code path builds the contract 1 body | `TestAuthorizerEnvelope`, table-driven over every handler; `TestContractOneIsGone`, which finds no `"repo":` or `"actor":` key in the client | not built |
+| The three figures are read from `limits` and reach the consumers spec 007 names | `TestFiguresReachTheirConsumers` | not built |
 | A subject is `<iss>\|<sub>` in the authorizer request, the entry header, the event, and `origo`'s output; two issuers agreeing on a `sub` are two subjects | `TestSubjectsAreIssuerQualified` | not built |
 | With no authorizer configured the owner policy holds every rule of its list, denies the probe and anonymous, and `ORIGO_ADMIN_SUBJECTS` acts on everything | `TestOwnerPolicy`, table-driven | not built |
 | `ORIGO_OIDC_AUDIENCE` changes the accepted audience and defaults to `origo` | `TestAudienceIsConfigurable` | not built |
 | Every row of spec 007's verification table holds through the shared verifier with the same reason | `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` unchanged | not built |
-| `ORIGO_AUTHORIZER_CONTRACT` selects the envelope, defaults as the release table says, and `origod check` probes in the selected one | `TestContractSwitch`, `TestCheckProbesInTheConfiguredContract` | not built |
-| The conformance suite's authorizer group passes against the shared stub in both contracts | `test/conformance`, the authorizer group | not built |
+| `origod check` sends the probe in contract 2 and reads an allow as an endpoint that does not read the request | `TestCheckProbesTheAuthorizer` | not built |
+| The conformance suite's authorizer group passes against the shared stub in contract 2 | `test/conformance`, the authorizer group | not built |
