@@ -156,7 +156,7 @@ func (s *Server) answerDirectory(req authz.Request) any {
 	if !supported {
 		return map[string]any{"directory": false}
 	}
-	if d := s.Server.Decide(req); !d.Allow {
+	if d := s.Decide(req); !d.Allow {
 		return map[string]any{"allow": false, "reason": d.Reason}
 	}
 	limit := req.Resource.Int("limit")
@@ -178,7 +178,7 @@ func (s *Server) answerDirectory(req authz.Request) any {
 			Action:   readAction,
 			Resource: authz.NewResource(resourceKind, e.ID, map[string]any{"owner": e.Owner, "slug": e.Slug}),
 		}
-		if !s.Server.Decide(probe).Allow {
+		if !s.Decide(probe).Allow {
 			continue
 		}
 		if len(entries) == limit {
