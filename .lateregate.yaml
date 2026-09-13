@@ -119,9 +119,6 @@ identity:
     authorizer:
       until: 2026-11-30
       reason: spec 028 moves the authorizer client to pkg/authz
-    delegation:
-      until: 2026-12-31
-      reason: the act claim goes with the family's D5 in id-06
     audience:
       until: 2026-11-30
       reason: spec 028 adds ORIGO_OIDC_AUDIENCE to the deployments
