@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.2.1 - 2026-09-13
+
 - The stub issuer of spec 013 serves `POST /actor-tokens`: a bearer it
   minted buys a token for one audience with the same subject, good for at
   most five minutes, the way auth mints one. A consumer's end-to-end tier
