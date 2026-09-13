@@ -313,3 +313,72 @@ func TestMintsEachFailure(t *testing.T) {
 		t.Fatal("minting stopped while hung")
 	}
 }
+
+// POST /actor-tokens is the family's one hop: a token this issuer minted,
+// presented as the bearer, buys a token for one audience with the same
+// subject and at most five minutes of life. A missing bearer, a bearer
+// that is not a token, and a body naming no audience are refused.
+func TestActorTokensMintForTheBearer(t *testing.T) {
+	s := issuer.New(t)
+	login := s.Mint(issuer.Claims{Sub: "alice"})
+	post := func(bearer, body string) *http.Response {
+		req, _ := http.NewRequest(http.MethodPost, s.URL()+"/actor-tokens", strings.NewReader(body))
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	resp := post(login, `{"audience":"sandboxd","ttl_seconds":900}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var out struct {
+		ActorToken string `json:"actor_token"`
+		ExpiresIn  int64  `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if out.ExpiresIn != 300 {
+		t.Errorf("expires_in = %d, want the cap of 300", out.ExpiresIn)
+	}
+	parts := strings.Split(out.ActorToken, ".")
+	if len(parts) != 3 {
+		t.Fatalf("actor token is not a compact JWT: %q", out.ActorToken)
+	}
+	raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims struct {
+		Sub string   `json:"sub"`
+		Aud []string `json:"aud"`
+		Exp int64    `json:"exp"`
+		Iat int64    `json:"iat"`
+	}
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims.Sub != "alice" || len(claims.Aud) != 1 || claims.Aud[0] != "sandboxd" || claims.Exp-claims.Iat != 300 {
+		t.Errorf("claims = %+v, want alice for sandboxd, 300 s", claims)
+	}
+
+	for name, c := range map[string]struct {
+		bearer, body string
+		status       int
+	}{
+		"no bearer":          {"", `{"audience":"sandboxd"}`, http.StatusUnauthorized},
+		"bearer not a token": {"nope", `{"audience":"sandboxd"}`, http.StatusUnauthorized},
+		"no audience":        {login, `{}`, http.StatusBadRequest},
+	} {
+		resp := post(c.bearer, c.body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != c.status {
+			t.Errorf("%s: status = %d, want %d", name, resp.StatusCode, c.status)
+		}
+	}
+}

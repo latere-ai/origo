@@ -10,6 +10,11 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- The stub issuer of spec 013 serves `POST /actor-tokens`: a bearer it
+  minted buys a token for one audience with the same subject, good for at
+  most five minutes, the way auth mints one. A consumer's end-to-end tier
+  that acts at Origo with an actor token runs against the stubs unchanged.
+
 - The fetch allow-list accepts exact single-label names, including `localhost`
   and bare service names. Address restrictions still apply; single-label
   wildcards remain invalid.

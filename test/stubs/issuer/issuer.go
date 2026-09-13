@@ -148,6 +148,7 @@ func NewHandler(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /.well-known/openid-configuration", s.discovery)
 	s.mux.HandleFunc("GET /jwks", s.jwks)
 	s.mux.HandleFunc("POST /mint", s.mint)
+	s.mux.HandleFunc("POST /actor-tokens", s.actorTokens)
 	s.mux.HandleFunc("POST /rotate", func(w http.ResponseWriter, _ *http.Request) { s.Rotate(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /hang", func(w http.ResponseWriter, _ *http.Request) { s.Hang(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("POST /resume", func(w http.ResponseWriter, _ *http.Request) { s.Resume(); w.WriteHeader(http.StatusNoContent) })
@@ -302,6 +303,68 @@ func (s *Server) mint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"token": s.Mint(c)})
+}
+
+// ActorTokenLifetime is the most an actor token lives, the family's cap.
+const ActorTokenLifetime = 300 * time.Second
+
+// actorTokens is the issuer's POST /actor-tokens, the one way a service
+// acts for a person across the family: the bearer is a token this stub
+// minted, the body names one audience, and the answer is a token for that
+// audience whose subject is the bearer's, good for at most five minutes.
+// A stub verifies nothing about the bearer beyond its shape, because the
+// real issuer's registry gate is not what a test of a consumer exercises.
+func (s *Server) actorTokens(w http.ResponseWriter, r *http.Request) {
+	bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || bearer == "" {
+		http.Error(w, `{"error":"unauthorized","message":"a bearer is required"}`, http.StatusUnauthorized)
+		return
+	}
+	sub, ok := subjectOf(bearer)
+	if !ok {
+		http.Error(w, `{"error":"unauthorized","message":"the bearer is not a token"}`, http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		Audience string `json:"audience"`
+		TTL      int64  `json:"ttl_seconds"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
+		http.Error(w, `{"error":"bad_request","message":"invalid json"}`, http.StatusBadRequest)
+		return
+	}
+	if body.Audience == "" {
+		http.Error(w, `{"error":"bad_request","message":"audience is required"}`, http.StatusBadRequest)
+		return
+	}
+	ttl := time.Duration(body.TTL) * time.Second
+	if ttl <= 0 || ttl > ActorTokenLifetime {
+		ttl = ActorTokenLifetime
+	}
+	s.mu.Lock()
+	now := s.now()
+	s.mu.Unlock()
+	token := s.Mint(Claims{Sub: sub, Aud: StringList{body.Audience}, Iat: now.Unix(), Exp: now.Add(ttl).Unix()})
+	writeJSON(w, map[string]any{"actor_token": token, "token_type": "Bearer", "expires_in": int64(ttl / time.Second)})
+}
+
+// subjectOf reads the sub claim of a compact JWT without verifying it.
+func subjectOf(token string) (string, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", false
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if json.Unmarshal(raw, &claims) != nil || claims.Sub == "" {
+		return "", false
+	}
+	return claims.Sub, true
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
