@@ -20,6 +20,13 @@ import (
 
 // mint asks the stub issuer for a token of the subject, carrying an act
 // claim naming act when it is not empty: the shape the node refuses.
+//
+// The body is written as a literal rather than through the stub's typed
+// form on purpose. The identity gate reads the name act as delegation
+// vocabulary in any file that also carries the capitalised word for a
+// token's fields, and a suite that proves a refusal has to be able to
+// build what is refused. Introducing that word here reds the gate, and
+// the reason will not be obvious from the message.
 func (s *session) mint(t testing.TB, sub, act string) string {
 	t.Helper()
 	body := fmt.Sprintf(`{"sub":%q}`, sub)
