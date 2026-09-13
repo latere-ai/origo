@@ -93,7 +93,7 @@ Content-Type: application/json
 | `subject` | the token's `sub`, or its `act` | `<iss>\|<sub>`; empty for an anonymous request ([[027-anonymous-read]]) and for the probe |
 | `issuer`, `sub` | absent | the two halves apart |
 | `claims` | absent | every verified claim, verbatim; the node reads none |
-| `actor` | the delegating service | absent; delegation leaves with the family's D5 |
+| `actor` | always empty since 2026-09-13, when the family's D5 removed the `act` claim | absent |
 | `action` | `read`, `write`, `admin`, `list` | `repo.read`, `repo.write`, `repo.admin`, `repo.list` |
 | `repo` | `{id, owner, slug}` | `resource: {kind: "Repository", id, owner, slug}`; `repo.list` carries `{kind: "Repository"}` and no id |
 | `request` | absent | `id`, `ip`, `user_agent` |
@@ -158,9 +158,9 @@ installation's authorizer and node roll together.
 ## Not in this spec
 
 Moving the authorizer, the registry, the grants and the SSH keys from
-auth to the platform control plane (the family's id-06); removing the
-`act` claim from the verifier and the minter (the family's D5), which
-lands with id-06; the `filter`-based `repo.list`, which waits for the
+auth to the platform control plane (the family's id-06); the `act`
+claim, which the family's D5 removed from the verifier and the minter on
+2026-09-13 ahead of this spec; the `filter`-based `repo.list`, which waits for the
 registry to sit beside the node's name index.
 
 ## Acceptance criteria

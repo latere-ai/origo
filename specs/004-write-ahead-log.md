@@ -120,7 +120,7 @@ committed. Format, in order:
 
 | Section | Content |
 |---|---|
-| header | JSON, one line, at most 4 KiB, unknown fields refused: `{"v": 1, "kind": "push"\|"compact"\|"delete", "seq", "at", "subject", "actor", "pack_bytes", "pack_sha256", "push_options"}`; `push_options` present only when the client sent any; `pack_sha256` empty when `pack_bytes` is 0 |
+| header | JSON, one line, at most 4 KiB, unknown fields refused: `{"v": 1, "kind": "push"\|"compact"\|"delete", "seq", "at", "subject", "pack_bytes", "pack_sha256", "push_options"}`; `push_options` present only when the client sent any; `pack_sha256` empty when `pack_bytes` is 0; a reader also accepts, and records nothing from, the `actor` key an entry written before 2026-09-13 carries (spec 007, the family's D5) |
 | refs | JSON, one line, at most 64 MiB: the reference transaction `[{"ref", "old", "new"}]`; `old` all zeros for a create, `new` all zeros for a delete; for `HEAD` the values are symbolic, `ref: refs/heads/main`; a reference appears at most once and `old` differs from `new` |
 | pack | the packfile bytes exactly as received from the client (`push`) or produced by repack (`compact`); absent when `pack_bytes` is 0 |
 

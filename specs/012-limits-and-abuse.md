@@ -39,8 +39,8 @@ One item the builder took from spec 010: `quota_bytes` for a
 repository-bound token was `auth.DefaultQuotaBytes` there, because the
 token's claims carry no quota and the authorizer never sees the token.
 This spec asks the authorizer for the minting subject's figure when a
-bound token writes (the token's `sub`, `act` as the actor, action
-`write`, on the bound repository), cached like any allow, so a bound
+bound token writes (the token's `sub`, action `write`, on the bound
+repository), cached like any allow, so a bound
 token's uploads are held to the figure its minter's pushes are, and
 spec 010's interim rule ended with it.
 
@@ -90,7 +90,7 @@ the LFS body shape of spec 010; the status and `Retry-After` are what
 
 A repository-bound token (spec 007) carries no quota claim, so a write
 under one asks the authorizer for the minting subject's figure with the
-token's own `sub` and `act` on the bound repository, cached like any
+token's own `sub` on the bound repository, cached like any
 allow. The call supplies the figure and decides nothing: the token's
 scope already decided the access. A deny, and an allow that names no
 figure, therefore leave `auth.DefaultQuotaBytes` and write a warning

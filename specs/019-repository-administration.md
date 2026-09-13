@@ -194,7 +194,7 @@ key, the id (a UUID v5 of the repository, the kind, and `at`, so a
 repeated emit is one event), delivery, retry, dead-letter, the cursor,
 and repair for every kind, and this spec adds nothing to them. The
 shared fields are `id`, `kind`, `repo`, `owner`, `slug`, `at`, and
-`pusher` (`{"sub", "actor"}` of the caller, the same field and shape
+`pusher` (`{"sub"}` of the caller, the same field and shape
 as the `push` event, so a consumer decodes one identity for every
 kind):
 

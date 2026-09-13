@@ -139,7 +139,7 @@ deadline, and under the pod's security context.
 |---|---|---|
 | Reading a repository without permission | every request authenticated; authorization asked of the consumer per action and cached for at most 600 seconds; deny by default and never fail-open; repository-bound tokens scoped to one repository and one scope | 007 |
 | Writing to a repository without permission | same; `write` is asked at `info/refs?service=git-receive-pack`, before the pack is accepted | 007 |
-| A service acting as a user beyond its mandate | `act` is recorded on every entry and event; the authorizer sees both subject and actor and may refuse the pair | 007 |
+| A service acting as a user beyond its mandate | a token carrying `act` is refused; a service acting for a person presents the token that person's issuer minted for Origo, whose lifetime and audience the issuer bounds, and every entry and event names the person | 007 |
 | Malformed or malicious git objects | `receive.fsckObjects` (phase 1), `transfer.fsckObjects`, `core.protectNTFS` (phase 1), `core.protectHFS`; Origo never checks out a tree on the server except into the archive stream, which is `git archive` with no filesystem write | 004, 009, 016 |
 | Command injection through refs, owner, slug, or paths | reference names validated by `internal/wal.ValidRefName`; owner and slug by the grammar of spec 003; subprocess arguments never pass through a shell; `GIT_DIR` set explicitly; the only hook is Origo's own pre-receive, installed by the node and never from a push | 003, 004, 016 |
 | Resource exhaustion by one client | per-subject rate limit, per-node subprocess cap, body and repository size limits, subprocess deadlines | 012 |
@@ -159,7 +159,7 @@ deadline, and under the pod's security context.
 | A key that outlives its person | the resolve answer's `ttl` bounds it, 60 seconds by default and capped at 600, and a not-found answer is cached 5 seconds, so a revocation at the store stops the key inside the window Origo already uses for an authorizer deny | 024 |
 | More than git over an SSH connection | only `session` channels, one per connection, only `exec`, and only `git-upload-pack` and `git-receive-pack`; shell, subsystem, pty, env, X11, agent forwarding, and every port-forwarding channel and global request are refused before a channel is opened, no subprocess starts and no repository is read on a refusal, and the surface is a maintained list a hostile-client test walks, the way the route sweep above is a maintained list | 024 |
 | Unauthenticated cost on an SSH connection | the handshake is work before any identity is known: a 30 second deadline over handshake and authentication together, at most 3 public key attempts, no password and no keyboard-interactive method, no banner naming the installation, and nothing that touches the bucket or the authorizer before authentication succeeds | 024, 012 |
-| Delegation over a transport that cannot carry it | a public key carries no claims, so `act` is never derived on the SSH path and the key store cannot assert a pair; the actor is empty on every SSH-originated authorizer call and on every entry an SSH push commits, and a service that must act for a person uses HTTPS with a token the issuer signed | 024, 007 |
+| A second identity path over SSH | a public key carries no claims, so the key store resolves a key to one subject and asserts nothing else; a service that must act for a person uses HTTPS with the token the issuer minted for that person | 024, 007 |
 
 ### Process and pod hardening
 

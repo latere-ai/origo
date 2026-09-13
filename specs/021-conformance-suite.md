@@ -52,7 +52,7 @@ since the live run of the v0.1.3 release on 2026-09-11.
 conformance.Run(t, conformance.Target{
     URL:        "https://git.example.com",
     Token:      "<a token with admin on every repository the suite creates>",
-    Issuer:     "<the stub issuer's URL, for the delegation and token cases>",
+    Issuer:     "<the stub issuer's URL, for the delegation refusal and token cases>",
     Authorizer: "<the stub authorizer's control URL, to flip allow and deny>",
     EventsSink: "<the stub sink's control URL, to read deliveries>",
     Source:     "<a git source URL for the import and verify cases; empty on a live target>",
@@ -67,7 +67,7 @@ asserts every table of spec 003 and of the specs it points at, one
 subtest per row, named `TestContract/<spec>/<row>`: the repository
 lifecycle, each advertised capability, fetch by reachable hash, atomic
 pushes, non-fast-forward rejection, the read endpoints against a fixture
-it pushes itself, archive reproducibility, delegation with `act`,
+it pushes itself, archive reproducibility, the refusal of `act`,
 repository-bound tokens, push event delivery and signature, LFS, the
 administration operations of spec 019, the server-side operations of
 spec 020 once they exist, and every error code with its sentence. Every
@@ -93,7 +93,8 @@ Cases a target does not support are skipped by a `Skip` list on the
 target, never silently: each skipped case is reported by name. Four
 groups skip on their own when the field they need is empty, because
 they drive the stubs and a live service has none: the delegation cases
-(`act` on a service token, which need `Issuer` to mint one), the
+(a service token carrying `act` is refused, which need `Issuer` to mint
+one), the
 deny-flipping cases (403 before lookup, the authorizer outage,
 `authorizer_unavailable`, the 403 of every administration operation,
 and spec 026's populated directory, which need `Authorizer` to flip an
@@ -138,7 +139,7 @@ report with fewer or more skipped names is a failure of the run.
 
 | Skipped on the live run | Why |
 |---|---|
-| the delegation group: `act` on a service token, the repository-bound token minted through delegation | needs `Issuer` to mint the token |
+| the delegation group: a service token carrying `act` is refused with `delegation`, a plain one is served and mints a bound token | needs `Issuer` to mint the tokens |
 | the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable`, the 403 of each of spec 019's operations, spec 026's populated directory and the 501 of an authorizer without one | needs `Authorizer` to flip an answer, or to hold a directory the run seeds through the stub's `/directory` endpoint |
 | the quota row: `over_quota` | needs `Authorizer` to lower `quota_bytes` |
 | the source group: `import` and `repo_not_empty`, with `repo_importing` and the `imported` event asserted inside `import` | needs `Source` and `SourceToken` |

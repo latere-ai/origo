@@ -63,8 +63,7 @@ released before it:
 - Spec 003's repository representation at `GET /v1/repos/{id}` and its
   error envelope.
 - Spec 007's `POST /v1/repos/{id}/tokens`, which mints a token bound to
-  one repository with a scope and a lifetime, and copies the minter's
-  `act` claim into it.
+  one repository with a scope and a lifetime for the minter's subject.
 - Spec 026's `GET /v1/repos`, landed after the first draft of this
   spec: a directory mode that lists what the subject may see, and a name
   mode that resolves `?owner=&slug=`. The first draft caveated both,
@@ -216,16 +215,14 @@ and it expires, so a leak is bounded. The skill's first block is the
 agent, and the skill says plainly that the command does not do this for
 you and why.
 
-**An agent acting for a person** is spec 007's `act` claim, and the
-command constructs nothing. The platform that starts the agent holds a
-service token with `act: <the person's sub>` and mints the bound token
-from it; spec 007 copies `act` from the minter into the minted token. So
-the credential handed to the agent already carries the delegation, every
-entry the agent's commits produce records `subject` as the person and
-`actor` as the service, and every push event carries `pusher.sub` and
-`pusher.actor` the same way. An agent a person runs for themselves uses
-a token minted from their own, with no `act`, and the history says the
-person did it, which is true.
+**An agent acting for a person** holds a token minted for that person,
+and the command constructs nothing. The platform that starts the agent
+presents the token the person's issuer minted for Origo on their behalf
+(the family's one hop) and mints the bound token from it, so the bound
+token names the person, every entry the agent's commits produce records
+`subject` as the person, and every push event carries `pusher.sub` the
+same way. A token carrying an `act` claim is refused (spec 007): the
+history says the person did it, which is true, and names no relay.
 
 **A token from the issuer** is accepted and is the broader case: it is
 not bound to a repository, so the authorizer decides each call, and what
@@ -751,8 +748,8 @@ was built against the route as the tree held it, 026's status being
 what lagged its code rather than a design still moving. Both closed on
 the same day, 2026-09-11, on the v0.2.0 tag run.
 
-Unchanged after checking: spec 007's `Mint` writes `repo`, `scope` and a
-copied `act` and caps `ttl` at 3 600 seconds; spec 009's budget is 30
+Unchanged after checking: spec 007's `Mint` writes `repo` and `scope`
+and caps `ttl` at 3 600 seconds (the copied `act` went on 2026-09-13); spec 009's budget is 30
 seconds and its caps are 10 000 refs, 200 commits, 5 000 tree entries,
 1 MiB of compare and 50 MiB of blob; spec 020's budget is 300 seconds
 and its receipt is the five fields `commit`, `branch`, `entry_seq`,

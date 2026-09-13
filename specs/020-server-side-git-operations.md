@@ -69,7 +69,7 @@ than clobbering:
 | `branch` | `refs/heads/<name>` or a short name; must exist except for `commits` with `create_branch: true` |
 | `create_branch`, `from` | `commits` only: `create_branch: true` creates `branch`, which must not exist (409 `non_fast_forward` with `details.expected: null` and `details.actual` the existing head when it does), and requires `from`, a commit sha or a branch name in the repository whose tree the new branch's first commit starts from and whose commit is its parent; `from` without `create_branch` and `create_branch` without `from` are 400 `invalid_request` with `details.field`; a repository with no commit takes `from: null` and the first commit has no parent |
 | `expected_head` | the commit the caller believes the branch points at; `null` with `create_branch: true` and refused otherwise; mismatch is 409 `non_fast_forward` with the details of spec 003: `ref`, `expected`, `actual` |
-| `author` | required: `{"name", "email"}`, both non-empty, `email` with one `@`; a missing or empty field is 400 `invalid_request` with `details.field: "author"`; the committer is always `Origo <origo@<host of ORIGO_PUBLIC_URL>>` with the effective subject's identity in the message trailer `Origo-Subject:` and the actor in `Origo-Actor:` (spec 007) |
+| `author` | required: `{"name", "email"}`, both non-empty, `email` with one `@`; a missing or empty field is 400 `invalid_request` with `details.field: "author"`; the committer is always `Origo <origo@<host of ORIGO_PUBLIC_URL>>` with the subject's identity in the message trailer `Origo-Subject:` (spec 007) |
 | `message` | the commit message, 1 to 64 KiB |
 | `dry_run` | `true` computes the result and returns it without committing; the objects it writes go into a temporary object directory under `<ORIGO_DATA_DIR>/spool/`, set as `GIT_OBJECT_DIRECTORY` with the repository's `objects/` in `GIT_ALTERNATE_OBJECT_DIRECTORIES`, and the directory is removed after the response, so a dry run never writes into the repository's objects and a loop of dry runs leaves nothing for compaction to clear |
 
@@ -124,7 +124,7 @@ pack; `git index-pack --strict` over that pack and `git fsck
 `receive.fsckObjects` would; the pack's size is checked against
 `quota_bytes` and the push size limit (spec 012); and `Log.Commit` of
 spec 004 commits the pack with the one-update transaction, the
-subject and actor, and `push_options: ["origo.operation=<name>"]`,
+subject, and `push_options: ["origo.operation=<name>"]`,
 after which `Cache.Advance` records the sequence, the branch is
 moved with `git update-ref`, and `events.Enqueue` (spec 008) writes the
 event. `commits` is bounded by the 30 second budget of spec 009 and the
@@ -421,9 +421,8 @@ that keeps its own rules; each is a candidate for a later round.
   repository that has history. Built: 400 `invalid_request` naming the
   field, because the Limits table's `too_many` is the answer to a list
   that is too long and not to one that is empty.
-- `Origo-Actor:` is written only when the request carries an actor, so
-  a commit made without delegation has one trailer rather than an
-  empty one.
+- `Origo-Subject:` is the one trailer; `Origo-Actor:` went with the
+  `act` claim on 2026-09-13 (spec 007, the family's D5).
 - One subprocess slot (spec 012) covers a whole operation, the way one
   covers a whole read. The Mechanics do not mention the semaphore.
 - An operation does not call the compaction trigger a push calls

@@ -216,17 +216,14 @@ teaches a caller nothing about whether the repository exists. For
 `git-receive-pack` the allow is taken before the pack is read, which is
 what 016's write row requires.
 
-**Delegation does not exist over SSH.** `actor` is empty on every
-SSH-originated authorizer call and the entry's `actor` field is empty on
-every SSH push. The `act` claim of spec 007 is a statement inside a
-token an issuer signed, and the authorizer can attribute it to that
-issuer. A public key carries no claims and no signature over anything
-but the session, so a key store that answered a pair would be a second,
-unsigned delegation path with no issuer behind it. An operator who wants
-a machine to push gives the machine a subject of its own — a deploy key
-is its own subject — and grants that subject what it needs through the
-authorizer, which is the machinery that already exists. A service that
-must push *as a person* uses HTTPS with a token carrying `act`.
+**A key names one subject.** A public key carries no claims and no
+signature over anything but the session, so the key store resolves it to
+one subject and asserts nothing else. An operator who wants a machine to
+push gives the machine a subject of its own — a deploy key is its own
+subject — and grants that subject what it needs through the authorizer,
+which is the machinery that already exists. A service that must push *as
+a person* uses HTTPS with the token that person's issuer minted for
+Origo (spec 007).
 
 Repository-bound tokens (spec 007) are an HTTP surface and stay one:
 there is no request on an SSH connection that could present one, and
@@ -386,7 +383,7 @@ parsed by Origo and never by a shell.
 | Surface | Over SSH | Why |
 |---|---|---|
 | clone, fetch, push, and every capability of spec 003's table | unchanged | the same subprocess, the same advertisement, the same `atomic` and `push-options` behaviour |
-| durability, linearization, the `push` event, `act` recorded on an entry | unchanged | one write path; `actor` is empty because nothing set it |
+| durability, linearization, the `push` event, the subject recorded on an entry | unchanged | one write path |
 | quotas and the size limits of spec 012 | unchanged | they live in the hook and the write path, below the transport; `over_quota` reaches the client on the sideband as it does today |
 | the per-subject rate limit of spec 012 | one session costs one token | an HTTP clone is two requests, `info/refs` then `git-upload-pack`, and an SSH clone is one connection; charging one keeps `ORIGO_REQUESTS_PER_MINUTE` a bound on operations rather than on framing. `RateLimit-Limit` has no header to travel on and is not sent; a `rate_limited` refusal names its wait in the stderr line |
 | the storage breakers and the refusals of spec 015 | unchanged | below the transport |
@@ -464,7 +461,7 @@ builder adds them:
 | A key that outlives its person | the resolve `ttl` bounds it: a revoked key stops authenticating within `ttl`, 60 seconds by default, and a `{"found": false}` is cached 5 seconds so a revocation is not held by a negative answer | 024 |
 | More than git over an SSH connection | only `session` channels, only one, only `exec`, only the two service commands; shell, subsystem, pty, env, agent forwarding, X11, and every port-forwarding channel and global request are refused before anything is opened, and a hostile-client test walks the list | 024 |
 | Unauthenticated cost before any identity is known | a 30 second deadline over handshake and authentication, at most 3 public key attempts, no password and no keyboard-interactive method, and no work that touches the bucket or the authorizer before authentication succeeds | 024, 012 |
-| Delegation over a transport that cannot carry it | `act` is never derived on the SSH path and the key store cannot assert one; `actor` is empty on every SSH-originated authorizer call and on every SSH entry | 024, 007 |
+| A second identity path over SSH | the key store resolves a key to one subject and asserts nothing else | 024, 007 |
 | A key store outage read as an allow | authentication fails closed; a resolver that does not answer refuses the connection and is counted on `origo_ssh_auth_total{result="resolver_error"}`, the rule spec 007 fixes for the authorizer | 024, 007 |
 
 The trust boundary diagram of spec 016 gains the key resolver beside the

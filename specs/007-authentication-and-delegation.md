@@ -20,16 +20,20 @@ author: changkun
 > owner policy and a configurable audience, and moves the verifier to
 > the shared package, and replaces contract 1 in one release. The
 > five rules, the probe id, and the cache and retry rules are unchanged
-> and are the shared contract's. Delegation through `act` is removed
-> by the family's decision D5 and lands with its id-06.
+> and are the shared contract's. Delegation through `act` was removed
+> on 2026-09-13 by the family's decision D5 (its id-06): the verifier
+> refuses a token carrying `act` with the reason `delegation`, the
+> minter copies no such claim, the entry header and the push event name
+> the subject alone, and contract 1's `actor` field is always empty
+> until contract 2 drops it. The sections below describe the system as
+> it is; the history of the claim is in this note and in the Outcome.
 
 ## Overview
 
 Origo knows who is calling and asks the consumer whether they may. It
-verifies tokens from configured OIDC issuers, lets a service act on
-behalf of a subject with an auditable claim, mints narrow read tokens
-for builds, and delegates every authorization decision to an endpoint the
-consumer runs. Origo stores no user and no permission.
+verifies tokens from configured OIDC issuers, admits the one party a
+token names, mints narrow read tokens for builds, and delegates every
+authorization decision to an endpoint the consumer runs. Origo stores no user and no permission.
 
 ## Current state
 
@@ -92,6 +96,7 @@ spec 003's table carries.
 | `nbf` | absent or in the past, with 60 seconds of skew | `nbf` |
 | `iat` | present and at most 24 hours old | `iat` |
 | `sub` | present and not empty; a token that names nobody is not a caller, and would otherwise verify to the empty subject that spec 027 admits as anonymous | `subject` |
+| `act` | absent; a token that carries one names two parties, and no token carries a chain (the family's D5): a service acting for a person presents the token its issuer minted for that person | `delegation` |
 | keys | from each issuer's `<iss>/.well-known/openid-configuration` `jwks_uri`, after its `issuer` is checked to equal the configured URL (OIDC Discovery 4.3; a document naming another issuer fails the fetch like an unreachable issuer), cached, refreshed every hour and on an unknown `kid` at most once a minute per issuer; the discovery fetch and the JWKS fetch each have a 5 second timeout; an issuer unreachable at start-up does not fail the start-up: it is logged, retried every minute by the loop and from one second on by a request, doubling per failure up to the minute, and its tokens are refused with `issuer_unavailable` until a fetch succeeds, while tokens of the other issuers verify | |
 | issuer scheme | an issuer URL is `https://`; `http://` is accepted only when the URL's host is a loopback address or the URL is listed in `ORIGO_OIDC_INSECURE_ISSUERS` (spec 002), which the kind overlay of spec 013 sets for the stub issuer and a production deployment never sets; any other `http://` issuer is a start-up failure naming it | |
 | credential forms | `Authorization: Bearer <token>`; basic auth with any username and the token as the password; basic auth with the token as the username and an empty password | |
@@ -106,16 +111,16 @@ endpoint below never runs without a key to sign with. Development and
 the test tiers run the stub issuer and the stub authorizer of spec 013
 in its place and generate the key at start (Current state).
 
-### Effective subject and actor
+### The subject
 
 | Claim | Meaning |
 |---|---|
-| `sub` | the caller |
-| `act` | optional; when present, the subject on whose behalf the call is made, and `sub` becomes the actor |
+| `sub` | the caller, the one party a token names |
 
-Both are recorded in every entry header (`subject`, `actor`) and every
-event (`pusher.sub`, `pusher.actor`). A consumer that commits for a user
-sends its service token with `act: <user sub>`.
+It is recorded in every entry header (`subject`) and every event
+(`pusher.sub`). A consumer that commits for a person presents the token
+its issuer minted for that person, addressed to Origo: the family's one
+hop. No token carries a chain, so nothing records an actor.
 
 ### Authorization before lookup
 
@@ -155,8 +160,8 @@ Content-Type: application/json
 
 | Field | Value |
 |---|---|
-| `subject` | the effective subject: the token's `sub`, or its `act` when the token carried one. It is empty only for the probe below |
-| `actor` | the delegating service when the token carried `act`, else empty |
+| `subject` | the token's `sub`. It is empty only for the probe below |
+| `actor` | always empty: contract 1 carried the delegating service here, delegation is gone, and the field leaves with contract 2 ([[028-authorizer-contract-2]]) |
 | `repo.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve |
 | `repo.owner`, `repo.slug` | set on the name form and on a creation, empty on the id form |
 | `action` | `read`, `write`, or `admin` |
@@ -269,9 +274,8 @@ from the request after its first.
 The token is an ES256 JWT signed with `ORIGO_TOKEN_KEY`, a PEM-encoded
 ECDSA P-256 private key; `kid` is the first 16 hex characters of the
 SHA-256 of the public key's DER encoding. Claims: `iss` =
-`ORIGO_PUBLIC_URL`, `aud: ["origo"]`, `sub` = the minter's effective
-subject, `act` copied from the minter when present, `repo: <id>`,
-`scope`, `iat`, `exp`, `jti` (a UUID). A repository-bound token skips
+`ORIGO_PUBLIC_URL`, `aud: ["origo"]`, `sub` = the minter's subject,
+`repo: <id>`, `scope`, `iat`, `exp`, `jti` (a UUID). A repository-bound token skips
 the authorizer because the decision was made at minting: `read` allows
 `read` on that repository, `write` allows `read` and `write`, neither
 allows `admin`, and any other repository is 403 `forbidden` with
@@ -312,11 +316,11 @@ beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
   fails the start-up naming it, and the same URL listed in
   `ORIGO_OIDC_INSECURE_ISSUERS` starts (proposed: `internal/config`,
   `TestInsecureIssuersNeedTheList`).
-- A service token with `act` sets the effective subject: the authorizer
-  request carries both and the entry header carries `subject` and
-  `actor` (proposed: `internal/httpgit`,
-  `TestActClaimIsRecordedOnEntryAndAuthorizer`; the push event's
-  `pusher` is spec 008's criterion).
+- A service token with `act` is refused with `delegation` before the
+  authorizer is asked, and a plain token of the same issuer pushes with
+  the entry header naming its subject alone (`internal/httpgit`,
+  `TestActClaimIsRefused`; the push event's `pusher` is spec 008's
+  criterion).
 - With the authorizer answering 500 or not at all, every request is 503
   `authorizer_unavailable` within 5 seconds, a 500 is sent one request
   and a refused connection two, and the first request after it recovers
@@ -327,13 +331,13 @@ beyond the loopback and `ORIGO_OIDC_INSECURE_ISSUERS` exceptions above.
   same paths, with the authorizer stub recording one request carrying
   the id or the name before any store read (proposed: `internal/api`,
   `TestDenyBeforeLookup`).
-- 65 537 distinct `(subject, actor, repo id, action)` allows leave the
+- 65 537 distinct `(subject, repo id, action)` allows leave the
   authorizer cache at 65 536 entries with the first one evicted, and the
   same holds for the verified-token cache (proposed: `internal/auth`,
   `TestCachesAreBounded`).
-- Two service tokens that differ only in `act` are two authorizer calls
-  and two cache entries (proposed: `internal/auth`,
-  `TestCacheKeyIncludesActor`).
+- The authorizer cache is keyed by subject, repository and action, and
+  each component alone distinguishes two calls (`internal/auth`,
+  `TestCacheKeyComponents`).
 - A `read` token minted for repository A answers 403 `forbidden` on
   `git-receive-pack` of A and on `info/refs` of repository B, and 401
   `unauthenticated` with `details.reason: "expired"` one second after
@@ -358,11 +362,11 @@ Every criterion has a passing test in the tree:
 | two issuers verify, the local token verifies with no fetch, each row's reason | `internal/auth`, `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`; the route sweep `cmd/origod`, `TestEveryRouteRequiresAToken` asserts `missing`, `audience`, and `expired` on every route of the public listener and that `/readyz`, `/version`, and `/.well-known/jwks.json` answer without a token |
 | an unreachable issuer at start-up, the minute retry on a fake clock, the hung discovery abandoned | `internal/auth`, `TestIssuerUnavailableIsRetried` |
 | the issuer scheme rule | `internal/config`, `TestInsecureIssuersNeedTheList` |
-| `act` on the authorizer request and the entry header | `internal/httpgit`, `TestActClaimIsRecordedOnEntryAndAuthorizer` |
+| a token carrying `act` refused with `delegation`, the authorizer unasked, a plain token's entry naming its subject | `internal/httpgit`, `TestActClaimIsRefused` |
 | the authorizer outage: a 500 one request, a refused connection two, `authorizer_unavailable` within the timeout, recovery without a restart | `internal/auth`, `TestAuthorizerOutageDeniesAndRecovers` |
 | deny before lookup on an unknown id and an unknown name, 404 only to an allowed caller, one authorizer request before any store read | `internal/api`, `TestDenyBeforeLookup`, over the id form and the name form of both handlers |
 | both caches bounded at 65 536 with the first entry evicted | `internal/auth`, `TestCachesAreBounded` |
-| two tokens differing in `act` are two calls and two entries | `internal/auth`, `TestCacheKeyIncludesActor` |
+| the cache keyed by subject, repository and action | `internal/auth`, `TestCacheKeyComponents` |
 | a `read` token refused by scope on `git-receive-pack` of A and on `info/refs` of B, expired one second after `exp` | `internal/auth`, `TestRepositoryBoundTokenScope` |
 | `ORIGO_DEV_TOKEN` refused with the one message | `internal/config`, `TestDevTokenIsRefused` |
 | `FuzzParseToken` | `internal/auth`, as a seed-corpus test on every push; the 40 second run is `make fuzz` of spec 013 on the weekly schedule |
@@ -379,13 +383,10 @@ Divergences and interpretations, all kept:
   no skew, which is what lets it be `expired` one second after its
   `exp` as the criterion says; with the skew the two sentences of the
   Design could not both hold.
-- A minted token carries the minter's `sub` and `act` as they were on
-  the minter's own token (`sub` the minter's actor when there was one,
-  `act` the minter's subject), so the verifier derives from it the
-  same effective subject and actor the minter had and the entry a
-  build pushes names both. Read literally, "`sub` = the minter's
-  effective subject, `act` copied" would put one value in both claims
-  and make the subject its own actor.
+- A minted token carries the minter's `sub` and nothing about any
+  other party. Until 2026-09-13 it copied the minter's `act` as well;
+  the family's D5 removed the claim from the verifier and the minter
+  together, so a bound token minted by a service names the service.
 - The discovery and JWKS timeout and the authorizer's timeout are
   constructor options with the Design's values as their defaults
   (`auth.DefaultFetchTimeout`, `auth.AuthorizerTimeout`, both 5

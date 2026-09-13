@@ -56,10 +56,10 @@ scope is 403 `forbidden` (spec 007).
 Every request carries `Authorization: Bearer <token>` or git's basic auth
 with any username and the token as the password. From spec 007 on, the
 token is a JWT from one of the configured OIDC issuers with audience
-`origo`, or a repository-bound token Origo minted; a service token may
-carry an `act` claim naming the subject it acts for, and the service is
-then recorded as the actor. Origo never decides who may do what: it asks
-the consumer's authorizer with the effective subject, the repository, and
+`origo`, or a repository-bound token Origo minted; a token names one
+caller, and one carrying an `act` claim is refused (spec 007). Origo
+never decides who may do what: it asks the consumer's authorizer with
+the subject, the repository, and
 the action (`read`, `write`, `admin`), and caches the answer for the
 `ttl` the authorizer returns, 60 seconds by default (spec 007). In phase
 1 the token was the one value of `ORIGO_DEV_TOKEN` and every request
@@ -142,7 +142,7 @@ When `ORIGO_EVENTS_URL` is set, every acknowledged push sends one signed
 
 ```json
 {"id": "<event uuid>", "kind": "push", "repo": "<uuid>", "seq": 1044, "owner": "…", "slug": "…",
- "pusher": {"sub": "…", "actor": "…"},
+ "pusher": {"sub": "…"},
  "updates": [{"ref": "refs/heads/main", "before": "<sha>", "after": "<sha>", "forced": false}],
  "at": "2026-09-06T10:00:00Z"}
 ```
@@ -153,12 +153,13 @@ derives from `repo` and `seq` so a redelivery carries the same id. Spec
 no branch or tag, and `operation` on a push made by a server-side
 operation (spec 020).
 
-### Delegation and tokens
+### Acting for a person, and tokens
 
-A consumer that commits or pushes on behalf of a user does so with its
-own service token carrying `act`; the entry and the event carry both the
-effective subject and the actor. A consumer that lets a build fetch mints
-a repository-bound token through `POST /v1/repos/{id}/tokens` (spec 007).
+A consumer that commits or pushes for a person presents the token that
+person's issuer minted for Origo on their behalf, so the entry and the
+event carry the person as the subject; a token that carries an `act`
+claim is refused (spec 007). A consumer that lets a build fetch mints a
+repository-bound token through `POST /v1/repos/{id}/tokens` (spec 007).
 
 ### Errors
 
@@ -178,7 +179,7 @@ specs add: `authorizer_unavailable` (007), `blob_too_large` (009),
 | Code | Status | Message | Details |
 |---|---|---|---|
 | `invalid_request` | 400 | The request is malformed. | `reason`: the validation failure in the developer register; `field` when one field is at fault |
-| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `issuer_unavailable`, `audience`, `expired`, `nbf`, `iat`, `subject`, `unknown_key`; spec 007 says which check produces each |
+| `unauthenticated` | 401 | A bearer token is required. | `reason`: `missing`, `malformed`, `size`, `signature`, `issuer`, `issuer_unavailable`, `audience`, `expired`, `nbf`, `iat`, `subject`, `delegation`, `unknown_key`; spec 007 says which check produces each |
 | `forbidden` | 403 | You do not have permission to do this. | `action`, `subject`, `reason` from the authorizer |
 | `repo_not_found` | 404 | Repository not found. | `id`, or `owner` and `slug` |
 | `ref_not_found` | 404 | The reference or object does not exist in this repository. | `ref` |
@@ -259,7 +260,7 @@ lifecycle table; the envelope with the codes named here; the
 `Origo-Contract: 1` header on every response.
 
 Phase 2 (spec 007, 2026-09-08) added OIDC identity, the authorizer,
-delegation and `act`, `POST /v1/repos/{id}/tokens`, and `GET
+`POST /v1/repos/{id}/tokens`, and `GET
 /.well-known/jwks.json`, and fixed the two defects the Current state
 records: every response of the public listener carries
 `Origo-Contract`, `/readyz` and `/version` included, and
