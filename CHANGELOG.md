@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.2.2 - 2026-09-13
+
 ### Changed
 
 - The stub issuer of spec 013 is the family's `authkit/issuertest` from
