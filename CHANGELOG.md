@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.3.0 - 2026-09-13
+
 ### Removed
 
 - The `act` claim (the family's decision D5). The verifier refuses a
