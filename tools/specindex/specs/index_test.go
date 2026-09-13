@@ -132,6 +132,23 @@ func TestReadmeTableIsCurrent(t *testing.T) {
 	}
 }
 
+func TestAuthorizerContractTwoDefinesItsConfiguration(t *testing.T) {
+	idx, err := Build("../../../specs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, variable := range []string{"ORIGO_ADMIN_SUBJECTS", "ORIGO_OIDC_AUDIENCE"} {
+		t.Run(variable, func(t *testing.T) {
+			for _, name := range idx.Names {
+				if name.Kind == KindVariable && name.Name == variable && name.Owner == "028" {
+					return
+				}
+			}
+			t.Fatalf("authorizer contract 2 must define %s in its configuration table", variable)
+		})
+	}
+}
+
 // TestHeaderMentionOutsideOrigosOwnNames is the regression for the
 // header column: headerRe matches only Origo's own names, so a mention
 // of a header a spec defines under any other name reaches the fallback,

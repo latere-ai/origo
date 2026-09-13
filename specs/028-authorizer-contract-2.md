@@ -60,6 +60,13 @@ the connection failed before a response line. They do not change.
 
 ## Design
 
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ORIGO_ADMIN_SUBJECTS` | empty | Comma-separated issuer-qualified subjects allowed every action by the built-in owner policy; unused when an external authorizer is configured. |
+| `ORIGO_OIDC_AUDIENCE` | `origo` | Audience accepted by the token verifier. |
+
 ### The envelope
 
 ```
