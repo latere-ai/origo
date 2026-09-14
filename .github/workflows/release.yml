@@ -374,6 +374,28 @@ jobs:
             echo '```'
           } > release-evidence/conformance.md
 
+      # The server's view, only when a step above failed: the client sees
+      # a reset, and what reset it is in the pods' logs. Every pod's every
+      # container, the current run and the one before a restart, so a
+      # panic the http server recovered and a crash that took the pod are
+      # both here; then describe and the namespace's events.
+      - name: Dump the stack on failure
+        if: failure()
+        run: |
+          set +e
+          echo "===== pods ====="
+          kubectl get pods -n origo -o wide
+          echo "===== events ====="
+          kubectl get events -n origo --sort-by=.lastTimestamp | tail -80
+          for p in $(kubectl get pods -n origo -o name); do
+            echo "===== $p (current) ====="
+            kubectl logs "$p" -n origo --all-containers --prefix --tail=-1
+            echo "===== $p (previous, if it restarted) ====="
+            kubectl logs "$p" -n origo --all-containers --prefix --previous --tail=-1 2>/dev/null || echo "(no previous container)"
+          done
+          echo "===== describe origod ====="
+          kubectl describe pods -n origo -l app.kubernetes.io/name=origod
+
       - name: Pack the fixture for the next release
         env:
           TAG: ${{ github.ref_name }}
