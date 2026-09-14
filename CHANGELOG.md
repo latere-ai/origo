@@ -10,6 +10,40 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A built-in owner policy, so a node is useful with no authorizer service
+  behind it. Leave `ORIGO_AUTHORIZER_URL` unset and a subject reaches the
+  repositories it created; `ORIGO_ADMIN_SUBJECTS` lists the subjects that
+  reach every repository. A self-hosted node needs no endpoint to run, and
+  points `ORIGO_AUTHORIZER_URL` at one only when policy outgrows ownership.
+
+### Changed
+
+- Authorizer contract 2 (spec 028), the envelope Origo shares with its
+  sibling open cores Cella and Lux, so one authorizer serves all three.
+  The subject is qualified by its issuer (`<issuer>|<sub>`), the token's
+  claims are forwarded verbatim, the action is one of `repo.read`,
+  `repo.write`, `repo.admin`, `repo.list`, and the resource names the
+  repository; the answer is `{allow, reason, ttl, limits}`. Contract 2
+  replaces contract 1 in this one release with no compatibility window,
+  and the empty `actor` field is gone from the envelope. The client
+  protocol contract of spec 003 — the one a git client and an API caller
+  code against, carried by `Origo-Contract` — is unchanged and stays
+  contract 1.
+- `ORIGO_OIDC_AUDIENCE` sets the audience a node accepts in a token,
+  defaulting to `origo`, so an installation can name itself.
+- `ORIGO_AUTHORIZER_URL` is now optional (it was required); when unset the
+  owner policy decides. `ORIGO_AUTHORIZER_TOKEN` is read only when the URL
+  is set.
+- The production overlay points the git plane at platformd, the code
+  control plane that now holds the owners, grants, and visibility (spec
+  028, identity id-06): `ORIGO_AUTHORIZER_URL` and `ORIGO_SSH_KEYS_URL`
+  name the in-cluster Service `platformd-internal`, not `auth-internal`.
+  The authorizer URL moves out of the `origod-auth` Secret into a manifest
+  patch (`deploy/prod/authorizer.yaml`) beside the SSH keys URL — a URL is
+  not a secret, only the bearer is.
+
 ## v0.3.0 - 2026-09-13
 
 ### Removed
