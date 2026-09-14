@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.4.1 - 2026-09-15
+
 ### Changed
 
 - v0.4.1 is the published build of the contract-2 release: v0.4.0's release
