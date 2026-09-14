@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.4.0 - 2026-09-14
+
 ### Added
 
 - A built-in owner policy, so a node is useful with no authorizer service
