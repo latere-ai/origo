@@ -1,0 +1,32 @@
+# The authorization endpoint. A URL, not a secret: it names an in-cluster
+# Service, so it belongs in the manifest where a reviewer sees it, next to
+# ORIGO_SSH_KEYS_URL in ssh.yaml. Only the bearer is a secret, and that
+# stays in the origod-auth Secret as ORIGO_AUTHORIZER_TOKEN.
+#
+# Latere points Origo at platformd, the code control plane (spec 028,
+# identity id-06): platformd holds the owners, grants, and visibility and
+# answers contract 2 at /internal/origo/authorize. Before id-06 this named
+# auth-internal; auth's git plane is removed at the end of the cutover.
+#
+# Set on both containers: the node authorizes every repository request
+# against it, and the check runs against the node's environment, so a
+# check that lacked it would prove a configuration the node does not have.
+# An explicit env here overrides the value that still arrives via envFrom
+# origod-auth until that stale key is dropped from the Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_AUTHORIZER_URL
+              value: http://platformd-internal.latere.svc.cluster.local/internal/origo/authorize
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_AUTHORIZER_URL
+              value: http://platformd-internal.latere.svc.cluster.local/internal/origo/authorize

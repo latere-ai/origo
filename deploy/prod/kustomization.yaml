@@ -33,6 +33,7 @@ images:
 patches:
   - path: ingress.yaml
   - path: public-url.yaml
+  - path: authorizer.yaml
   - path: pull-secret.yaml
   - path: replicas.yaml
   - path: ssh.yaml
