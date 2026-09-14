@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- v0.4.1 is the published build of the contract-2 release: v0.4.0's release
+  run failed while standing the conformance stack up and published nothing,
+  so v0.4.1 carries exactly v0.4.0's node changes. The release's conformance
+  job now dumps the stack's own logs when a step fails, so a git operation a
+  client sees reset with `Connection reset by peer` is read from the
+  server's side rather than the client's.
+
 ## v0.4.0 - 2026-09-14
 
 ### Added
