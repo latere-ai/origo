@@ -15,11 +15,12 @@ committed: the commit log already holds that.
 ### Changed
 
 - v0.4.1 is the published build of the contract-2 release: v0.4.0's release
-  run failed while standing the conformance stack up and published nothing,
-  so v0.4.1 carries exactly v0.4.0's node changes. The release's conformance
-  job now dumps the stack's own logs when a step fails, so a git operation a
-  client sees reset with `Connection reset by peer` is read from the
-  server's side rather than the client's.
+  run stood the conformance stack up and then failed in the conformance
+  tests themselves, six create-then-clone cases reading `Connection reset by
+  peer` from the node, and it published nothing, so v0.4.1 carries exactly
+  v0.4.0's node changes. The release's conformance job now dumps the stack's
+  own logs when a step fails, so an operation a client sees reset is read
+  from the server's side rather than the client's.
 
 ## v0.4.0 - 2026-09-14
 
