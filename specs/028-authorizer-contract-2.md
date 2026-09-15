@@ -1,6 +1,6 @@
 ---
 title: "Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy"
-status: in-progress
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/auth/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-14
+updated: 2026-09-15
 author: changkun
 ---
 
@@ -205,3 +205,58 @@ Two departures from the design above, both deliberate:
   epic's id-06 git-plane move to `platformd`). The node code and its
   overlay audience variable are ready; the tag waits for that batch.
   Moving to `complete` waits for the release.
+
+## Outcome
+
+Built and shipped in `v0.4.1`, released on 2026-09-15 by the tag run
+34905955936 at commit `7988ecb`, the `changelog: v0.4.1` commit. Every
+job of that run passed: `artifacts, images, signatures, attestations`,
+`conformance against the published image`, `deploy and smoke`,
+`conformance against the live installation`, `publish the release`,
+`verify the published release`, `install from the release artifacts`.
+The installation serves it: `GET https://code.latere.ai/version` answers
+`{"version":"v0.4.1","commit":"7988ecb","build_time":"2026-09-14T22:49:32Z"}`.
+`Current state` above describes the contract 1 installation of
+2026-09-13; `v0.4.1` is what code.latere.ai runs now.
+
+`v0.4.0` carries the same node changes and published nothing. It was
+gate-green, and its release run 34898933307 failed in `conformance
+against the published image`: the stack came up, and six
+create-then-clone subtests of `TestContract` — `007/tokens`,
+`007/authorizer_unavailable`, `008/push`, `008/event-off`,
+`009/blob_too_large`, `010/lfs_locks_unsupported` — read `Connection
+reset by peer` from origod in the kind cluster. That job runs before
+deploy, so nothing reached the installation. The node's own side was
+cleared by reproducing the clone single-node and across a two-node
+cluster; `v0.4.1` added a step that dumps the stack's logs when a
+conformance step fails, and passed. The cause was never proven and is
+assumed a transient of the kind stack.
+
+Every criterion of the table has a passing test in the tree. Read back
+on 2026-09-15 with `go test -v`, each named test reports `--- PASS`,
+the conformance row excepted:
+
+| Test | Package |
+|---|---|
+| `TestAuthorizerEnvelope`, `TestContractOneIsGone`, `TestFiguresReachTheirConsumers`, `TestSubjectsAreIssuerQualified`, `TestAudienceIsConfigurable`, `TestCheckProbesTheAuthorizer`, `TestOwnerPolicy`, `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` | `internal/auth` |
+| `TestWalObjectsBacksTheOwnerPolicy`, `TestOwnerPolicyNodeMode` | `cmd/origod` |
+| `TestAuthorizerIsOptional` | `internal/config` |
+| `TestContract` | `test/conformance` |
+
+The conformance row is the exception: `TestContract` carries the `e2e`
+build tag and does not run in an ordinary `go test`. It ran in the
+release run's two conformance jobs, against the published image and
+against the live installation, and the cases it carries speak contract 2
+through `test/stubs/authorizer`.
+
+One divergence from the Design stands, the waiver above: the verifier is
+Origo's own in `internal/auth` and not `latere.ai/x/pkg/authkit/jwt`,
+because the family's C5 has not shipped the options Origo's rules need.
+The audience became configurable in place and the behaviour of every row
+of spec 007's verification table is unchanged. The second departure of
+`State on 2026-09-14`, that the release was coupled and not yet cut, is
+what `v0.4.1` closes: contract 1 went in the same release, and the
+production overlay points `ORIGO_AUTHORIZER_URL` and `ORIGO_SSH_KEYS_URL`
+at `platformd` (`deploy/prod/authorizer.yaml`, `deploy/prod/ssh.yaml`),
+with the authorizer URL moved out of the `origod-auth` Secret into the
+manifest, because a URL is not a secret and only the bearer is.
