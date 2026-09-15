@@ -206,6 +206,11 @@ two subjects. The action is one of `repo.read`, `repo.write`,
 `repo.admin`, and `repo.list`. The three figures ride under `limits`.
 This is authorizer contract 2 ([[028-authorizer-contract-2]]).
 
+The URL is not a secret: it goes on the pods in your overlay, the way
+step 5 sets `ORIGO_SSH_KEYS_URL`. The bearer Origo presents with it,
+`ORIGO_AUTHORIZER_TOKEN`, is a secret, and goes in the `origod-auth`
+Secret of step 3.
+
 Five rules make an endpoint safe to run. An endpoint that keeps them
 serves any installation, and one that breaks any of them fails somewhere
 you will find hard to read.
@@ -379,7 +384,6 @@ metadata:
 type: Opaque
 stringData:
   ORIGO_OIDC_ISSUERS: https://auth.example.com
-  ORIGO_AUTHORIZER_URL: https://platform.example.com/internal/origo/authorize
   ORIGO_AUTHORIZER_TOKEN: …
   # openssl rand -hex 32, the same on every node
   ORIGO_GOSSIP_SECRET: …
