@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- The stub image no longer carries GO-2026-6348, a heap-exhaustion
+  vulnerability in `google.golang.org/grpc` reachable from the Origo stub:
+  grpc moves from v1.82.1 to v1.83.1.
+
 ## v0.4.1 - 2026-09-15
 
 ### Changed
