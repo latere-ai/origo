@@ -42,6 +42,14 @@ committed: the commit log already holds that.
   answer rather than under `limits`. The page an endpoint is written
   against now matches the node that calls it.
 
+- Nothing about how a token is verified. The node builds against
+  `latere.ai/x/pkg` v0.71.0, which brings the shared verifier the options
+  spec 028 said Origo's own verifier was kept for, but not the one rule
+  they are needed under: a token's `kid` must name a key of the issuer's
+  set and an issuer's `exp` carries 60 seconds of skew, and the shared
+  package offers one path with each, never both. Verification stays in
+  the node, and every reason of spec 007's table reads as it did.
+
 ## v0.4.3 - 2026-09-16
 
 ### Fixed

@@ -298,3 +298,69 @@ importable; that file becomes `authorizer.Vocabulary()` and
 `authorizer.PageActions()` on Origo's next tag, the way its Lux section
 already reads `latere.ai/x/lux/authorizer`. Lux did the same promotion
 in lux v0.2.0, and the package mirrors its shape.
+
+## State on 2026-09-16: the verifier stays, and its waiver is a test
+
+`Audience and verifier` above says the verifier becomes
+`latere.ai/x/pkg/authkit/jwt` with the options the family's C5 adds. C5
+shipped in pkg v0.71.0, and the options are there: ES256, a token size
+bound, an `iat` age, `RequireIssuedAt`, a local issuer with a fixed key,
+a clock skew, an issuer comparison that trims a trailing slash from both
+sides, and a reason table whose values are this spec's wire words, read
+through `jwt.ReasonOf`. The verifier still does not move, because the
+options are not composable into spec 007's row.
+
+Spec 007's verification table asks two things of one token: its `kid`
+names a key of the issuer's set, else `unknown_key`, and its `exp` and
+`nbf` carry 60 seconds of skew. authkit/jwt v0.71.0 offers one path with
+each and neither with both.
+
+| Path | names the key strictly | carries `ClockSkew` |
+|---|---|---|
+| `LocalIssuer` + `LocalKey` + `LocalKeyID` | yes | no: `Validate` zeroes the skew for a local token, whatever `Config.ClockSkew` says |
+| `Issuer` + `JWKSURL` | no: `verifySignature` falls back to every key of the set when the `kid` names none | yes |
+
+Read as Origo's answers, the JWKS path verifies the token this spec
+refuses:
+
+```
+iss.Mint(Claims{Sub: "alice", Kid: "nope"})   spec 007: unknown_key
+                                              authkit/jwt, JWKS path: verified
+iss.Mint(Claims{Sub: "ci", Exp: now-59s})     spec 007: verified, inside the skew
+                                              authkit/jwt, local path: expired
+```
+
+The two paths cannot be composed, either. Handing the package one
+resolved key means `Config.LocalKey`, which is the path that zeroes the
+skew; and picking the key a `kid` names needs the JOSE header, which the
+package decodes for itself and does not hand back. `DecodePayload` reads
+the payload alone. So a node that keeps spec 007's key rules cannot hand
+the shared verifier a key, and a node that hands it the issuer's set
+loses the `kid` rule.
+
+What a move would leave behind is most of the verifier anyway. Of spec
+007's table, authkit/jwt would carry the shape, the algorithms, the
+signature, `exp`, `nbf` and `iat`. Origo would keep `missing`, `size`,
+the `iss` routing over `ORIGO_OIDC_ISSUERS`, `issuer_unavailable`,
+`unknown_key`, `subject` (the package reads an empty `sub` as
+`malformed`), `delegation`, `aud` (the package checks it after `exp`,
+where the table checks it before), the rendered `<iss>|<sub>` subject,
+the verified-token cache, discovery with the OIDC 4.3 issuer check, and
+the one-second-doubling retry ladder that spec 013's kind stack needed.
+
+So the waiver of `State on 2026-09-14` stands, and stops being a date.
+`TestTheSharedVerifierCannotCarrySpec007` in `internal/auth` holds both
+rows of the table above against pkg v0.71.0 and reds when either closes;
+`.lateregate.yaml`'s `verifier` waiver names it. Two things close it, and
+either is enough with the other: a `kid` that names no key of the set
+refused rather than tried against every key, and `Config.ClockSkew`
+honoured for a token of `Config.LocalIssuer`. An exported reader of the
+JOSE header would close it a third way, by letting a caller that keeps
+its own key sets hand the verifier the one key a `kid` names.
+
+The spec's `authorizer` half needed no such move and was already done:
+`internal/auth`'s client is `latere.ai/x/pkg/authz`. The identity gate's
+`authorizer` rule read three files of `test/conformance` as second
+clients, on the import path of the spec 013 stub rather than on any
+request they build, and those three are skipped for the reason the
+section above gives for keeping `test/` outside the one-home walk.
