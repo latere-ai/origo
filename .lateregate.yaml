@@ -123,19 +123,8 @@ identity:
   config_prefix: ORIGO
   api_group: origo.latere.ai
   # deploy/prod is Latere's own overlay in the core's tree.
-  #
-  # The two stub manifests are the test double of spec 013. origo-stubs
-  # mints tokens, answers authorization, and serves the test source; it
-  # verifies no audience, so the audience rule's sentence, that the
-  # container would accept a token addressed to anything, is not true of
-  # it. The rule reads a document holding one container as a workload of
-  # this repository, which those two are not. This is a statement of
-  # scope and not a deferral: a test double will never verify an
-  # audience, so it carries no date and there is nothing to come back to.
   skip:
     - deploy/prod
-    - deploy/examples/kind/origo-stubs.yaml
-    - deploy/examples/kind/test-source/stubs-source.yaml
   waive:
     verifier:
       until: 2026-11-30
