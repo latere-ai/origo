@@ -303,17 +303,21 @@ in lux v0.2.0, and the package mirrors its shape.
 
 `Audience and verifier` above says the verifier becomes
 `latere.ai/x/pkg/authkit/jwt` with the options the family's C5 adds. C5
-shipped in pkg v0.71.0, and the options are there: ES256, a token size
-bound, an `iat` age, `RequireIssuedAt`, a local issuer with a fixed key,
-a clock skew, an issuer comparison that trims a trailing slash from both
-sides, and a reason table whose values are this spec's wire words, read
-through `jwt.ReasonOf`. The verifier still does not move, because the
-options are not composable into spec 007's row.
+shipped in pkg v0.71.0 and grew in v0.72.0, and the options are there:
+ES256, a token size bound, an `iat` age, `RequireIssuedAt`, a local
+issuer with its own keys, a clock skew, an issuer comparison that trims a
+trailing slash from both sides, a reason table whose values are this
+spec's wire words read through `jwt.ReasonOf`, and in v0.72.0 a list of
+issuers each discovering its own key set, weighed before the signature,
+which is this spec's order. The verifier still does not move, because
+the options are not composable into spec 007's row.
 
 Spec 007's verification table asks two things of one token: its `kid`
 names a key of the issuer's set, else `unknown_key`, and its `exp` and
-`nbf` carry 60 seconds of skew. authkit/jwt v0.71.0 offers one path with
-each and neither with both.
+`nbf` carry 60 seconds of skew. authkit/jwt v0.72.0 offers one path with
+each and neither with both. v0.72.0's `Issuers` and `LocalKeys` are
+real and Origo's tripwire is written against them, but neither is one of
+these two rows.
 
 | Path | names the key strictly | carries `ClockSkew` |
 |---|---|---|
@@ -333,7 +337,7 @@ an issuer's token 59 seconds past exp
 ```
 
 The two paths cannot be composed, either. Handing the package one
-resolved key means `Config.LocalKey`, which is the path that zeroes the
+resolved key means `Config.LocalKeys`, which is the path that zeroes the
 skew; and picking the key a `kid` names needs the JOSE header, which the
 package decodes for itself and does not hand back. `DecodePayload` reads
 the payload alone. So a node that keeps spec 007's key rules cannot hand
@@ -352,7 +356,7 @@ the one-second-doubling retry ladder that spec 013's kind stack needed.
 
 So the waiver of `State on 2026-09-14` stands, and stops being a date.
 `TestTheSharedVerifierCannotCarrySpec007` in `internal/auth` holds both
-rows of the table above against pkg v0.71.0 and reds when either closes;
+rows of the table above against pkg v0.72.0 and reds when either closes;
 `.lateregate.yaml`'s `verifier` waiver names it. Either of two changes
 to the package closes it on its own: a `kid` that names no key of the
 set refused rather than tried against every key, which makes the JWKS

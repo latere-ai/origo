@@ -43,7 +43,7 @@ committed: the commit log already holds that.
   against now matches the node that calls it.
 
 - Nothing about how a token is verified. The node builds against
-  `latere.ai/x/pkg` v0.71.0, which brings the shared verifier the options
+  `latere.ai/x/pkg` v0.72.0, which brings the shared verifier the options
   spec 028 said Origo's own verifier was kept for, but not the one rule
   they are needed under: a token's `kid` must name a key of the issuer's
   set and an issuer's `exp` carries 60 seconds of skew, and the shared

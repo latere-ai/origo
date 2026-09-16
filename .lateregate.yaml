@@ -146,10 +146,11 @@ identity:
     verifier:
       until: 2026-11-30
       reason: >-
-        authkit/jwt v0.71.0 cannot name a key strictly and carry a clock
+        authkit/jwt v0.72.0 cannot name a key strictly and carry a clock
         skew at once, which spec 007's table asks of it together: the
         local-issuer path names the key strictly and zeroes ClockSkew,
         and the JWKS path carries the skew and tries every key of the set
         when the kid names none, so it verifies the token spec 007
-        refuses with unknown_key. TestTheSharedVerifierCannotCarrySpec007
-        holds both, and reds when either closes.
+        refuses with unknown_key. v0.72.0's Issuers and LocalKeys are not
+        those two rows. TestTheSharedVerifierCannotCarrySpec007 holds
+        both, and reds when either closes.

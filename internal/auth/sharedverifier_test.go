@@ -20,17 +20,22 @@ import (
 //
 // Spec 007's verification table asks for both at once: a token's `kid`
 // must name a key of the issuer's set, else `unknown_key`, and an
-// issuer's `exp` and `nbf` carry 60 seconds of skew. authkit/jwt v0.71.0
+// issuer's `exp` and `nbf` carry 60 seconds of skew. authkit/jwt v0.72.0
 // offers one path with each:
 //
 //	               names the key strictly   carries ClockSkew
 //	LocalIssuer              yes                   no
 //	JWKS                     no                    yes
 //
-// Neither column is spec 007's row, and a caller cannot compose them,
-// because Config.LocalKey takes one key and the node has an issuer's set:
-// picking the key of a `kid` needs the JOSE header, which the package
-// decodes and does not hand back. DecodePayload reads the payload alone.
+// Neither column is spec 007's row, and a caller cannot compose them.
+// v0.72.0's Config.Issuers gives each issuer its own discovered key set
+// and weighs the issuer before the signature, which is spec 007's order,
+// and Config.LocalKeys lets the local set hold a rotation; neither
+// touches the two rows above. Composing them by hand does not work
+// either: handing the package one resolved key means the local path,
+// which is the path that zeroes the skew, and picking the key a `kid`
+// names needs the JOSE header, which the package decodes for itself and
+// does not hand back. DecodePayload reads the payload alone.
 //
 // Four smaller gaps are not here, because Origo can close each on its own
 // side once the two above close: an empty `sub` reads `malformed` where
@@ -48,7 +53,7 @@ func TestTheSharedVerifierCannotCarrySpec007(t *testing.T) {
 	// with unknown_key.
 	iss := issuer.New(t)
 	jwks := jwt.New(jwt.Config{
-		JWKSURL: iss.JWKSURL(), Issuer: iss.URL(), Audiences: []string{DefaultAudience},
+		Issuers: []string{iss.URL()}, Audiences: []string{DefaultAudience},
 		ClockSkew: ClockSkew, MaxTokenBytes: MaxTokenBytes, MaxTokenAge: MaxTokenAge,
 		RequireIssuedAt: true,
 	})
@@ -75,8 +80,9 @@ func TestTheSharedVerifierCannotCarrySpec007(t *testing.T) {
 	key := newKey(t)
 	local := issuer.New(t, issuer.WithKey(key), issuer.WithIssuer(localIssuer))
 	one := jwt.New(jwt.Config{
-		LocalIssuer: localIssuer, LocalKey: &key.PublicKey, LocalKeyID: local.KID(),
-		Audiences: []string{DefaultAudience}, ClockSkew: ClockSkew,
+		LocalIssuer: localIssuer,
+		LocalKeys:   []jwt.LocalKey{{KeyID: local.KID(), Key: &key.PublicKey}},
+		Audiences:   []string{DefaultAudience}, ClockSkew: ClockSkew,
 		MaxTokenBytes: MaxTokenBytes, MaxTokenAge: MaxTokenAge, RequireIssuedAt: true,
 	})
 	if _, err := one.Validate(local.Mint(issuer.Claims{Sub: "ci"})); err != nil {
