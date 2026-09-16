@@ -163,7 +163,10 @@ type ClientOptions struct {
 
 // Client is the authorizer client. It is the shared package's client
 // (its cache, its retry, its failure rules) with Origo's figures decoded
-// out of the answer's limits object.
+// out of the answer's limits object. It carries the published
+// vocabulary, so an action outside spec 028's table is refused here and
+// never leaves the node; a page is asked through Ask, which the shared
+// client does not validate, and repo.list travels like the rest.
 type Client struct {
 	inner   *authz.Client
 	seconds *pkgmetrics.Histogram
@@ -178,7 +181,8 @@ func NewClient(o ClientOptions) (*Client, error) {
 	seconds := set.AuthorizerSeconds
 	inner, err := authz.NewClient(authz.Options{
 		URL: o.URL, Token: o.Token, HTTP: o.HTTP, Timeout: o.Timeout, Now: o.Now,
-		Observe: func(result string, s float64) { seconds.Observe(map[string]string{"result": result}, s) },
+		Observe:    func(result string, s float64) { seconds.Observe(map[string]string{"result": result}, s) },
+		Vocabulary: authorizer.Vocabulary(),
 	})
 	if err != nil {
 		return nil, err

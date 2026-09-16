@@ -458,3 +458,44 @@ func TestCacheKeyComponents(t *testing.T) {
 		t.Fatalf("%d calls, %d entries", len(stub.Requests()), c.CacheLen())
 	}
 }
+
+// TestAnUnknownActionCostsNoRoundTrip: the client carries the published
+// vocabulary, so an action outside spec 028's table is refused in the
+// node and never reaches the operator's endpoint. A string Origo never
+// declared is a mistake in origod, not a question an endpoint is asked
+// to answer, so the refusal is no *Unavailable and nothing retries it.
+// The directory is the complement: a page is asked through the shared
+// client's Ask, which does not validate, and repo.list still travels.
+func TestAnUnknownActionCostsNoRoundTrip(t *testing.T) {
+	const rename = "repo.rename"
+	stub := authorizer.New(t)
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, newClock(), nil)
+	ctx := context.Background()
+
+	var unknown *authz.UnknownAction
+	if _, err := c.Authorize(ctx, request("alice", repoA, rename)); !errors.As(err, &unknown) {
+		t.Fatalf("Authorize(%s) = %v, want an *authz.UnknownAction", rename, err)
+	}
+	if unknown.Core != "origo" || unknown.Action != rename {
+		t.Errorf("the refusal names %s's %q", unknown.Core, unknown.Action)
+	}
+	if Retryable(unknown) {
+		t.Error("an unknown action reads as retryable; it is no outage at the endpoint")
+	}
+	if n := len(stub.Requests()); n != 0 {
+		t.Fatalf("%d call(s) reached the endpoint; an unknown action costs no round trip", n)
+	}
+
+	// Every action of the table still travels.
+	for _, action := range []Action{ActionRead, ActionWrite, ActionAdmin} {
+		if _, err := c.Authorize(ctx, request("alice", repoA, action)); err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+	}
+	if _, err := c.List(ctx, listReq("alice", "", 0)); err != nil {
+		t.Fatalf("%s: %v", ActionList, err)
+	}
+	if n := len(stub.Requests()); n != 4 {
+		t.Errorf("%d call(s) after the four actions of the table, want four", n)
+	}
+}
