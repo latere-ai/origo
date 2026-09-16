@@ -135,6 +135,11 @@ identity:
     - test/conformance/cases007.go
     - test/conformance/cases019.go
     - test/conformance/stubs.go
+  # The same overlay, declared: the no-latere-value rule reads the
+  # addresses deploy/prod sets, so a document may name the installation
+  # it serves.
+  overlays:
+    - deploy/prod
   # Access is by role: the roles rule runs, and it is one way once set.
   roles_only: true
   waive:
@@ -148,6 +153,3 @@ identity:
         when the kid names none, so it verifies the token spec 007
         refuses with unknown_key. TestTheSharedVerifierCannotCarrySpec007
         holds both, and reds when either closes.
-    no-latere-value:
-      until: 2026-12-31
-      reason: the Latere overlay in deploy/prod and the hosted names in docs move out with id-06

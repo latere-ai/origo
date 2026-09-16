@@ -153,7 +153,7 @@ team in [Git at any scale](https://cursor.com/blog/git-at-any-scale): a
 write-ahead log in object storage as the source of truth, repositories as a
 warm cache, and linearized pushes without a consensus cluster.
 
-Origo is built by [Latere](https://latere.ai).
+Origo is built by Latere.
 
 ## License
 
