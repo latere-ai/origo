@@ -162,7 +162,7 @@ func TestE2EOrigoReadsCommitsAndReverts(t *testing.T) {
 	// so internal/auth refuses the list action on its scope before the
 	// authorizer is asked. The line says what to do instead.
 	repos := c.run("repos")
-	if repos.code != 1 || !strings.Contains(repos.stderr, "action=list") {
+	if repos.code != 1 || !strings.Contains(repos.stderr, "action=repo.list") {
 		t.Fatalf("repos under a bound token: %d %q", repos.code, repos.stderr)
 	}
 	if !strings.Contains(repos.stderr, "-repo") || !strings.Contains(repos.stderr, "token from the issuer") {
@@ -415,7 +415,7 @@ func TestE2EOrigoDirectoryNeedsAnIssuerToken(t *testing.T) {
 	// A repository-bound token is refused the same call, on its scope.
 	bound := newClient(t, n, id, "read")
 	refused := bound.run("repos")
-	if refused.code != 1 || !strings.Contains(refused.stderr, "action=list") {
+	if refused.code != 1 || !strings.Contains(refused.stderr, "action=repo.list") {
 		t.Fatalf("repos under a bound token: %d %q", refused.code, refused.stderr)
 	}
 }
