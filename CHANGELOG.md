@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.4.3 - 2026-09-16
+
 ### Fixed
 
 - `origo repos` explains its refusal again. A repository-bound token is
