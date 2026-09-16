@@ -173,7 +173,11 @@ service that will act on a user's behalf. Origo accepts a token whose
 `iss` is one of the issuers you configure, character for character, and
 whose `aud` contains `origo`; how a client asks your provider for that
 audience is the provider's own, and the first clone at the end of this
-page is where you find out whether you asked correctly.
+page is where you find out whether you asked correctly. The manifests
+name that audience rather than inherit it: `ORIGO_OIDC_AUDIENCE` is
+`origo` on the node and on its check in `deploy/base/deployment.yaml`,
+and an installation whose provider mints another name for Origo changes
+both together.
 
 **The authorization endpoint.** One `POST` endpoint you run, or none.
 Leave `ORIGO_AUTHORIZER_URL` unset and Origo runs a built-in owner

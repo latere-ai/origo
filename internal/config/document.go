@@ -74,7 +74,7 @@ var Groups = []Group{{
 	Variables: []Variable{
 		{"ORIGO_OIDC_ISSUERS", "yes", "none", "comma separated issuer URLs whose tokens are accepted. Each must serve OpenID discovery and a key set over HTTPS."},
 		{"ORIGO_OIDC_INSECURE_ISSUERS", "no", "unset", "issuers from the list above that may use `http://` on a host that is not a loopback address. For a test stack only; never set it in production."},
-		{"ORIGO_OIDC_AUDIENCE", "no", "`origo`", "the audience every accepted token must carry. The default is the service's own name; set it when the issuer mints for a different audience."},
+		{"ORIGO_OIDC_AUDIENCE", "no", "`origo`", "the audience every accepted token must carry. The default is the service's own name, and the deployment manifests name it explicitly rather than inherit it; set it when the issuer mints for a different audience."},
 		{"ORIGO_AUTHORIZER_URL", "no", "unset", "your authorization endpoint, an absolute `http` or `https` URL. Origo asks it before every repository operation and caches the answer briefly. Unset, Origo runs the built-in owner policy instead."},
 		{"ORIGO_AUTHORIZER_TOKEN", "with `ORIGO_AUTHORIZER_URL`", "none", "the bearer Origo presents to that endpoint, so it can tell Origo from anything else that reaches it. Read only when the endpoint is set."},
 		{"ORIGO_ADMIN_SUBJECTS", "no", "unset", "comma separated issuer-qualified subjects (`<issuer>|<sub>`) the built-in owner policy allows every action on every repository. Read only when no authorizer endpoint is set."},

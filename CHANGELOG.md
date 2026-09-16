@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The deployments name the audience they verify. `ORIGO_OIDC_AUDIENCE` is
+  `origo` on the node and on its check in `deploy/base/deployment.yaml`,
+  and on the node of the kind example, rather than left to the binary's
+  default. An installation whose issuer mints another name for Origo
+  changes it in one place, and a change to the default can no longer move
+  a deployment without a line of the diff saying so. The identity gate's
+  `audience` waiver is retired with it.
+
 ### Fixed
 
 - The stub image no longer carries GO-2026-6348, a heap-exhaustion
