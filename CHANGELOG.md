@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.4.2 - 2026-09-16
+
 ### Changed
 
 - The deployments name the audience they verify. `ORIGO_OIDC_AUDIENCE` is
