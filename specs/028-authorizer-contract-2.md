@@ -7,10 +7,10 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/026-repository-directory.md
   - specs/027-anonymous-read.md
-affects: [internal/auth/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
+affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-15
+updated: 2026-09-16
 author: changkun
 ---
 
@@ -260,3 +260,41 @@ production overlay points `ORIGO_AUTHORIZER_URL` and `ORIGO_SSH_KEYS_URL`
 at `platformd` (`deploy/prod/authorizer.yaml`, `deploy/prod/ssh.yaml`),
 with the authorizer URL moved out of the `origod-auth` Secret into the
 manifest, because a URL is not a secret and only the bearer is.
+## State on 2026-09-16: the vocabulary is an importable package
+
+The four action strings and the resource kind of the envelope above have
+one home in the shipped source, `github.com/latere-ai/origo/authorizer`,
+a package at the module root that anything may import. `Vocabulary()` is
+the table as `latere.ai/x/pkg/authz`'s own type, built once through
+`NewVocabulary`, and `Actions`, `Kind` and `Known` read that same value.
+`PageActions()` names `repo.list` alone: the shared vocabulary carries
+the actions and not the shape of their answers, so `authz/server` takes
+the page actions as an option and this package is where the name lives.
+`internal/contract` keeps its constants and reads them from there, so
+`details.action` on a 403 and the agent client's branch are the
+published strings. A walk over the shipped Go source holds the one-home
+claim; `test/` is outside it on purpose, because the stub of spec 013
+answers as an operator's endpoint would and the suite of spec 021 drives
+an installation it did not build, so both speak the wire rather than the
+node's constants.
+
+Nothing on the wire moves. The envelope, the four names, the kind, the
+answer shapes and the five rules are this spec's, unchanged; what
+changes is who can say them in Go. `origod`'s own client now carries the
+vocabulary, so an action outside the table is an `authz.UnknownAction`
+in the node rather than a round trip to an operator's endpoint
+(`TestAnUnknownActionCostsNoRoundTrip`), and `repo.list` still travels,
+because a page is asked through `Ask`, which the shared client does not
+validate. Spec 007's endpoint section was rewritten to contract 2 in the
+same change, since `make docs` renders it into `docs/api.md` and it
+still described contract 1.
+
+The work is the identity epic's id-11, piece (c)
+(latere-ai/specs, `infrastructure/identity/id-11-one-authorizer-library.md`),
+whose acceptance row is that no repository re-declares another
+repository's action strings. `platformd` re-declared these four in
+`internal/repositories/vocabulary.go` because Origo exported nothing
+importable; that file becomes `authorizer.Vocabulary()` and
+`authorizer.PageActions()` on Origo's next tag, the way its Lux section
+already reads `latere.ai/x/lux/authorizer`. Lux did the same promotion
+in lux v0.2.0, and the package mirrors its shape.

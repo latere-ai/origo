@@ -10,6 +10,38 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- Origo publishes its action vocabulary, so whoever writes the endpoint
+  `ORIGO_AUTHORIZER_URL` points at can import it instead of copying the
+  strings out of the documentation. `github.com/latere-ai/origo/authorizer`
+  carries the four actions of contract 2, the resource kind `Repository`,
+  and the table itself as `latere.ai/x/pkg/authz`'s `Vocabulary`, with
+  `Actions`, `Kind` and `Known` reading that same value and `PageActions`
+  naming `repo.list`, whose answer is a directory page rather than a
+  decision. Hand `Vocabulary()` to `authz/server` and an endpoint answers
+  400 for an action Origo does not send; hand it to `authz/conformance`
+  and the suite covers every row. The strings are declared there and
+  nowhere else in what ships: `internal/contract` and `internal/auth`
+  read them, and a test walks the source to keep a second copy from
+  appearing.
+
+### Changed
+
+- Nothing on the authorizer wire. The envelope, the four action names,
+  the resource kind, the answer shapes and the five rules of spec 028 are
+  unchanged, and an endpoint written against v0.4.3 keeps serving. One
+  thing changes inside the node: its client now carries the vocabulary,
+  so an action Origo never declared is refused before the call instead of
+  spending a round trip at the endpoint to be told no.
+
+- The authorization endpoint section of `docs/api.md` describes contract
+  2. It had been left at contract 1 since v0.4.1 shipped the new
+  envelope: it showed an `actor` field, a `repo` object, the bare `read`,
+  `write` and `admin`, and the three figures at the top level of the
+  answer rather than under `limits`. The page an endpoint is written
+  against now matches the node that calls it.
+
 ## v0.4.3 - 2026-09-16
 
 ### Fixed
