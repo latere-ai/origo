@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/latere-ai/origo/internal/auth"
 )
 
 // The two manifests this file holds to spec 018's rule: the base's
@@ -209,6 +211,54 @@ func TestOverlayPatchesReachBothContainers(t *testing.T) {
 		}
 		if !slices.Equal(check, node) {
 			t.Errorf("%s gives the check %v and the node %v", patch, check, node)
+		}
+	}
+}
+
+// TestEveryNodeNamesItsAudience is the identity gate's audience rule held
+// in this tree: every container that runs origod names the `aud` a token
+// must carry, rather than leaving it to auth.DefaultAudience. A manifest
+// that names none accepts whatever the binary's default happens to be, so
+// an installation whose issuer mints another name learns it from a 401 on
+// every route, and a change to the default would move the deployments
+// without a line of the diff saying so. The check is held to it beside the
+// node, for the reason TestCheckInitContainerSharesTheNodesEnvironment
+// gives: a check against another environment checks nothing.
+//
+// The gate reads only `containers`, so the check's entry is this test's
+// alone; the kind example is here because nothing else reads it.
+func TestEveryNodeNamesItsAudience(t *testing.T) {
+	const kindNode = "deploy/examples/kind/origod.yaml"
+	workloads := map[string][]string{
+		baseDeploy: {"check", "origod"},
+		kindNode:   {"origod"},
+	}
+	entry := regexp.MustCompile(`(?m)^\s+- name: ORIGO_OIDC_AUDIENCE\n\s+value: (\S+)$`)
+	for _, workload := range slices.Sorted(maps.Keys(workloads)) {
+		body := manifest(t, workload)
+		blocks := map[string]string{}
+		starts := containerStart.FindAllStringSubmatchIndex(body, -1)
+		for i, m := range starts {
+			end := len(body)
+			if i+1 < len(starts) {
+				end = starts[i+1][0]
+			}
+			blocks[body[m[2]:m[3]]] = body[m[0]:end]
+		}
+		for _, name := range workloads[workload] {
+			block, ok := blocks[name]
+			if !ok {
+				t.Errorf("%s holds no container %s", workload, name)
+				continue
+			}
+			got := entry.FindStringSubmatch(block)
+			if got == nil {
+				t.Errorf("%s: the container %s sets no ORIGO_OIDC_AUDIENCE, so it accepts whatever audience the verifier defaults to", workload, name)
+				continue
+			}
+			if got[1] != auth.DefaultAudience {
+				t.Errorf("%s: the container %s names the audience %q; this repository verifies %q", workload, name, got[1], auth.DefaultAudience)
+			}
 		}
 	}
 }

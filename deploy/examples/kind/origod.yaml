@@ -106,6 +106,12 @@ spec:
               value: http://origo-stubs.origo.svc:8081
             - name: ORIGO_OIDC_INSECURE_ISSUERS
               value: http://origo-stubs.origo.svc:8081
+            # The stub issuer mints `origo` by default
+            # (test/stubs/issuer), which is the node's own audience; the
+            # stack names it so the two sides are one decision and not
+            # two defaults that happen to agree.
+            - name: ORIGO_OIDC_AUDIENCE
+              value: origo
             - name: ORIGO_AUTHORIZER_URL
               value: http://origo-stubs.origo.svc:8082
             - name: ORIGO_AUTHORIZER_TOKEN
