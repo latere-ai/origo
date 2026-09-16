@@ -128,6 +128,8 @@ identity:
   # deploy/prod is Latere's own overlay in the core's tree.
   skip:
     - deploy/prod
+  # Access is by role: the roles rule runs, and it is one way once set.
+  roles_only: true
   waive:
     verifier:
       until: 2026-11-30
