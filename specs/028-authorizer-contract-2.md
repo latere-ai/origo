@@ -320,14 +320,16 @@ each and neither with both.
 | `LocalIssuer` + `LocalKey` + `LocalKeyID` | yes | no: `Validate` zeroes the skew for a local token, whatever `Config.ClockSkew` says |
 | `Issuer` + `JWKSURL` | no: `verifySignature` falls back to every key of the set when the `kid` names none | yes |
 
-Read as Origo's answers, the JWKS path verifies the token this spec
-refuses:
+Read as Origo's answers, each path loses a row of the table. The JWKS
+path verifies a token this spec refuses; the local path, the only one
+that can be handed a key the node resolved itself, refuses a token this
+spec reads:
 
 ```
-iss.Mint(Claims{Sub: "alice", Kid: "nope"})   spec 007: unknown_key
-                                              authkit/jwt, JWKS path: verified
-iss.Mint(Claims{Sub: "ci", Exp: now-59s})     spec 007: verified, inside the skew
-                                              authkit/jwt, local path: expired
+an issuer's token, kid "nope", signed by the issuer
+    spec 007: unknown_key          JWKS path: verified
+an issuer's token 59 seconds past exp
+    spec 007: verified, in skew    local path: expired
 ```
 
 The two paths cannot be composed, either. Handing the package one
@@ -351,12 +353,14 @@ the one-second-doubling retry ladder that spec 013's kind stack needed.
 So the waiver of `State on 2026-09-14` stands, and stops being a date.
 `TestTheSharedVerifierCannotCarrySpec007` in `internal/auth` holds both
 rows of the table above against pkg v0.71.0 and reds when either closes;
-`.lateregate.yaml`'s `verifier` waiver names it. Two things close it, and
-either is enough with the other: a `kid` that names no key of the set
-refused rather than tried against every key, and `Config.ClockSkew`
-honoured for a token of `Config.LocalIssuer`. An exported reader of the
-JOSE header would close it a third way, by letting a caller that keeps
-its own key sets hand the verifier the one key a `kid` names.
+`.lateregate.yaml`'s `verifier` waiver names it. Either of two changes
+to the package closes it on its own: a `kid` that names no key of the
+set refused rather than tried against every key, which makes the JWKS
+path whole; or `Config.ClockSkew` honoured for a token of
+`Config.LocalIssuer`, which makes the local path whole. An exported
+reader of the JOSE header would close it a third way, by letting a
+caller that keeps its own key sets hand the verifier the one key a `kid`
+names.
 
 The spec's `authorizer` half needed no such move and was already done:
 `internal/auth`'s client is `latere.ai/x/pkg/authz`. The identity gate's

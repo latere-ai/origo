@@ -67,9 +67,11 @@ func TestTheSharedVerifierCannotCarrySpec007(t *testing.T) {
 		t.Errorf("the JWKS path must carry ClockSkew: %v", err)
 	}
 
-	// The local-issuer path names the key strictly, and zeroes the skew
-	// whatever Config.ClockSkew says, so it cannot verify an issuer's
-	// token under spec 007's exp and nbf rows.
+	// The local-issuer path is the only one a caller can hand a key it
+	// resolved itself, and it names that key strictly. It also zeroes the
+	// skew whatever Config.ClockSkew says, so an issuer's token routed
+	// through it loses the 60 seconds spec 007's exp and nbf rows give it.
+	// The stub below stands for an issuer whose key the node holds.
 	key := newKey(t)
 	local := issuer.New(t, issuer.WithKey(key), issuer.WithIssuer(localIssuer))
 	one := jwt.New(jwt.Config{
