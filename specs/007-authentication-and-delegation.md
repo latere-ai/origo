@@ -8,25 +8,34 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-12
+updated: 2026-09-16
 author: changkun
 ---
 
 # Authentication and delegation
 
-> Amended 2026-09-13. The authorizer envelope below is contract 1.
-> [[028-authorizer-contract-2]] replaces it with the envelope the
-> three open cores share, qualifies subjects by their issuer, adds the
-> owner policy and a configurable audience, and moves the verifier to
-> the shared package, and replaces contract 1 in one release. The
-> five rules, the probe id, and the cache and retry rules are unchanged
-> and are the shared contract's. Delegation through `act` was removed
-> on 2026-09-13 by the family's decision D5 (its id-06): the verifier
-> refuses a token carrying `act` with the reason `delegation`, the
-> minter copies no such claim, the entry header and the push event name
-> the subject alone, and contract 1's `actor` field is always empty
-> until contract 2 drops it. The sections below describe the system as
-> it is; the history of the claim is in this note and in the Outcome.
+> Amended 2026-09-13. [[028-authorizer-contract-2]] replaces the
+> authorizer envelope of this spec with the one the three open cores
+> share, qualifies subjects by their issuer, adds the owner policy and a
+> configurable audience, and moves the verifier to the shared package,
+> in one release. The five rules, the probe id, and the cache and retry
+> rules are unchanged and are the shared contract's. Delegation through
+> `act` was removed on 2026-09-13 by the family's decision D5 (its
+> id-06): the verifier refuses a token carrying `act` with the reason
+> `delegation`, the minter copies no such claim, the entry header and
+> the push event name the subject alone, and contract 1's `actor` field
+> left with contract 1. The sections below describe the system as it is;
+> the history of the claim is in this note and in the Outcome.
+>
+> Amended 2026-09-16. `The authorization endpoint` below is contract 2,
+> rewritten in place. `make docs` renders that section verbatim into
+> `docs/api.md`, where whoever writes an endpoint reads it, so a section
+> left at contract 1 was a page describing a node that has not existed
+> since v0.4.1. Contract 1's envelope is 028's migration table, which is
+> its record. The section also names
+> `github.com/latere-ai/origo/authorizer`, the vocabulary package of the
+> identity epic's id-11 (c), so an endpoint written in Go imports the
+> action strings rather than copying them out of the page.
 
 ## Overview
 
@@ -148,6 +157,15 @@ permission model, and Origo adds nothing to it and caches its answer.
 Nothing here is any one operator's: it is what an endpoint must do to
 serve any installation, whatever holds the permissions behind it.
 
+The envelope is contract 2, the one the three open cores share (spec
+028), so one endpoint can answer for Origo and its siblings behind one
+bearer. Whoever writes it in Go imports the vocabulary rather than
+copying the strings out of this page: `github.com/latere-ai/origo/authorizer`
+declares the four actions, the resource kind `Repository`, and the
+table itself as `latere.ai/x/pkg/authz`'s `Vocabulary`, which
+`latere.ai/x/pkg/authz/server` validates a request against and
+`latere.ai/x/pkg/authz/conformance` drives a case per row of.
+
 The call, after verification, per request that names a repository:
 
 ```
@@ -155,23 +173,34 @@ POST <ORIGO_AUTHORIZER_URL>
 Authorization: Bearer <ORIGO_AUTHORIZER_TOKEN>
 Content-Type: application/json
 
-{"subject": "…", "actor": "…", "repo": {"id": "…", "owner": "…", "slug": "…"}, "action": "read"}
+{
+  "subject":  "https://auth.example.com|0f5c1d2e-…",
+  "issuer":   "https://auth.example.com",
+  "sub":      "0f5c1d2e-…",
+  "claims":   {…},
+  "action":   "repo.read",
+  "resource": {"kind": "Repository", "id": "…", "owner": "…", "slug": "…"},
+  "request":  {"id": "…", "ip": "203.0.113.4", "user_agent": "git/2.47"}
+}
 ```
 
 | Field | Value |
 |---|---|
-| `subject` | the token's `sub`. It is empty only for the probe below |
-| `actor` | always empty: contract 1 carried the delegating service here, delegation is gone, and the field leaves with contract 2 ([[028-authorizer-contract-2]]) |
-| `repo.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve |
-| `repo.owner`, `repo.slug` | set on the name form and on a creation, empty on the id form |
-| `action` | `read`, `write`, or `admin` |
+| `subject` | the issuer URL with its trailing slash removed, a pipe, and the token's `sub`. It is empty for an anonymous request (spec 027) and for the probe below |
+| `issuer`, `sub` | the same two halves apart, so an endpoint keyed by issuer does not split the string again |
+| `claims` | every verified claim of the token, verbatim. Origo reads none of them; a plan, a team, or a role is read here |
+| `action` | `repo.read`, `repo.write`, `repo.admin`, or `repo.list` |
+| `resource.kind` | `Repository` on every call, the one kind Origo names |
+| `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list`, which names no repository |
+| `resource.owner`, `resource.slug` | set on the name form and on a creation, empty on the id form |
+| `request` | the request id Origo logs the call under, the caller's IP, and its user agent, for an endpoint that rate-limits or audits |
 
 The answer is 200 either way, `{"allow": true}` with the optional
 figures below, or `{"allow": false, "reason": "…"}` whose `reason`
 reaches the client as `details.reason` on Origo's 403 `forbidden`:
 
 ```
-200 {"allow": true, "ttl": 60, "replicas": 1, "quota_bytes": 53687091200, "requests_per_minute": 600}
+200 {"allow": true, "ttl": 60, "limits": {"replicas": 1, "quota_bytes": 53687091200, "requests_per_minute": 600}}
 200 {"allow": false, "reason": "…"}
 ```
 
@@ -179,22 +208,28 @@ The action Origo sends per operation:
 
 | Action | Operations |
 |---|---|
-| `read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
-| `write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
-| `admin` | `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+| `repo.read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
+| `repo.write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
+| `repo.admin` | `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+| `repo.list` | the directory form of `GET /v1/repos`: which repositories may this subject see (spec 026) |
 
-Spec 026 adds a fourth action, `list`, which names no repository and
-asks which repositories a subject may see. It is that spec's to state
-and it changes nothing here: the three actions above, the five rules,
-the answer shape, and the caches are unchanged, and an endpoint built to
-this spec alone stays correct.
+`repo.list` is the one action whose answer is not a decision. Its
+resource carries the kind alone, and the endpoint answers a page of
+Origo's own shape, `{"repos": [{"id", "owner", "slug"}, …],
+"next_cursor": "…"}`, or `{"allow": false, "reason": "…"}` to refuse
+it, or `{"directory": false}` for an installation that lists no
+repositories. Spec 026 states that answer in full; the page is never
+cached, and an endpoint that answers `{"directory": false}` keeps this
+contract whole. In Go, `authorizer.PageActions()` names it for
+`authz/server`'s `Options.PageActions`, since the vocabulary carries
+the actions and not their answer shapes.
 
-Spec 019 marks three of its own operations `read`, and the per-operation
-row wins over the sentence that calls its operations `admin`: a reader
-who may clone may also read the size of what they cloned. On
-`POST /v1/repos` the `repo` object carries the id, owner, and slug the
-body names, so the endpoint decides a creation from the name the caller
-chose.
+Spec 019 marks three of its own operations `repo.read`, and the
+per-operation row wins over the sentence that calls its operations
+`repo.admin`: a reader who may clone may also read the size of what
+they cloned. On `POST /v1/repos` the resource carries the id, owner,
+and slug the body names, so the endpoint decides a creation from the
+name the caller chose.
 
 **The five rules.** An endpoint that keeps them serves any installation.
 
@@ -223,28 +258,34 @@ for a database, a permission model, or an answer that varies by
 repository. An endpoint that answers `{"allow": true}` for a list of
 subjects, `{"allow": false}` for everyone else, and always denies the
 probe id keeps the contract in full: rule 3 does not apply when the
-answer is the same everywhere, and every figure may be omitted for
-Origo's defaults. That is a few dozen lines behind the same bearer, and
-it is where a team hosting its own repositories starts.
+answer is the same everywhere, every figure may be omitted for Origo's
+defaults, and `repo.list` may answer `{"directory": false}`. That is a
+few dozen lines behind the same bearer, and it is where a team hosting
+its own repositories starts. In Go it is fewer: `authz/server` carries
+the bearer, the body bound, the decode, the validation against the
+vocabulary above, and the failure rules, so what is written is one
+`Decide` method.
 
 **The figures, and when to send them.** Each is optional and each has a
-default, so an endpoint that sends `allow` alone is complete.
+default, so an endpoint that sends `allow` alone is complete. `ttl` is
+at the top level of the answer and the other three are under `limits`.
 
 | Field | Omit it when | Send it when |
 |---|---|---|
 | `ttl` | 60 seconds of revocation lag suits you | you want fewer calls; the cap is 600 |
-| `replicas` | always, unless you run Origo's placement policy (spec 005); absent is 1 | a repository needs more than one warm node |
-| `quota_bytes` | 50 GiB per repository suits you (spec 012); absent is 53687091200 | you sell plans or cap by tenant |
-| `requests_per_minute` | your subjects are people; absent buckets the subject at `ORIGO_REQUESTS_PER_MINUTE` (spec 012), and absent is not zero | one subject drives many repositories, a build fleet under one token, which spec 020 names as its case |
+| `limits.replicas` | always, unless you run Origo's placement policy (spec 005); absent is 1 | a repository needs more than one warm node |
+| `limits.quota_bytes` | 50 GiB per repository suits you (spec 012); absent is 53687091200 | you sell plans or cap by tenant |
+| `limits.requests_per_minute` | your subjects are people; absent buckets the subject at `ORIGO_REQUESTS_PER_MINUTE` (spec 012), and absent is not zero | one subject drives many repositories, a build fleet under one token, which spec 020 names as its case |
 
 **What Origo does with the answer.** An allow is cached per
-`(subject, actor, repo id, action)` for `ttl`; a deny for 5 seconds; an
-answer for an unresolved name (an empty id) is not cached. So the call
-rate an endpoint sees is set by the cache and not by the traffic, and a
-higher `ttl` divides it. The call is made once and retried once when the
-connection failed before a response line arrived (a refused or reset
-connection, a dial timeout); a 5xx, a timeout after the request was
-sent, and a body that does not parse are never retried.
+`(subject, action, repository id)` for `ttl`; a deny for 5 seconds; an
+answer for an unresolved name (an empty id) is not cached, and neither
+is a `repo.list` page. So the call rate an endpoint sees is set by the
+cache and not by the traffic, and a higher `ttl` divides it. The call is
+made once and retried once when the connection failed before a response
+line arrived (a refused or reset connection, a dial timeout); a 5xx, a
+timeout after the request was sent, and a body that does not parse are
+never retried.
 
 ### The authorizer client
 
