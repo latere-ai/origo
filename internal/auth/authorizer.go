@@ -14,7 +14,7 @@ import (
 	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"github.com/latere-ai/origo/authorizer"
 	"github.com/latere-ai/origo/internal/metrics"
 )
 
@@ -23,19 +23,20 @@ import (
 type Action string
 
 // The four actions Origo names in an envelope, typed over the strings
-// internal/contract holds so the node and the client read one value.
+// the published vocabulary declares, so the node, the agent client and
+// an operator's endpoint read one value.
 const (
-	ActionRead  Action = contract.ActionRead
-	ActionWrite Action = contract.ActionWrite
-	ActionAdmin Action = contract.ActionAdmin
+	ActionRead  Action = authorizer.ActionRead
+	ActionWrite Action = authorizer.ActionWrite
+	ActionAdmin Action = authorizer.ActionAdmin
 	// ActionList is spec 026's fourth action: which repositories may this
 	// subject see. It names no repository, so its resource carries the
 	// kind and no id.
-	ActionList Action = contract.ActionList
+	ActionList Action = authorizer.ActionList
 )
 
 // ResourceKind is the kind every repository envelope names.
-const ResourceKind = "Repository"
+const ResourceKind = authorizer.KindRepository
 
 // RepoRef is the repository a request names, as the node resolves it
 // before it builds the envelope: the id from the path, or the id a name

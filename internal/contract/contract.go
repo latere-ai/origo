@@ -15,6 +15,8 @@ import (
 	"sort"
 
 	"latere.ai/x/pkg/httpjson"
+
+	"github.com/latere-ai/origo/authorizer"
 )
 
 // Version is the value of the Origo-Contract header. Additive changes
@@ -79,15 +81,17 @@ const (
 )
 
 // The action vocabulary of the authorizer envelope, which is also the
-// value of details.action on a 403 forbidden (spec 028). It lives here
-// because the node writes the value and the client branches on it, so
-// one home is what keeps the two from drifting; ActionList is spec 026's
+// value of details.action on a 403 forbidden (spec 028). The strings are
+// declared once, in the published vocabulary an operator writing the
+// endpoint imports, and restated here as the node's and the client's
+// reading of them: a handler and the agent client of spec 025 branch on
+// the same value and neither declares it. ActionList is spec 026's
 // fourth action, which names no repository.
 const (
-	ActionRead  = "repo.read"
-	ActionWrite = "repo.write"
-	ActionAdmin = "repo.admin"
-	ActionList  = "repo.list"
+	ActionRead  = authorizer.ActionRead
+	ActionWrite = authorizer.ActionWrite
+	ActionAdmin = authorizer.ActionAdmin
+	ActionList  = authorizer.ActionList
 )
 
 // sentences is the code table: one user sentence per code, the text of
