@@ -37,6 +37,7 @@ type fake struct {
 	compareTruncated bool
 	stale            string
 	directoryCode    string
+	directoryDetails map[string]any
 	treePage         int
 	commitPage       int
 
@@ -137,7 +138,11 @@ func (f *fake) collection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.directoryCode != "" {
-		f.refuse(w, contract.Status(f.directoryCode), f.directoryCode, map[string]any{"reason": "the authorizer has no directory"})
+		details := f.directoryDetails
+		if details == nil {
+			details = map[string]any{"reason": "the authorizer has no directory"}
+		}
+		f.refuse(w, contract.Status(f.directoryCode), f.directoryCode, details)
 		return
 	}
 	// One repository per page, so the paging is exercised rather than asserted.

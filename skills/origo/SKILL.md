@@ -37,7 +37,7 @@ scope is the gate. A `read` token is refused a write by the installation
 whatever you type.
 
 A repository-bound token names one repository, so `origo repos` does not work
-under it: the installation answers `forbidden` with `action=list`, because
+under it: the installation answers `forbidden` with `action=repo.list`, because
 there is no subject-wide question a credential for one repository can ask.
 That is expected. Work with `ORIGO_REPO` set, which every other command uses.
 

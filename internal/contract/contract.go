@@ -78,6 +78,18 @@ const (
 	CodeDirectoryUnsupported  = "directory_unsupported"  // spec 026
 )
 
+// The action vocabulary of the authorizer envelope, which is also the
+// value of details.action on a 403 forbidden (spec 028). It lives here
+// because the node writes the value and the client branches on it, so
+// one home is what keeps the two from drifting; ActionList is spec 026's
+// fourth action, which names no repository.
+const (
+	ActionRead  = "repo.read"
+	ActionWrite = "repo.write"
+	ActionAdmin = "repo.admin"
+	ActionList  = "repo.list"
+)
+
 // sentences is the code table: one user sentence per code, the text of
 // the Message column of the owning spec. Everything a developer needs
 // goes in details, never here.

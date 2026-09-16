@@ -412,6 +412,29 @@ func TestReposPagesAndSaysWhenThereIsNoDirectory(t *testing.T) {
 	}
 }
 
+// TestReposExplainsABoundTokensRefusal covers the second half of
+// directoryHint: a repository-bound token is refused the directory on its
+// scope, and the line names the two ways on rather than leaving a caller with
+// a bare permission error (spec 025, spec 026).
+func TestReposExplainsABoundTokensRefusal(t *testing.T) {
+	f := newFake()
+	f.directoryCode = contract.CodeForbidden
+	f.directoryDetails = map[string]any{"action": contract.ActionList, "reason": "token scope does not allow this action"}
+	env := envFor(f.start(t))
+	got := run(t, env, "repos")
+	if got.code != origocli.CodeRefused {
+		t.Fatalf("exit %d", got.code)
+	}
+	for _, want := range []string{"forbidden:", "action=" + contract.ActionList, "-repo", "token from the issuer"} {
+		if !strings.Contains(got.stderr, want) {
+			t.Fatalf("the refusal does not say %q: %q", want, got.stderr)
+		}
+	}
+	if got.stdout != "" {
+		t.Fatalf("a refusal wrote to stdout: %q", got.stdout)
+	}
+}
+
 func TestInfoIsOneCall(t *testing.T) {
 	f := newFake()
 	env := envFor(f.start(t))

@@ -107,7 +107,7 @@ func directoryHint(err error) error {
 	switch {
 	case ref.Code == contract.CodeDirectoryUnsupported:
 		ref.Message += " Name one with -repo or ORIGO_REPO."
-	case ref.Code == contract.CodeForbidden && render(ref.Details["action"]) == "list":
+	case ref.Code == contract.CodeForbidden && render(ref.Details["action"]) == contract.ActionList:
 		ref.Message += " A repository-bound token names one repository and cannot list; name it with -repo or ORIGO_REPO, or use a token from the issuer."
 	}
 	return ref

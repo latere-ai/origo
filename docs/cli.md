@@ -52,10 +52,10 @@ sends.
 **One command does not work under a repository-bound token: `origo repos`.**
 That token's decision was made when it was minted, for one repository, so the
 installation refuses to answer a question about every repository you may see
-and says `forbidden` with `action=list`. This is the model working, not a gap.
-Name the repository with `-repo` or `ORIGO_REPO`, which every other command
-takes, or use a token from your issuer if you want to browse. The command says
-as much when it is refused.
+and says `forbidden` with `action=repo.list`. This is the model working, not a
+gap. Name the repository with `-repo` or `ORIGO_REPO`, which every other
+command takes, or use a token from your issuer if you want to browse. The
+command says as much when it is refused.
 
 ## Set four variables
 

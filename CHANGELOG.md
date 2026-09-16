@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- `origo repos` explains its refusal again. A repository-bound token is
+  refused the directory on its scope, and since v0.4.0 the answer was a bare
+  `forbidden`: contract 2 renamed the action to `repo.list` and the client
+  still matched `list`, so the line naming `-repo` and a token from the
+  issuer was dropped. The four action names now live in `internal/contract`,
+  the one package the node and the client share, so the two cannot drift
+  apart again.
+
 ## v0.4.2 - 2026-09-16
 
 ### Changed
