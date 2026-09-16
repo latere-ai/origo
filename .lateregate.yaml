@@ -125,18 +125,29 @@ identity:
   audience: origo
   config_prefix: ORIGO
   api_group: origo.latere.ai
-  # deploy/prod is Latere's own overlay in the core's tree.
+  # deploy/prod is Latere's own overlay in the core's tree. The three
+  # conformance files carry no authorizer request: the only string the
+  # authorizer rule can read in them is the import path of the spec 013
+  # stub, which holds the word and a slash, so the rule reads a test
+  # double that speaks the wire as a second client.
   skip:
     - deploy/prod
+    - test/conformance/cases007.go
+    - test/conformance/cases019.go
+    - test/conformance/stubs.go
   # Access is by role: the roles rule runs, and it is one way once set.
   roles_only: true
   waive:
     verifier:
       until: 2026-11-30
-      reason: spec 028 moves the verifier to authkit/jwt
-    authorizer:
-      until: 2026-11-30
-      reason: spec 028 moves the authorizer client to pkg/authz
+      reason: >-
+        authkit/jwt v0.71.0 cannot name a key strictly and carry a clock
+        skew at once, which spec 007's table asks of it together: the
+        local-issuer path names the key strictly and zeroes ClockSkew,
+        and the JWKS path carries the skew and tries every key of the set
+        when the kid names none, so it verifies the token spec 007
+        refuses with unknown_key. TestTheSharedVerifierCannotCarrySpec007
+        holds both, and reds when either closes.
     no-latere-value:
       until: 2026-12-31
       reason: the Latere overlay in deploy/prod and the hosted names in docs move out with id-06
