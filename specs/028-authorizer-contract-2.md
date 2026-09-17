@@ -10,7 +10,7 @@ depends_on:
 affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-16
+updated: 2026-09-17
 author: changkun
 ---
 
@@ -372,3 +372,60 @@ The spec's `authorizer` half needed no such move and was already done:
 clients, on the import path of the spec 013 stub rather than on any
 request they build, and those three are skipped for the reason the
 section above gives for keeping `test/` outside the one-home walk.
+
+## State on 2026-09-17: one row closed, three remain
+
+pkg v0.73.0 closed the row the section above named. authkit/jwt now
+decides which key verifies a token by one rule on every path: the `kid`
+names the key, a key declaring no `kid` answers whatever `kid` a token
+names, a token carrying no `kid` is answered only by a set holding
+exactly one key, and anything else is `jwt.ErrUnknownKey`, reason
+`unknown_key`. The JWKS fallback that tried every key of the set in turn
+is gone, so the token spec 007 refuses with `unknown_key` is refused with
+`unknown_key`; the local path, which called the same miss a signature,
+uses the same word. A `kid` miss still forces one refresh of the set
+first, which is this table's "after one refresh".
+
+The second row of that section did not close and does not need to:
+`Validate` still zeroes the skew for a token of `Config.LocalIssuer`
+whatever `Config.ClockSkew` says, and spec 007 gives a repository-bound
+token no skew for the same reason the package does, so the two agree.
+Read against v0.73.0 the old tripwire reds, correctly, on the `kid` row.
+
+The verifier still does not move. Three rows of spec 007's table have no
+home in the package, and none is composable away:
+
+| Row | What the package does |
+|---|---|
+| `exp`, `nbf`, `iat` | `Validate` calls `time.Now` and `jwt.Config` takes no clock, so a token minted on the clock Origo's verifier runs on reads `expired` |
+| keys, OIDC Discovery 4.3 | discovery follows the `jwks_uri` of whatever document answers; it never checks the document's `issuer` against the URL it was fetched under |
+| `issuer_unavailable` | a fetch failure is wrapped unclassified, so `jwt.ReasonOf` reads the empty string and an unreachable issuer is not a row of the table |
+
+The middle row is the one with teeth. A document served under one URL and
+naming another issuer publishes the key set the package then verifies
+that URL's tokens with, which is the fetch spec 007 fails on purpose.
+`TestTheSharedVerifierCannotCarrySpec007` builds exactly that stack and
+reads the token back as verified.
+
+There is no seam below `Validate` to take less of it. `verifyAgainst` is
+unexported, and `DecodePayload` and `ParseUnverified` read the payload
+alone, so there is still no exported reader of the JOSE header: a caller
+cannot let the package choose the key and keep the claims window on its
+own clock. It is `Validate` or nothing, and `Validate` brings its own
+clock and its own discovery. Handing the package a key set the node
+resolved itself means `Config.LocalKeys`, which is the path that zeroes
+the skew an issuer's token carries, so that composition is closed too.
+
+So `.lateregate.yaml`'s `verifier` waiver stands, with its reason rewritten
+to these three rows, and the tripwire rewritten to probe them: it asserts
+the `kid` row that closed, so a regression is caught, and reds when the
+clock, the 4.3 check, or the word for an unreachable issuer arrives. The
+three findings it covers are one thing and clear together: `go.mod`
+imports no shared verifier, and `internal/auth/token.go` takes a token
+apart at two lines. Nothing on the wire moved: no refusal reason changed,
+no configuration variable changed, and `internal/auth` is untouched.
+
+Of the three closures that section offered, the package took the first.
+What would close the rest is a clock on `jwt.Config`, the discovery
+document's `issuer` checked against the URL it was fetched under, and a
+reason word for a fetch that failed.
