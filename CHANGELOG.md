@@ -10,6 +10,13 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A release is cut only from a green build. The release command reads CI
+  before it runs the quality bar and refuses while the repository is red,
+  so a version whose build failed, or whose tag published no notes, does
+  not reach you as a release. Nothing about running the node changes.
+
 ## v0.6.0 - 2026-09-17
 
 ### Changed
