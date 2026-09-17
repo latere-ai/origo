@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.7.0 - 2026-09-17
+
 ### Added
 
 - A personal access token can be narrower than the person who holds it.
