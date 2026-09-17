@@ -142,21 +142,3 @@ identity:
     - deploy/prod
   # Access is by role: the roles rule runs, and it is one way once set.
   roles_only: true
-  waive:
-    verifier:
-      until: 2026-11-30
-      reason: >-
-        authkit/jwt v0.73.0 closed the row this waiver used to name: one
-        key-selection rule on every path, so a kid naming no key of the
-        set is unknown_key rather than tried against every key. Three
-        rows of spec 007's table still have no home in the package.
-        Validate calls time.Now and jwt.Config takes no clock, so exp,
-        nbf and iat cannot be read on the clock Origo's verifier runs
-        on. Its discovery does not run OIDC Discovery 4.3, so a document
-        served under one URL and naming another issuer publishes the
-        keys it would verify that URL's tokens with. And a fetch failure
-        is wrapped unclassified, so an unreachable issuer carries no
-        issuer_unavailable. TestTheSharedVerifierCannotCarrySpec007
-        probes all three against the package as it is, asserts the
-        closed row so a regression is caught, and reds when any of the
-        three closes.
