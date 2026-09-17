@@ -10,6 +10,32 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- Token verification is now the shared library's. The node builds against
+  `latere.ai/x/pkg` v0.74.0, whose verifier runs on the node's own clock,
+  checks that an issuer's discovery document names the issuer it was
+  fetched from, and tells an issuer it cannot reach apart from a token
+  that is wrong. Those were the three rules that kept a second verifier in
+  the node, and the node's copy is gone.
+
+  Nothing you set changes and nothing you read changes. Every refusal
+  reason is the word it was: `issuer_unavailable` still means the node
+  cannot reach that issuer, and still covers a discovery document served
+  under one address that names another. A token accepted by v0.5.1 is
+  accepted here, and one refused is refused for the same reason.
+
+  Two differences are worth knowing if you watch an issuer closely. A
+  token is now refused from just past its `exp` plus the 60 seconds of
+  skew rather than at that instant, so it is read for one moment longer.
+  And when a token names a signing key the node has not seen, the node
+  refetches that issuer's key set at most once every fifteen seconds
+  rather than once a minute: a key you rotate in is picked up sooner, at
+  the cost of a few more requests to your issuer. An issuer that is down
+  is asked no more often than before, on the same one second doubling to
+  a minute, and its tokens are still refused with `issuer_unavailable`
+  until one fetch succeeds.
+
 ## v0.5.1 - 2026-09-17
 
 ### Changed
