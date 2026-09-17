@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- Nothing about how a token is verified, again, and one reason fewer
+  stands in the way. The node builds against `latere.ai/x/pkg` v0.73.0,
+  where the shared verifier now picks the key a token's `kid` names and
+  refuses a `kid` that names none, which is the rule v0.72.0 was missing
+  and the one spec 007 has always read tokens under. Three rules of spec
+  007 still have no home in the shared package: the clock it checks
+  `exp`, `nbf` and `iat` against cannot be supplied, its discovery does
+  not check that a document naming an issuer was served by that issuer,
+  and an issuer it cannot reach is not told apart from other failures.
+  Verification stays in the node until those arrive. No refusal reason
+  changed, no setting changed, and a token accepted by v0.5.0 is accepted
+  here.
+
 ## v0.5.0 - 2026-09-17
 
 ### Added
