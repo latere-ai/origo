@@ -45,12 +45,14 @@ func eventSink(t *testing.T) (url, secret string, list func(repo, kind string) [
 // push put in its journal, yields one event for the second push from
 // another node's repair sweep within one ORIGO_REPAIR_INTERVAL once the
 // dead node is ORIGO_REPAIR_UNHEARD unheard, with updates equal to the
-// entry's transaction and id equal to the UUID v5 of the payload table,
-// and the dead node's journal names the repository once. Two nodes of
-// the test's own run against the stack's MinIO with the sink at its
-// host port; the node that carries the failpoint is the first node
-// restarted under its name and data directory, so its first push
-// enqueued and its second is the one the failpoint ends.
+// entry's transaction, id equal to the UUID v5 of the payload table,
+// and the pusher equal to the issuer-qualified subject of spec 028 the
+// entry header carries, and the dead node's journal names the
+// repository once. Two nodes of the test's own run against the stack's
+// MinIO with the sink at its host port; the node that carries the
+// failpoint is the first node restarted under its name and data
+// directory, so its first push enqueued and its second is the one the
+// failpoint ends.
 func TestSlowEventRepairAfterKill(t *testing.T) {
 	s := requireStack(t)
 	sinkURL, secret, list := eventSink(t)
@@ -114,12 +116,21 @@ func TestSlowEventRepairAfterKill(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("%d push events, want 2: %+v", len(got), got)
 	}
-	var p events.Push
+	var first, p events.Push
+	if err := json.Unmarshal(got[0].Body, &first); err != nil {
+		t.Fatal(err)
+	}
 	if err := json.Unmarshal(got[1].Body, &p); err != nil {
 		t.Fatal(err)
 	}
-	if !got[1].Verified || got[1].ID != p.ID || p.ID != events.PushID(id, 2) || p.Seq != 2 || p.Pusher.Sub != "dev" {
-		t.Fatalf("repaired event %+v", got[1])
+	if !got[1].Verified || got[1].ID != p.ID || p.ID != events.PushID(id, 2) || p.Seq != 2 {
+		t.Fatalf("repaired event %+v, want verified with id %s and seq 2", got[1], events.PushID(id, 2))
+	}
+	// Spec 028: the pusher is the issuer-qualified subject the entry
+	// header carries. The sweep reads the header, so the repaired
+	// event names the party the live delivery of the first push named.
+	if sub := s.issuer.URL() + "|dev"; p.Pusher.Sub != sub || first.Pusher.Sub != sub {
+		t.Fatalf("pusher %q repaired and %q live, want %q", p.Pusher.Sub, first.Pusher.Sub, sub)
 	}
 	rc, _, err := s.store.Get(context.Background(), s.log.RepoPrefix(id)+ix.Entry, "")
 	if err != nil {
