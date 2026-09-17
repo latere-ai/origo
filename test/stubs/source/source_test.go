@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,18 @@ import (
 	"github.com/latere-ai/origo/internal/gittest"
 	"github.com/latere-ai/origo/test/stubs/source"
 )
+
+// noBackgroundMaintenance turns off the git config that lets clone and
+// fetch hand work to a detached background process: fetch.writeCommitGraph,
+// gc.autoDetach and maintenance.auto. Without it, a commit-graph write can
+// still be running under the work tree after the command returns, and
+// t.TempDir's cleanup races it, so every invocation against the stub
+// carries these.
+var noBackgroundMaintenance = []string{
+	"-c", "fetch.writeCommitGraph=false",
+	"-c", "gc.autoDetach=false",
+	"-c", "maintenance.auto=false",
+}
 
 // gitClient runs the client git against the stub: the CA file trusted
 // through GIT_SSL_CAINFO and the bearer as an extra header when token is
@@ -38,7 +51,7 @@ func gitClient(t *testing.T, s *source.Server, token string, args ...string) (st
 	if err := os.WriteFile(ca, s.CA(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	full := []string{"-c", "http.sslCAInfo=" + ca}
+	full := slices.Concat(noBackgroundMaintenance, []string{"-c", "http.sslCAInfo=" + ca})
 	if token != "" {
 		full = append(full, "-c", "http.extraHeader=Authorization: Bearer "+token)
 	}
@@ -94,9 +107,16 @@ func TestSourceServesTheFixtureOverTLS(t *testing.T) {
 	if !strings.HasPrefix(after, commit) || after == before {
 		t.Fatalf("ls-remote after Commit: %q, commit %s", after, commit)
 	}
-	gittest.Run(t, work, nil, "-c", "http.extraHeader=Authorization: Bearer "+s.Token(), "-c", "http.sslVerify=false", "pull", "-q")
+	gittest.Run(t, work, nil, slices.Concat(noBackgroundMaintenance,
+		[]string{"-c", "http.extraHeader=Authorization: Bearer " + s.Token(), "-c", "http.sslVerify=false", "pull", "-q"})...)
 	if got := gittest.Run(t, work, nil, "rev-list", "--count", "HEAD"); got != "5001" {
 		t.Fatalf("%s commits after the late write", got)
+	}
+	// With the background maintenance off, clone and pull never leave a
+	// detached commit-graph write running under work: the directory
+	// TempDir's cleanup must remove is never there to race.
+	if _, err := os.Stat(filepath.Join(work, ".git", "objects", "info", "commit-graphs")); err == nil {
+		t.Fatal("clone or pull left a commit-graph chain under .git/objects/info")
 	}
 	if _, err := s.Commit("fixture", "nope"); err == nil || !strings.Contains(err.Error(), "no branch") {
 		t.Fatalf("Commit on a missing branch: %v", err)
