@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.5.0 - 2026-09-17
+
 ### Added
 
 - Origo publishes its action vocabulary, so whoever writes the endpoint
