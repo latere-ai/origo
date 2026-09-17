@@ -172,6 +172,7 @@ registry to sit beside the node's name index.
 | A subject is `<iss>\|<sub>` in the authorizer request, the entry header, the event, and `origo`'s output; two issuers agreeing on a `sub` are two subjects | `TestSubjectsAreIssuerQualified` | built |
 | With no authorizer configured the owner policy holds every rule of its list, denies the probe and anonymous, and `ORIGO_ADMIN_SUBJECTS` acts on everything | `TestOwnerPolicy`, table-driven | built |
 | `ORIGO_OIDC_AUDIENCE` changes the accepted audience and defaults to `origo` | `TestAudienceIsConfigurable` | built |
+| The family's shared audience suite passes against the verifier the middleware installs: `origo` is admitted, a token addressed to the issuer itself, to another service, or to nobody is refused, a token that names no subject is refused, the issuer is called for its key set alone, and the retired `is_superadmin` flag grants no platform role | `TestConformance` in `internal/auth`, `latere.ai/x/pkg/authkit/conformance`'s `Run`, with `TestAudienceAtTheDoor` on a protected route | built |
 | Every row of spec 007's verification table holds through the shared verifier with the same reason | `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` unchanged | built |
 | `origod check` sends the probe in contract 2 and reads an allow as an endpoint that does not read the request | `TestCheckProbesTheAuthorizer` | built |
 | The conformance suite's authorizer group passes against the shared stub in contract 2 | `test/conformance`, the authorizer group | built |

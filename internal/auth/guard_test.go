@@ -402,3 +402,49 @@ func TestBoundTokenWriteFailsClosedDuringAuthorizerOutage(t *testing.T) {
 		t.Fatalf("write after the outage: %+v %v", d, err)
 	}
 }
+
+// TestAudienceAtTheDoor is the family's audience rule on a route rather
+// than on the verifier: TestConformance proves what the verifier
+// decides, and this proves the decision is what the public surface
+// answers. A token addressed to ORIGO_OIDC_AUDIENCE opens a protected
+// route, and a token the same issuer signed for itself, for another
+// service, or for nobody is unauthenticated at the same door, with the
+// row of spec 007's table in details.reason.
+//
+// It is the audience rule on one route in full. Spec 007's sweep,
+// cmd/origod's TestEveryRouteRequiresAToken, is the other half: it runs
+// three of these rows over every route of the listener rather than every
+// row over one, so a route added without the verifier fails there and a
+// row the verifier stops weighing fails here.
+func TestAudienceAtTheDoor(t *testing.T) {
+	clk := newClock()
+	stub := authorizer.New(t)
+	iss := issuer.New(t, issuer.WithClock(clk.Now))
+	v := newVerifier(t, clk, newKey(t), iss)
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	h := routes(v, NewGuard(c, slog.New(slog.DiscardHandler)))
+	path := "/r/" + repoA + ".git/info/refs?service=git-upload-pack"
+	for _, tc := range []struct {
+		name   string
+		claims issuer.Claims
+		code   int
+		reason string
+	}{
+		{"the node", issuer.Claims{Sub: "alice", Aud: issuer.StringList{"origo"}}, 204, ""},
+		{"the node among others", issuer.Claims{Sub: "alice", Aud: issuer.StringList{"another-service", "origo"}}, 204, ""},
+		{"the issuer", issuer.Claims{Sub: "alice", Aud: issuer.StringList{iss.URL()}}, 401, ReasonAudience},
+		{"another service", issuer.Claims{Sub: "alice", Aud: issuer.StringList{"another-service"}}, 401, ReasonAudience},
+		{"no audience", issuer.Claims{Sub: "alice", Omit: []string{"aud"}}, 401, ReasonAudience},
+		{"no subject", issuer.Claims{Aud: issuer.StringList{"origo"}, Omit: []string{"sub"}}, 401, ReasonSubject},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, e, _ := do(t, h, "GET", path, iss.Mint(tc.claims))
+			if code != tc.code {
+				t.Fatalf("%d, want %d: %+v", code, tc.code, e)
+			}
+			if tc.reason != "" && (e.Code != contract.CodeUnauthenticated || e.Details["reason"] != tc.reason) {
+				t.Fatalf("%+v, want reason %s", e, tc.reason)
+			}
+		})
+	}
+}
