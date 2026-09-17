@@ -103,7 +103,7 @@ func theKidNamesTheKey(t *testing.T) {
 // `exp`, `nbf` and `iat` rows cannot move while that holds.
 func thePackageReadsItsOwnClock(t *testing.T) {
 	for _, f := range reflect.VisibleFields(reflect.TypeFor[jwt.Config]()) {
-		if f.Type == reflect.TypeFor[func() time.Time]() {
+		if takesAClock(f) {
 			t.Errorf("jwt.Config.%s takes a clock now: spec 007's exp, nbf and iat rows "+
 				"can be read on Origo's clock, so move the verifier", f.Name)
 		}
@@ -174,6 +174,24 @@ func anUnreachableIssuerHasNoWord(t *testing.T) {
 		t.Errorf("an unreachable issuer reads %q now: spec 007's issuer_unavailable row "+
 			"holds through the package, so move the verifier", got)
 	}
+}
+
+// takesAClock reports whether a jwt.Config field would carry Origo's
+// clock, in any of the shapes a clock is written in: the func the rest of
+// this package passes, anything with a Now method, and a func or
+// interface named for one, so a clock arriving under a named type is not
+// missed by an exact type comparison. ClockSkew is a duration and names
+// no clock: a field must be callable to be one.
+func takesAClock(f reflect.StructField) bool {
+	if f.Type == reflect.TypeFor[func() time.Time]() {
+		return true
+	}
+	if now, ok := f.Type.MethodByName("Now"); ok &&
+		now.Type.NumOut() == 1 && now.Type.Out(0) == reflect.TypeFor[time.Time]() {
+		return true
+	}
+	callable := f.Type.Kind() == reflect.Func || f.Type.Kind() == reflect.Interface
+	return callable && (strings.Contains(f.Name, "Clock") || strings.Contains(f.Name, "Now"))
 }
 
 // sharedConfig is the configuration a move would give the shared
