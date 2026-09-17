@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"latere.ai/x/pkg/authz"
+
+	"github.com/latere-ai/origo/authorizer"
 )
 
 // The owner policy (Origo spec 028).
@@ -19,10 +21,18 @@ import (
 // everything on every repository; the probe id and the anonymous subject
 // are denied; repo.list returns the subject's own.
 //
-// The policy reads no claim. What it needs of a repository, whether it
-// exists and the rendered subject that created it, it asks Objects for,
-// so this file depends on no storage package and the node wires the
-// lookup over its log.
+// The policy reads no claim of its own. What it needs of a repository,
+// whether it exists and the rendered subject that created it, it asks
+// Objects for, so this file depends on no storage package and the node
+// wires the lookup over its log.
+//
+// It reads two claims after it has decided, and only to narrow: a
+// personal access token carries what its holder narrowed the credential
+// to, and a decision point intersects its answer with that set (identity
+// id-13). With no endpoint configured this policy is the node's decision
+// point, so the intersection is applied here or it is applied nowhere,
+// and a key scoped to one repository would reach every repository its
+// holder can.
 
 // Objects looks a repository up for the owner policy.
 type Objects interface {
@@ -61,7 +71,16 @@ func (o *OwnerPolicy) Authorize(ctx context.Context, req authz.Request) (Decisio
 	if err != nil {
 		return Decision{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
 	}
-	d := o.policy.Decide(req, obj)
+	// The grants the caller's token carries, off the envelope the guard
+	// built from the verified claims. A claim nobody can parse is no
+	// verdict: it fails closed as an *Unavailable, the way a lookup that
+	// did not answer does, rather than deciding from a set that was never
+	// read.
+	grants, err := authz.ParseGrants(req.Claims)
+	if err != nil {
+		return Decision{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
+	}
+	d := authz.Restrict(authorizer.Vocabulary().Core, o.policy.Decide(req, obj), req, grants)
 	return Decision{
 		Allow:      d.Allow,
 		Reason:     d.Reason,
@@ -79,6 +98,17 @@ func (o *OwnerPolicy) Authorize(ctx context.Context, req authz.Request) (Decisio
 func (o *OwnerPolicy) List(ctx context.Context, req authz.Request) (Directory, error) {
 	if req.Subject == "" {
 		return Directory{Supported: true, Reason: authz.ReasonAnonymous}, nil
+	}
+	// The same intersection, on the action that names no repository: a
+	// directory is covered by a kind-wide selector and by no single
+	// resource one, so a key granted a read on one repository cannot read
+	// the names of the rest (identity id-13).
+	grants, err := authz.ParseGrants(req.Claims)
+	if err != nil {
+		return Directory{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
+	}
+	if d := authz.Restrict(authorizer.Vocabulary().Core, authz.Decision{Allow: true}, req, grants); !d.Allow {
+		return Directory{Supported: true, Reason: d.Reason}, nil
 	}
 	cursor := req.Resource.String("cursor")
 	limit := req.Resource.Int("limit")

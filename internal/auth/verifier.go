@@ -147,6 +147,17 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	// package reads, and its key-set cache and its back-off, run on the
 	// clock a test moves. The client is the node's, with the fetch budget
 	// as its timeout: the package bounds a fetch no other way.
+	//
+	// ReadsGrants is the promise a personal access token is verified
+	// under (identity id-13): the token carries what its holder narrowed
+	// the credential to, as RFC 9396's authorization_details, and the
+	// node forwards both that claim and token_use to the decision point,
+	// which intersects its answer with them. With the promise unmade the
+	// package refuses such a token grants_unread, because a service that
+	// reads a restriction and applies none grants more than the person
+	// asked for, and silently. Origo keeps it, so the word never reaches
+	// a client. Every other bearer, an operator's and an environment's
+	// alike, carries no such claim and is unaffected.
 	v.shared = jwt.New(jwt.Config{
 		Issuers:         urls,
 		LocalIssuer:     v.local,
@@ -159,6 +170,7 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 		CacheTTL:        RefreshInterval,
 		HTTPClient:      &http.Client{Transport: o.Client.Transport, Timeout: v.timeout},
 		Now:             v.now,
+		ReadsGrants:     true,
 	})
 	return v, nil
 }
