@@ -9,11 +9,36 @@ depends_on:
 affects: [internal/events/, internal/httpgit/, internal/api/, internal/wal/, internal/config/, cmd/origod/, test/e2e/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-17
 author: changkun
 ---
 
 # Push events
+
+> Amended 2026-09-17. The payload table's `pusher` below, `{"sub",
+> "actor"}`, is contract 1's shape from the 2026-09-08 build. The
+> family's D5 removed the `act` claim in v0.3.0 (2026-09-13): no token
+> carries one, the entry header and the push event's `pusher` name the
+> subject alone, and `actor` left with it; the Go type,
+> `events.Pusher` (`internal/events`), has held `Sub` alone since.
+> Since v0.4.0 (2026-09-14), when spec 028 shipped contract 2,
+> `pusher.sub` is the rendered `<iss>|<sub>`
+> ([[028-authorizer-contract-2]], "Subjects"): the issuer URL with its
+> trailing slash removed, a pipe, and the `sub` claim. The payload
+> table below is corrected to the current shape, `"pusher": {"sub"}`,
+> no `actor` key on the wire; an entry written before v0.4.0 still
+> holds the bare `sub`.
+>
+> The acceptance row and the Outcome row below name
+> `TestPusherCarriesSubjectAndActor`, which is
+> `TestPusherCarriesTheSubject` in the tree (`internal/events`); it
+> pins the shape and that no `actor` key reaches the wire, on a
+> harness that pushes with a literal subject, so it does not exercise
+> the rendered form. The rendered `<iss>|<sub>`, on the live delivery
+> and on the repaired one alike, is pinned by
+> `test/e2e/events_test.go`'s `TestSlowEventRepairAfterKill`, corrected
+> in ad34c40 after 56da371 migrated the rest of the suite to contract 2
+> and missed this assertion.
 
 ## Overview
 
@@ -69,7 +94,7 @@ The payload is spec 003's, with `kind`:
 
 | Event | Payload |
 |---|---|
-| `push` | `{"id", "kind": "push", "repo", "seq", "owner", "slug", "pusher": {"sub", "actor"}, "updates": [{"ref", "before", "after", "forced"}], "at", "kind_detail", "operation"}`; `seq` is the entry's sequence; `id` is deterministic: the UUID v5 (RFC 9562, SHA-1) of the name `<repo>:<seq>`, `<seq>` as the 12 digit zero-padded decimal of the log key, under the namespace UUID `7c1f0b6e-4d0a-4b6a-9d3e-2a8f5c1e9b47`, fixed here and in `internal/events`, so the enqueue and the repair sweep produce the same id for one entry and a consumer that deduplicates on `id` sees one event however many times it is delivered; `forced` is true when `before` is not an ancestor of `after`; `at` is the entry header's `at`; `kind_detail` is present only when the push changes no branch or tag and says what it did instead, and it takes one value on the wire: `default_branch`, with `updates` holding the one symbolic update `{"ref": "HEAD", "before": "ref: refs/heads/<old>", "after": "ref: refs/heads/<new>", "forced": false}` (spec 003's `PATCH` of `default_branch` moves `HEAD` through the log). A push entry with an empty transaction is an undelete (spec 004) and its `kind_detail` is `undelete`, but no `push` event is ever emitted for it, by the enqueue or by the repair sweep: an undelete has exactly one event, spec 019's `undeleted`, and the value exists so both paths recognise the entry and skip it. `operation` is present only for a push made by a server-side operation of spec 020 and is its name (`commits`, `merge`, `cherry-pick`, `revert`), copied from the push option `origo.operation=<name>` in the entry header |
+| `push` | `{"id", "kind": "push", "repo", "seq", "owner", "slug", "pusher": {"sub"}, "updates": [{"ref", "before", "after", "forced"}], "at", "kind_detail", "operation"}`; `seq` is the entry's sequence; `id` is deterministic: the UUID v5 (RFC 9562, SHA-1) of the name `<repo>:<seq>`, `<seq>` as the 12 digit zero-padded decimal of the log key, under the namespace UUID `7c1f0b6e-4d0a-4b6a-9d3e-2a8f5c1e9b47`, fixed here and in `internal/events`, so the enqueue and the repair sweep produce the same id for one entry and a consumer that deduplicates on `id` sees one event however many times it is delivered; `forced` is true when `before` is not an ancestor of `after`; `at` is the entry header's `at`; `kind_detail` is present only when the push changes no branch or tag and says what it did instead, and it takes one value on the wire: `default_branch`, with `updates` holding the one symbolic update `{"ref": "HEAD", "before": "ref: refs/heads/<old>", "after": "ref: refs/heads/<new>", "forced": false}` (spec 003's `PATCH` of `default_branch` moves `HEAD` through the log). A push entry with an empty transaction is an undelete (spec 004) and its `kind_detail` is `undelete`, but no `push` event is ever emitted for it, by the enqueue or by the repair sweep: an undelete has exactly one event, spec 019's `undeleted`, and the value exists so both paths recognise the entry and skip it. `operation` is present only for a push made by a server-side operation of spec 020 and is its name (`commits`, `merge`, `cherry-pick`, `revert`), copied from the push option `origo.operation=<name>` in the entry header |
 
 Spec 019 defines the administration kinds and spec 014 the `verified`
 kind; each carries the shared fields spec 019 lists (`id`, `kind`,
