@@ -11,7 +11,10 @@
 # release to install from and the document has to stay true on the push
 # that changes it; on a tag its place is taken by install-release in
 # release.yml, which installs the published artifacts. The fuzz job runs
-# on the weekly schedule and nowhere else. Each job selects its tests by
+# on the Sunday schedule and nowhere else; the slow cluster tier also
+# runs on the Monday schedule, beside its tag and workflow_dispatch
+# triggers, so a stale assertion in it is caught within a week instead
+# of at the next tag. Each job selects its tests by
 # name prefix and nothing else, and no job but build has a docker build
 # step. Every run on the stack passes -v, so the log names the tests that
 # ran and a spec's stack proof is read from the run rather than argued
@@ -26,6 +29,8 @@ on:
   schedule:
     # Sunday 03:00 UTC: the 40 second run of every fuzz function.
     - cron: '0 3 * * 0'
+    # Monday 04:00 UTC: the slow cluster tier on main.
+    - cron: '0 4 * * 1'
 permissions:
   contents: read
 
@@ -147,13 +152,16 @@ jobs:
 
   # The two candidate images, built once from the push's tree and shared
   # with every job that needs them as docker save tarballs. It runs
-  # everywhere but the weekly schedule, because the install job below
-  # runs on every push: the cluster tiers that bill the minutes are the
-  # ones that stay on a tag, and one image build is what the install
-  # job needs to walk the document from the tree it was written for.
+  # everywhere but the Sunday fuzz schedule, because the install job
+  # below runs on every push: the cluster tiers that bill the minutes
+  # are the ones that stay on a tag, and one image build is what the
+  # install job needs to walk the document from the tree it was written
+  # for. It also runs on the Monday schedule, precisely, because
+  # e2e-slow needs it there and a job skipped by `needs` skips its
+  # dependents regardless of their own `if`.
   build:
     name: build the candidate images
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' || github.event.schedule == '0 4 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -251,10 +259,13 @@ jobs:
   # The slow scenarios on the same stack, with git-lfs for spec 010.
   # The longest is spec 004's materialization ceiling, which writes
   # 10 000 entries through the log before it materializes them: 7 minutes
-  # of the job's 12, measured on run 34629785911.
+  # of the job's 12, measured on run 34629785911. Also runs on the
+  # Monday schedule (build gates this to that one, not the Sunday fuzz
+  # schedule), so a stale assertion in this tier surfaces within a week
+  # of a release that broke it instead of at the next tag.
   e2e-slow:
     name: slow cluster e2e tier
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
