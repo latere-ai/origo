@@ -477,12 +477,17 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	}
 	down.Store(true)
 	v.refresh(ctx, true)
-	if attempts.Load() != 1 {
+	// Two attempts, and this is the whole price of the warm: the pass
+	// warms the shared verifier, which names the issuers it could not
+	// reach only in the text of its report, so the node asks the issuer
+	// itself to attribute the failure to it. The healthy path pays the
+	// opposite way round and reads one key set where it read two.
+	if attempts.Load() != 2 {
 		t.Fatalf("start-up attempts: %d", attempts.Load())
 	}
 	// Each pause is met on the request path: a request just before it
 	// is refused with no fetch, one at it fetches, fails, and doubles it.
-	want := int32(1)
+	want := int32(2)
 	for _, pause := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, RetryInterval, RetryInterval} {
 		clk.Advance(pause - time.Millisecond)
 		if _, got := verify("a"); got != ReasonIssuerUnavailable || attempts.Load() != want {
@@ -568,4 +573,56 @@ func delegated(sub, act string) issuer.Claims {
 func reasonIs(err error, reason string) bool {
 	var r *Refusal
 	return errors.As(err, &r) && r.Reason == reason
+}
+
+// jwksFetches counts the key-set reads an issuer stub served.
+func jwksFetches(requests []string) int {
+	n := 0
+	for _, r := range requests {
+		if r == "GET /jwks" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestStartUpWarmsTheSharedVerifier closes the residual Origo spec 028
+// recorded when the verifier moved: the package could not be warmed, so
+// the start-up probe read each issuer's key set for the record it keeps
+// and the package read the same set again for the first token. The probe
+// is now the package's own warm-up, which keeps what it reads, so an
+// issuer is read once and the first token pays for no fetch.
+func TestStartUpWarmsTheSharedVerifier(t *testing.T) {
+	clk := newClock()
+	iss := issuer.New(t, issuer.WithClock(clk.Now))
+	v := newVerifier(t, clk, newKey(t), iss)
+	ctx := context.Background()
+	iss.ResetRequests()
+
+	v.refresh(ctx, true)
+	if _, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "alice"})); err != nil {
+		t.Fatalf("the first token: %v", err)
+	}
+	if n := jwksFetches(iss.Requests()); n != 1 {
+		t.Fatalf("the key set was read %d times at start-up, want one: %v", n, iss.Requests())
+	}
+	// The issuer answered, so the pacing gate records it and the loop
+	// leaves it alone until the set is stale.
+	if !v.order[0].probed() {
+		t.Fatal("the warm did not record the issuer as answered")
+	}
+	v.refresh(ctx, false)
+	if n := jwksFetches(iss.Requests()); n != 1 {
+		t.Fatalf("a pass inside the refresh interval read the key set %d times", n)
+	}
+	// On the hour the set is stale on this node's clock and in the
+	// package's cache alike, and one read serves both.
+	clk.Advance(RefreshInterval)
+	v.refresh(ctx, false)
+	if _, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "bob"})); err != nil {
+		t.Fatalf("after the hourly refresh: %v", err)
+	}
+	if n := jwksFetches(iss.Requests()); n != 2 {
+		t.Fatalf("the hourly refresh read the key set %d times in all, want two: %v", n, iss.Requests())
+	}
 }

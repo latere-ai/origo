@@ -191,8 +191,25 @@ func (v *Verifier) Run(ctx context.Context) error {
 
 // refresh probes the issuers that are due: every one on the first pass,
 // then the unprobed and the stale ones.
+//
+// The probe is the shared verifier's own warm-up, so the fetch it costs
+// is the fetch the verifier would have made anyway and the keys it reads
+// are kept. Until the package could be warmed the node read a set for
+// the record below and the package read the same set again for the first
+// token of that issuer, which is the cost Origo spec 028 recorded when
+// the verifier moved. A warm reaches no network for a set inside the
+// package's cache TTL, which is RefreshInterval on this node's clock, so
+// what it fetches is what the stale rule above asks for and nothing
+// more.
+//
+// It warms every configured issuer rather than the due ones alone,
+// because the package takes no issuer. That is the one place this
+// loosens spec 007's pacing, and the loop runs once a RetryInterval
+// while the ladder caps at the same minute, so an unreachable issuer is
+// still asked at most once a minute by this path.
 func (v *Verifier) refresh(ctx context.Context, all bool) {
 	now := v.now()
+	var due []*keySet
 	for _, i := range v.order {
 		if !all && i.probed() && !i.stale(now) {
 			continue
@@ -200,6 +217,26 @@ func (v *Verifier) refresh(ctx context.Context, all bool) {
 		if !i.due(now) {
 			continue
 		}
+		due = append(due, i)
+	}
+	if len(due) == 0 {
+		return
+	}
+	err := v.shared.Warm(ctx)
+	if err == nil {
+		for _, i := range due {
+			i.answered(now)
+			v.logger.InfoContext(ctx, "issuer keys fetched", "issuer", i.url)
+		}
+		return
+	}
+	// The warm names the issuers it could not reach in the text of its
+	// error and nowhere a caller can read, and the back-off is per
+	// issuer, so the node asks each due issuer itself to learn which one
+	// it was. That second attempt is paid only while an issuer is already
+	// out of reach.
+	v.logger.WarnContext(ctx, "issuer keys not warmed", "error", err)
+	for _, i := range due {
 		v.fetchIssuer(ctx, i, now)
 	}
 }
@@ -208,8 +245,9 @@ func (v *Verifier) refresh(ctx context.Context, all bool) {
 // learned. The keys are the shared verifier's to hold, so the probe
 // keeps none: what the node needs from it is the reachability the
 // back-off below is paced by, and the line an operator reads at start-up
-// when an issuer does not answer. The package exposes no way to warm its
-// key set, so this is the same pair of requests `origod check` makes.
+// when an issuer does not answer. It is the same pair of requests
+// `origod check` makes, and it runs only to attribute a warm that did
+// not answer for every issuer.
 func (v *Verifier) fetchIssuer(ctx context.Context, i *keySet, now time.Time) {
 	if _, err := FetchKeys(ctx, v.client, i.url, v.timeout); err != nil {
 		i.failed(now)
