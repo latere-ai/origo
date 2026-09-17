@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	authorizerstub "github.com/latere-ai/origo/test/stubs/authorizer"
 	"github.com/latere-ai/origo/test/stubs/issuer"
 )
 
@@ -49,7 +50,7 @@ func principalCtx(iss, sub string, claims map[string]any) context.Context {
 // issuer and sub apart, every claim of the token in claims, and a request
 // block. It is table-driven over the four actions the guard builds.
 func TestAuthorizerEnvelope(t *testing.T) {
-	stub := authorizer.New(t)
+	stub := authorizerstub.New(t)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, newClock(), nil)
 	g := NewGuard(c, nil)
 	iss := "https://auth.example.com"
@@ -143,9 +144,9 @@ func TestContractOneIsGone(t *testing.T) {
 // TestFiguresReachTheirConsumers is the second row: the three figures are
 // read from limits and reach the Decision the handlers consume.
 func TestFiguresReachTheirConsumers(t *testing.T) {
-	stub := authorizer.New(t)
+	stub := authorizerstub.New(t)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, newClock(), nil)
-	stub.Allow(authorizer.Rule{Subject: "*", Resource: repoA, Action: "repo.read",
+	stub.Allow(authorizerstub.Rule{Subject: "*", Resource: repoA, Action: "repo.read",
 		Limits: map[string]any{"replicas": 3, "quota_bytes": 4096, "requests_per_minute": 120}})
 	d, err := c.Authorize(context.Background(), request("alice", repoA, ActionRead))
 	if err != nil || !d.Allow {
@@ -157,7 +158,7 @@ func TestFiguresReachTheirConsumers(t *testing.T) {
 	// An answer with no limits carries the defaults, and requests_per_minute
 	// stays zero, which the node reads as its own configured rate.
 	stub.SetRules()
-	stub.Allow(authorizer.Rule{Subject: "*", Resource: repoB, Action: "repo.read"})
+	stub.Allow(authorizerstub.Rule{Subject: "*", Resource: repoB, Action: "repo.read"})
 	d, err = c.Authorize(context.Background(), request("alice", repoB, ActionRead))
 	if err != nil || d.Replicas != DefaultReplicas || d.QuotaBytes != DefaultQuotaBytes || d.RequestsPerMinute != 0 {
 		t.Fatalf("defaults: %+v, %v", d, err)
@@ -231,7 +232,7 @@ func TestCheckProbesTheAuthorizer(t *testing.T) {
 	ctx := context.Background()
 
 	// A stub denies the probe id, so Check passes.
-	good := authorizer.New(t)
+	good := authorizerstub.New(t)
 	c := newClient(t, good.URL(), good.Token(), &http.Transport{}, newClock(), nil)
 	if err := c.Check(ctx); err != nil {
 		t.Fatalf("a conforming authorizer failed the check: %v", err)
@@ -250,5 +251,71 @@ func TestCheckProbesTheAuthorizer(t *testing.T) {
 	down := newClient(t, "http://127.0.0.1:1/", "t", &http.Transport{}, newClock(), nil)
 	if err := down.Check(ctx); err == nil {
 		t.Fatal("an unavailable authorizer passed the check")
+	}
+}
+
+// TestTheEnvelopeCarriesTheTwoClaims is id-13's envelope row. The node
+// reads neither claim, so what the decision point is handed has to be
+// what the token carried: a push by a key holder sends token_use and
+// authorization_details verbatim, and a token that carries neither sends
+// neither. The envelope itself does not change, which is why forwarding
+// them is inside contract 2 (Origo spec 028) rather than a change to it.
+func TestTheEnvelopeCarriesTheTwoClaims(t *testing.T) {
+	clk := newClock()
+	iss := issuer.New(t, issuer.WithClock(clk.Now))
+	v := newVerifier(t, clk, newKey(t), iss)
+	stub := authorizerstub.New(t)
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	g := NewGuard(c, nil)
+	ctx := context.Background()
+	ref := RepoRef{ID: repoA, Owner: "acme", Slug: "app"}
+
+	for _, row := range []struct {
+		name   string
+		raw    string
+		grants bool
+	}{
+		{"a personal access token", iss.Mint(patClaims("alice", grant("origo:repo.write", repoA))), true},
+		{"a session token", iss.Mint(issuer.Claims{Sub: "bob"}), false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			p, err := v.Verify(ctx, row.raw)
+			if err != nil {
+				t.Fatalf("verify: %v", err)
+			}
+			stub.ClearRequests()
+			if _, err := g.Decide(WithCaller(ctx, Caller{ID: "req-1"}), p, ref, ActionWrite); err != nil {
+				t.Fatalf("decide: %v", err)
+			}
+			reqs := stub.Requests()
+			if len(reqs) != 1 {
+				t.Fatalf("%d calls", len(reqs))
+			}
+			claims := reqs[0].Claims
+			use, hasUse := claims["token_use"]
+			details, hasDetails := claims["authorization_details"]
+			if hasUse != row.grants || hasDetails != row.grants {
+				t.Fatalf("token_use %v (%v), authorization_details %v (%v)", use, hasUse, details, hasDetails)
+			}
+			if !row.grants {
+				return
+			}
+			if use != authkit.TokenUsePAT {
+				t.Errorf("token_use %v", use)
+			}
+			// Verbatim: the entry the endpoint reads is the entry the
+			// token carried, field for field.
+			got, err := json.Marshal(details)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := json.Marshal([]any{grant("origo:repo.write", repoA)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(want) {
+				t.Errorf("authorization_details %s, want %s", got, want)
+			}
+		})
 	}
 }
