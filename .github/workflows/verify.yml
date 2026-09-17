@@ -11,14 +11,17 @@
 # release to install from and the document has to stay true on the push
 # that changes it; on a tag its place is taken by install-release in
 # release.yml, which installs the published artifacts. The fuzz job runs
-# on the Sunday schedule and nowhere else; the slow cluster tier also
-# runs on the Monday schedule, beside its tag and workflow_dispatch
-# triggers, so a stale assertion in it is caught within a week instead
-# of at the next tag. Each job selects its tests by
-# name prefix and nothing else, and no job but build has a docker build
-# step. Every run on the stack passes -v, so the log names the tests that
-# ran and a spec's stack proof is read from the run rather than argued
-# from the package's wall-clock time (spec 017).
+# on the Sunday schedule and on a manual dispatch and nowhere else; the
+# slow cluster tier also runs on the Monday schedule, beside its tag and
+# workflow_dispatch triggers, so a stale assertion in it is caught within
+# a week instead of at the next tag. A job that names the schedule event
+# alone takes both crons, so fuzz and build name the cron they mean and
+# e2e-slow is held to the Monday one by `needs: build`.
+# Each job selects its tests by name prefix and nothing else, and no job
+# but build has a docker build step. Every run on the stack passes -v,
+# so the log names the tests that ran and a spec's stack proof is read
+# from the run rather than argued from the package's wall-clock time
+# (spec 017).
 name: verify
 on:
   push:
@@ -431,10 +434,14 @@ jobs:
   # Every fuzz function of the module for 40 seconds, weekly, and on a
   # manual dispatch. A job that can only be started by waiting a week is a
   # job nobody can verify when they need it: spec 009 waited on the Sunday
-  # run for a criterion a dispatch answers in an hour.
+  # run for a criterion a dispatch answers in an hour. The cron is named,
+  # not just the event: two schedules reach this workflow since 1c63439,
+  # and `github.event_name == 'schedule'` alone ran the whole sweep a
+  # second time every Monday, on the trigger the slow cluster tier was
+  # given.
   fuzz:
     name: fuzz
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
