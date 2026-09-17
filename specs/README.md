@@ -1096,7 +1096,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
-| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027 |
+| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028 |
 | variable | `ORIGO_ADMIN_SUBJECTS` | [028](028-authorizer-contract-2.md) | - |
 | variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016 |
 | variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002 |
@@ -1166,7 +1166,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025 |
 | variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | - |
-| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025 |
+| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025, 028 |
 | variable | `ORIGO_URL` | [025](025-agent-client.md) | - |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
