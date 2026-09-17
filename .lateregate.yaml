@@ -125,16 +125,9 @@ identity:
   audience: origo
   config_prefix: ORIGO
   api_group: origo.latere.ai
-  # deploy/prod is Latere's own overlay in the core's tree. The three
-  # conformance files carry no authorizer request: the only string the
-  # authorizer rule can read in them is the import path of the spec 013
-  # stub, which holds the word and a slash, so the rule reads a test
-  # double that speaks the wire as a second client.
+  # deploy/prod is Latere's own overlay in the core's tree.
   skip:
     - deploy/prod
-    - test/conformance/cases007.go
-    - test/conformance/cases019.go
-    - test/conformance/stubs.go
   # The same overlay, declared: the no-latere-value rule reads the
   # addresses deploy/prod sets, so a document may name the installation
   # it serves.
