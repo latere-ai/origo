@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.5.1 - 2026-09-17
+
 ### Changed
 
 - Nothing about how a token is verified, again, and one reason fewer
