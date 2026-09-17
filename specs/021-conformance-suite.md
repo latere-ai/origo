@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-12
+updated: 2026-09-17
 author: changkun
 ---
 
@@ -663,10 +663,24 @@ Divergences and interpretations, each kept, with the reason:
   `details.reason: "cursor"` and its test asserts
   `cursor: not a commit of this walk`; the developer register is the
   handler's, so the case asserts the prefix.
-- **`gc` accepts 200 or 202.** Whether the first `gc` of a fresh
-  repository runs inside the wait or is scheduled depends on which node
-  answers; the case asserts the shape of either and the 429 of a second
-  `gc` after a run.
+- **`gc` accepts 200 or 202, and asserts no pack count.** Whether the
+  first `gc` of a fresh repository runs inside the wait or is scheduled
+  depends on which node answers; the case asserts the shape of either
+  and the 429 of a second `gc` after a run. `after.packs` turns on the
+  same routing: compaction repacks geometrically (spec 006, step 2), and
+  a geometric roll-up needs two packs to compare, so it leaves a lone
+  pack alone while the loose objects become a second one. A node that
+  served every push of the case holds all of them loose and answers 1; a
+  node that served some and applied one entry as a pack answers 2, so
+  the case asserts the fold spec 006 promises, `before.entries` 3,
+  `after.entries` 1, `size_bytes` set and `after.packs` at least 1, and
+  no count. A single node is the shape that answers 1, so no
+  failing-then-passing test proves this on one node: the evidence is the
+  live installation of 2026-09-17 on three replicas, where the
+  compacting node logged `packs=2 entries=3 size_bytes=716` for the two
+  repositories whose three pushes were split across replicas, and
+  `packs=1` for the one whose compacting node had applied two entries as
+  two packs before it repacked.
 - **The `atomic-push` case asserts a three-reference atomic push
   lands as one push.** A push with a stale reference under `--atomic`
   is refused by git on the client, so the server's atomicity is proved

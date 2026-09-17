@@ -102,7 +102,11 @@ func case019Stats(t *testing.T, s *session) {
 // case019GC asks for a compaction: 200 with before and after when it
 // ran inside the wait, 202 when it is running or scheduled on the
 // primary; a second within the hour is refused with the repository
-// limit once a compaction ran.
+// limit once a compaction ran. The 200 asserts the fold spec 006
+// promises: three entries before, one compact entry after, size_bytes
+// set, and at least one pack. The pack count itself is not asserted,
+// because a geometric roll-up (spec 006, step 2) leaves a lone pack
+// alone, so the figure turns on which node served which push.
 func case019GC(t *testing.T, s *session) {
 	id := s.create(t, "gc")
 	work := clone(t, s.repoURL(id))
@@ -115,7 +119,8 @@ func case019GC(t *testing.T, s *session) {
 	case http.StatusOK:
 		before, _ := r.json["before"].(map[string]any)
 		after, _ := r.json["after"].(map[string]any)
-		failIf(t, before["entries"] != float64(3) || after["packs"] != float64(1) || after["size_bytes"] == nil, "gc: %s", r.body)
+		packs, _ := after["packs"].(float64)
+		failIf(t, before["entries"] != float64(3) || after["entries"] != float64(1) || after["size_bytes"] == nil || packs < 1, "gc: %s", r.body)
 		d := expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/gc", ""), http.StatusTooManyRequests, contract.CodeRateLimited)
 		failIf(t, d["limit"] != "repository" || d["retry_after"] == nil, "second gc: %v", d)
 		s.expectEvent(t, id, "compacted", 1)
