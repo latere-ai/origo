@@ -513,11 +513,18 @@ configuration variable changed, and `issuer_unavailable` reads exactly as
 it did, for an unreachable issuer and for a discovery document naming
 another issuer alike.
 
-One residual, worth writing down: a token whose signature segment is not
-base64 and whose `sub` is empty reads `subject` where the table says
-`malformed`. Both are 401 `unauthenticated` on a token that could never
-verify, and telling them apart again would mean decoding the segment here,
-which is the duplication this move removed.
+The rows keep their order under each other, which is what the shim walks
+rather than approximates: a token that names nobody and is expired besides
+reads `expired`, and one that names nobody and carries another audience
+reads `audience`, because the package refuses an empty `sub` last and the
+table puts that row last too.
+
+One residual, worth writing down, and it is the only one: a token whose
+signature segment is not base64 and whose `sub` is empty reads `subject`
+where the table says `malformed`, because both are `jwt.ErrMalformedToken`
+and only the segment tells them apart. Both are 401 `unauthenticated` on a
+token that could never verify, and reading the segment here again is the
+duplication this move removed.
 
 `internal/auth/token.go` holds no parser, no signature and no claims
 window. `sharedverifier_test.go`, which was the waiver written as a red

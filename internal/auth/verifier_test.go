@@ -205,6 +205,12 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		// signed by hand with the issuer's own key.
 		{ReasonSubject, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})},
 		{ReasonSubject, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "sub": "", "aud": "origo", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})},
+		// The rows keep their order under each other: a token that names
+		// nobody and is expired besides reads expired, which the table
+		// puts three rows above sub, and one that names nobody and carries
+		// another audience reads audience, which it puts four above.
+		{ReasonExpired, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "sub": "", "aud": "origo", "iat": now.Unix(), "exp": now.Add(-2 * time.Minute).Unix()})},
+		{ReasonAudience, signClaims(t, aKey, parts[0], map[string]any{"iss": a.URL(), "sub": "", "aud": "other", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()})},
 	}
 	for _, row := range rows {
 		_, err := v.Verify(ctx, row.token)

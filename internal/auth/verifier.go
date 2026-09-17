@@ -277,13 +277,15 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	}
 	if err != nil {
 		// exp, nbf and iat carry the package's words, which are the
-		// table's. A token that names nobody is the row below them: it
-		// would otherwise verify to the empty subject, which is the
-		// anonymous principal of spec 027, and an issuer's token would
-		// reach the authorizer as an anonymous request whether or not the
-		// switch is on. The package refuses it too, as malformed, which is
-		// the shape row and not the word spec 007 gives this one.
-		if c.Sub == "" {
+		// table's, and they are weighed above the row below. A token that
+		// names nobody would otherwise verify to the empty subject, which
+		// is the anonymous principal of spec 027, and an issuer's token
+		// would reach the authorizer as an anonymous request whether or
+		// not the switch is on. The package refuses it too, as malformed,
+		// which is the shape row and not the word spec 007 gives this one:
+		// only that refusal is the subject row, so a token that is expired
+		// and names nobody reads expired.
+		if jwt.ReasonOf(err) == jwt.ReasonMalformed && c.Sub == "" {
 			return Principal{}, refuse(ReasonSubject)
 		}
 		return Principal{}, refuse(string(jwt.ReasonOf(err)))
