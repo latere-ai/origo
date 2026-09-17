@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.6.0 - 2026-09-17
+
 ### Changed
 
 - Token verification is now the shared library's. The node builds against
