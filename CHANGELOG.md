@@ -10,7 +10,36 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- A personal access token can be narrower than the person who holds it.
+  You choose what a key may do when you create it, the key's token
+  carries that choice, and the node holds every request to it. A key
+  that grants a read on one repository clones that repository and
+  nothing else: a push to it is refused, another repository is refused,
+  and so is the list of your repositories, which the key would have to
+  grant on its own.
+
+  A refusal says which kind it is. Over HTTPS it is the 403 you already
+  get for an action you may not take, with `grant` as the reason, so the
+  error tells you the credential is too narrow rather than leaving you
+  to guess that your access was removed. Over SSH the node's log names
+  it; the line git prints is unchanged.
+
+  A node running without an authorizer holds the same line, so the
+  built-in owner policy is not a way around a key's limits. A key that
+  grants nothing reaches nothing, an absent list included. Every other
+  credential is unaffected: a session token, an operator's bearer and a
+  repository-bound token carry no such list and are read exactly as they
+  were.
+
 ### Changed
+
+- The node reads an issuer's signing keys once at start-up where it read
+  them twice. Nothing you set changes and no refusal changes; an issuer
+  that does not answer is still named in the log at start-up, still
+  retried on the ladder it always was, and a token of it is still
+  refused `issuer_unavailable`.
 
 - A release is cut only from a green build. The release command reads CI
   before it runs the quality bar and refuses while the repository is red,

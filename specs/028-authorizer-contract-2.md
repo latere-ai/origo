@@ -531,3 +531,110 @@ window. `sharedverifier_test.go`, which was the waiver written as a red
 test, is its inverse: `go list -deps` shows `authkit/jwt` in the build
 list, and `token.go` and `verifier.go` call into no base64 and no
 signature of their own. `.lateregate.yaml` carries no `waive` block.
+
+## State on 2026-09-17: a personal access token carries what it may do
+
+A person can push to Origo over HTTPS with a personal access token
+(latere-ai/specs, `infrastructure/identity/id-12-personal-access-tokens.md`).
+The key mints a short token whose `token_use` is `pat`, and from id-13
+that token also carries what its holder narrowed the credential to: a
+set of grants, one action of a published vocabulary paired with a
+resource selector, as RFC 9396's `authorization_details`
+(`infrastructure/identity/id-13-pat-scopes.md`).
+
+**Nothing on the wire moves.** The envelope is this spec's, field for
+field. `claims` already carries every verified claim of the token
+verbatim, so the two claims a decision point intersects with travel
+inside contract 2 rather than as a change to it, and an authorizer that
+reads neither is unaffected. The node reads them nowhere it decides.
+
+| What travels | Where |
+|---|---|
+| `token_use` | `claims.token_use`, verbatim |
+| `authorization_details` | `claims.authorization_details`, verbatim, entry for entry |
+
+### The rule, and where it is applied
+
+`platformd` is the decision point for a node that names one
+(`ORIGO_AUTHORIZER_URL`), and it intersects its answer with the grants.
+The rule is `latere.ai/x/pkg/authz`'s and is written once there:
+
+```
+allow(req) = decide(req) AND ( token_use(req) != pat
+                               OR EXISTS g in G(req) : covers(g, req) )
+
+covers(g, req) = qualified(req.action) in g.actions
+                 AND ( g.identifier = "" OR g.identifier = req.resource.id )
+```
+
+With `ORIGO_AUTHORIZER_URL` unset the owner policy of this spec is the
+node's own decision point, so it applies the same intersection or a key
+narrowed to one repository reaches every repository its holder owns.
+That amends **The owner policy** above: the policy still decides from
+`meta` alone, and it now narrows what it decided by the two claims. The
+three properties hold as tests (`TestTheOwnerPolicyNarrowsAScopedToken`):
+the policy's answer is the ceiling, so a grant on a repository the
+person does not own still reads `not_owner`; the intersection only ever
+turns an allow into a deny; and a request no grant covers is denied
+without reading any of the node's tables. `repo.list` names no
+repository, so it is covered by a kind-wide selector on `origo:repo.list`
+and by nothing else: a key that grants a read on one repository cannot
+read the names of the rest.
+
+A claim nobody can parse is no verdict. It fails closed as an
+`*Unavailable`, the way a lookup that did not answer does.
+
+### The refusal
+
+The reason is `grant`, the shared package's word, and Origo names it the
+way it names every other reason a decision point writes. No word is
+added and no row of spec 003's code table moves.
+
+| Surface | What a person sees |
+|---|---|
+| HTTPS | 403 `forbidden` with `details.reason: "grant"`, beside `action` and `subject`, exactly as every authorizer deny is rendered |
+| SSH | the operator's line carries `reason=grant`; the session's stderr carries the forbidden line byte for byte, because a git client reads that line and spec 021 fixed its form |
+
+### The validator reads the claim, and says so
+
+`jwt.Config.ReadsGrants` is the verifier's promise that whoever holds
+the identity applies the grants. Without it the package refuses a token
+carrying grants with reason `grants_unread`: the claim is a restriction,
+so a service that reads it and applies none grants more than the person
+asked for, and silently. The node sets it, and applies the restriction
+at both its decision points, so `grants_unread` is a word no client of
+Origo reads. Every other bearer, an operator's and an environment's
+alike, carries no such claim and verifies exactly as before.
+
+### The warm-up, and the residual it closes
+
+**State on 2026-09-17: the verifier moved** ends by saying the loop
+costs one discovery and one key-set fetch per issuer per hour beside the
+package's own, "which is the price of that package having no warm-up".
+That price is paid no longer: pkg v0.75.0 carries `jwt.Validator.Warm`,
+the probe is that warm, and the keys it reads are kept. An issuer is
+read once per refresh interval rather than twice, and the first token of
+an issuer pays for no fetch (`TestStartUpWarmsTheSharedVerifier`).
+
+Two things follow, and the second is the only behaviour that changed.
+
+- A warm reaches no network for a set inside the package's `CacheTTL`,
+  which is `RefreshInterval` on this node's clock, so a pass fetches
+  exactly what the loop's stale rule asks for.
+- A warm that did not answer for every issuer names them only in the
+  text of its report, and this node's back-off is per issuer, so the
+  node then asks each due issuer itself. An issuer already out of reach
+  costs one more discovery attempt per pass while it is out of reach;
+  the ladder, the request-path gate and `issuer_unavailable` are
+  unchanged (`TestFirstFetchFailureBacksOffFromASecond`, whose start-up
+  count is two for that reason).
+
+### Acceptance
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| A token whose `token_use` is `pat` verifies, and the identity behind it carries the credential class and the grants | `internal/auth`, `TestAPersonalAccessTokenVerifiesWithItsGrants` | built |
+| The envelope carries `token_use` and `authorization_details` verbatim for a key holder's push, and neither for a token that carries neither | `internal/auth`, `TestTheEnvelopeCarriesTheTwoClaims` | built |
+| With no authorizer configured the owner policy narrows its answer by the grants, and never widens it | `internal/auth`, `TestTheOwnerPolicyNarrowsAScopedToken`, table-driven | built |
+| A deny whose reason is `grant` reaches the person in `details.reason` over HTTPS and the operator's line over SSH, with the sideband unchanged | `internal/auth`, `TestTheGrantRefusalReachesTheClient`; `internal/sshd`, `TestSSHNamesAGrantRefusal` | built |
+| An issuer's key set is read once at start-up, not twice | `internal/auth`, `TestStartUpWarmsTheSharedVerifier` | built |

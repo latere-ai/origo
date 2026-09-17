@@ -110,6 +110,15 @@ func patReq(subject, action, id string, grants ...map[string]any) authz.Request 
 	return req
 }
 
+// noGrantsReq is the envelope of a personal access token whose claims
+// name no grant at all. An absent claim is not full authority: the
+// credential says what it may do, and this says nothing.
+func noGrantsReq(subject, action, id string) authz.Request {
+	req := ownerReq(subject, action, id)
+	req.Claims = map[string]any{"token_use": authkit.TokenUsePAT}
+	return req
+}
+
 // TestTheOwnerPolicyNarrowsAScopedToken is id-13's rule at the node's own
 // decision point. With ORIGO_AUTHORIZER_URL unset the owner policy is the
 // only decision point a request meets, so the intersection is applied
@@ -148,6 +157,8 @@ func TestTheOwnerPolicyNarrowsAScopedToken(t *testing.T) {
 		{"a grant is not authority", patReq(alice, "repo.read", yours, grant("origo:repo.read", yours)), false, authz.ReasonNotOwner},
 		{"an unqualified action covers nothing", patReq(alice, "repo.read", mine, grant("repo.read", mine)), false, authz.ReasonGrant},
 		{"a token of another class is not narrowed", ownerReq(alice, "repo.write", mine), true, ""},
+		{"no grant at all covers nothing", patReq(alice, "repo.read", mine), false, authz.ReasonGrant},
+		{"an absent claim covers nothing", noGrantsReq(alice, "repo.read", mine), false, authz.ReasonGrant},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			d, err := p.Authorize(ctx, row.req)
