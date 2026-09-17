@@ -25,6 +25,19 @@ committed: the commit log already holds that.
   changed, no setting changed, and a token accepted by v0.5.0 is accepted
   here.
 
+### Fixed
+
+- The conformance suite's `019/gc` case no longer fails an installation
+  that runs more than one node. It asserted that a `gc` leaves exactly one
+  pack, a count Origo never promised: compaction repacks geometrically, and
+  the roll-up leaves a lone pack alone, so a node that materialized part of
+  the history as a pack and served the rest of the pushes itself answers
+  two. Three-replica installations failed the live run on that figure while
+  the compaction itself was correct. The case now asserts what compaction
+  promises, that the three entries fold into one compact entry with
+  `size_bytes` set and at least one pack, which is stronger on the fold and
+  silent on the count. Nothing on the node changed.
+
 ## v0.5.0 - 2026-09-17
 
 ### Added
