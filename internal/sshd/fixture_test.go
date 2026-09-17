@@ -71,6 +71,7 @@ type fixtureConfig struct {
 	store     wal.Store
 	breakers  bool
 	staleMax  time.Duration
+	logs      slog.Handler
 }
 
 type fixtureOption func(*fixtureConfig)
@@ -85,6 +86,12 @@ func withLimits(o limits.Options) fixtureOption {
 
 func withHandshake(d time.Duration) fixtureOption {
 	return func(c *fixtureConfig) { c.handshake = d }
+}
+
+// withLogs sends the node's log lines to the handler, for a test that
+// reads what an operator reads.
+func withLogs(h slog.Handler) fixtureOption {
+	return func(c *fixtureConfig) { c.logs = h }
 }
 
 func withNow(now func() time.Time) fixtureOption {
@@ -160,7 +167,11 @@ func newFixture(t *testing.T, options ...fixtureOption) *fixture {
 	if len(cfg.hostKeys) == 0 {
 		cfg.hostKeys = []crypto.PrivateKey{generateEd25519(t)}
 	}
-	logger := slog.New(slog.DiscardHandler)
+	var handler slog.Handler = slog.DiscardHandler
+	if cfg.logs != nil {
+		handler = cfg.logs
+	}
+	logger := slog.New(handler)
 	set := metrics.Register(pkgmetrics.NewRegistry())
 	clock := &fakeClock{now: time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)}
 	store := cfg.store

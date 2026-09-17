@@ -4,12 +4,15 @@
 package sshd
 
 import (
+	"log/slog"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"latere.ai/x/pkg/authz"
 
 	"github.com/latere-ai/origo/internal/contract"
 	"github.com/latere-ai/origo/internal/limits"
@@ -457,5 +460,34 @@ func TestSSHServerNeedsItsParts(t *testing.T) {
 	}
 	if _, err := ParseHostKeys(nil); err == nil {
 		t.Error("an empty host key list was accepted")
+	}
+}
+
+// TestSSHNamesAGrantRefusal is the identity epic's id-13 over SSH. A
+// decision point that narrows its answer by the grants a credential
+// carries denies with the reason `grant`, and the listener names it the
+// way it names every other authorizer reason: the operator's line
+// carries it, and the session's stderr carries the forbidden line, byte
+// for byte the form spec 021 fixed, because a git client reads that line
+// and no reason belongs in it.
+func TestSSHNamesAGrantRefusal(t *testing.T) {
+	var logs strings.Builder
+	f := newFixture(t, withLogs(slog.NewTextHandler(&logs, nil)))
+	f.create(repoA, "acme", "app")
+	f.authz.SetRules(
+		authorizer.Rule{Subject: "u_7f3c", Action: "repo.read", Allow: true},
+		authorizer.Rule{Subject: "u_7f3c", Action: "repo.write", Allow: false, Reason: authz.ReasonGrant},
+	)
+
+	status, _, errOut := f.exec(f.mustDial(), "git-receive-pack '/acme/app.git'", strings.NewReader("0000"))
+	if status != 1 {
+		t.Errorf("receive-pack exited %d, want 1", status)
+	}
+	if got := strings.TrimSpace(errOut); got != contract.Line(contract.CodeForbidden) {
+		t.Errorf("stderr = %q, want the forbidden line", got)
+	}
+	line := logs.String()
+	if !strings.Contains(line, "ssh refused") || !strings.Contains(line, `reason=`+authz.ReasonGrant) {
+		t.Errorf("the refusal was not named to the operator: %q", line)
 	}
 }

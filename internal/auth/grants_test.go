@@ -6,11 +6,15 @@ package auth
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
 	"testing"
 
 	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authz"
 
+	"github.com/latere-ai/origo/internal/contract"
+	authorizerstub "github.com/latere-ai/origo/test/stubs/authorizer"
 	"github.com/latere-ai/origo/test/stubs/issuer"
 )
 
@@ -194,5 +198,38 @@ func TestTheOwnerPolicyNarrowsAScopedToken(t *testing.T) {
 		t.Fatal("a malformed authorization_details decided")
 	} else if _, ok := errors.AsType[*Unavailable](err); !ok {
 		t.Fatalf("the failure is not an *Unavailable: %v", err)
+	}
+}
+
+// TestTheGrantRefusalReachesTheClient is id-13's refusal row over HTTPS.
+// A key narrowed to some repositories is refused elsewhere, and the
+// reason a decision point writes for that refusal, `grant`, reaches the
+// person as every other authorizer reason does: the 403 forbidden of
+// spec 003 with the reason in details, beside the action and the
+// subject. The node adds no word of its own, which is what keeps the
+// reason table the decision point's.
+func TestTheGrantRefusalReachesTheClient(t *testing.T) {
+	clk := newClock()
+	iss := issuer.New(t, issuer.WithClock(clk.Now))
+	v := newVerifier(t, clk, newKey(t), iss)
+	stub := authorizerstub.New(t)
+	stub.SetRules(
+		authorizerstub.Rule{Subject: "*", Action: "repo.read", Allow: true},
+		authorizerstub.Rule{Subject: "*", Action: "repo.write", Allow: false, Reason: authz.ReasonGrant},
+	)
+	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, clk, nil)
+	h := routes(v, NewGuard(c, slog.New(slog.DiscardHandler)))
+	raw := iss.Mint(patClaims("alice", grant("origo:repo.read", repoA)))
+	subject := authz.Subject(iss.URL(), "alice")
+
+	if code, _, _ := do(t, h, "POST", "/r/"+repoA+".git/git-upload-pack", raw); code != 204 {
+		t.Fatalf("the granted read: %d", code)
+	}
+	code, e, _ := do(t, h, "POST", "/r/"+repoA+".git/git-receive-pack", raw)
+	if code != http.StatusForbidden || e.Code != contract.CodeForbidden || e.Message != contract.Sentence(contract.CodeForbidden) {
+		t.Fatalf("the push: %d %+v", code, e)
+	}
+	if e.Details["reason"] != authz.ReasonGrant || e.Details["action"] != string(ActionWrite) || e.Details["subject"] != subject {
+		t.Errorf("details %+v", e.Details)
 	}
 }
