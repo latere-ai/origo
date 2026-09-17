@@ -167,9 +167,9 @@ func newFixture(t *testing.T, options ...fixtureOption) *fixture {
 	if len(cfg.hostKeys) == 0 {
 		cfg.hostKeys = []crypto.PrivateKey{generateEd25519(t)}
 	}
-	var handler slog.Handler = slog.DiscardHandler
-	if cfg.logs != nil {
-		handler = cfg.logs
+	handler := cfg.logs
+	if handler == nil {
+		handler = slog.DiscardHandler
 	}
 	logger := slog.New(handler)
 	set := metrics.Register(pkgmetrics.NewRegistry())
