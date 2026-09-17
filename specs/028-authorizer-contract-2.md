@@ -584,6 +584,11 @@ read the names of the rest.
 A claim nobody can parse is no verdict. It fails closed as an
 `*Unavailable`, the way a lookup that did not answer does.
 
+A repository-bound token the node minted carries no `token_use`
+(`internal/auth/token.go`), so nothing narrows it: its scope decided it
+at minting, and the call spec 012 makes for its writes asks a figure
+rather than an access.
+
 ### The refusal
 
 The reason is `grant`, the shared package's word, and Origo names it the
