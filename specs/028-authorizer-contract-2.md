@@ -429,3 +429,98 @@ Of the three closures that section offered, the package took the first.
 What would close the rest is a clock on `jwt.Config`, the discovery
 document's `issuer` checked against the URL it was fetched under, and a
 reason word for a fetch that failed.
+
+
+## State on 2026-09-17: the verifier moved
+
+pkg v0.74.0 closed the three rows the section above named, and
+`internal/auth` verifies through `latere.ai/x/pkg/authkit/jwt`.
+
+| Row that blocked | What v0.74.0 carries |
+|---|---|
+| `exp`, `nbf`, `iat` | `jwt.Config.Now` is the one clock: the three windows, the key-set cache's TTL and the refresh back-off all read it, so the whole validator runs on the clock Origo hands it and nil is `time.Now` |
+| keys, OIDC Discovery 4.3 | discovery on the `Issuers` path checks the document's `issuer` against the URL it was fetched from before its `jwks_uri` is read; a document naming another issuer, or naming none, is `jwt.ErrBadDiscovery` |
+| `issuer_unavailable` | `jwt.ErrIssuerUnavailable`, reason `issuer_unavailable`, when discovery or the key set cannot be read and no cached set answers; a cached set, however stale, is still an answer and is still served |
+
+The tripwire was run against v0.74.0 before anything moved. It reddened on
+all three and stayed green on the `kid` row it asserts, which is what said
+the move was due.
+
+### What the node hands the shared verifier
+
+`Issuers` from `ORIGO_OIDC_ISSUERS` with the trailing slash trimmed;
+`LocalIssuer` `ORIGO_PUBLIC_URL` with `LocalKey` the public half of
+`ORIGO_TOKEN_KEY` under `LocalKeyID`, the node's own thumbprint;
+`ClockSkew` 60 s; `MaxTokenBytes` 8192; `MaxTokenAge` 24 h;
+`RequireIssuedAt`; `CacheTTL` the hour of `RefreshInterval`; `Now` the
+node's clock; and the node's instrumented client with the 5 second fetch
+budget as its timeout, which is the only bound that package puts on a
+fetch.
+
+`Audiences` is deliberately not among them. Spec 007's table checks `aud`
+between `signature` and `exp`; `Validate` checks it after `iat`. Leaving it
+unset makes the row Origo's, weighed in its own place, rather than forking
+the verifier to move it.
+
+### What stays on Origo's side, and why
+
+| Shim | Why it is not the shared package's |
+|---|---|
+| `missing` | nothing arrived; `jwt.ErrNoToken` carries no reason by design |
+| `subject` | an empty `sub` is `malformed` to the package, which is the shape row, not the row spec 007 gives it |
+| `delegation` | the family's D5 is Origo's rule, and the package reads no `act` |
+| `aud` before `exp` | spec 007's table pins the order; see above |
+| `issuer_unavailable` for a bad discovery document | spec 007 fails such a fetch "like an unreachable issuer"; the package calls the issuer itself bad, reason `issuer`. One `errors.Is` keeps the word an operator has always read |
+| `<iss>\|<sub>` with the trailing slash trimmed | the authorizer envelope's subject (`authz.Subject`), which no verifier renders |
+| the verified-token cache | the package caches key sets, not verdicts: without it every request re-runs the signature and the whole window. `TokenCacheTTL` and `CacheEntries` are Origo's |
+| the discovery back-off | measured, not assumed; see below |
+
+### The back-off, measured
+
+Against v0.74.0, with the clock standing still, five requests naming an
+issuer that is down made five discovery fetches: the package has no
+back-off to evaluate, only the absence of one. Spec 007 bounds the same
+attempts, and `TestFirstFetchFailureBacksOffFromASecond` names the
+incident the bound was written for, so the ladder stays: until an issuer
+answers once, an attempt is made after one second, doubled per consecutive
+failure and capped at the minute, and a token arriving before the pause
+elapses is refused `issuer_unavailable` with no fetch. It is now a pacing
+gate in front of `Validate` and holds no keys.
+
+Once an issuer has answered, the package paces itself and the gate steps
+aside: `CacheTTL` refreshes the set on the hour and a `kid` naming no key
+of it forces one refresh, at most one every fifteen seconds. That window
+is the one behaviour of spec 007 the move changed: the spec bounded the
+same refresh to one a minute. It is strictly more responsive to a rotation
+and strictly more fetches, it changes no refusal reason and nothing an
+operator sets, and it is the package's figure rather than a value Origo
+can configure.
+
+`Run` keeps the loop, with the keys taken out of it. The package exposes
+no way to warm its key set, so the loop probes each issuer through
+`FetchKeys`, the same two documents `origod check` reads, and keeps what
+it learned rather than what it read: the line an operator sees at start-up
+when an issuer does not answer, and the back-off above. It costs one
+discovery and one key-set fetch per issuer per hour beside the package's
+own, which is the price of that package having no warm-up.
+
+### On the wire
+
+One refusal moved by an instant. The package refuses a token from past
+`exp` plus the skew where this node refused at it, so a token is read for
+one instant longer at the boundary. No refusal reason changed, no
+configuration variable changed, and `issuer_unavailable` reads exactly as
+it did, for an unreachable issuer and for a discovery document naming
+another issuer alike.
+
+One residual, worth writing down: a token whose signature segment is not
+base64 and whose `sub` is empty reads `subject` where the table says
+`malformed`. Both are 401 `unauthenticated` on a token that could never
+verify, and telling them apart again would mean decoding the segment here,
+which is the duplication this move removed.
+
+`internal/auth/token.go` holds no parser, no signature and no claims
+window. `sharedverifier_test.go`, which was the waiver written as a red
+test, is its inverse: `go list -deps` shows `authkit/jwt` in the build
+list, and `token.go` and `verifier.go` call into no base64 and no
+signature of their own. `.lateregate.yaml` carries no `waive` block.
