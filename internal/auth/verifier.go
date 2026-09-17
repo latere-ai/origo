@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/authkit/jwt"
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/cache"
 	"latere.ai/x/pkg/wait"
@@ -70,12 +71,16 @@ type VerifierOptions struct {
 }
 
 // Verifier checks tokens against the configured issuers and the local
-// key, and remembers what it verified.
+// key, and remembers what it verified. The check itself is the family's
+// latere.ai/x/pkg/authkit/jwt: shared holds the parser, the signature,
+// the key sets and the claims window, all on Origo's clock and Origo's
+// values of spec 007. What stays here is what spec 007 asks and that
+// package does not carry, named row by row in Verify.
 type Verifier struct {
+	shared   *jwt.Validator
 	issuers  map[string]*keySet
 	order    []*keySet
 	local    string
-	localKey *ecdsa.PublicKey
 	localKID string
 	audience string
 	client   *http.Client
@@ -105,7 +110,7 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	}
 	v := &Verifier{
 		issuers: make(map[string]*keySet, len(o.Issuers)), local: strings.TrimRight(o.LocalIssuer, "/"),
-		localKey: o.LocalKey, localKID: KeyID(o.LocalKey), audience: o.Audience, client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
+		localKID: KeyID(o.LocalKey), audience: o.Audience, client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
 		anonymousRead: o.AnonymousRead,
 	}
 	if v.audience == "" {
@@ -130,6 +135,30 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 		v.order = append(v.order, i)
 	}
 	v.cache = cache.New[[32]byte, cached](TokenCacheTTL, cache.WithMaxSize[[32]byte, cached](CacheEntries), cache.WithClock[[32]byte, cached](v.now))
+	urls := make([]string, 0, len(v.order))
+	for _, i := range v.order {
+		urls = append(urls, i.url)
+	}
+	// Origo's values of spec 007, handed to the shared verifier. Audiences
+	// is deliberately not among them: spec 007's table checks aud before
+	// exp and the package checks it after, so that one row is weighed in
+	// Verify rather than here. The clock is Origo's, so every window the
+	// package reads, and its key-set cache and its back-off, run on the
+	// clock a test moves. The client is the node's, with the fetch budget
+	// as its timeout: the package bounds a fetch no other way.
+	v.shared = jwt.New(jwt.Config{
+		Issuers:         urls,
+		LocalIssuer:     v.local,
+		LocalKey:        o.LocalKey,
+		LocalKeyID:      v.localKID,
+		ClockSkew:       ClockSkew,
+		MaxTokenBytes:   MaxTokenBytes,
+		MaxTokenAge:     MaxTokenAge,
+		RequireIssuedAt: true,
+		CacheTTL:        RefreshInterval,
+		HTTPClient:      &http.Client{Transport: o.Client.Transport, Timeout: v.timeout},
+		Now:             v.now,
+	})
 	return v, nil
 }
 
@@ -147,13 +176,12 @@ func (v *Verifier) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// refresh fetches the issuers that are due: every one on the first
-// pass, then the unfetched and the stale ones.
+// refresh probes the issuers that are due: every one on the first pass,
+// then the unprobed and the stale ones.
 func (v *Verifier) refresh(ctx context.Context, all bool) {
 	now := v.now()
 	for _, i := range v.order {
-		_, fetched := i.keyFor("")
-		if !all && fetched && !i.stale(now) {
+		if !all && i.probed() && !i.stale(now) {
 			continue
 		}
 		if !i.due(now) {
@@ -163,17 +191,27 @@ func (v *Verifier) refresh(ctx context.Context, all bool) {
 	}
 }
 
-// fetchIssuer runs one claimed attempt and logs its failure.
+// fetchIssuer reads one issuer's two documents and records what it
+// learned. The keys are the shared verifier's to hold, so the probe
+// keeps none: what the node needs from it is the reachability the
+// back-off below is paced by, and the line an operator reads at start-up
+// when an issuer does not answer. The package exposes no way to warm its
+// key set, so this is the same pair of requests `origod check` makes.
 func (v *Verifier) fetchIssuer(ctx context.Context, i *keySet, now time.Time) {
-	if err := i.fetch(ctx, v.client, v.timeout, now); err != nil {
+	if _, err := FetchKeys(ctx, v.client, i.url, v.timeout); err != nil {
+		i.failed(now)
 		v.logger.WarnContext(ctx, "issuer keys not fetched", "issuer", i.url, "error", err)
 		return
 	}
+	i.answered(now)
 	v.logger.InfoContext(ctx, "issuer keys fetched", "issuer", i.url)
 }
 
 // Verify runs the rows of spec 007's verification table in order and
 // returns the principal, or a *Refusal naming the first row that failed.
+// Most rows are the shared verifier's; the ones named below are Origo's,
+// and each is here because spec 007 asks something the package does not
+// carry, not because the package's answer was rewritten.
 func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if raw == "" {
 		return Principal{}, refuse(ReasonMissing)
@@ -183,62 +221,83 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if c, ok := v.cache.Get(key); ok && now.Before(c.until) {
 		return c.principal, nil
 	}
-	t, err := ParseToken(raw)
-	if err != nil {
-		return Principal{}, err
+	// The size and the algorithm rows are weighed here as well as by the
+	// shared verifier, because the issuer that paces the fetch below is
+	// read out of the payload and the table puts both rows above it: a
+	// token too large is never decoded, and one signed under an algorithm
+	// nothing verifies never reaches an issuer's back-off.
+	if len(raw) > MaxTokenBytes {
+		return Principal{}, refuse(ReasonSize)
 	}
-	if t.Alg != "RS256" && t.Alg != "ES256" {
+	header, err := jwt.ParseHeader(raw)
+	if err != nil {
+		return Principal{}, refuse(ReasonMalformed)
+	}
+	if header.Alg != "RS256" && header.Alg != "ES256" {
 		return Principal{}, refuse(ReasonSignature)
 	}
-	iss := strings.TrimRight(t.Claims.Iss, "/")
+	var c Claims
+	if err := jwt.DecodePayload(raw, &c); err != nil {
+		return Principal{}, refuse(ReasonMalformed)
+	}
+	iss := strings.TrimRight(c.Iss, "/")
 	local := iss == v.local
-	if local {
-		if t.KID != v.localKID {
-			return Principal{}, refuse(ReasonUnknownKey)
-		}
-		if !t.verifySignature(v.localKey) {
-			return Principal{}, refuse(ReasonSignature)
-		}
-	} else {
-		i, ok := v.issuers[iss]
-		if !ok {
+	var set *keySet
+	if !local {
+		var known bool
+		if set, known = v.issuers[iss]; !known {
 			return Principal{}, refuse(ReasonIssuer)
 		}
-		pub, err := v.issuerKey(ctx, i, t.KID, now)
-		if err != nil {
-			return Principal{}, err
-		}
-		if !t.verifySignature(pub) {
-			return Principal{}, refuse(ReasonSignature)
+		// Spec 007's back-off, which the package does not carry: until an
+		// issuer answers once, an attempt is made after FirstRetryInterval,
+		// doubled per consecutive failure and capped at RetryInterval, and
+		// a token arriving before the pause elapses is refused without a
+		// fetch. The package attempts a fetch on every request instead, so
+		// the node would hammer an issuer that is down.
+		if !set.due(now) {
+			return Principal{}, refuse(ReasonIssuerUnavailable)
 		}
 	}
-	c := t.Claims
+	verified, err := v.shared.Validate(raw)
+	if set != nil {
+		v.settle(set, now, err)
+	}
+	if err != nil {
+		if r := v.refusalOf(err, c); r != "" {
+			return Principal{}, refuse(r)
+		}
+	}
+	// The table's tail, in its order. The shared verifier reaches exp only
+	// once the signature has verified, so its verdict is what says the aud
+	// row below is due at all: aud is checked before exp here and after it
+	// there, and spec 007's table pins the order.
 	if !c.HasAudience(v.audience) {
 		return Principal{}, refuse(ReasonAudience)
 	}
-	skew := ClockSkew
-	if local {
-		skew = 0
+	if err != nil {
+		// exp, nbf and iat carry the package's words, which are the
+		// table's. A token that names nobody is the row below them: it
+		// would otherwise verify to the empty subject, which is the
+		// anonymous principal of spec 027, and an issuer's token would
+		// reach the authorizer as an anonymous request whether or not the
+		// switch is on. The package refuses it too, as malformed, which is
+		// the shape row and not the word spec 007 gives this one.
+		if c.Sub == "" {
+			return Principal{}, refuse(ReasonSubject)
+		}
+		return Principal{}, refuse(string(jwt.ReasonOf(err)))
 	}
-	if c.Exp == nil || !now.Before(unix(*c.Exp).Add(skew)) {
-		return Principal{}, refuse(ReasonExpired)
-	}
-	if c.Nbf != nil && now.Before(unix(*c.Nbf).Add(-skew)) {
-		return Principal{}, refuse(ReasonNBF)
-	}
-	if c.Iat == nil || now.Sub(unix(*c.Iat)) > MaxTokenAge {
-		return Principal{}, refuse(ReasonIAT)
-	}
-	// A token that names nobody is not a caller. Without this row it
-	// would verify to the empty subject, which is the anonymous
-	// principal of spec 027, and an issuer's token would then reach the
-	// authorizer as an anonymous request whether or not the switch is on.
-	if c.Sub == "" {
-		return Principal{}, refuse(ReasonSubject)
+	// Every claim of the payload, verbatim, for the authorizer envelope
+	// (Origo spec 028): the node reads the typed Claims above, the
+	// authorizer reads whatever its policy needs. It carries the same
+	// object the signature covered, because the token verified.
+	var claims map[string]any
+	if err := jwt.DecodePayload(raw, &claims); err != nil {
+		return Principal{}, refuse(ReasonMalformed)
 	}
 	// A token that carries an act claim names two parties, and no token
 	// carries a chain: the caller is the token's sub and nobody else.
-	if c.Delegated {
+	if _, delegated := claims["act"]; delegated {
 		return Principal{}, refuse(ReasonDelegation)
 	}
 	// The rendered subject the authorizer, the entry header, and the event
@@ -246,15 +305,20 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	// minter's rendered subject already, and its iss is ORIGO_PUBLIC_URL,
 	// so rendering it again would nest: the node renders a local token's
 	// subject as the sub it carries. An issuer's token renders <iss>|<sub>.
-	subject := c.Sub
+	subject := verified.Sub
 	if !local {
-		subject = authz.Subject(iss, c.Sub)
+		subject = authz.Subject(iss, verified.Sub)
 	}
-	p := Principal{Subject: subject, Issuer: iss, Sub: c.Sub, Claims: t.Raw}
+	p := Principal{Subject: subject, Issuer: iss, Sub: verified.Sub, Claims: claims}
 	if local {
 		p.Bound = &Bound{Repo: c.Repo, Scope: Scope(c.Scope)}
 	}
-	until := unix(*c.Exp)
+	// The verified token is remembered, which the package's key-set cache
+	// is not: it caches the keys a signature is checked against, not the
+	// verdict, so without this every request re-runs the signature and the
+	// whole window. Bounded by TokenCacheTTL and by the token's own exp,
+	// whichever is sooner, so a cache entry never outlives the token.
+	until := unix(c.Exp)
 	if limit := now.Add(TokenCacheTTL); until.After(limit) {
 		until = limit
 	}
@@ -262,28 +326,46 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	return p, nil
 }
 
-// issuerKey finds the key kid of an issuer: refusing with
-// issuer_unavailable until the set was fetched once, and with
-// unknown_key after one refresh when the set does not hold it. A fetch
-// from here is bounded to one a minute per issuer.
-func (v *Verifier) issuerKey(ctx context.Context, i *keySet, kid string, now time.Time) (any, error) {
-	pub, _ := i.keyFor(kid)
-	if pub != nil {
-		return pub, nil
+// settle records what one attempt learned about an issuer. Only a verdict
+// the shared verifier could reach after it read a key says anything: the
+// rows it refuses before that, the shape and the size and the algorithm,
+// are about the token and not about the issuer.
+func (v *Verifier) settle(set *keySet, now time.Time, err error) {
+	switch {
+	case errors.Is(err, jwt.ErrIssuerUnavailable), errors.Is(err, jwt.ErrBadDiscovery):
+		set.failed(now)
+	case errors.Is(err, jwt.ErrTokenTooLarge), errors.Is(err, jwt.ErrUnsupportedAlg),
+		errors.Is(err, jwt.ErrInvalidIssuer), errors.Is(err, jwt.ErrMalformedToken):
+	default:
+		set.answered(now)
 	}
-	if i.due(now) {
-		v.fetchIssuer(ctx, i, now)
-	} else {
-		i.await(ctx)
+}
+
+// refusalOf is the row a shared refusal belongs to, or "" when the row is
+// one Verify weighs itself below. Two words differ from the package's and
+// are translated here rather than in the package, because spec 007 and
+// the family's table disagree on them and neither is wrong:
+//
+//   - a discovery document naming another issuer fails the fetch like an
+//     unreachable issuer (spec 007), where the package calls the issuer
+//     itself bad. An operator reads issuer_unavailable either way, so the
+//     node keeps the word it always wrote.
+//   - a token whose sub is empty is the subject row, weighed after iat.
+//     The package calls it malformed, which is the shape row.
+func (v *Verifier) refusalOf(err error, c Claims) string {
+	switch reason := jwt.ReasonOf(err); {
+	case errors.Is(err, jwt.ErrBadDiscovery):
+		return ReasonIssuerUnavailable
+	case reason == jwt.ReasonExpired, reason == jwt.ReasonNotYetValid, reason == jwt.ReasonTooOld,
+		reason == jwt.ReasonMalformed && c.Sub == "":
+		// Rows at or below aud in the table: Verify weighs aud first and
+		// then writes the word itself.
+		return ""
+	case reason == "":
+		return ReasonMalformed
+	default:
+		return string(reason)
 	}
-	pub, fetched := i.keyFor(kid)
-	if pub != nil {
-		return pub, nil
-	}
-	if !fetched {
-		return nil, refuse(ReasonIssuerUnavailable)
-	}
-	return nil, refuse(ReasonUnknownKey)
 }
 
 // CacheLen reports the verified-token cache's size, for tests.

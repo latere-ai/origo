@@ -4,35 +4,34 @@
 package auth
 
 import (
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
-	"math/big"
 	"slices"
-	"strings"
+
+	"latere.ai/x/pkg/authkit/jwt"
 )
 
 // MaxTokenBytes is the size above which a token is refused before it is
-// parsed.
+// parsed. It is the figure spec 007 names and the shared verifier's own
+// bound, handed to it as jwt.Config.MaxTokenBytes.
 const MaxTokenBytes = 8 << 10
 
 // The reasons of spec 003's unauthenticated table, one per row of spec
-// 007's verification table.
+// 007's verification table. Ten of them are the shared verifier's words
+// for the same rows, written here as its constants so the two tables
+// cannot drift; the other five are Origo's own, for rows the shared
+// package does not carry.
 const (
 	ReasonMissing           = "missing"
-	ReasonSize              = "size"
-	ReasonMalformed         = "malformed"
-	ReasonSignature         = "signature"
-	ReasonIssuer            = "issuer"
-	ReasonIssuerUnavailable = "issuer_unavailable"
-	ReasonUnknownKey        = "unknown_key"
-	ReasonAudience          = "audience"
-	ReasonExpired           = "expired"
-	ReasonNBF               = "nbf"
-	ReasonIAT               = "iat"
+	ReasonSize              = string(jwt.ReasonTooLarge)
+	ReasonMalformed         = string(jwt.ReasonMalformed)
+	ReasonSignature         = string(jwt.ReasonBadSignature)
+	ReasonIssuer            = string(jwt.ReasonBadIssuer)
+	ReasonIssuerUnavailable = string(jwt.ReasonIssuerUnavailable)
+	ReasonUnknownKey        = string(jwt.ReasonUnknownKey)
+	ReasonAudience          = string(jwt.ReasonBadAudience)
+	ReasonExpired           = string(jwt.ReasonExpired)
+	ReasonNBF               = string(jwt.ReasonNotYetValid)
+	ReasonIAT               = string(jwt.ReasonTooOld)
 	ReasonSubject           = "subject"
 	// ReasonDelegation refuses a token carrying an act claim: no token
 	// carries a chain (the family's decision D5), and a service acting
@@ -69,115 +68,22 @@ func (a *Audience) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Claims are the claims the verifier reads. Times are Unix seconds and
-// nil when absent. Unknown claims are ignored: an issuer's token carries
-// many the node has no use for.
+// Claims are the claims Origo reads for itself, decoded through
+// jwt.DecodePayload and never through a parser of its own: the issuer
+// that paces the fetch, the three rows of spec 007's table the shared
+// verifier does not carry (`aud` in the table's place, `sub`, and the
+// `act` the raw claims below name), the `exp` the verified-token cache
+// is bounded by, and the two fields a repository-bound token binds.
+// Every other row is the shared verifier's. Times are Unix seconds, and
+// an absent exp decodes to zero, which is the epoch and so expired.
 type Claims struct {
 	Iss   string   `json:"iss"`
 	Sub   string   `json:"sub"`
 	Aud   Audience `json:"aud"`
-	Exp   *float64 `json:"exp"`
-	Nbf   *float64 `json:"nbf"`
-	Iat   *float64 `json:"iat"`
+	Exp   float64  `json:"exp"`
 	Repo  string   `json:"repo"`
 	Scope string   `json:"scope"`
-	JTI   string   `json:"jti"`
-	// Delegated records that the payload carried an act claim, which the
-	// verifier refuses. It is not a claim the node reads for meaning.
-	Delegated bool `json:"-"`
-}
-
-// Token is a parsed and not yet verified JWT.
-type Token struct {
-	Alg    string
-	KID    string
-	Claims Claims
-	// Raw is every claim of the payload, verbatim, as it decoded. The
-	// verifier hands it to the authorizer in the envelope's claims field
-	// (Origo spec 028): the node reads the typed Claims, the authorizer
-	// reads whatever its policy needs. It is nil until ParseToken fills
-	// it and carries the same object the signature covered.
-	Raw map[string]any
-
-	signingInput []byte
-	signature    []byte
-}
-
-// ParseToken checks the size and the shape of a compact JWT: three
-// base64url segments whose header and claims parse as JSON objects. It
-// verifies nothing.
-func ParseToken(raw string) (*Token, error) {
-	if len(raw) > MaxTokenBytes {
-		return nil, refuse(ReasonSize)
-	}
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return nil, refuse(ReasonMalformed)
-	}
-	var header struct {
-		Alg string `json:"alg"`
-		KID string `json:"kid"`
-	}
-	if err := decodeSegment(parts[0], &header); err != nil {
-		return nil, refuse(ReasonMalformed)
-	}
-	t := &Token{Alg: header.Alg, KID: header.KID}
-	if err := decodeSegment(parts[1], &t.Claims); err != nil {
-		return nil, refuse(ReasonMalformed)
-	}
-	var present struct {
-		Act *json.RawMessage `json:"act"`
-	}
-	if err := decodeSegment(parts[1], &present); err != nil {
-		return nil, refuse(ReasonMalformed)
-	}
-	t.Claims.Delegated = present.Act != nil
-	if err := decodeSegment(parts[1], &t.Raw); err != nil {
-		return nil, refuse(ReasonMalformed)
-	}
-	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return nil, refuse(ReasonMalformed)
-	}
-	t.signingInput = []byte(parts[0] + "." + parts[1])
-	t.signature = sig
-	return t, nil
-}
-
-// decodeSegment decodes one base64url segment into a JSON object.
-func decodeSegment(s string, v any) error {
-	raw, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		return err
-	}
-	if len(raw) == 0 || raw[0] != '{' {
-		return refuse(ReasonMalformed)
-	}
-	return json.Unmarshal(raw, v)
-}
-
-// verifySignature checks the token's signature with key under the alg
-// the header names. A key of the wrong kind for the alg fails like a bad
-// signature.
-func (t *Token) verifySignature(key crypto.PublicKey) bool {
-	digest := sha256.Sum256(t.signingInput)
-	switch t.Alg {
-	case "RS256":
-		pub, ok := key.(*rsa.PublicKey)
-		return ok && rsa.VerifyPKCS1v15(pub, crypto.SHA256, digest[:], t.signature) == nil
-	case "ES256":
-		pub, ok := key.(*ecdsa.PublicKey)
-		if !ok || len(t.signature) != 64 {
-			return false
-		}
-		r := new(big.Int).SetBytes(t.signature[:32])
-		s := new(big.Int).SetBytes(t.signature[32:])
-		return ecdsa.Verify(pub, digest[:], r, s)
-	}
-	return false
 }
 
 // HasAudience reports whether aud contains the value.
-func (c Claims) HasAudience(want string) bool {
-	return slices.Contains(c.Aud, want)
-}
+func (c Claims) HasAudience(want string) bool { return slices.Contains(c.Aud, want) }

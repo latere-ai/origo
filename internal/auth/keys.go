@@ -23,15 +23,16 @@ import (
 )
 
 // Fetch budgets of spec 007: the discovery fetch and the JWKS fetch each
-// have five seconds, the key set is refreshed every hour, and a fetch is
-// attempted at most once a minute per issuer while a token names an
-// unknown kid. Until an issuer's first fetch has succeeded, a failed
-// attempt is retried after FirstRetryInterval, doubled per consecutive
-// failure up to RetryInterval, on the request path as well as by the
-// minute loop: a node that started before its issuer answered would
-// otherwise refuse every token of that issuer for a minute after the
-// issuer came up, with issuer_unavailable, while the fetch a request
-// could trigger stood pinned by the start-up failure.
+// have five seconds, and the key set is refreshed every hour. Until an
+// issuer has answered once, a failed attempt is retried after
+// FirstRetryInterval, doubled per consecutive failure up to
+// RetryInterval, on the request path as well as by the minute loop: a
+// node that started before its issuer answered would otherwise refuse
+// every token of that issuer for a minute after the issuer came up, with
+// issuer_unavailable, while the fetch a request could trigger stood
+// pinned by the start-up failure. Once an issuer has answered, a token
+// naming an unknown kid forces one refresh of the set, which the shared
+// verifier bounds to one every fifteen seconds.
 const (
 	DefaultFetchTimeout = 5 * time.Second
 	RefreshInterval     = time.Hour
@@ -107,89 +108,69 @@ func (k jwk) public() crypto.PublicKey {
 	return nil
 }
 
-// keySet is one configured OIDC issuer and the key set fetched from it.
+// keySet is one configured OIDC issuer and the back-off the node asks it
+// under. It holds no keys: the shared verifier fetched them and holds
+// them. What is here is spec 007's pacing, which that package does not
+// carry, and the record of the probe the refresh loop runs.
 type keySet struct {
 	url string
 
-	mu          sync.Mutex
-	keys        map[string]crypto.PublicKey
+	mu sync.Mutex
+	// failures counts the consecutive attempts that found the issuer out
+	// of reach; lastFailure is when the last of them was made.
+	failures    int
+	lastFailure time.Time
+	// fetched records that the issuer answered the probe at least once,
+	// and lastFetched when it last did, so the loop refreshes on the hour.
 	fetched     bool
-	inflight    chan struct{} // closed when the fetch in flight ends; nil when none
-	failures    int           // consecutive failed attempts since the last success
-	lastAttempt time.Time
 	lastFetched time.Time
 }
 
-// keyFor reports the key named kid and whether the set was ever fetched.
-func (i *keySet) keyFor(kid string) (crypto.PublicKey, bool) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	return i.keys[kid], i.fetched
-}
-
-// due reports whether an attempt may start now: none is in flight and
-// the last one is at least retryAfter old. A true answer claims the
-// attempt, so the caller must fetch.
+// due reports whether the issuer may be asked now: always, until an
+// attempt finds it out of reach, and then not before the back-off of the
+// failures so far has elapsed.
 func (i *keySet) due(now time.Time) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.inflight != nil || (!i.lastAttempt.IsZero() && now.Sub(i.lastAttempt) < i.retryAfter()) {
-		return false
-	}
-	i.inflight, i.lastAttempt = make(chan struct{}), now
-	return true
+	return i.failures == 0 || now.Sub(i.lastFailure) >= i.retryAfter()
 }
 
-// retryAfter is the pause between attempts: RetryInterval once the set
-// has been fetched, and before that the back-off of the failures so
-// far, FirstRetryInterval doubled per consecutive failure and capped at
-// RetryInterval. Called with mu held.
+// failed records an attempt that found the issuer out of reach.
+func (i *keySet) failed(now time.Time) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.failures, i.lastFailure = i.failures+1, now
+}
+
+// answered records an attempt that read the issuer's key set.
+func (i *keySet) answered(now time.Time) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.failures, i.fetched, i.lastFetched = 0, true, now
+}
+
+// probed reports whether the issuer has ever answered.
+func (i *keySet) probed() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.fetched
+}
+
+// retryAfter is the pause between attempts: FirstRetryInterval doubled
+// per consecutive failure and capped at RetryInterval. Called with mu
+// held, and only with a failure recorded.
 func (i *keySet) retryAfter() time.Duration {
-	if i.fetched || i.failures == 0 {
-		return RetryInterval
-	}
 	// Six doublings pass the cap; the shift stays small whatever the
 	// count.
 	return min(RetryInterval, FirstRetryInterval<<min(i.failures-1, 6))
 }
 
-// await blocks until the fetch in flight, if any, ends or ctx is done,
-// so a request that arrives during a refresh waits for its keys rather
-// than being refused.
-func (i *keySet) await(ctx context.Context) {
-	i.mu.Lock()
-	ch := i.inflight
-	i.mu.Unlock()
-	if ch == nil {
-		return
-	}
-	select {
-	case <-ch:
-	case <-ctx.Done():
-	}
-}
-
-// stale reports whether the set is older than RefreshInterval.
+// stale reports whether the last probe of the issuer is older than
+// RefreshInterval.
 func (i *keySet) stale(now time.Time) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.fetched && now.Sub(i.lastFetched) >= RefreshInterval
-}
-
-// fetch runs discovery and the JWKS fetch, each under its own timeout,
-// and stores the keys. The caller has claimed the attempt through due.
-func (i *keySet) fetch(ctx context.Context, client *http.Client, timeout time.Duration, now time.Time) error {
-	keys, err := FetchKeys(ctx, client, i.url, timeout)
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	close(i.inflight)
-	i.inflight = nil
-	if err != nil {
-		i.failures++
-		return err
-	}
-	i.keys, i.fetched, i.lastFetched, i.failures = keys, true, now, 0
-	return nil
 }
 
 // FetchKeys reads <iss>/.well-known/openid-configuration for jwks_uri and

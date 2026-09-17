@@ -10,12 +10,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"latere.ai/x/pkg/authkit/jwt"
 )
 
 func TestParseKeyReadsTheFormsOpensslWrites(t *testing.T) {
@@ -65,32 +68,54 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	if err != nil || !exp.Equal(clk.Now().Add(90*time.Second)) {
 		t.Fatalf("%v %v", exp, err)
 	}
-	parsed, err := ParseToken(tok)
+	header, err := jwt.ParseHeader(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := parsed.Claims
-	if parsed.Alg != "ES256" || parsed.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(DefaultAudience) || c.Sub != "alice" || c.Delegated || c.Repo != repoA || c.Scope != "write" {
-		t.Fatalf("claims: %+v %+v", parsed, c)
+	var c Claims
+	if err := jwt.DecodePayload(tok, &c); err != nil {
+		t.Fatal(err)
 	}
-	if c.Iat == nil || c.Exp == nil || *c.Iat != float64(clk.Now().Unix()) || *c.Exp != float64(exp.Unix()) {
-		t.Fatalf("times: %v %v", c.Iat, c.Exp)
+	var extra struct {
+		Iat *float64        `json:"iat"`
+		JTI string          `json:"jti"`
+		Act json.RawMessage `json:"act"`
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(c.JTI) {
-		t.Fatalf("jti %q", c.JTI)
+	if err := jwt.DecodePayload(tok, &extra); err != nil {
+		t.Fatal(err)
+	}
+	if header.Alg != "ES256" || header.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(DefaultAudience) || c.Sub != "alice" || extra.Act != nil || c.Repo != repoA || c.Scope != "write" {
+		t.Fatalf("claims: %+v %+v", header, c)
+	}
+	if extra.Iat == nil || *extra.Iat != float64(clk.Now().Unix()) || c.Exp != float64(exp.Unix()) {
+		t.Fatalf("times: %v %v", extra.Iat, c.Exp)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(extra.JTI) {
+		t.Fatalf("jti %q", extra.JTI)
 	}
 	tok2, _, _ := s.Mint(Principal{Subject: "bob"}, repoA, ScopeRead, time.Hour)
-	p2, _ := ParseToken(tok2)
-	if p2.Claims.Sub != "bob" || p2.Claims.Scope != "read" {
-		t.Fatalf("read token: %+v", p2.Claims)
+	var c2 Claims
+	if err := jwt.DecodePayload(tok2, &c2); err != nil {
+		t.Fatal(err)
 	}
-	// The JWKS verifies what the signer minted, and a verifier holding the
-	// public key names the same subject as the minter had.
+	if c2.Sub != "bob" || c2.Scope != "read" {
+		t.Fatalf("read token: %+v", c2)
+	}
+	// The JWKS verifies what the signer minted: the key set the node
+	// serves, read back through the shared verifier as any client reads
+	// it, names the same subject as the minter had.
 	rec := httptest.NewRecorder()
 	s.JWKS().ServeHTTP(rec, httptest.NewRequest("GET", "/.well-known/jwks.json", nil))
 	keys, err := parseJWKS(rec.Body.Bytes())
-	if err != nil || len(keys) != 1 || keys[s.KID()] == nil || !parsed.verifySignature(keys[s.KID()]) || rec.Header().Get("Content-Type") != "application/json" {
+	if err != nil || len(keys) != 1 || keys[s.KID()] == nil || rec.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("jwks: %s, %v", rec.Body.String(), err)
+	}
+	served := jwt.New(jwt.Config{
+		LocalIssuer: localIssuer, LocalKey: keys[s.KID()], LocalKeyID: s.KID(),
+		Audiences: []string{DefaultAudience}, Now: clk.Now,
+	})
+	if _, err := served.Validate(tok); err != nil {
+		t.Fatalf("the published key does not verify what the signer minted: %v", err)
 	}
 	v := newVerifier(t, clk, key)
 	p, err := v.Verify(context.Background(), tok)

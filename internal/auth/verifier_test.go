@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"latere.ai/x/pkg/authkit/jwt"
 	"latere.ai/x/pkg/authz"
 
 	"github.com/latere-ai/origo/test/stubs/issuer"
@@ -164,12 +165,13 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := newVerifier(t, clk, key, a)
+	a.ResetRequests()
 	p, err := fresh.Verify(ctx, local)
 	if err != nil || p.Subject != "ci" || p.Bound == nil || p.Bound.Repo != "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f" || p.Bound.Scope != ScopeRead {
 		t.Fatalf("local token: %+v, %v", p, err)
 	}
-	if _, fetched := fresh.issuers[a.URL()].keyFor(""); fetched {
-		t.Fatal("the local token fetched the issuer's keys")
+	if reqs := a.Requests(); len(reqs) != 0 {
+		t.Fatalf("the local token fetched the issuer's keys: %v", reqs)
 	}
 	// Each row of the verification table, on the verifier alone.
 	other := issuer.New(t, issuer.WithClock(clk.Now))
@@ -230,7 +232,10 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	if p, err := v.Verify(ctx, cached); err != nil || p.Subject != authz.Subject(a.URL(), "carol") {
 		t.Fatalf("cached: %+v, %v", p, err)
 	}
-	clk.Advance(3 * time.Minute)
+	// A second past exp plus the skew, which is where the token stops
+	// being read: the shared verifier refuses from past that instant,
+	// where this one refused at it (Origo spec 028).
+	clk.Advance(3*time.Minute + time.Second)
 	if got := reason(func() error { _, err := v.Verify(ctx, cached); return err }()); got != ReasonExpired {
 		t.Fatalf("after the lifetime: %q", got)
 	}
@@ -245,11 +250,11 @@ func TestVerifierAcceptsTwoIssuersAndRefusesEachFailure(t *testing.T) {
 	if got := reason(func() error { _, err := v.Verify(ctx, beforeRotate); return err }()); got != ReasonUnknownKey {
 		t.Fatalf("dropped key: %q", got)
 	}
-	// A second rotation within the minute is not refreshed: the new kid
-	// is unknown until the next minute.
+	// A second rotation within the window is not refreshed: the new kid
+	// is unknown until the window elapses.
 	a.Rotate()
 	if got := reason(func() error { _, err := v.Verify(ctx, a.Mint(issuer.Claims{})); return err }()); got != ReasonUnknownKey {
-		t.Fatalf("refresh not bounded to one a minute: %q", got)
+		t.Fatalf("refresh not bounded: %q", got)
 	}
 	clk.Advance(RetryInterval)
 	if _, err := v.Verify(ctx, a.Mint(issuer.Claims{})); err != nil {
@@ -402,16 +407,24 @@ func FuzzParseToken(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		tok, err := ParseToken(raw)
-		if err != nil {
-			if reason(err) == "" {
-				t.Fatalf("not a refusal: %v", err)
-			}
-			return
-		}
-		_ = tok.verifySignature(&key.PublicKey)
-		if _, err := v.Verify(context.Background(), raw); err == nil {
+		// Whatever the bytes are, the verifier answers with a row of the
+		// table and never with anything else: the shared verifier reads
+		// the header and the payload, and Verify writes the word.
+		_, err := v.Verify(context.Background(), raw)
+		if err == nil {
 			t.Fatal("a fuzzed token verified")
+		}
+		if reason(err) == "" {
+			t.Fatalf("not a refusal: %v", err)
+		}
+		// The two readers the shims decode through refuse the same bytes
+		// the verifier refused, and neither panics on them.
+		if _, err := jwt.ParseHeader(raw); err != nil && !errors.Is(err, jwt.ErrMalformedToken) {
+			t.Fatalf("the header reader: %v", err)
+		}
+		var c Claims
+		if err := jwt.DecodePayload(raw, &c); err != nil && !errors.Is(err, jwt.ErrMalformedToken) {
+			t.Fatalf("the payload reader: %v", err)
 		}
 	})
 }
@@ -431,17 +444,20 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	}
 	clk := newClock()
 	var stub *issuer.Server
-	var attempts atomic.Int32
+	var attempts, sets atomic.Int32
 	var down atomic.Bool
-	// The issuer behind a front that counts discovery fetches and
-	// answers 503 while down; the stub names the front as its issuer.
+	// The issuer behind a front that counts the discovery fetches and the
+	// key-set fetches apart, and answers 503 while down; the stub names
+	// the front as its issuer.
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/openid-configuration") {
 			attempts.Add(1)
-			if down.Load() {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
+		} else {
+			sets.Add(1)
+		}
+		if down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
 		}
 		stub.Handler().ServeHTTP(w, r)
 	}))
@@ -484,33 +500,55 @@ func TestFirstFetchFailureBacksOffFromASecond(t *testing.T) {
 	if sub, got := verify("b"); got != "" || sub != authz.Subject(front.URL, "b") || attempts.Load() != want {
 		t.Fatalf("up, at the pause: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
 	}
-	// Fetched once, the minute cap holds: a token naming a new kid is
-	// unknown_key without a fetch until the minute, whatever the
-	// failures before the success.
+	// Once the issuer has answered, the back-off above is spent and the
+	// shared verifier paces the set it now holds: a token naming an
+	// unknown kid forces one refresh of it, at most one per
+	// forcedRefreshWindow, and the discovery document is not read again
+	// because the jwks_uri it named is kept. So the first miss after the
+	// fetch is picked up at once, and the discovery count stands still
+	// from here on (Origo spec 028).
+	held := sets.Load()
 	stub.Rotate()
-	clk.Advance(FirstRetryInterval)
-	if _, got := verify("c"); got != ReasonUnknownKey || attempts.Load() != want {
-		t.Fatalf("rotated, a second after the fetch: %q, %d attempts", got, attempts.Load())
+	if sub, got := verify("c"); got != "" || sub != authz.Subject(front.URL, "c") || sets.Load() != held+1 || attempts.Load() != want {
+		t.Fatalf("rotated, at once: %q %q, %d key sets, %d discoveries", sub, got, sets.Load(), attempts.Load())
 	}
-	clk.Advance(RetryInterval - FirstRetryInterval)
-	want++
-	if sub, got := verify("c"); got != "" || sub != authz.Subject(front.URL, "c") || attempts.Load() != want {
-		t.Fatalf("rotated, at the minute: %q %q, %d attempts, want %d", sub, got, attempts.Load(), want)
+	// A second rotation within the window is not refreshed: the new kid is
+	// unknown until the window elapses, and no key set is read for it.
+	held = sets.Load()
+	stub.Rotate()
+	clk.Advance(forcedRefreshWindow - time.Millisecond)
+	if _, got := verify("d"); got != ReasonUnknownKey || sets.Load() != held {
+		t.Fatalf("within the window: %q, %d key sets", got, sets.Load())
 	}
-	// A failed refresh of a fetched set keeps the minute cap: the keys
-	// held serve, and the next attempt is a minute on.
+	clk.Advance(time.Millisecond)
+	if sub, got := verify("d"); got != "" || sub != authz.Subject(front.URL, "d") || sets.Load() != held+1 {
+		t.Fatalf("at the window: %q %q, %d key sets", sub, got, sets.Load())
+	}
+	// A failed refresh of a set already held keeps that set: the keys
+	// serve, so a token naming the new kid is unknown_key and not
+	// issuer_unavailable, and the next attempt is a window on.
 	down.Store(true)
 	stub.Rotate()
-	clk.Advance(RetryInterval)
-	want++
-	if _, got := verify("d"); got != ReasonUnknownKey || attempts.Load() != want {
-		t.Fatalf("refresh failed: %q, %d attempts, want %d", got, attempts.Load(), want)
+	held = sets.Load()
+	clk.Advance(forcedRefreshWindow)
+	if _, got := verify("e"); got != ReasonUnknownKey || sets.Load() != held+1 {
+		t.Fatalf("refresh failed: %q, %d key sets", got, sets.Load())
 	}
-	clk.Advance(32 * time.Second)
-	if _, got := verify("d"); got != ReasonUnknownKey || attempts.Load() != want {
-		t.Fatalf("fetched set, 32 s after a failure: %q, %d attempts, want %d", got, attempts.Load(), want)
+	clk.Advance(forcedRefreshWindow - time.Millisecond)
+	if _, got := verify("e"); got != ReasonUnknownKey || sets.Load() != held+1 {
+		t.Fatalf("within the window after a failure: %q, %d key sets", got, sets.Load())
+	}
+	if attempts.Load() != want {
+		t.Fatalf("the discovery document was read again: %d, want %d", attempts.Load(), want)
 	}
 }
+
+// forcedRefreshWindow is how often the shared verifier lets an unknown
+// kid force a refresh of an issuer's key set. It is that package's figure
+// and not Origo's, which is why it is here and not in keys.go: spec 007
+// bounded the same refresh to one a minute, and the move to the shared
+// verifier took its window instead (Origo spec 028).
+const forcedRefreshWindow = 15 * time.Second
 
 // delegated builds the claims of a token that names two parties, the shape
 // the verification table refuses: no token carries a chain (the family's
