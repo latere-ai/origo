@@ -33,7 +33,7 @@ resources:
 # containers: the node and the check it runs in front of are one image.
 images:
   - name: ghcr.io/latere-ai/origod
-    newTag: v0.8.0
+    newTag: v0.9.0
 
 patches:
   - path: ingress.yaml

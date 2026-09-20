@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.9.0 - 2026-09-20
+
 ### Added
 
 - Origo publishes its HTTP surface as an OpenAPI 3.1 document. It is
