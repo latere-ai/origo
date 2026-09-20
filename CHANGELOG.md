@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.8.0 - 2026-09-20
+
 ### Changed
 
 - A node can accept more than one audience. `ORIGO_OIDC_AUDIENCE` reads a
