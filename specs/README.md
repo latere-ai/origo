@@ -88,6 +88,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | complete | 003, 007, 013 |
 | [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | complete | 007, 009, 012, 016 |
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
+| [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai | small | drafted | 007, 026, 027, 028 |
 
 ## Dependency graph
 
@@ -1098,8 +1099,8 @@ name, or when a spec names something no spec defines.
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028 |
 | variable | `ORIGO_ADMIN_SUBJECTS` | [028](028-authorizer-contract-2.md) | - |
-| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016 |
-| variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002 |
+| variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016, 029 |
+| variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002, 029 |
 | variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
 | variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013, 028 |
@@ -1130,12 +1131,12 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 013, 019 |
-| variable | `ORIGO_OIDC_AUDIENCE` | [028](028-authorizer-contract-2.md) | - |
+| variable | `ORIGO_OIDC_AUDIENCE` | [028](028-authorizer-contract-2.md) | 029 |
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013, 028 |
 | variable | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | [017](017-release-and-versioning.md) | 002, 013 |
 | variable | `ORIGO_PUBLIC_ADDR` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 010, 013, 018, 028 |
+| variable | `ORIGO_PUBLIC_URL` | [002](002-repository-scaffold.md) | 007, 010, 013, 018, 028, 029 |
 | variable | `ORIGO_RELEASE_DEPLOY` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
@@ -1224,7 +1225,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
-| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027 |
+| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027, 029 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
@@ -1245,7 +1246,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006 |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
-| endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025 |
+| endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029 |
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
