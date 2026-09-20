@@ -1,6 +1,6 @@
 ---
 title: "The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -293,3 +293,18 @@ person's actor token and for a PAT-minted token addressed to
 and the audience list ship in one release, because the route without the
 second audience serves 401 to every key-minted caller. Record both in the
 Outcome, then the spec is `complete`.
+
+## Outcome
+
+Released as v0.8.0 on 2026-09-20; deploy, smoke, publish, verify and
+install all passed by 18:09 UTC.
+
+| # | Criterion | Proof |
+|---|---|---|
+| 1 | `/v1/repos` answers at the origin | `GET https://api.latere.ai/v1/repos` without a token answers the node's `unauthenticated` envelope, byte-identical to `code.latere.ai/v1/repos`; the authenticated calls (a person's `origo` actor token, a PAT-minted `api.latere.ai` token) are the maintainer's step in the specs repo's window runbook |
+| 3, 5 | the list audience | both containers run `ORIGO_OIDC_AUDIENCE=origo,api.latere.ai` |
+| 5 | the Ingress | `origod-api` on `api.latere.ai`, one rule `/v1/repos` Prefix, no tls, no cert-manager annotation, no regex |
+| 7 | bodies name no host | the two hosts' bodies compared equal |
+
+Criterion 6 (a 64 MiB operation body at both hosts) is not yet
+exercised in production.
