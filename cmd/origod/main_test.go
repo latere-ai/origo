@@ -707,10 +707,10 @@ func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 	}
 	// The unauthenticated paths, each stamped as well. The list is the
 	// deliberate one: the two probes and the key set of the contract,
-	// and the landing page with its favicon (spec 022), which are
-	// served without a token because a person who has not authenticated
-	// is exactly who they are for. A route added anywhere else belongs
-	// in the sweep above, not here.
+	// the landing page with its favicon (spec 022), which are served
+	// without a token because a person who has not authenticated is
+	// exactly who they are for, and the OpenAPI document (spec 030). A
+	// route added anywhere else belongs in the sweep above, not here.
 	for _, p := range []struct {
 		path   string
 		status int
@@ -720,6 +720,10 @@ func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 		{"/.well-known/jwks.json", 200},
 		{"/", 200},
 		{"/favicon.ico", 204},
+		// The OpenAPI document of spec 030, which says how a caller
+		// authenticates and so cannot ask a caller to authenticate for
+		// it.
+		{"/openapi.yaml", 200},
 	} {
 		resp, err := client.Get("http://" + public + p.path)
 		if err != nil {

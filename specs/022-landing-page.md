@@ -181,6 +181,12 @@ table, for a need no installation has stated.
 Both join `GET /readyz`, `GET /version`, and `GET /.well-known/jwks.json`
 as the unauthenticated paths of the public listener, and both carry
 `Origo-Contract` like every other response of that listener (spec 003).
+Noted on 2026-09-20: spec 030 adds a sixth, `GET /openapi.yaml`, the
+OpenAPI document, on the same outer mux for the same kind of reason, a
+document that says how a caller authenticates cannot ask a caller to
+authenticate for it. The list here and the diagram above are unchanged
+otherwise; the route sweep `TestEveryRouteRequiresAToken` carries all
+six.
 Neither is part of the contract of spec 003: a provider serving that
 contract owes machines an API, not a person a page, and the conformance
 suite of spec 021 does not ask for it.

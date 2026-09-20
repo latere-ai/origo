@@ -22,8 +22,13 @@ type section struct {
 	intro   string
 }
 
+// repoAddress is how a repository is addressed in a path, written once:
+// the endpoint section opens with it and the OpenAPI document gives it to
+// the {repo} parameter, so the two cannot say it differently.
+const repoAddress = "`{repo}` is either `r/{id}.git` or `{owner}/{slug}.git`; both address the same repository, and the id form never changes."
+
 var sections = []section{
-	{specs.KindEndpoint, "Endpoints", "Every path below is under the base URL of the installation. `{repo}` is either `r/{id}.git` or `{owner}/{slug}.git`; both address the same repository, and the id form never changes."},
+	{specs.KindEndpoint, "Endpoints", "Every path below is under the base URL of the installation. " + repoAddress},
 	{specs.KindHeader, "Headers", "Headers Origo sets on its responses. A consumer reads them; none is sent by a client."},
 	{specs.KindCode, "Error codes", "Every refusal is one JSON body, `{\"error\": {\"code\", \"message\", \"details\"}}`. `code` is the stable name to branch on, `message` is one sentence to show a person, and `details` carries the developer fields listed here."},
 }
@@ -165,6 +170,12 @@ every request, including the git routes. How to get a token, and what a
 token may do, is your installation's own configuration; see
 [`+"`install.md`"+`](install.md) for the operator's side and
 [`+"`configuration.md`"+`](configuration.md) for the variables behind it.
+
+The same surface as an OpenAPI 3.1 document is
+[`+"`api/openapi.yaml`"+`](../api/openapi.yaml), generated from these
+tables in the same run; an installation serves those bytes at
+`+"`GET /openapi.yaml`"+`, so a client generator reads the surface without
+parsing this page.
 `, "`make docs`", version, version)
 
 	for _, s := range sections {

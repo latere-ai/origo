@@ -84,12 +84,18 @@ runs user code: no hooks, no filters, no smudge, no submodule fetch.
 
 ### Operations
 
+Each Result cell opens with the status the operation answers, which is
+the 201 the Response paragraph above states and the 200 a `dry_run`
+gets. Noted on 2026-09-20 for spec 030: the OpenAPI document is rendered
+from these rows, so a status the row does not state is a status the
+document cannot carry. Nothing about the answers changed.
+
 | Method | Path | Body beyond the common fields | Result |
 |---|---|---|---|
-| POST | `/v1/repos/{id}/commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
-| POST | `/v1/repos/{id}/merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
-| POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
-| POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
+| POST | `/v1/repos/{id}/commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | 201, one commit with `expected_head` as parent; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | 201, fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths`; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | 201, one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | 201, one revert commit per input, same atomicity and conflict rule; 200 for a `dry_run` |
 
 ### Paths
 

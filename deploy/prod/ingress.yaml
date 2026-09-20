@@ -87,6 +87,18 @@ spec:
                 name: origod
                 port:
                   name: http
+          # The OpenAPI document of spec 030, anchored and escaped like
+          # the favicon below: use-regex makes every path here a regular
+          # expression, and the admission webhook refuses a path holding
+          # a dot under Exact or Prefix anyway. It is published here and
+          # not at api.latere.ai: one probe surface per host (spec 029).
+          - path: /openapi\.yaml$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http
           # The key set of spec 007.
           - path: /\.well-known/jwks\.json$
             pathType: ImplementationSpecific

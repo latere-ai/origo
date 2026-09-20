@@ -15,6 +15,12 @@ token may do, is your installation's own configuration; see
 [`install.md`](install.md) for the operator's side and
 [`configuration.md`](configuration.md) for the variables behind it.
 
+The same surface as an OpenAPI 3.1 document is
+[`api/openapi.yaml`](../api/openapi.yaml), generated from these
+tables in the same run; an installation serves those bytes at
+`GET /openapi.yaml`, so a client generator reads the surface without
+parsing this page.
+
 ## Endpoints
 
 Every path below is under the base URL of the installation. `{repo}` is either `r/{id}.git` or `{owner}/{slug}.git`; both address the same repository, and the id form never changes.
@@ -96,10 +102,10 @@ Defined by [020 server side git operations](../specs/020-server-side-git-operati
 
 | Method | Path | Body beyond the common fields | Result |
 |---|---|---|---|
-| POST | `/v1/repos/{id}/commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | one commit with `expected_head` as parent |
-| POST | `/v1/repos/{id}/merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths` |
-| POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths |
-| POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | one revert commit per input, same atomicity and conflict rule |
+| POST | `/v1/repos/{id}/commits` | `changes: [{"path", "content" (base64, at most 10 MiB decoded per file) \| "content_ref" (a blob sha already in the repository) \| "delete": true, "mode": "100644"\|"100755"\|"120000"}]`, 1 to 1 000 changes in a body of at most 64 MiB, each `path` checked by the rules below | 201, one commit with `expected_head` as parent; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/merge` | `source: <branch or sha>`, `strategy: "fast_forward_only"\|"merge_commit"\|"fast_forward_if_possible"` (default), `message` optional for a merge commit, defaulting to `Merge <source> into <branch>` with both names as the request gave them | 201, fast-forward moves the branch with no new commit and answers the source's sha; a merge commit has two parents; a conflict is 409 `merge_conflict` with `details.paths`; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/cherry-pick` | `commits: [<sha>]`, 1 to 100, applied in order, `mainline` for a merge commit | 201, one commit per picked commit, all in one entry and one transaction, so partial application never lands; a conflict is 409 `merge_conflict` naming the commit and paths; 200 for a `dry_run` |
+| POST | `/v1/repos/{id}/revert` | `commits: [<sha>]`, 1 to 100, `mainline` | 201, one revert commit per input, same atomicity and conflict rule; 200 for a `dry_run` |
 
 Defined by [022 landing page](../specs/022-landing-page.md).
 
@@ -113,6 +119,12 @@ Defined by [026 repository directory](../specs/026-repository-directory.md).
 | Method | Path | Behaviour |
 |---|---|---|
 | GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
+
+Defined by [030 the openapi document](../specs/030-the-openapi-document.md).
+
+| Method | Path | Body |
+|---|---|---|
+| GET | `/openapi.yaml` | 200, this document, `application/yaml`; the bytes of `api/openapi.yaml` as the build embedded them. No token, like `GET /readyz` and `GET /version` (spec 002); unlike those two it is part of the contract, so a client may read it at any installation |
 
 ## Headers
 

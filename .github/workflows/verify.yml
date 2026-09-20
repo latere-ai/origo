@@ -90,15 +90,16 @@ jobs:
           mkdir -p out
           (cd tools/specindex && go run . -rules ../../deploy/base/prometheusrule.yaml) > out/rules.yaml
           promtool check rules out/rules.yaml
-      # The two generated pages: docs/configuration.md from
-      # internal/config and docs/api.md from the specs' endpoint, header,
-      # and code tables. A change to a variable or to a spec table that
-      # was not regenerated shows up here as a documentation diff on the
-      # same push.
+      # The generated reference: docs/configuration.md from
+      # internal/config, docs/api.md from the specs' endpoint, header,
+      # and code tables, and api/openapi.yaml from the same tables (spec
+      # 030), which the node embeds and serves. A change to a variable or
+      # to a spec table that was not regenerated shows up here as a
+      # documentation diff on the same push.
       - name: The generated documentation is current
         run: |
           make docs
-          git diff --exit-code docs/
+          git diff --exit-code docs/ api/
       # Spec 001's seventh invariant names the module's direct
       # dependencies; go.mod is where a reader checks the claim, so it
       # has to agree with the imports. golang.org/x/crypto sat in the

@@ -89,6 +89,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | complete | 007, 009, 012, 016 |
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai | small | complete | 007, 026, 027, 028 |
+| [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | testing | 003, 018, 029 |
 
 ## Dependency graph
 
@@ -1076,7 +1077,7 @@ name, or when a spec names something no spec defines.
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028 |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
@@ -1088,7 +1089,7 @@ name, or when a spec names something no spec defines.
 | error code | `non_fast_forward` | [003](003-protocol-contract.md) | 012, 020, 021, 025 |
 | error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021, 025 |
 | error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021, 024, 025 |
-| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 015, 019, 020, 021, 024, 025 |
+| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 015, 019, 020, 021, 024, 025, 030 |
 | error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 019, 020, 021, 025 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
@@ -1097,7 +1098,7 @@ name, or when a spec names something no spec defines.
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
-| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028 |
+| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028, 029, 030 |
 | variable | `ORIGO_ADMIN_SUBJECTS` | [028](028-authorizer-contract-2.md) | - |
 | variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016, 029 |
 | variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002, 029 |
@@ -1222,9 +1223,10 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 002, 005, 016, 022 |
 | endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
-| endpoint | `GET /livez` | [002](002-repository-scaffold.md) | - |
-| endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013 |
-| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
+| endpoint | `GET /livez` | [002](002-repository-scaffold.md) | 030 |
+| endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013, 030 |
+| endpoint | `GET /openapi.yaml` | [030](030-the-openapi-document.md) | 022 |
+| endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 030 |
 | endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027, 029 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
@@ -1237,14 +1239,14 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010, 027 |
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | 025 |
-| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022 |
+| endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 030 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
-| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006 |
+| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006, 030 |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
 | endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029 |
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
@@ -1255,11 +1257,11 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
 | endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | - |
 | endpoint | `POST /{repo}/git-upload-pack` | [003](003-protocol-contract.md) | - |
-| endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | - |
+| endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | 030 |
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
 | header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 025 |
-| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022, 028 |
+| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022, 028, 030 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
 | header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024, 026 |

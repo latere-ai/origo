@@ -178,16 +178,35 @@ func TestAuthorizationSectionComesFromTheSpec(t *testing.T) {
 	}
 }
 
+// TestPageNamesTheDocument is spec 030's criterion 8: the reference page
+// points at the OpenAPI document and at the route an installation serves
+// it from, so a reader who needs a machine-readable surface finds one.
+func TestPageNamesTheDocument(t *testing.T) {
+	page, err := Page(index(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"(../api/openapi.yaml)", "`GET /openapi.yaml`", "OpenAPI 3.1"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page does not name %s", want)
+		}
+	}
+}
+
 func TestRunWritesAndReportsFindings(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "api.md")
+	document := filepath.Join(dir, "openapi.yaml")
 	specsDir := filepath.Join(root(t), "specs")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"-specs", specsDir, "-out", out, "-write"}, &stdout, &stderr); code != 0 {
+	if code := run([]string{"-specs", specsDir, "-out", out, "-openapi", document, "-write"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("write: %d %q", code, stderr.String())
 	}
 	if body, err := os.ReadFile(out); err != nil || !bytes.Contains(body, []byte("# The Origo API")) {
 		t.Fatalf("written page: %v", err)
+	}
+	if body, err := os.ReadFile(document); err != nil || !bytes.Contains(body, []byte("openapi: 3.1.0")) {
+		t.Fatalf("written document: %v", err)
 	}
 	stdout.Reset()
 	if code := run([]string{"-specs", specsDir}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "# The Origo API") {
@@ -208,7 +227,10 @@ func TestRunWritesAndReportsFindings(t *testing.T) {
 	if code := run([]string{"-specs", bad}, &stdout, &stderr); code != 1 {
 		t.Fatalf("finding: %d", code)
 	}
-	if code := run([]string{"-specs", specsDir, "-out", filepath.Join(dir, "nowhere", "api.md"), "-write"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("unwritable: %d", code)
+	if code := run([]string{"-specs", specsDir, "-out", filepath.Join(dir, "nowhere", "api.md"), "-openapi", document, "-write"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("unwritable page: %d", code)
+	}
+	if code := run([]string{"-specs", specsDir, "-out", out, "-openapi", filepath.Join(dir, "nowhere", "openapi.yaml"), "-write"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("unwritable document: %d", code)
 	}
 }

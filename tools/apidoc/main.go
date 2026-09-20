@@ -7,6 +7,13 @@
 // Origo makes rather than serves, the authorization endpoint, carried
 // verbatim from the spec that states its contract.
 //
+// With -write it renders api/openapi.yaml beside the page, the same
+// surface as an OpenAPI 3.1 document, from the same reading of the same
+// tables (spec 030). The node embeds that file and serves it, so the
+// bytes a consumer vendors and the bytes an installation answers are one
+// file. Without -write only the page is printed; the document is checked
+// by the test beside this file.
+//
 // It reads the specs through the package specindex/specs, the parser the
 // cross-reference table is built with, so the page carries no name the
 // specs do not define and a table shape one tool does not recognize is a
@@ -33,7 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	dir := fs.String("specs", "../../specs", "the spec directory")
 	out := fs.String("out", "../../docs/api.md", "the page to write with -write")
-	write := fs.Bool("write", false, "rewrite the page")
+	document := fs.String("openapi", "../../api/openapi.yaml", "the OpenAPI document to write with -write")
+	write := fs.Bool("write", false, "rewrite the page and the document")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -62,5 +70,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "apidoc: wrote %s\n", *out)
+	doc, err := Build(idx)
+	if err != nil {
+		fmt.Fprintln(stderr, "apidoc:", err)
+		return 1
+	}
+	body, err := doc.YAML()
+	if err != nil {
+		fmt.Fprintln(stderr, "apidoc:", err)
+		return 1
+	}
+	if err := os.WriteFile(*document, body, 0o644); err != nil {
+		fmt.Fprintln(stderr, "apidoc:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "apidoc: wrote %s\n", *document)
 	return 0
 }

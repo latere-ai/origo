@@ -23,6 +23,7 @@ import (
 	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/wait"
 
+	openapi "github.com/latere-ai/origo/api"
 	"github.com/latere-ai/origo/internal/api"
 	"github.com/latere-ai/origo/internal/auth"
 	"github.com/latere-ai/origo/internal/compact"
@@ -522,11 +523,13 @@ func (n *node) metricsHandler() http.Handler {
 	})
 }
 
-// publicHandler serves the application surface with five
+// publicHandler serves the application surface with six
 // unauthenticated paths in front of it: /readyz and /version, public as
 // well as internal so the release smoke reaches them through the
-// ingress, the key set of spec 007, and the landing page of spec 022 at
-// the root with the favicon route beside it. /livez and /metrics stay
+// ingress, the key set of spec 007, the landing page of spec 022 at
+// the root with the favicon route beside it, and the OpenAPI document of
+// spec 030, which says how a caller authenticates and so cannot ask a
+// caller to authenticate for it. /livez and /metrics stay
 // internal. Every response of the listener carries the contract
 // version (spec 003).
 //
@@ -548,6 +551,7 @@ func (n *node) publicHandler() http.Handler {
 	mux.Handle("GET /readyz", probes)
 	mux.Handle("GET /version", probes)
 	mux.Handle("GET /.well-known/jwks.json", n.signer.JWKS())
+	mux.Handle("GET /openapi.yaml", openapi.Handler())
 	mux.HandleFunc("GET /{$}", landing)
 	mux.HandleFunc("GET /favicon.ico", favicon)
 	mux.Handle("/", n.public)

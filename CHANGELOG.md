@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- Origo publishes its HTTP surface as an OpenAPI 3.1 document. It is
+  `api/openapi.yaml` in the repository, and every installation serves the
+  same bytes at `GET /openapi.yaml`, with no token, beside `GET /version`
+  and the key set. Every route is one operation with a stable
+  `operationId`, the group it belongs to as a tag, the bearer scheme
+  where a token is required, and one declared response per error code, so
+  a client generator, a request collection or a linter reads the surface
+  without parsing the reference page. The document is generated from the
+  design specs in the same run as `docs/api.md`, so the two cannot
+  disagree, and it names no server and no release: what a client pins is
+  the contract version it carries.
+
 ## v0.8.0 - 2026-09-20
 
 ### Changed

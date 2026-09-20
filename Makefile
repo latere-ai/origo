@@ -260,12 +260,13 @@ specindex:
 	cd tools/specindex && go test ./...
 .PHONY: specindex
 
-# The two generated pages: docs/configuration.md from internal/config,
-# where the reference lives beside the code that reads each variable, and
-# docs/api.md from the endpoint, header, and code tables of the specs.
-# The specindex job runs this and then `git diff --exit-code docs/`, so a
-# change to a variable or to a spec table shows up as a documentation
-# diff on the same push.
+# The generated reference: docs/configuration.md from internal/config,
+# where the reference lives beside the code that reads each variable,
+# docs/api.md from the endpoint, header, and code tables of the specs,
+# and api/openapi.yaml from the same reading of the same tables (spec
+# 030), which the node embeds and serves. The specindex job runs this and
+# then `git diff --exit-code`, so a change to a variable or to a spec
+# table shows up as a documentation diff on the same push.
 docs:
 	$(GO) run ./tools/configdoc -write
 	cd tools/apidoc && $(GO) run . -write
