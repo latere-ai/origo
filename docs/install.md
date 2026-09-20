@@ -177,7 +177,12 @@ page is where you find out whether you asked correctly. The manifests
 name that audience rather than inherit it: `ORIGO_OIDC_AUDIENCE` is
 `origo` on the node and on its check in `deploy/base/deployment.yaml`,
 and an installation whose provider mints another name for Origo changes
-both together.
+both together. The variable reads a comma separated list, for an
+installation reached at more than one address: a token is accepted when
+its `aud` names any entry, and the first entry is the one Origo mints
+its own repository-bound tokens with. An empty or repeated entry is a
+start-up failure, so a trailing comma is found at the restart and not
+at the first 401.
 
 **The authorization endpoint.** One `POST` endpoint you run, or none.
 Leave `ORIGO_AUTHORIZER_URL` unset and Origo runs a built-in owner
@@ -859,7 +864,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | a clone works and a push is refused | your authorization endpoint denies `write` for that subject | its answer carries a `reason`, which Origo passes back to the client |
 | every operation on one repository is 403, `POST /v1/repos` included | your authorization endpoint has not been told about this repository, and rule 4 of step 2 makes it deny what it does not know | register the repository there under the id you gave Origo and grant the subject; the endpoint's own `reason` is in `details.reason` on the 403 |
 | every operation on every repository is 403 | the endpoint is answering, and refusing this subject | check that the subject in the token is the one you granted: it is the token's `sub`, or its `act` when a service is acting for someone |
-| 401 on every request | the token's issuer is not in `ORIGO_OIDC_ISSUERS`, or its audience is not `origo` | decode the token and compare |
+| 401 on every request | the token's issuer is not in `ORIGO_OIDC_ISSUERS`, or its audience is not one of `ORIGO_OIDC_AUDIENCE` | decode the token and compare |
 
 Origo's own alert rules, for a cluster running the Prometheus operator,
 are `deploy/base/prometheusrule.yaml`; they are not applied by the base,

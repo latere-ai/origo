@@ -75,11 +75,15 @@ spec:
                   fieldPath: metadata.name
             - name: ORIGO_GOSSIP_PEERS
               value: origod-gossip
-            # The audience every accepted token must carry (spec 028),
-            # named here rather than left to the node's default so a
-            # token addressed to anything else is refused by decision
-            # and not by coincidence. The check reads it too: a check
-            # against another environment checks nothing.
+            # The audiences an accepted token may carry (specs 028 and
+            # 029): a comma separated list whose first entry is the
+            # primary, the one the node mints repository-bound tokens
+            # with. Named here rather than left to the node's default so
+            # a token addressed to anything else is refused by decision
+            # and not by coincidence. One entry is a whole installation;
+            # a second is for a node published at a second address, and
+            # deploy/prod is where Latere names its own. The check reads
+            # it too: a check against another environment checks nothing.
             - name: ORIGO_OIDC_AUDIENCE
               value: origo
             # The signing key is its own Secret, generated once by the
@@ -149,9 +153,11 @@ spec:
                   fieldPath: metadata.name
             - name: ORIGO_GOSSIP_PEERS
               value: origod-gossip
-            # The audience every accepted token must carry (spec 028).
-            # An installation whose issuer mints another name for this
-            # node changes it here and on the check together.
+            # The audiences an accepted token may carry (specs 028 and
+            # 029), primary first. An installation whose issuer mints
+            # another name for this node changes it here and on the check
+            # together, and one that publishes the node at a second
+            # address names that address as a second entry.
             - name: ORIGO_OIDC_AUDIENCE
               value: origo
             # ORIGO_TOKEN_KEY is not in either bootstrap Secret: it is

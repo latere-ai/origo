@@ -83,9 +83,15 @@ type Config struct {
 	// Spec 007 identity and authorization. Required.
 	OIDCIssuers         []string
 	OIDCInsecureIssuers []string
-	// OIDCAudience is ORIGO_OIDC_AUDIENCE, the aud a token must carry
-	// (Origo spec 028). DefaultAudience when unset.
+	// OIDCAudience is the primary audience: the first entry of
+	// ORIGO_OIDC_AUDIENCE, and what the node's signer mints with (Origo
+	// specs 028 and 029). DefaultAudience when unset.
 	OIDCAudience string
+	// OIDCAudiences is the whole accepted set of ORIGO_OIDC_AUDIENCE, in
+	// the order it names them, OIDCAudience first (Origo spec 029). A
+	// token is accepted when its aud holds any of them, so one node
+	// answers at its own name and at the address it is published under.
+	OIDCAudiences []string
 	// AuthorizerURL is optional (Origo spec 028): with it unset the node
 	// runs the built-in owner policy over AdminSubjects, and needs no
 	// external service to be usable.
@@ -277,7 +283,21 @@ func Load(getenv Getenv) (*Config, error) {
 	if cfg.AuthorizerURL != "" && cfg.AuthorizerToken == "" {
 		problems = append(problems, "missing ORIGO_AUTHORIZER_TOKEN")
 	}
-	cfg.OIDCAudience = orDefault(getenv("ORIGO_OIDC_AUDIENCE"), auth.DefaultAudience)
+	// The accepted audiences, primary first (Origo spec 029). An empty or
+	// repeated entry is a start-up failure rather than a silently shorter
+	// set: a trailing comma would otherwise read as an audience nobody
+	// mints, and a repeated name hides a typo in the other entry.
+	for entry := range strings.SplitSeq(orDefault(getenv("ORIGO_OIDC_AUDIENCE"), auth.DefaultAudience), ",") {
+		audience := strings.TrimSpace(entry)
+		if audience == "" || slices.Contains(cfg.OIDCAudiences, audience) {
+			problems = append(problems, "ORIGO_OIDC_AUDIENCE requires distinct nonempty entries")
+			continue
+		}
+		cfg.OIDCAudiences = append(cfg.OIDCAudiences, audience)
+	}
+	if len(cfg.OIDCAudiences) > 0 {
+		cfg.OIDCAudience = cfg.OIDCAudiences[0]
+	}
 	cfg.AdminSubjects = list(getenv("ORIGO_ADMIN_SUBJECTS"))
 	if raw := missing("ORIGO_TOKEN_KEY"); raw != "" {
 		key, err := auth.ParseKey(raw)

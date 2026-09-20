@@ -46,9 +46,11 @@ const (
 type VerifierOptions struct {
 	// Issuers are the URLs of ORIGO_OIDC_ISSUERS, trailing slash removed.
 	Issuers []string
-	// Audience is ORIGO_OIDC_AUDIENCE: the aud a token must carry.
-	// DefaultAudience when empty.
-	Audience string
+	// Audiences is ORIGO_OIDC_AUDIENCE: the audiences a token's aud may
+	// name, primary first. A token is accepted when its aud holds any of
+	// them, so one node verifies at its own name and at the address it is
+	// published under (Origo spec 029). DefaultAudience alone when empty.
+	Audiences []string
 	// LocalIssuer is ORIGO_PUBLIC_URL: the iss of a repository-bound
 	// token, verified against LocalKey with no fetch.
 	LocalIssuer string
@@ -78,17 +80,17 @@ type VerifierOptions struct {
 // values of spec 007. What stays here is what spec 007 asks and that
 // package does not carry, named row by row in Verify.
 type Verifier struct {
-	shared   *jwt.Validator
-	issuers  map[string]*keySet
-	order    []*keySet
-	local    string
-	localKID string
-	audience string
-	client   *http.Client
-	timeout  time.Duration
-	now      func() time.Time
-	logger   *slog.Logger
-	cache    *cache.TTLCache[[32]byte, cached]
+	shared    *jwt.Validator
+	issuers   map[string]*keySet
+	order     []*keySet
+	local     string
+	localKID  string
+	audiences map[string]struct{}
+	client    *http.Client
+	timeout   time.Duration
+	now       func() time.Time
+	logger    *slog.Logger
+	cache     *cache.TTLCache[[32]byte, cached]
 	// anonymousRead is VerifierOptions.AnonymousRead (spec 027).
 	anonymousRead bool
 }
@@ -111,11 +113,16 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	}
 	v := &Verifier{
 		issuers: make(map[string]*keySet, len(o.Issuers)), local: strings.TrimRight(o.LocalIssuer, "/"),
-		localKID: KeyID(o.LocalKey), audience: o.Audience, client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
+		localKID: KeyID(o.LocalKey), audiences: make(map[string]struct{}, len(o.Audiences)), client: o.Client, timeout: o.FetchTimeout, now: o.Now, logger: o.Logger,
 		anonymousRead: o.AnonymousRead,
 	}
-	if v.audience == "" {
-		v.audience = DefaultAudience
+	for _, audience := range o.Audiences {
+		if audience != "" {
+			v.audiences[audience] = struct{}{}
+		}
+	}
+	if len(v.audiences) == 0 {
+		v.audiences[DefaultAudience] = struct{}{}
 	}
 	if v.timeout == 0 {
 		v.timeout = DefaultFetchTimeout
@@ -178,6 +185,19 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 // LocalKID is the kid of the node's own key, the one a repository-bound
 // token must name.
 func (v *Verifier) LocalKID() string { return v.localKID }
+
+// addressed reports whether the token is addressed to this node: its aud
+// names one of the configured audiences. Any one is enough, because the
+// set is the node's names and not a list of claims a caller must hold
+// (Origo spec 029).
+func (v *Verifier) addressed(c Claims) bool {
+	for _, aud := range c.Aud {
+		if _, ok := v.audiences[aud]; ok {
+			return true
+		}
+	}
+	return false
+}
 
 // Run fetches every issuer's key set now and then once a minute retries
 // any issuer whose set was never fetched and refreshes any set older
@@ -322,7 +342,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	// once the signature has verified, so its verdict is what says the aud
 	// row below is due at all: aud is checked before exp here and after it
 	// there, and spec 007's table pins the order.
-	if !c.HasAudience(v.audience) {
+	if !v.addressed(c) {
 		return Principal{}, refuse(ReasonAudience)
 	}
 	if err != nil {

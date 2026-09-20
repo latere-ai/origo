@@ -23,6 +23,11 @@ const (
 	baseIngress = "deploy/base/ingress.yaml"
 	kindIngress = "deploy/examples/kind/patches/ingress-nginx.yaml"
 	baseDeploy  = "deploy/base/deployment.yaml"
+	// The two files of spec 029: the Ingress for the platform origin, and
+	// the patch that makes the origin's name an accepted audience.
+	originIngress = "deploy/prod/ingress-api.yaml"
+	prodAudience  = "deploy/prod/audience.yaml"
+	prodKustomize = "deploy/prod/kustomization.yaml"
 )
 
 func manifest(t *testing.T, name string) string {
@@ -179,6 +184,7 @@ func TestSigningKeyHasOneSource(t *testing.T) {
 func TestOverlayPatchesReachBothContainers(t *testing.T) {
 	overlays := []string{
 		"deploy/prod/public-url.yaml",
+		"deploy/prod/audience.yaml",
 		"deploy/examples/digitalocean/public-url.yaml",
 		"deploy/examples/aws/public-url.yaml",
 	}
@@ -225,13 +231,21 @@ func TestOverlayPatchesReachBothContainers(t *testing.T) {
 // node, for the reason TestCheckInitContainerSharesTheNodesEnvironment
 // gives: a check against another environment checks nothing.
 //
+// The value is a list since spec 029, so what is held is the *first*
+// entry: it is the primary, the one name the signer mints
+// repository-bound tokens with, and the rest are the other addresses the
+// node answers at. The prod overlay is read here because that is where
+// the second address is named, and a list whose first entry moved would
+// change what every minted token carries.
+//
 // The gate reads only `containers`, so the check's entry is this test's
 // alone; the kind example is here because nothing else reads it.
 func TestEveryNodeNamesItsAudience(t *testing.T) {
 	const kindNode = "deploy/examples/kind/origod.yaml"
 	workloads := map[string][]string{
-		baseDeploy: {"check", "origod"},
-		kindNode:   {"origod"},
+		baseDeploy:   {"check", "origod"},
+		prodAudience: {"check", "origod"},
+		kindNode:     {"origod"},
 	}
 	entry := regexp.MustCompile(`(?m)^\s+- name: ORIGO_OIDC_AUDIENCE\n\s+value: (\S+)$`)
 	for _, workload := range slices.Sorted(maps.Keys(workloads)) {
@@ -256,10 +270,102 @@ func TestEveryNodeNamesItsAudience(t *testing.T) {
 				t.Errorf("%s: the container %s sets no ORIGO_OIDC_AUDIENCE, so it accepts whatever audience the verifier defaults to", workload, name)
 				continue
 			}
-			if got[1] != auth.DefaultAudience {
-				t.Errorf("%s: the container %s names the audience %q; this repository verifies %q", workload, name, got[1], auth.DefaultAudience)
+			audiences := strings.Split(got[1], ",")
+			if audiences[0] != auth.DefaultAudience {
+				t.Errorf("%s: the container %s names the audiences %q, whose primary is %q; this repository mints and verifies %q first", workload, name, got[1], audiences[0], auth.DefaultAudience)
+			}
+			for i, audience := range audiences {
+				if audience == "" || audience != strings.TrimSpace(audience) {
+					t.Errorf("%s: the container %s names the audiences %q; entry %d is empty or padded, which the node refuses to start on", workload, name, got[1], i+1)
+				}
 			}
 		}
+	}
+}
+
+// TestTheOriginIngressClaimsTheRepositoryPrefix is spec 029's fifth row:
+// the prod overlay claims exactly /v1/repos on api.latere.ai and nothing
+// else on that host. Every clause is a way the object could be wrong on a
+// release apply and right in review:
+//
+//   - a `tls` block or a cert-manager annotation is a second claim on a
+//     certificate another service on this host already renews;
+//   - `use-regex` would turn /v1/repos into an unanchored regular
+//     expression, which nginx tries before every prefix on the host, so
+//     the rule would answer for paths that are not Origo's;
+//   - a `rewrite-target` would change the path the node's mux reads, and
+//     the whole point of this prefix is that the published path and the
+//     registered path are one string;
+//   - a second path here would claim a prefix of the origin that another
+//     core owns, which the controller does not refuse.
+//
+// It is a `resources` entry and not a `patches` entry: a patch merges
+// into the base, and the base holds no Ingress for this host to merge
+// into. Comments are stripped before the object is read, because the
+// reasons above are written in it.
+func TestTheOriginIngressClaimsTheRepositoryPrefix(t *testing.T) {
+	// The overlay applies it, as a resource.
+	kustomization := manifest(t, prodKustomize)
+	block := func(key string) string {
+		_, rest, ok := strings.Cut(kustomization, "\n"+key+":\n")
+		if !ok {
+			t.Fatalf("%s holds no %s", prodKustomize, key)
+		}
+		var out []string
+		for line := range strings.SplitSeq(rest, "\n") {
+			if !strings.HasPrefix(line, " ") {
+				break
+			}
+			out = append(out, line)
+		}
+		return strings.Join(out, "\n")
+	}
+	if !strings.Contains(block("resources"), "- ingress-api.yaml") {
+		t.Errorf("%s does not list %s among its resources", prodKustomize, originIngress)
+	}
+	if strings.Contains(block("patches"), "ingress-api.yaml") {
+		t.Errorf("%s applies %s as a patch; it has no counterpart in the base to merge into", prodKustomize, originIngress)
+	}
+
+	var lines []string
+	for line := range strings.SplitSeq(manifest(t, originIngress), "\n") {
+		if field := strings.TrimSpace(line); field != "" && !strings.HasPrefix(field, "#") {
+			lines = append(lines, line)
+		}
+	}
+	object := strings.Join(lines, "\n")
+
+	// A second object, so applying it leaves the git host's rules alone.
+	if !strings.Contains(object, "kind: Ingress") || !strings.Contains(object, "name: origod-api") {
+		t.Fatalf("%s is not an Ingress named origod-api", originIngress)
+	}
+	for _, forbidden := range []string{"tls:", "secretName:", "cert-manager.io/", "use-regex", "rewrite-target"} {
+		if strings.Contains(object, forbidden) {
+			t.Errorf("%s carries %q; the origin's certificate and its path matching are not this object's", originIngress, forbidden)
+		}
+	}
+	for _, want := range []string{
+		"ingressClassName: nginx",
+		`nginx.ingress.kubernetes.io/proxy-body-size: "0"`,
+		`nginx.ingress.kubernetes.io/proxy-read-timeout: "600"`,
+		`nginx.ingress.kubernetes.io/proxy-send-timeout: "600"`,
+	} {
+		if !strings.Contains(object, want) {
+			t.Errorf("%s does not carry %s; one request would behave differently per host", originIngress, want)
+		}
+	}
+
+	// One host, one path, and the path is the capability prefix.
+	if got := regexp.MustCompile(`(?m)^\s+- host: (\S+)$`).FindAllStringSubmatch(object, -1); len(got) != 1 || got[0][1] != "api.latere.ai" {
+		t.Errorf("%s names the hosts %v; want api.latere.ai alone", originIngress, got)
+	}
+	rule := regexp.MustCompile(`(?m)^\s+- path: (\S+)\n\s+pathType: (\S+)\n\s+backend:\n\s+service:\n\s+name: (\S+)\n\s+port:\n\s+name: (\S+)$`)
+	rules := rule.FindAllStringSubmatch(object, -1)
+	if n := strings.Count(object, "- path: "); n != 1 || len(rules) != 1 {
+		t.Fatalf("%s holds %d paths and %d whole rules; the origin gives Origo one prefix", originIngress, n, len(rules))
+	}
+	if got := rules[0][1:]; got[0] != "/v1/repos" || got[1] != "Prefix" || got[2] != "origod" || got[3] != "http" {
+		t.Errorf("%s claims %q as %s for %s:%s; want /v1/repos as Prefix for origod:http", originIngress, got[0], got[1], got[2], got[3])
 	}
 }
 

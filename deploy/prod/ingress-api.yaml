@@ -1,0 +1,60 @@
+# The platform origin. api.latere.ai is one name in front of several
+# services, partitioned by capability prefix with one prefix per core, and
+# Origo's prefix is `repos`. The JSON API is mounted at /v1/repos already,
+# so the capability prefix and the resource collection are one path: the
+# published path and the path the mux registers are one string, and there
+# is no rewrite, no base path, and no change to ORIGO_PUBLIC_URL.
+#
+# A second object rather than a second host block in ingress.yaml. That
+# object carries use-regex, which turns every path in it into a regular
+# expression, and an unanchored /v1/repos would match anywhere in a path;
+# nginx rejects a whole document rather than one rule, so the failure
+# would land on a release apply. The annotation stays with the host that
+# needs it and this rule is a plain prefix.
+#
+# No tls block and no cert-manager.io/cluster-issuer. The origin's
+# certificate is the platform's, the secret api-latere-ai-tls held by the
+# service that publishes this host, and a second issuer annotation on one
+# host is a second claim on one certificate.
+#
+# The three settings below are what a repository request needs from this
+# controller, or one request behaves differently per host: an operation
+# body is bounded at 64 MiB by the node against a controller default of
+# 1 MiB, so POST /v1/repos/{id}/merge would take a controller 413 here and
+# the node's readable error at code.latere.ai, and `archive` and
+# `export.bundle` stream for minutes.
+#
+# pathType: Prefix, because /v1/repos holds no dot: the nginx admission
+# webhook refuses a dotted path under Exact or Prefix and rejects the
+# whole document. nginx renders the type as a prefix location rather than
+# the segment-bounded match Kubernetes defines, so /v1/reposX reaches
+# origod and 404s in its mux; no other prefix at this origin begins with
+# /v1/repos, so nothing is shadowed.
+#
+# The probes and the key set are deliberately not here. A repository-bound
+# token's iss is ORIGO_PUBLIC_URL, https://code.latere.ai, so its key set
+# resolves at that one host by construction, and the release smoke reads
+# /readyz and /version at the address it deploys. Transport stays there
+# too: clone, LFS and SSH URLs name code.latere.ai whichever host a JSON
+# request arrived on.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: origod-api
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.latere.ai
+      http:
+        paths:
+          - path: /v1/repos
+            pathType: Prefix
+            backend:
+              service:
+                name: origod
+                port:
+                  name: http

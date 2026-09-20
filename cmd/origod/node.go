@@ -256,7 +256,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// keys at start and keeps them fresh.
 	authClient := &http.Client{Transport: outboundTransport()}
 	n.verifier, err = auth.NewVerifier(auth.VerifierOptions{
-		Issuers: cfg.OIDCIssuers, Audience: cfg.OIDCAudience, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
+		Issuers: cfg.OIDCIssuers, Audiences: cfg.OIDCAudiences, LocalIssuer: cfg.PublicURL.String(), LocalKey: &cfg.TokenKey.PublicKey,
 		Client: authClient, Logger: logger, AnonymousRead: cfg.AnonymousRead,
 	})
 	if err != nil {
@@ -277,6 +277,9 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		logger.Info("authorizer configured", "mode", "owner policy", "admin_subjects", len(cfg.AdminSubjects))
 	}
 	guard := auth.NewGuard(authorizer, logger)
+	// The signer mints with the primary alone (Origo spec 029): a
+	// repository-bound token is this node's own, so it carries the one
+	// name the node is known by and not every address it answers at.
 	n.signer = auth.NewSigner(cfg.TokenKey, cfg.PublicURL.String(), cfg.OIDCAudience, nil)
 	n.background = append(n.background, n.verifier.Run)
 	if err := n.newEvents(); err != nil {

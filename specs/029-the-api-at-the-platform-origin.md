@@ -1,13 +1,13 @@
 ---
 title: "The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai"
-status: drafted
+status: testing
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/026-repository-directory.md
   - specs/027-anonymous-read.md
   - specs/028-authorizer-contract-2.md
-affects: [deploy/prod/ingress-api.yaml, deploy/prod/kustomization.yaml, deploy/base/deployment.yaml, internal/auth/verifier.go, internal/auth/conformance_test.go, internal/config/config.go, internal/config/document.go, cmd/origod/node.go, cmd/origod/manifests_test.go, docs/configuration.md, docs/install.md, specs/007-authentication-and-delegation.md, specs/028-authorizer-contract-2.md, .lateregate.yaml]
+affects: [deploy/prod/ingress-api.yaml, deploy/prod/audience.yaml, deploy/prod/kustomization.yaml, deploy/base/deployment.yaml, internal/auth/verifier.go, internal/auth/conformance_test.go, internal/config/config.go, internal/config/document.go, cmd/origod/node.go, cmd/origod/manifests_test.go, docs/configuration.md, docs/install.md, specs/007-authentication-and-delegation.md, specs/028-authorizer-contract-2.md, .lateregate.yaml]
 effort: small
 created: 2026-09-20
 updated: 2026-09-20
@@ -230,3 +230,66 @@ is a new caller, with its own leaf in the platform deck (spec 67).
 [[007-authentication-and-delegation]] for the verification table whose `aud` row
 moves. Outside the tree, latere-ai/specs
 `infrastructure/platform/ps-01-one-origin.md`, which this is Origo's half of.
+
+## State on 2026-09-20
+
+Built on main, green locally. Every criterion a local run can prove is
+proved; the two that are requests at the origin wait for the release,
+because the route does not exist until `deploy/prod` is applied.
+
+### What was built
+
+**The route.** `deploy/prod/ingress-api.yaml`, the object `origod-api`:
+`ingressClassName: nginx`, host `api.latere.ai`, one rule, `/v1/repos` at
+`pathType: Prefix`, backend `origod:http`. No `tls` block, no
+`cert-manager.io/cluster-issuer`, no `use-regex`, no `rewrite-target`;
+`proxy-body-size: "0"`, `proxy-read-timeout: "600"` and
+`proxy-send-timeout: "600"` are the three annotations it carries. It is a
+`resources` entry of `deploy/prod/kustomization.yaml`, not a patch, as
+the Design says.
+
+**The audience list.** `ORIGO_OIDC_AUDIENCE` is comma separated, entries
+trimmed, an empty or repeated entry a start-up failure, unset still
+`auth.DefaultAudience`. `Config.OIDCAudience` keeps its meaning as the
+primary and `Config.OIDCAudiences` is the accepted set;
+`VerifierOptions.Audience` became `Audiences []string` and
+`Verifier.audience` a set read by `Verifier.addressed`. The check is
+still by hand and still before `exp`. The signer still mints with the
+primary (`cmd/origod/node.go`), so a repository-bound token carries
+`aud: ["origo"]` unchanged.
+
+**Latere's values.** `deploy/prod/audience.yaml` sets
+`origo,api.latere.ai` on the node and on the check; `deploy/base`
+keeps `origo`, so a self-hoster gets nothing new.
+`.lateregate.yaml` is untouched and still names the scalar `origo`, the
+primary. `docs/configuration.md` is regenerated from
+`internal/config/document.go`, and `docs/install.md` says the variable
+reads a list and what its first entry is. Specs 007 and 028 carry a
+dated note each.
+
+### What the tests prove
+
+| Criterion | Test | State |
+|---|---|---|
+| 2 | `internal/auth`, `TestConformance`, the family's suite run once per configured audience over a verifier holding both; `RefusesOtherAudience` is the case | passing |
+| 3 | `internal/config`, `TestConfiguredAudienceSet`, table-driven over the default, a list, a reordered list, a trimmed list, and the four malformed values | passing |
+| 4 | `internal/auth`, `TestSignerMintsAndServesItsKey` (the minted token names the primary alone) and `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` (the reason order, now over a verifier holding the list) | passing |
+| 5 | `cmd/origod`, `TestTheOriginIngressClaimsTheRepositoryPrefix` (the resource entry, one host, one path, `/v1/repos` at `Prefix` to `origod:http`, and the absence of `tls`, `secretName`, `cert-manager.io/`, `use-regex` and `rewrite-target`) and `TestEveryNodeNamesItsAudience`, amended to read the first entry of the list and extended to the prod patch | passing |
+| 7, the half a tree can answer | no file of `internal/api` or `internal/lfs` names `code.latere.ai`; `git grep code.latere.ai/v1` finds nothing in origo outside this document and nothing in origo-web, and latere-cli names `code.latere.ai` only as a git credential host and in clone URLs | passing |
+
+Each was run once against the tree without the change and once with it:
+the ingress test fails on a `tls` block, a `secretName` and a
+`use-regex` annotation; the audience test fails on a list whose primary
+is the origin; `TestConformance/api.latere.ai` fails with `audience` on
+a verifier holding one name; and `TestConfiguredAudienceSet` fails on
+every malformed value with the entry check removed.
+
+### What waits for the release
+
+Criteria 1 and 6 are requests at `https://api.latere.ai`, and the host
+answers 404 from nginx until this overlay is applied: the directory for a
+person's actor token and for a PAT-minted token addressed to
+`api.latere.ai`, and a 64 MiB operation body at both hosts. The object
+and the audience list ship in one release, because the route without the
+second audience serves 401 to every key-minted caller. Record both in the
+Outcome, then the spec is `complete`.

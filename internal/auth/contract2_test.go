@@ -194,14 +194,27 @@ func TestSubjectsAreIssuerQualified(t *testing.T) {
 }
 
 // TestAudienceIsConfigurable is the fifth row: ORIGO_OIDC_AUDIENCE changes
-// the accepted audience and defaults to origo.
+// the accepted audience and defaults to origo. Spec 029 widens the option
+// to a list, so the last case is a verifier holding two names: each one
+// admits a token on its own, and a third is still refused.
 func TestAudienceIsConfigurable(t *testing.T) {
 	clk := newClock()
 	iss := issuer.New(t, issuer.WithClock(clk.Now))
 	ctx := context.Background()
+	build := func(audiences ...string) *Verifier {
+		t.Helper()
+		v, err := NewVerifier(VerifierOptions{
+			Issuers: []string{iss.URL()}, Audiences: audiences, LocalIssuer: localIssuer, LocalKey: &newKey(t).PublicKey,
+			Client: testClient(), Now: clk.Now, FetchTimeout: 500 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
 
 	// The default accepts origo and refuses another.
-	def := newVerifier(t, clk, newKey(t), iss)
+	def := build()
 	if _, err := def.Verify(ctx, iss.Mint(issuer.Claims{Sub: "a"})); err != nil {
 		t.Fatalf("the default audience rejected origo: %v", err)
 	}
@@ -210,18 +223,23 @@ func TestAudienceIsConfigurable(t *testing.T) {
 	}
 
 	// A configured audience accepts its value and refuses origo.
-	v, err := NewVerifier(VerifierOptions{
-		Issuers: []string{iss.URL()}, Audience: "code.example", LocalIssuer: localIssuer, LocalKey: &newKey(t).PublicKey,
-		Client: testClient(), Now: clk.Now, FetchTimeout: 500 * time.Millisecond,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := build("code.example")
 	if _, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "a", Aud: issuer.StringList{"code.example"}})); err != nil {
 		t.Fatalf("the configured audience rejected its value: %v", err)
 	}
 	if _, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "a"})); !reasonIs(err, ReasonAudience) {
 		t.Fatalf("the configured audience accepted origo: %v", err)
+	}
+
+	// A configured list accepts every entry and nothing else.
+	both := build(installed...)
+	for _, audience := range installed {
+		if _, err := both.Verify(ctx, iss.Mint(issuer.Claims{Sub: "a", Aud: issuer.StringList{audience}})); err != nil {
+			t.Fatalf("the configured list rejected %q: %v", audience, err)
+		}
+	}
+	if _, err := both.Verify(ctx, iss.Mint(issuer.Claims{Sub: "a", Aud: issuer.StringList{"code.example"}})); !reasonIs(err, ReasonAudience) {
+		t.Fatalf("the configured list accepted an audience it does not name: %v", err)
 	}
 }
 

@@ -61,6 +61,12 @@ const localIssuer = "https://git.example.com"
 
 // newVerifier builds a verifier over the issuers with the fake clock and
 // the local key, fetching nothing yet.
+// newVerifier builds the verifier the tests of this package run against,
+// carrying the audience list deploy/prod configures (spec 029). The list
+// and not the single default, so every row weighed after aud, the
+// reason order of spec 007's table included, is proved on the
+// configuration the node installs, and a repository-bound token minted
+// with the primary alone is proved to verify against it.
 func newVerifier(t *testing.T, clk *clock, key *ecdsa.PrivateKey, issuers ...*issuer.Server) *Verifier {
 	t.Helper()
 	urls := make([]string, 0, len(issuers))
@@ -68,7 +74,7 @@ func newVerifier(t *testing.T, clk *clock, key *ecdsa.PrivateKey, issuers ...*is
 		urls = append(urls, i.URL()+"/")
 	}
 	v, err := NewVerifier(VerifierOptions{
-		Issuers: urls, LocalIssuer: localIssuer + "/", LocalKey: &key.PublicKey,
+		Issuers: urls, Audiences: installed, LocalIssuer: localIssuer + "/", LocalKey: &key.PublicKey,
 		Client: testClient(), Now: clk.Now, FetchTimeout: 500 * time.Millisecond,
 	})
 	if err != nil {

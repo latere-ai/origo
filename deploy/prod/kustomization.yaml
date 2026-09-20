@@ -21,6 +21,11 @@ namespace: latere
 
 resources:
   - ../base
+  # The platform origin (spec 029): a second Ingress object, for the host
+  # api.latere.ai, claiming /v1/repos. A resource and not a patch, because
+  # the base holds no counterpart for it to merge into: the base names no
+  # host, and this host is Latere's address.
+  - ingress-api.yaml
 
 # The release the target runs. The base carries the placeholder tag
 # `unreleased`, which never resolves, so a target that pins nothing fails
@@ -39,6 +44,8 @@ patches:
   - path: ssh.yaml
   # Public repositories clone without a token (spec 027).
   - path: anonymous-read.yaml
+  # Both addresses the node answers at are accepted audiences (spec 029).
+  - path: audience.yaml
 
 # Port 22 is not patched onto origod-ssh here. Latere's ingress
 # controller passes TCP 22 through to this Service (its tcp-services

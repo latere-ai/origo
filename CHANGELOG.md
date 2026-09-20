@@ -10,6 +10,27 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A node can accept more than one audience. `ORIGO_OIDC_AUDIENCE` reads a
+  comma separated list, and a token is admitted when its `aud` names any
+  entry, so one installation verifies at its own name and at every
+  address it is published under. The first entry is the primary: it is
+  what the repository-bound tokens the node mints carry, so those tokens
+  are unchanged and are still accepted by the node that minted them. A
+  single value means exactly what it meant before, unset is still
+  `origo`, and an empty or repeated entry fails the start-up, so a
+  trailing comma is found at the restart rather than at the first 401.
+
+### Added
+
+- Latere's own installation answers the repository API at
+  `https://api.latere.ai/v1/repos` as well as at `code.latere.ai`. It is
+  the same API, byte for byte, reached under the platform's origin;
+  clone, LFS and SSH URLs still name `code.latere.ai`, whichever host a
+  JSON request arrived on. Nothing changes for a self-hosted node, whose
+  own address is `ORIGO_PUBLIC_URL` as before.
+
 ## v0.7.0 - 2026-09-17
 
 ### Added

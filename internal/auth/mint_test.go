@@ -87,6 +87,12 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	if header.Alg != "ES256" || header.KID != s.KID() || c.Iss != localIssuer || !c.HasAudience(DefaultAudience) || c.Sub != "alice" || extra.Act != nil || c.Repo != repoA || c.Scope != "write" {
 		t.Fatalf("claims: %+v %+v", header, c)
 	}
+	// The primary alone, whatever the verifier accepts (spec 029): a
+	// repository-bound token is this node's own and names one audience,
+	// so widening the accepted set does not widen what the node mints.
+	if len(c.Aud) != 1 || c.Aud[0] != DefaultAudience {
+		t.Fatalf("aud is %v; a minted token names the primary alone", c.Aud)
+	}
 	if extra.Iat == nil || *extra.Iat != float64(clk.Now().Unix()) || c.Exp != float64(exp.Unix()) {
 		t.Fatalf("times: %v %v", extra.Iat, c.Exp)
 	}

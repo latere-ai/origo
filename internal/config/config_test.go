@@ -14,6 +14,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +107,55 @@ func TestAuthorizerIsOptional(t *testing.T) {
 	delete(m, "ORIGO_AUTHORIZER_TOKEN")
 	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "missing ORIGO_AUTHORIZER_TOKEN") {
 		t.Fatalf("a URL with no token was accepted: %v", err)
+	}
+}
+
+// TestConfiguredAudienceSet is Origo spec 029's third row:
+// ORIGO_OIDC_AUDIENCE reads a comma-separated list, the first entry is
+// the primary the node mints with, entries are trimmed, and an empty or
+// repeated entry fails the start-up. A trailing comma would otherwise
+// read as an audience nobody mints and a repeated name would hide a typo
+// in the entry beside it, both of them silently.
+func TestConfiguredAudienceSet(t *testing.T) {
+	for _, tc := range []struct {
+		value     string
+		primary   string
+		audiences []string
+		invalid   bool
+	}{
+		{value: "", primary: "origo", audiences: []string{"origo"}},
+		{value: "origo,api.latere.ai", primary: "origo", audiences: []string{"origo", "api.latere.ai"}},
+		{value: " origo , api.latere.ai ", primary: "origo", audiences: []string{"origo", "api.latere.ai"}},
+		{value: "api.latere.ai,origo", primary: "api.latere.ai", audiences: []string{"api.latere.ai", "origo"}},
+		{value: "code.example", primary: "code.example", audiences: []string{"code.example"}},
+		{value: ",", invalid: true},
+		{value: "origo,", invalid: true},
+		{value: "origo,,other", invalid: true},
+		{value: "origo, origo", invalid: true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			m := complete(t)
+			m["ORIGO_OIDC_AUDIENCE"] = tc.value
+			cfg, err := Load(env(m))
+			if tc.invalid {
+				if err == nil {
+					t.Fatalf("%q was accepted", tc.value)
+				}
+				if !strings.Contains(err.Error(), "ORIGO_OIDC_AUDIENCE requires distinct nonempty entries") {
+					t.Fatalf("%q was refused without naming the variable: %v", tc.value, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.OIDCAudience != tc.primary {
+				t.Errorf("the primary audience is %q, want %q", cfg.OIDCAudience, tc.primary)
+			}
+			if !slices.Equal(cfg.OIDCAudiences, tc.audiences) {
+				t.Errorf("the accepted audiences are %v, want %v", cfg.OIDCAudiences, tc.audiences)
+			}
+		})
 	}
 }
 

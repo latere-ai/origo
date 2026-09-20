@@ -1,0 +1,31 @@
+# The audiences this installation accepts (spec 029). The node answers at
+# two addresses, code.latere.ai and the platform origin api.latere.ai, and
+# a token addressed to either is addressed to this node, so both names are
+# accepted and a personal access token minted for the origin is not
+# refused with `audience` on a route the origin publishes.
+#
+# The first entry is the primary: it is what the signer mints
+# repository-bound tokens with, so those tokens still carry aud: ["origo"]
+# and are accepted by this node alone. The second name is Latere's own
+# address, which is why the pair is set here and not in the base; the base
+# keeps `origo` and a self-hoster gets nothing new.
+#
+# The check reads it beside the node, for the reason the base gives: a
+# check against another environment checks nothing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_OIDC_AUDIENCE
+              value: origo,api.latere.ai
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_OIDC_AUDIENCE
+              value: origo,api.latere.ai

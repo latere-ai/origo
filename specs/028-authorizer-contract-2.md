@@ -644,3 +644,30 @@ Two things follow, and the second is the only behaviour that changed.
 | With no authorizer configured the owner policy narrows its answer by the grants, and never widens it | `internal/auth`, `TestTheOwnerPolicyNarrowsAScopedToken`, table-driven | built |
 | A deny whose reason is `grant` reaches the person in `details.reason` over HTTPS and the operator's line over SSH, with the sideband unchanged | `internal/auth`, `TestTheGrantRefusalReachesTheClient`; `internal/sshd`, `TestSSHNamesAGrantRefusal` | built |
 | An issuer's key set is read once at start-up, not twice | `internal/auth`, `TestStartUpWarmsTheSharedVerifier` | built |
+
+## State on 2026-09-20: the audience is a list, primary first
+
+Spec 029 widens `ORIGO_OIDC_AUDIENCE` from one value to a comma
+separated list, following Cella. Three places in this document read
+differently from this date, and none of them is rewritten in place,
+because two of them sit inside dated records and a record that is edited
+is no longer one:
+
+- the configuration row "Audience accepted by the token verifier" is the
+  audiences accepted by the token verifier, in the order the variable
+  names them, the first of them the primary;
+- the Design sentence "`ORIGO_OIDC_AUDIENCE`, default `origo`, replaces
+  the constant" holds exactly as written for a single value, and gains a
+  clause for a list: every entry is accepted, and the first is what the
+  node's signer mints with;
+- the line of `State on 2026-09-14` that records `ORIGO_OIDC_AUDIENCE`
+  (default `origo`) among what shipped is the record of that day and
+  stays as it is.
+
+Nothing else moves. Unset is still `origo`, a single value means exactly
+what it meant here, and the widening is refused where it would be a
+typo: an empty or repeated entry fails the start-up rather than becoming
+a shorter set (`internal/config`, `TestConfiguredAudienceSet`). The fifth
+acceptance row's test, `TestAudienceIsConfigurable`, gains the list case:
+a verifier holding two names admits each of them on its own and refuses a
+third.

@@ -88,7 +88,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [026](026-repository-directory.md) | Repository directory: the list action on the authorizer contract and the collection route | medium | complete | 003, 007, 013 |
 | [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | complete | 007, 009, 012, 016 |
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
-| [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai | small | drafted | 007, 026, 027, 028 |
+| [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai | small | testing | 007, 026, 027, 028 |
 
 ## Dependency graph
 
@@ -1131,7 +1131,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_NODE_NAME` | [002](002-repository-scaffold.md) | 005, 013, 019 |
-| variable | `ORIGO_OIDC_AUDIENCE` | [028](028-authorizer-contract-2.md) | 029 |
+| variable | `ORIGO_OIDC_AUDIENCE` | [028](028-authorizer-contract-2.md) | 007, 029 |
 | variable | `ORIGO_OIDC_INSECURE_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013 |
 | variable | `ORIGO_OIDC_ISSUERS` | [002](002-repository-scaffold.md) | 007, 013, 028 |
 | variable | `ORIGO_PREVIOUS_RELEASE_FIXTURE` | [017](017-release-and-versioning.md) | 002, 013 |

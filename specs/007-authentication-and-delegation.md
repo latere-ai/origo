@@ -521,3 +521,30 @@ authorizer as an anonymous request whether or not
 `TestBadCredentialIsNotAnonymous`). And the discovery document's
 `issuer` was not compared with the URL it was fetched under; it is now,
 and a mismatch fails the fetch (`TestDiscoveryIssuerMustMatch`).
+
+## State on 2026-09-20: the `aud` row reads the configured set
+
+Spec 029 gives one node more than one audience. `ORIGO_OIDC_AUDIENCE` is
+a comma separated list whose first entry is the primary, and Latere's
+installation sets `origo,api.latere.ai`, so a token addressed to the
+platform origin verifies on the route that origin publishes. The
+verification table above is amended in one cell and nowhere else: its
+`aud` row, which reads "contains `origo`", reads "contains one of the
+configured audiences" from this date, with the same refusal `audience`
+and the same place in the order.
+
+The order is the point of that cell, and it does not move. The check
+stays by hand in `Verify` rather than being handed to the shared
+package as `jwt.Config.Audiences`, because the package weighs `aud`
+after `exp` and this table weighs it before, and the reason a client
+reads would otherwise change with the token.
+`TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` now runs over a
+verifier holding the whole list, so every row weighed after `aud` is
+proved on the configuration the node installs, and `RefusesOtherAudience`
+of the family's suite runs once per configured name.
+
+The minted token is unchanged. A repository-bound token carries
+`aud: ["origo"]`, because the signer mints with the primary alone
+(`cmd/origod/node.go`, `TestSignerMintsAndServesItsKey`), so it is still
+verified against the local key with no fetch and accepted by the node
+that minted it and by nobody else. Rule R4 stands as written.

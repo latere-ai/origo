@@ -39,6 +39,13 @@ func (a identity) Authenticate(r *http.Request) (authkit.Identity, error) {
 	return id, nil
 }
 
+// installed is ORIGO_OIDC_AUDIENCE as deploy/prod sets it (spec 029):
+// the core's own name first, the platform origin the node is published
+// at second. The suite runs once per entry over a verifier holding both,
+// so each name is proved to be a whole audience and not a string the
+// other one carries.
+var installed = []string{DefaultAudience, "api.latere.ai"}
+
 // TestConformance runs the family's rule R2 against the verifier origod
 // installs in production: a token addressed to ORIGO_OIDC_AUDIENCE is
 // admitted and yields one Identity, a token addressed to the issuer
@@ -49,19 +56,28 @@ func (a identity) Authenticate(r *http.Request) (authkit.Identity, error) {
 // key beside the issuer list, because one verifier serves both and the
 // suite must run against that one. The suite hands the constructor a
 // stub issuer, so the test needs nothing running.
+//
+// The second run is spec 029's second row: a node that answers at
+// api.latere.ai admits that audience under every rule the first one is
+// held to, and refuses another-service under both. Widening the set
+// widens nothing else.
 func TestConformance(t *testing.T) {
-	conformance.Run(t, conformance.Service{
-		Audience: "origo",
-		New: func(tb testing.TB, issuerURL, _ string) authkit.Authenticator {
-			v, err := NewVerifier(VerifierOptions{
-				Issuers: []string{issuerURL}, Audience: "origo",
-				LocalIssuer: localIssuer, LocalKey: &newKey(tb).PublicKey,
-				Client: testClient(),
+	for _, audience := range installed {
+		t.Run(audience, func(t *testing.T) {
+			conformance.Run(t, conformance.Service{
+				Audience: audience,
+				New: func(tb testing.TB, issuerURL, _ string) authkit.Authenticator {
+					v, err := NewVerifier(VerifierOptions{
+						Issuers: []string{issuerURL}, Audiences: installed,
+						LocalIssuer: localIssuer, LocalKey: &newKey(tb).PublicKey,
+						Client: testClient(),
+					})
+					if err != nil {
+						tb.Fatal(err)
+					}
+					return identity{v}
+				},
 			})
-			if err != nil {
-				tb.Fatal(err)
-			}
-			return identity{v}
-		},
-	})
+		})
+	}
 }
