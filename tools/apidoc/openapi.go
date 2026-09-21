@@ -64,6 +64,53 @@ var tagsBySpec = map[string]string{
 	"030": "service",
 }
 
+// summaries names each action for navigation, independently of the endpoint
+// table's full behavior prose. Every route must have an explicit label: adding
+// a route without deciding its name fails generation instead of truncating prose.
+var summaries = map[string]string{
+	"GET /":                      "Get landing page",
+	"GET /.well-known/jwks.json": "Get signing keys",
+	"GET /favicon.ico":           "Get favicon",
+	"GET /livez":                 "Check liveness",
+	"GET /metrics":               "Get metrics",
+	"GET /openapi.yaml":          "Get OpenAPI document",
+	"GET /readyz":                "Check readiness",
+	"GET /version":               "Get version",
+	"GET /v1/repos":              "List repositories",
+	"POST /v1/repos":             "Create repository",
+	"GET /v1/repos/{id}":         "Get repository",
+	"PATCH /v1/repos/{id}":       "Update repository",
+	"DELETE /v1/repos/{id}":      "Delete repository",
+	"GET /v1/repos/{id}/archive/{sha}.tar.gz":    "Download archive",
+	"GET /v1/repos/{id}/blob/{sha}":              "Get blob",
+	"POST /v1/repos/{id}/cherry-pick":            "Cherry-pick commits",
+	"GET /v1/repos/{id}/commits":                 "List commits",
+	"POST /v1/repos/{id}/commits":                "Create commit",
+	"GET /v1/repos/{id}/commits/{sha}":           "Get commit",
+	"GET /v1/repos/{id}/compare/{base}...{head}": "Compare revisions",
+	"GET /v1/repos/{id}/export.bundle":           "Export repository",
+	"POST /v1/repos/{id}/freeze":                 "Freeze repository",
+	"POST /v1/repos/{id}/gc":                     "Compact repository",
+	"GET /v1/repos/{id}/import":                  "Get import status",
+	"POST /v1/repos/{id}/import":                 "Import repository",
+	"POST /v1/repos/{id}/merge":                  "Merge revisions",
+	"GET /v1/repos/{id}/refs":                    "List references",
+	"POST /v1/repos/{id}/revert":                 "Revert commits",
+	"GET /v1/repos/{id}/stats":                   "Get repository statistics",
+	"POST /v1/repos/{id}/tokens":                 "Create repository token",
+	"POST /v1/repos/{id}/transfer":               "Transfer repository",
+	"GET /v1/repos/{id}/tree/{sha}":              "List files",
+	"POST /v1/repos/{id}/undelete":               "Restore repository",
+	"POST /v1/repos/{id}/unfreeze":               "Unfreeze repository",
+	"POST /v1/repos/{id}/verify":                 "Verify repository",
+	"POST /{repo}/git-receive-pack":              "Push changes",
+	"POST /{repo}/git-upload-pack":               "Fetch repository",
+	"POST /{repo}/info/lfs/locks":                "Request LFS lock",
+	"POST /{repo}/info/lfs/objects/batch":        "Get LFS transfer actions",
+	"POST /{repo}/info/lfs/verify":               "Verify LFS upload",
+	"GET /{repo}/info/refs":                      "Advertise references",
+}
+
 // tagDescriptions are the one line each group carries in the document.
 var tagDescriptions = map[string]string{
 	"administration": "Rename, transfer, freeze, import, export, statistics and garbage collection.",
@@ -266,15 +313,14 @@ func operation(n specs.Name, method, path string, codes map[string]code) (Operat
 	if err != nil {
 		return Operation{}, err
 	}
-	description := prose(n, desc)
-	summary := firstFragment(answerColumn(desc))
-	if description == summary {
-		description = ""
+	summary, ok := summaries[n.Name]
+	if !ok {
+		return Operation{}, fmt.Errorf("endpoint %q has no action summary; add it to summaries", n.Name)
 	}
 	op := Operation{
 		OperationID: operationID(method, path),
 		Summary:     summary,
-		Description: description,
+		Description: prose(n, desc),
 		Tags:        []string{tag},
 		Scope:       scopesBySpec[n.Owner],
 		Parameters:  parameters(path, desc),
@@ -370,32 +416,6 @@ func answerColumn(desc []string) string {
 		}
 	}
 	return ""
-}
-
-// firstFragment is the opening statement of a cell: everything up to the
-// first sentence end, semicolon or colon outside backticks, which is
-// where these rows stop naming the answer and start on its shape and its
-// conditions. A digit before the period is a number and not an end.
-func firstFragment(s string) string {
-	runes := []rune(s)
-	tick := false
-	for i, r := range runes {
-		switch {
-		case r == '`':
-			tick = !tick
-		case tick:
-		case r == ';', r == ':':
-			return strings.TrimSpace(string(runes[:i]))
-		case r == '.':
-			if i > 0 && unicode.IsDigit(runes[i-1]) {
-				continue
-			}
-			if i+1 >= len(runes) || runes[i+1] == ' ' {
-				return strings.TrimSpace(string(runes[:i+1]))
-			}
-		}
-	}
-	return strings.TrimSpace(s)
 }
 
 // tagOf is the group one row's operation is rendered in: the path

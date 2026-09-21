@@ -9,7 +9,7 @@ depends_on:
 affects: [tools/apidoc/openapi.go, tools/apidoc/openapi_test.go, tools/apidoc/main.go, tools/apidoc/page.go, tools/apidoc/page_test.go, tools/apidoc/go.mod, api/openapi.yaml, api/openapi.go, api/openapi_test.go, cmd/origod/node.go, cmd/origod/openapi_test.go, cmd/origod/main_test.go, deploy/prod/ingress.yaml, docs/api.md, Makefile, .github/workflows/verify.yml, CHANGELOG.md, specs/020-server-side-git-operations.md, specs/022-landing-page.md, specs/README.md]
 effort: medium
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-21
 author: changkun
 ---
 
@@ -138,8 +138,8 @@ One operation per endpoint row:
 | Field | Rule |
 |---|---|
 | `operationId` | the method and the path, one word per segment, a wildcard as `By` and its name: `getV1ReposById`, `postV1ReposByIdCherryPick`. Derived from the route, so rewording a row does not move a generated client's method name. Arca's scheme (`arca/internal/apidocs/apidocs.go`) |
-| `summary` | the opening statement of the row's answer column, which is the last column after `Path`, since a table that splits request from response states the answer last and a table with one column states both in it. Cut at the first sentence end, semicolon or colon outside backticks, which is where these rows stop naming the answer and start on its shape and its conditions |
-| `description` | every column after `Path`, in the table's order, each under its own header when the table has more than one. The row's whole text, so the document carries what the spec states and the page shows; absent where the row is one statement and the summary already is it |
+| `summary` | an explicit verb-first action name of two to four words from `summaries` in `tools/apidoc/openapi.go`, keyed by method and path. A route without naming metadata fails generation. Labels describe actions, such as `List files` or `Create commit`, independently of the endpoint's behavior prose |
+| `description` | every column after `Path`, in the table's order, each under its own header when the table has more than one. The row's whole text, so the document carries what the spec states and the page shows, including single-statement rows |
 | `tags` | one tag per group (below); a consumer renders and orders by it |
 | `x-scope` | `operator` on the rows a caller writing against the API never sends: spec 002's four probe routes and spec 022's two page routes. Absent on every other row |
 | `parameters` | every `{name}` of the path, `in: path`, required; and every `?name=` or `&name=` the row states, `in: query`, optional, because each of those has a default the row also states. `{repo}` carries the sentence `docs/api.md` opens its endpoint section with, the one place it is written |

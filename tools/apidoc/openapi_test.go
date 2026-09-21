@@ -123,6 +123,42 @@ func TestDocumentCarriesEveryEndpoint(t *testing.T) {
 	}
 }
 
+// Navigation labels name actions; the description retains the complete
+// endpoint row, including rows that used to live only in the summary.
+func TestDocumentUsesActionLabelsAndPreservesDescriptions(t *testing.T) {
+	doc := document(t)
+	verbs := []string{"Get", "List", "Create", "Update", "Delete", "Restore", "Download", "Check", "Export", "Freeze", "Unfreeze", "Compact", "Import", "Merge", "Revert", "Transfer", "Verify", "Push", "Fetch", "Request", "Advertise", "Cherry-pick", "Compare"}
+	for _, n := range index(t).Names {
+		if n.Kind != specs.KindEndpoint {
+			continue
+		}
+		method, path, _ := strings.Cut(n.Name, " ")
+		op := doc.Paths[path][strings.ToLower(method)]
+		words := strings.Fields(op.Summary)
+		if len(words) < 2 || len(words) > 4 || !slices.Contains(verbs, words[0]) {
+			t.Errorf("%s needs a verb-first action of two to four words, got %q", n.Name, op.Summary)
+		}
+		for _, cell := range n.Row[2:] {
+			if !strings.Contains(op.Description, cell) {
+				t.Errorf("%s description lost endpoint detail %q", n.Name, cell)
+			}
+		}
+	}
+	for _, tc := range []struct{ method, path, summary string }{
+		{"get", "/v1/repos", "List repositories"},
+		{"get", "/v1/repos/{id}/tree/{sha}", "List files"},
+		{"post", "/v1/repos/{id}/commits", "Create commit"},
+		{"post", "/v1/repos/{id}/cherry-pick", "Cherry-pick commits"},
+		{"get", "/v1/repos/{id}/import", "Get import status"},
+		{"post", "/v1/repos/{id}/import", "Import repository"},
+		{"get", "/livez", "Check liveness"},
+	} {
+		if got := doc.Paths[tc.path][tc.method].Summary; got != tc.summary {
+			t.Errorf("%s %s summary = %q, want %q", tc.method, tc.path, got, tc.summary)
+		}
+	}
+}
+
 // TestDocumentStatesTheContractVersion is criterion 4: the version is
 // spec 003's contract version, and a deck that states none renders no
 // document rather than a guess.
@@ -278,21 +314,26 @@ func TestADeckWithoutAGroupRendersNothing(t *testing.T) {
 	}
 }
 
-// TestSummaryStopsAtTheFirstStatement holds the rule the summaries are
-// cut by, including the three the rows would trip it on: a number with a
-// decimal point, a colon that opens the shape of an answer, and a
-// punctuation mark inside backticks, which is text and not a cut.
-func TestSummaryStopsAtTheFirstStatement(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"200 `ok`, touches no dependency", "200 `ok`, touches no dependency"},
-		{"sets `frozen_at`; writes refuse with `repo_frozen`", "sets `frozen_at`"},
-		{"two modes, chosen by the query. **Directory:** more", "two modes, chosen by the query."},
-		{"at most 1.5 MiB of it, then more", "at most 1.5 MiB of it, then more"},
-		{"`git bundle create - --all` streamed as `application/x-git-bundle`: the repository", "`git bundle create - --all` streamed as `application/x-git-bundle`"},
-		{"`{\"operation\": \"download\"}` and nothing after it", "`{\"operation\": \"download\"}` and nothing after it"},
-	} {
-		if got := firstFragment(tc.in); got != tc.want {
-			t.Errorf("firstFragment(%q) = %q, want %q", tc.in, got, tc.want)
+// Every new endpoint needs an authored action name, even when its prose
+// happens to start with a short sentence.
+func TestEndpointWithoutActionSummaryRendersNothing(t *testing.T) {
+	idx := index(t)
+	for i, n := range idx.Names {
+		if n.Kind == specs.KindEndpoint && n.Name == "GET /v1/repos/{id}" {
+			idx.Names[i].Name = "GET /v1/new-operation"
+		}
+	}
+	if _, err := Build(idx); err == nil || !strings.Contains(err.Error(), "has no action summary") {
+		t.Errorf("an endpoint without action metadata rendered a document: %v", err)
+	}
+}
+
+// Removed routes must not leave stale naming metadata behind.
+func TestActionSummariesNameOnlyDefinedEndpoints(t *testing.T) {
+	routes := document(t).Operations()
+	for route := range summaries {
+		if !slices.Contains(routes, route) {
+			t.Errorf("summary names an undefined endpoint: %s", route)
 		}
 	}
 }
