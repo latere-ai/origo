@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.10.0 - 2026-09-22
+
 ### Changed
 
 - The Go module is `latere.ai/x/origo`, the path the other Latere cores
