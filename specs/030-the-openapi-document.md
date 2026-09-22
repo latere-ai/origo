@@ -1,6 +1,6 @@
 ---
 title: "The OpenAPI document: Origo's surface as a machine-readable contract, generated from the specs"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/003-protocol-contract.md
@@ -9,7 +9,7 @@ depends_on:
 affects: [tools/apidoc/openapi.go, tools/apidoc/openapi_test.go, tools/apidoc/main.go, tools/apidoc/page.go, tools/apidoc/page_test.go, tools/apidoc/go.mod, api/openapi.yaml, api/openapi.go, api/openapi_test.go, cmd/origod/node.go, cmd/origod/openapi_test.go, cmd/origod/main_test.go, deploy/prod/ingress.yaml, docs/api.md, Makefile, .github/workflows/verify.yml, CHANGELOG.md, specs/020-server-side-git-operations.md, specs/022-landing-page.md, specs/README.md]
 effort: medium
 created: 2026-09-20
-updated: 2026-09-21
+updated: 2026-09-22
 author: changkun
 ---
 
@@ -329,3 +329,19 @@ platform vendors `api/openapi.yaml` from a tag, so its Repos API page renders
 once Origo is tagged; until then platform spec 68's freshness check skips the
 capability, which is what that spec says it does. The Outcome records both,
 and the spec is then `complete`.
+
+## Outcome
+
+Released as v0.9.0 on 2026-09-20; deploy, smoke, publish, verify and
+install all passed by 21:55 UTC. The two things that waited for a release
+are now observed in production.
+
+| # | Criterion | Proof |
+|---|---|---|
+| 5, 7 | the route answers at `code.latere.ai` | `GET https://code.latere.ai/openapi.yaml` with no token answers 200, `application/yaml`, and the bytes are those of the tag's `api/openapi.yaml` (checked by `cmp` on 2026-09-22) |
+| - | the platform renders from the document | latere-ai/platform vendors the v0.9.0 document as `docs/repos/openapi.yaml` and renders the Repos API page from it; the page answers 200 at `platform.latere.ai/docs/repos/api/repositories` since platform v0.16.0 |
+
+The summaries the generator wrote at v0.9.0 read badly as page labels;
+`175c403` shortens them in the tree, and the platform refreshes operation
+documentation from that revision while keeping the released contract. The
+next Origo tag carries them in the served document.

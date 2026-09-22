@@ -89,7 +89,7 @@ each says which spec owns each deferred criterion), so waiting for
 | [027](027-anonymous-read.md) | Anonymous read: a node may serve a repository the authorizer opens to a caller with no credential | small | complete | 007, 009, 012, 016 |
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai | small | complete | 007, 026, 027, 028 |
-| [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | testing | 003, 018, 029 |
+| [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
 
 ## Dependency graph
 
