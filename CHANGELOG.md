@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- The release smoke waits for the served version to reach the tag, up
+  to `VERSION_WAIT` seconds (90 by default), instead of judging the
+  first answer. `kubectl rollout status` returns before the ingress
+  stops answering from the previous pod, and the v0.10.0 release
+  failed its smoke on `served v0.9.0` a second after a rollout that
+  had completed.
+
 ## v0.10.0 - 2026-09-22
 
 ### Changed

@@ -12,6 +12,7 @@ set -eu
 dir=$(cd "$(dirname "$0")" && pwd)
 : "${STUB_URL:?STUB_URL names the stub server}"
 : "${SHARED_STUB_URL:?SHARED_STUB_URL names the shared-hostname stub}"
+: "${LAGGING_STUB_URL:?LAGGING_STUB_URL names the stub whose version lags the rollout}"
 # release.sh is a bash script; under the hermetic gate PATH holds no
 # /bin, where macOS keeps bash, so the interpreter is resolved here.
 bash=$(command -v bash 2>/dev/null || echo /bin/bash)
@@ -31,8 +32,9 @@ esac
 grep -q 'Served version: `v1.2.3`' "$evidence" || { echo "FAIL the evidence does not record the served version"; cat "$evidence"; exit 1; }
 rm -f "$evidence" 2>/dev/null || :
 
-# 2. Another tag fails, naming both versions.
-if out=$(BASE_URL="$STUB_URL" TAG=v9.9.9 "$bash" "$dir/release.sh" 0<&- 2>&1); then
+# 2. Another tag fails, naming both versions, once the wait for the
+#    rollout to reach the ingress is over.
+if out=$(BASE_URL="$STUB_URL" TAG=v9.9.9 VERSION_WAIT=1 "$bash" "$dir/release.sh" 0<&- 2>&1); then
   echo "FAIL release.sh passed with a mismatched tag:"
   echo "$out"
   exit 1
@@ -73,5 +75,14 @@ esac
 grep -q 'was not checked: the browsing interface serves it' "$evidence" \
   || { echo "FAIL the evidence does not record the skipped landing check"; cat "$evidence"; exit 1; }
 rm -f "$evidence" 2>/dev/null || :
+
+# 6. The ingress answers with the previous version for a moment after
+#    the rollout: the smoke waits for the tag and passes, saying so.
+out=$(BASE_URL="$LAGGING_STUB_URL" TAG=v1.2.3 VERSION_WAIT=10 "$bash" "$dir/release.sh" 0<&- 2>&1) \
+  || { echo "FAIL release.sh failed while the rollout reached the ingress:"; echo "$out"; exit 1; }
+case "$out" in
+  *"served version matches the tag (v1.2.3"*"after "*) ;;
+  *) echo "FAIL the wait for the rollout is not reported:"; echo "$out"; exit 1 ;;
+esac
 
 echo "release_test.sh passed"

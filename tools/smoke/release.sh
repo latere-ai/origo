@@ -10,6 +10,9 @@
 # Environment:
 #   BASE_URL       the public origin, default https://git.latere.ai
 #   TAG            release tag, for evidence output; the served version must match
+#   VERSION_WAIT   seconds to wait for the served version to reach TAG, default 90:
+#                  the rollout is complete before the ingress stops answering
+#                  from the previous pod, so the first answer may be the old one
 #   COMMIT         release commit, for evidence output
 #   DEPLOY_URL     deploy workflow URL, for evidence output
 #   OUTPUT_MD      optional path for markdown evidence
@@ -22,6 +25,7 @@ BASE_URL="${BASE_URL%/}"
 TAG="${TAG:-}"
 COMMIT="${COMMIT:-unknown}"
 DEPLOY_URL="${DEPLOY_URL:-}"
+VERSION_WAIT="${VERSION_WAIT:-90}"
 OUTPUT_MD="${OUTPUT_MD:-}"
 
 pass() { printf 'OK %s\n' "$*"; }
@@ -51,8 +55,23 @@ check_status "GET /version" "/version" "200" "$tmp/version"
 served=$(grep -o '"version":"[^"]*"' "$tmp/version" | head -1 | cut -d'"' -f4)
 [ -n "$served" ] || fail "GET /version: no version in $(cat "$tmp/version")"
 if [ -n "$TAG" ]; then
-  [ "$served" = "$TAG" ] || fail "version mismatch: served $served, expected $TAG"
-  pass "served version matches the tag ($served)"
+  # `kubectl rollout status` returns when the new pods are ready, and the
+  # ingress keeps answering from the previous pod until its endpoints
+  # converge, so the version the tag names arrives a moment later than
+  # the rollout. Wait for it, bounded, rather than judge the first answer.
+  waited=0
+  while [ "$served" != "$TAG" ] && [ "$waited" -lt "$VERSION_WAIT" ]; do
+    sleep 3
+    waited=$((waited + 3))
+    check_status "GET /version" "/version" "200" "$tmp/version" >/dev/null
+    served=$(grep -o '"version":"[^"]*"' "$tmp/version" | head -1 | cut -d'"' -f4)
+  done
+  [ "$served" = "$TAG" ] || fail "version mismatch: served $served, expected $TAG (waited ${waited}s for the rollout to reach the ingress)"
+  if [ "$waited" -gt 0 ]; then
+    pass "served version matches the tag ($served, after ${waited}s)"
+  else
+    pass "served version matches the tag ($served)"
+  fi
 else
   pass "served version recorded ($served)"
 fi
