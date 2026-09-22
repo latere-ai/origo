@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 func deliver(t *testing.T, s *sink.Server, signature, body string, headers map[string]string) (int, []byte) {

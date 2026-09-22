@@ -1,4 +1,4 @@
-module github.com/latere-ai/origo/tools/spike/condwrite
+module latere.ai/x/origo/tools/spike/condwrite
 
 go 1.27.0
 

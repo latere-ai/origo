@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/e2e/cluster"
-	"github.com/latere-ai/origo/test/stubs/slowproxy"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/e2e/cluster"
+	"latere.ai/x/origo/test/stubs/slowproxy"
 )
 
 // freshClient opens a new connection per request, so every request

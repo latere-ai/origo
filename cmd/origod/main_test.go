@@ -30,11 +30,11 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 // identity is the stub issuer and authorizer a node under test is

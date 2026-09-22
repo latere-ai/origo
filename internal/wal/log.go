@@ -19,8 +19,8 @@ import (
 	"latere.ai/x/pkg/retry"
 	"latere.ai/x/pkg/wait"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/tracing"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/tracing"
 )
 
 // Options configures a Log.

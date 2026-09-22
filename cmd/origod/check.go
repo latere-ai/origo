@@ -22,11 +22,11 @@ import (
 	"github.com/google/uuid"
 	"latere.ai/x/pkg/retry"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/events"
-	versionpkg "github.com/latere-ai/origo/internal/version"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/events"
+	versionpkg "latere.ai/x/origo/internal/version"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // `origod check` reads the same configuration as `origod serve` and

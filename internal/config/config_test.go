@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/limits"
+	"latere.ai/x/origo/internal/limits"
 )
 
 func env(m map[string]string) Getenv {

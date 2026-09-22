@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // noBackgroundMaintenance turns off the git config that lets clone and

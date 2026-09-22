@@ -9,7 +9,7 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 func bad(w http.ResponseWriter) {

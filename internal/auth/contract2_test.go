@@ -16,8 +16,8 @@ import (
 	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authz"
 
-	authorizerstub "github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	authorizerstub "latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 // fixedServer serves one body as a 200 and returns its URL, for an

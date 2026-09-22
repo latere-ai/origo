@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // exec runs one command on a session of its own and reports the exit

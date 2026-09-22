@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 // The route set of spec 027, asserted on the matcher alone. The wiring

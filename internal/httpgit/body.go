@@ -14,8 +14,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // receiveRequest is a parsed git-receive-pack body: the commands the

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // TestExportServesTheWholeRepository is spec 019's export: the complete

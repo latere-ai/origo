@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/tools/specindex/specs"
+	"latere.ai/x/origo/tools/specindex/specs"
 )
 
 // root is the repository root, resolved from this file rather than from

@@ -256,7 +256,7 @@ serve any installation, whatever holds the permissions behind it.
 The envelope is contract 2, the one the three open cores share (spec
 028), so one endpoint can answer for Origo and its siblings behind one
 bearer. Whoever writes it in Go imports the vocabulary rather than
-copying the strings out of this page: `github.com/latere-ai/origo/authorizer`
+copying the strings out of this page: `latere.ai/x/origo/authorizer`
 declares the four actions, the resource kind `Repository`, and the
 table itself as `latere.ai/x/pkg/authz`'s `Vocabulary`, which
 `latere.ai/x/pkg/authz/server` validates a request against and

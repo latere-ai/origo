@@ -15,9 +15,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/conformance"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/conformance"
 )
 
 // fixtureDir is the harness's own flag, for the conformance job of

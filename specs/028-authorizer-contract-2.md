@@ -264,7 +264,7 @@ manifest, because a URL is not a secret and only the bearer is.
 ## State on 2026-09-16: the vocabulary is an importable package
 
 The four action strings and the resource kind of the envelope above have
-one home in the shipped source, `github.com/latere-ai/origo/authorizer`,
+one home in the shipped source, `latere.ai/x/origo/authorizer`,
 a package at the module root that anything may import. `Vocabulary()` is
 the table as `latere.ai/x/pkg/authz`'s own type, built once through
 `NewVocabulary`, and `Actions`, `Kind` and `Known` read that same value.

@@ -16,7 +16,7 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/authorizer"
+	"latere.ai/x/origo/authorizer"
 )
 
 // Version is the value of the Origo-Contract header. Additive changes

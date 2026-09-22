@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/origocli"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/origocli"
 )
 
 // head is a whole object id the fixture's branch is at.

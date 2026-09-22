@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestMaliciousPackWritesNothing is spec 016's criterion for hostile

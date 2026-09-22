@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // read performs a GET of the read API on the node with the headers

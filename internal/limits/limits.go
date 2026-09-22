@@ -23,9 +23,9 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The values of spec 012's table.

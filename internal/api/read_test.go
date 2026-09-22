@@ -25,12 +25,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files under testdata/golden")

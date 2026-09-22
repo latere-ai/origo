@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // placementWindow is how long three nodes may take to agree on the

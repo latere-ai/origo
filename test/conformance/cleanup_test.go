@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/test/conformance"
-	"github.com/latere-ai/origo/test/stubs/origo"
+	"latere.ai/x/origo/test/conformance"
+	"latere.ai/x/origo/test/stubs/origo"
 )
 
 // get reads a repository and answers the status and the error code.

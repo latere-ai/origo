@@ -14,7 +14,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // call posts one contract-2 envelope and returns the status and the

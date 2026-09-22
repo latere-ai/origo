@@ -20,8 +20,8 @@ import (
 
 	"latere.ai/x/pkg/otel"
 
-	"github.com/latere-ai/origo/internal/config"
-	versionpkg "github.com/latere-ai/origo/internal/version"
+	"latere.ai/x/origo/internal/config"
+	versionpkg "latere.ai/x/origo/internal/version"
 )
 
 func main() {

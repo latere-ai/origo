@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The release fixture of spec 017: a repository one release pushes

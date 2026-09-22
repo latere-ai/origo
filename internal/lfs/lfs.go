@@ -27,11 +27,11 @@ import (
 	"github.com/google/uuid"
 	"latere.ai/x/pkg/s3"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/tracing"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/tracing"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The values spec 010 fixes.

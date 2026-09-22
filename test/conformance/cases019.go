@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // The rows of spec 019: transfer, freeze and unfreeze, stats, gc, the

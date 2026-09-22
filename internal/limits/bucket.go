@@ -9,8 +9,8 @@ import (
 
 	"latere.ai/x/pkg/ratelimit"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // Buckets is the shared subject quota table; Origo owns identity and HTTP policy.

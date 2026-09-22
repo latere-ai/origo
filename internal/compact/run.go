@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // errStale is what the commit's catch-up callback answers: a push landed

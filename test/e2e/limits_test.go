@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // TestE2EPushOverQuota is spec 012's repository size rule against a

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/tracing"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/tracing"
 )
 
 // Credential reads the token from the request in the three forms spec

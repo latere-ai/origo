@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/limits"
+	"latere.ai/x/origo/internal/limits"
 )
 
 // The configuration reference. Every variable the deck defines is a row

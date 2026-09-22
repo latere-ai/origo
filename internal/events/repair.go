@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // listAll pages through every key under prefix.

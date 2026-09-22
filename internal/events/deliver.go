@@ -17,7 +17,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // Sign is the Origo-Signature value over a body under the secret.

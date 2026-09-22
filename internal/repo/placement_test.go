@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestConcurrentWorkersApplyThinEntries is spec 005's materialization

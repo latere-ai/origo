@@ -27,13 +27,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
-	"github.com/latere-ai/origo/test/stubs/sink"
-	"github.com/latere-ai/origo/test/stubs/slowproxy"
-	"github.com/latere-ai/origo/test/stubs/source"
-	"github.com/latere-ai/origo/test/stubs/sshkeys"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
+	"latere.ai/x/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/slowproxy"
+	"latere.ai/x/origo/test/stubs/source"
+	"latere.ai/x/origo/test/stubs/sshkeys"
 )
 
 func main() {

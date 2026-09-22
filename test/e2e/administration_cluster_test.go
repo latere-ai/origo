@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // sourceURL is the in-cluster address of the source stub, which the

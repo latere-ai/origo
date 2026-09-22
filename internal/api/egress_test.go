@@ -27,9 +27,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // countingListener accepts on a loopback port and counts connections,

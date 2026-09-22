@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/config"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/config"
 )
 
 // moduleRoot is the checkout, resolved from this file with

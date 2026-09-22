@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // TestGenerateFixture writes testdata/fixture.bundle, the fixture

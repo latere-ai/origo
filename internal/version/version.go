@@ -8,7 +8,7 @@ package version
 
 import "fmt"
 
-// Set by -ldflags "-X github.com/latere-ai/origo/internal/version.Version=..." at
+// Set by -ldflags "-X latere.ai/x/origo/internal/version.Version=..." at
 // build time.
 var (
 	Version = "dev"

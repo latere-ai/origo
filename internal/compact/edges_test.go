@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 func TestNewValidatesOptionsAndDefaults(t *testing.T) {

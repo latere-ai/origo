@@ -18,7 +18,7 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/s3/s3test"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 // fakeClock is the Clock of the suite: it moves only when advanced, or

@@ -4,7 +4,7 @@
 // Package origocli is the `origo` command: the flags, the byte defaults, the
 // line writers and the exit codes of spec 025.
 //
-// It reaches the network only through [github.com/latere-ai/origo/internal/origoclient],
+// It reaches the network only through [latere.ai/x/origo/internal/origoclient],
 // which speaks contract 1 and formats nothing. Everything a reader sees is
 // decided here, under three rules.
 //
@@ -30,8 +30,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/origoclient"
-	versionpkg "github.com/latere-ai/origo/internal/version"
+	"latere.ai/x/origo/internal/origoclient"
+	versionpkg "latere.ai/x/origo/internal/version"
 )
 
 // The exit codes. They are the shell's half of the contract: 0 served, 1 the

@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/latere-ai/origo/tools/specindex/specs"
+	"latere.ai/x/origo/tools/specindex/specs"
 )
 
 // section is one kind of name the page carries, in the order a reader

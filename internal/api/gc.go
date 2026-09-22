@@ -11,9 +11,9 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/limits"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/limits"
 )
 
 // GCInterval is how often one repository may be compacted through the

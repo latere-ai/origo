@@ -21,10 +21,10 @@ import (
 
 	"latere.ai/x/pkg/s3/s3test"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // sourceHost is the name the migrate test reaches its in-process source

@@ -108,7 +108,7 @@ func (w *walker) file(f *ast.File, rel string, contractPkg bool) {
 		switch path {
 		case "latere.ai/x/pkg/httpjson":
 			want = "httpjson"
-		case "github.com/latere-ai/origo/internal/contract":
+		case "latere.ai/x/origo/internal/contract":
 			want = "contract"
 		default:
 			continue
@@ -447,7 +447,7 @@ import (
 
 	hj "latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 var status = 200

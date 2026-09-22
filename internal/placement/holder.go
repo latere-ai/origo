@@ -6,7 +6,7 @@ package placement
 import (
 	"context"
 
-	"github.com/latere-ai/origo/internal/repo"
+	"latere.ai/x/origo/internal/repo"
 )
 
 // CacheHolder is the Holder over the repository cache: Held is the

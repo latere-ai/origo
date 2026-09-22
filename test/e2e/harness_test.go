@@ -28,10 +28,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 var (

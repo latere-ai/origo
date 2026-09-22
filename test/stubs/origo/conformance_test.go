@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/latere-ai/origo/test/conformance"
-	"github.com/latere-ai/origo/test/stubs/origo"
+	"latere.ai/x/origo/test/conformance"
+	"latere.ai/x/origo/test/stubs/origo"
 )
 
 // TestStubConforms is spec 021's criterion for the contract stub: the

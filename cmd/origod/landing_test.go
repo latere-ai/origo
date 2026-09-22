@@ -14,7 +14,7 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	versionpkg "github.com/latere-ai/origo/internal/version"
+	versionpkg "latere.ai/x/origo/internal/version"
 )
 
 // landingFacts are what spec 022 says the page carries, in either form.

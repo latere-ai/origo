@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/lfs"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/lfs"
 )
 
 // The rows of spec 010, driven over the batch API with net/http so the

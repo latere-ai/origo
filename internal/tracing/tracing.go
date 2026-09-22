@@ -12,7 +12,7 @@ import (
 )
 
 // scope names the instrumentation library on every span Origo creates.
-const scope = "github.com/latere-ai/origo"
+const scope = "latere.ai/x/origo"
 
 // Attr is one span attribute. Repository id and subject travel here and
 // never on a metric label (spec 011).

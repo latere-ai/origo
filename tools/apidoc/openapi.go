@@ -18,7 +18,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/latere-ai/origo/tools/specindex/specs"
+	"latere.ai/x/origo/tools/specindex/specs"
 )
 
 // The document's own identity. The version is not written here: it is the

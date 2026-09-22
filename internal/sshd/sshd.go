@@ -39,13 +39,13 @@ import (
 	"golang.org/x/crypto/ssh"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/httpgit"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/httpgit"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // Before authentication a connection is cheap and bounded, because

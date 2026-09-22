@@ -19,7 +19,7 @@ import (
 	"latere.ai/x/pkg/cache"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 // The gossip schedule of spec 005.

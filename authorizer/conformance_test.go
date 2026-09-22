@@ -9,7 +9,7 @@ import (
 	"latere.ai/x/pkg/authz/conformance"
 	"latere.ai/x/pkg/authz/stub"
 
-	"github.com/latere-ai/origo/authorizer"
+	"latere.ai/x/origo/authorizer"
 )
 
 // TestConformanceAgainstTheStub holds the published table to the suite

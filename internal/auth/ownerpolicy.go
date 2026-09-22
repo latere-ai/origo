@@ -9,7 +9,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/authorizer"
+	"latere.ai/x/origo/authorizer"
 )
 
 // The owner policy (Origo spec 028).

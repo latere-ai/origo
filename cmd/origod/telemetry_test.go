@@ -23,10 +23,10 @@ import (
 	"latere.ai/x/pkg/authz"
 	"latere.ai/x/pkg/s3/s3test"
 
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // repoID is the fixture repository of the telemetry tests, named once so

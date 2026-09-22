@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestFrozenRepositoryRefusesAtInfoRefs is spec 019's push criterion: a

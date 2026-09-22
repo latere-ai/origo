@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/auth"
+	"latere.ai/x/origo/internal/auth"
 )
 
 // The two manifests this file holds to spec 018's rule: the base's

@@ -10,8 +10,8 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // walObjects is the built-in owner policy's view of the node's own

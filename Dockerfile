@@ -45,9 +45,9 @@ RUN BUILD_DATE=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ) && \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
         -trimpath -buildvcs=false \
         -ldflags "-s -w -buildid= \
-            -X github.com/latere-ai/origo/internal/version.Version=${VERSION} \
-            -X github.com/latere-ai/origo/internal/version.Commit=${COMMIT} \
-            -X github.com/latere-ai/origo/internal/version.Date=${BUILD_DATE}" \
+            -X latere.ai/x/origo/internal/version.Version=${VERSION} \
+            -X latere.ai/x/origo/internal/version.Commit=${COMMIT} \
+            -X latere.ai/x/origo/internal/version.Date=${BUILD_DATE}" \
         -o /out/origod ./cmd/origod
 
 FROM ${RUNTIME_BASE} AS runtime

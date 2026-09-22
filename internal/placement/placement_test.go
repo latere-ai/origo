@@ -24,7 +24,7 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 const (

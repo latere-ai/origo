@@ -24,9 +24,9 @@ import (
 
 	"latere.ai/x/pkg/hostmatch"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/sshd"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/sshd"
 )
 
 // Defaults for the optional variables.

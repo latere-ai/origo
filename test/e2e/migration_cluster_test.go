@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // The migration of spec 014 against the stack of spec 013: the nodes

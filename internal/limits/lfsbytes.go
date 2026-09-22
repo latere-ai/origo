@@ -9,7 +9,7 @@ import (
 
 	"latere.ai/x/pkg/cache"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // listPage is the page size of the lfs/ listing the sum walks.

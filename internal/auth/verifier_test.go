@@ -23,7 +23,7 @@ import (
 	"latere.ai/x/pkg/authkit/jwt"
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 // clock is a fake clock a test moves by hand.

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // TestClusterPodSecurityContext is spec 016's stack criterion: a node

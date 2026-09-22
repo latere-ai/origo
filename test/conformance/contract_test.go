@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/conformance"
-	"github.com/latere-ai/origo/test/stubs/origo"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/conformance"
+	"latere.ai/x/origo/test/stubs/origo"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // The ports table of spec 013 at offset 0, the defaults of the stack

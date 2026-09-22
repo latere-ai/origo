@@ -11,13 +11,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/sink"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // verifyResultOf reads a verify response into the document.

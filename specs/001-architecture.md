@@ -223,7 +223,7 @@ external hosts is a consumer concern; a one-time import is spec 019.
   visible change, the client sees a failure, the orphan is swept, and a
   retry lands at the same sequence under a fresh nonce (`test/e2e`,
   `TestE2EKillMidPush`).
-- The build list of `github.com/latere-ai/origo/...` reaches no package
+- The build list of `latere.ai/x/origo/...` reaches no package
   under `github.com/aws/`, `cloud.google.com/`, `github.com/Azure/`, or
   `k8s.io/` (the `depcheck` gate in `.lateregate.yaml`, its
   `depcheck.packages` naming `./cmd/origod` with an allow list of

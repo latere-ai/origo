@@ -18,10 +18,10 @@ import (
 	"latere.ai/x/pkg/httpjson"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/wal"
 )
 
 const testRepo = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"

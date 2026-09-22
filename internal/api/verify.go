@@ -16,9 +16,9 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/repo"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/repo"
 )
 
 // The verification of spec 014: the migration's proof that Origo's copy

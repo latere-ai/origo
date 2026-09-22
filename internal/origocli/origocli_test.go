@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/origocli"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/origocli"
 )
 
 // TestStartupRefusals: each one is a sentence on stderr and exit 2, and no

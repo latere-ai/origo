@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // moduleRoot is the checkout, resolved from this file rather than from

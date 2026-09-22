@@ -16,7 +16,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/latere-ai/origo/internal/origocli"
+	"latere.ai/x/origo/internal/origocli"
 )
 
 func main() {

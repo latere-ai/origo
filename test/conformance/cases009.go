@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // The rows of spec 009: the read endpoints against the fixture the

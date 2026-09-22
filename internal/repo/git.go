@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/tracing"
+	"latere.ai/x/origo/internal/tracing"
 )
 
 // Git runs the git binary against one bare repository with a hermetic

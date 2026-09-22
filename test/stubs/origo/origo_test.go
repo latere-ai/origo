@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
-	"github.com/latere-ai/origo/test/stubs/origo"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
+	"latere.ai/x/origo/test/stubs/origo"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"

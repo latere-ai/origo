@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The row of spec 015 a caller outside the installation cannot cause:

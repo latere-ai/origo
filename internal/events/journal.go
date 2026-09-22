@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // journal is the node's in-memory copy of its journals: one line

@@ -14,10 +14,10 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/sshkeys"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/sshkeys"
 )
 
 // TestSSHKeyResolverFailsClosedAndRecovers is spec 024's fourth

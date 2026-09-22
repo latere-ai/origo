@@ -22,9 +22,9 @@ import (
 	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/metrics"
 
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 const (

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/events"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/internal/events"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // eventSink is the sink the nodes of a test deliver to: the stack's

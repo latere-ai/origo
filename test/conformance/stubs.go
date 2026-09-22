@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // The stubs of spec 013 are driven over their control APIs, so the

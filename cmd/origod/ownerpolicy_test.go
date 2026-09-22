@@ -10,10 +10,10 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/wal"
 )
 
 func ownerPolicyLog(t *testing.T) *wal.Log {

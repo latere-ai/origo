@@ -7,8 +7,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // MaxPathBytes is the longest repository argument accepted, before any

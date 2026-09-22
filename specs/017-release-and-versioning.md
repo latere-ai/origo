@@ -298,7 +298,7 @@ workflow identity, which is what an outside operator can verify.
   differs (proposed: `tools/smoke/release_test.sh`, run by the `test`
   gate through a Go test in `tools/smoke` that executes it).
 - `main.version` no longer exists: a binary built with
-  `-X github.com/latere-ai/origo/internal/version.Version=v1.2.3`
+  `-X latere.ai/x/origo/internal/version.Version=v1.2.3`
   serves `v1.2.3` on `GET /version` and prints it for `-version`, and
   `grep -r 'main.version' cmd/` finds nothing (proposed: `cmd/origod`,
   `TestVersionHasOneSource`).

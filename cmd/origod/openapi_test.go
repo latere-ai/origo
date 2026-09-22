@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	openapi "github.com/latere-ai/origo/api"
+	openapi "latere.ai/x/origo/api"
 )
 
 // startDocumentNode brings a node up against the fake bucket and answers

@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/latere-ai/origo/internal/api"
-	"github.com/latere-ai/origo/internal/config"
-	versionpkg "github.com/latere-ai/origo/internal/version"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/api"
+	"latere.ai/x/origo/internal/config"
+	versionpkg "latere.ai/x/origo/internal/version"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The batch migration of spec 014: origod migrate reads a manifest of

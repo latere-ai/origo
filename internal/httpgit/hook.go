@@ -12,7 +12,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // preReceiveHook is installed in every materialized repository. It runs

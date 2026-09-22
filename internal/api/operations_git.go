@@ -17,12 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/events"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/events"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The mechanics of spec 020: git plumbing on the warm copy under the

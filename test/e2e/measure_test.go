@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // TestMeasure records the three numbers spec 004's Outcome carries:

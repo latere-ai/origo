@@ -40,8 +40,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // Target is what a run drives.

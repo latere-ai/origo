@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // The bounds of the read API this package must know to page and to window

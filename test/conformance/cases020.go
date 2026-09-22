@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // The rows of spec 020's Operations table, each on its success path

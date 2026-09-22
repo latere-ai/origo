@@ -13,8 +13,8 @@ import (
 
 	"latere.ai/x/pkg/cache"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The state of a repository that refuses a push (spec 019): a freeze a

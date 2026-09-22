@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // lfsObjectBytes is the file the round trip carries: large enough that

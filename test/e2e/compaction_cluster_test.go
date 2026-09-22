@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // stackNodes are the three node names of spec 013's ports table, in the

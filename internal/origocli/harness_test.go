@@ -15,8 +15,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/origocli"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/origocli"
 )
 
 // fake is a stand-in Origo with the shapes internal/api answers: the same

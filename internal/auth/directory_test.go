@@ -15,7 +15,7 @@ import (
 	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // listReq builds a contract-2 list envelope: no repository is named, so

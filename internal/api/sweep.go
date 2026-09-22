@@ -19,8 +19,8 @@ import (
 
 	"latere.ai/x/pkg/wait"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The weekly orphan sweep of spec 019: one listing of the whole prefix

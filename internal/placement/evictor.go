@@ -14,8 +14,8 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/repo"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/repo"
 )
 
 // The eviction rules of spec 005.

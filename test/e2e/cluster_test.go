@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // The ports table of spec 013 at offset 0.

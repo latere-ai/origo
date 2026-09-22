@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/tools/specindex/specs"
+	"latere.ai/x/origo/tools/specindex/specs"
 )
 
 // document builds the document from the deck, failing the test on a deck

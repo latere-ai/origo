@@ -11,8 +11,8 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // Stats is what GET /v1/repos/{id}/stats answers (spec 019): what the

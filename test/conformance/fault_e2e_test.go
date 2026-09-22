@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // stackFault is spec 021's Fault on the kind stack: the bucket cut by

@@ -17,7 +17,7 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 const repoA = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"

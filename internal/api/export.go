@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // DefaultExportTimeout bounds the git bundle subprocess of one export

@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // sizeRefusal is a push spec 012 refuses on size: which bound it crossed,

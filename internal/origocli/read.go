@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/origoclient"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/origoclient"
 )
 
 // The byte defaults of spec 025: the smallest answer that answers the

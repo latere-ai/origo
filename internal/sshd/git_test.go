@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // hostAlias is the name the ssh_config below maps to the fixture's

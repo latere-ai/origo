@@ -14,7 +14,7 @@ release:
       pattern: 'newTag: v\d+\.\d+\.\d+'
 
 cover:
-  trim_prefix: github.com/latere-ai/origo/
+  trim_prefix: latere.ai/x/origo/
   exempt:
     cmd/origo: >-
       main and nothing else: it reads the environment, opens a signal
@@ -75,7 +75,7 @@ modernize:
 # recorded here.
 depcheck:
   packages:
-    github.com/latere-ai/origo/cmd/origod:
+    latere.ai/x/origo/cmd/origod:
       decision: >-
         the node reaches latere.ai/x/pkg, the OpenTelemetry SDK that
         pkg/otel exports through (spec 011),
@@ -97,7 +97,7 @@ depcheck:
         github.com/felixge/httpsnoop: otelhttp's response recorder
         github.com/go-logr: the OpenTelemetry SDK's internal logging interface
         github.com/grpc-ecosystem/grpc-gateway: the OTLP status marshalling the exporters read errors with
-    github.com/latere-ai/origo/cmd/origo:
+    latere.ai/x/origo/cmd/origo:
       decision: >-
         the agent client of spec 025 reaches the standard library,
         internal/contract and the authorizer vocabulary that package

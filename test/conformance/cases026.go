@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // cases026 is the collection route of spec 026: the directory the

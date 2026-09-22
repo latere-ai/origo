@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/latere-ai/origo/internal/origoclient"
+	"latere.ai/x/origo/internal/origoclient"
 )
 
 // writeFlags are the arguments every write command shares. `-expect` is

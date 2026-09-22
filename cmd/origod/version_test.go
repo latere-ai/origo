@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	versionpkg "github.com/latere-ai/origo/internal/version"
+	versionpkg "latere.ai/x/origo/internal/version"
 )
 
 // TestVersionHasOneSource is spec 017's criterion for the binary's
@@ -24,7 +24,7 @@ import (
 func TestVersionHasOneSource(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "origod")
 	build := exec.CommandContext(context.Background(), "go", "build", "-trimpath",
-		"-ldflags", "-X github.com/latere-ai/origo/internal/version.Version=v1.2.3", "-o", binary, ".")
+		"-ldflags", "-X latere.ai/x/origo/internal/version.Version=v1.2.3", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}

@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The Go module is `latere.ai/x/origo`, the path the other Latere cores
+  and `latere.ai/x/pkg` already use, served by the same import redirect
+  to this repository. A program that imports `authorizer` or
+  `internal/...` by the old `github.com/latere-ai/origo` path changes
+  the import string and nothing else; the binaries, the images, the
+  routes and the configuration are unchanged.
+- The operation summaries of `api/openapi.yaml` are one short action
+  each, so a page that lists them by summary reads as a table of
+  contents rather than a column of sentences.
+
 ## v0.9.0 - 2026-09-20
 
 ### Added

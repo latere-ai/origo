@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/sshd"
-	"github.com/latere-ai/origo/test/stubs/sshkeys"
+	"latere.ai/x/origo/internal/sshd"
+	"latere.ai/x/origo/test/stubs/sshkeys"
 )
 
 // TestSSHListenerIsOptional is spec 024's start-up criterion on the

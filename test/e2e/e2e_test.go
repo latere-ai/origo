@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/gittest"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/gittest"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestE2EPushThenCloneFromAnEmptyDisk is the phase 1 exit criterion: a

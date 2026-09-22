@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestRejectLinesAreTheTableSentences is spec 021's sideband rule: a

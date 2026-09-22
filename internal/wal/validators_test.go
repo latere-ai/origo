@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // TestValidLabel: an owner or slug is the grammar of spec 003, and a

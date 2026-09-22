@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestSSHPathForms is decision 8: every form of the table is accepted

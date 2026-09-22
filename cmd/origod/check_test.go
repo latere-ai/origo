@@ -16,7 +16,7 @@ import (
 
 	"latere.ai/x/pkg/s3/s3test"
 
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // checkEnv is a configuration every requirement can meet: the fake

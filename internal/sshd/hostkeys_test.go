@@ -21,8 +21,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // TestHostKeysAreRefusedByAlgorithmAndSize holds the start-up rule: the

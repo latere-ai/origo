@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/conformance"
-	"github.com/latere-ai/origo/test/stubs/origo"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/conformance"
+	"latere.ai/x/origo/test/stubs/origo"
 )
 
 // TestReleaseFixtureRoundTrip is the harness of spec 017 against the

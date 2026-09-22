@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	versionpkg "github.com/latere-ai/origo/internal/version"
+	versionpkg "latere.ai/x/origo/internal/version"
 )
 
 // The landing page of spec 022: what a person who opens an installation

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // create makes a repository through the API and fails the test when it

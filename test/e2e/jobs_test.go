@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/config"
+	"latere.ai/x/origo/internal/config"
 )
 
 // repoRoot is the checkout, resolved from this file with runtime.Caller

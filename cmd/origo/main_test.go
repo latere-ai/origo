@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/origocli"
+	"latere.ai/x/origo/internal/origocli"
 )
 
 // TestMainDispatchesAndExits: main holds wiring only, so what this file proves

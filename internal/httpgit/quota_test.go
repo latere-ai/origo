@@ -20,10 +20,10 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 const repoC = "2b3c4d5e-6f70-4182-9394-a5b6c7d8e9f0"

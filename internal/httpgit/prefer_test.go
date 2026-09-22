@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // TestOrigoPreferNamesThePreferredNodes is spec 005's header on the

@@ -26,9 +26,9 @@ import (
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/tracing"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/tracing"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // Errors the cache reports.

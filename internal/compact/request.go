@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The reasons a request object carries.

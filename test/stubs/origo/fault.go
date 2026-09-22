@@ -11,8 +11,8 @@ import (
 
 	"latere.ai/x/pkg/s3/s3test"
 
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/conformance"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/conformance"
 )
 
 // Fault is spec 021's Fault on the stub: the bucket cut through the

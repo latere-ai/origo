@@ -20,10 +20,10 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // The thresholds and the budgets of spec 006.

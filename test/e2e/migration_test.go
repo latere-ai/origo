@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // The cut-over of spec 014 seen from a developer's machine: the prior

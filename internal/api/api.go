@@ -22,13 +22,13 @@ import (
 
 	"latere.ai/x/pkg/httpjson"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/events"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/internal/repo"
-	"github.com/latere-ai/origo/internal/wal"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/events"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/internal/repo"
+	"latere.ai/x/origo/internal/wal"
 )
 
 // Options configures the handler.

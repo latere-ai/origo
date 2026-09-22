@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // The SSH host ports of spec 013's ports table (spec 024's rows):

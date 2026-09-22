@@ -11,7 +11,7 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // envelope renders one request into the shared authorizer envelope

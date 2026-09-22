@@ -6,7 +6,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/latere-ai/origo/internal/events"
+	"latere.ai/x/origo/internal/events"
 )
 
 // newEvents builds the push event dispatcher of spec 008 from the

@@ -30,7 +30,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/latere-ai/origo/tools/specindex/specs"
+	"latere.ai/x/origo/tools/specindex/specs"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }

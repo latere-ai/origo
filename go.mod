@@ -1,4 +1,4 @@
-module github.com/latere-ai/origo
+module latere.ai/x/origo
 
 go 1.27.0
 

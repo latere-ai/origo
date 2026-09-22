@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // The rows of spec 007: the key set, repository-bound tokens, the

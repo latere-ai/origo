@@ -24,7 +24,7 @@ import (
 
 	"latere.ai/x/pkg/hostmatch"
 
-	"github.com/latere-ai/origo/internal/config"
+	"latere.ai/x/origo/internal/config"
 )
 
 // The egress rules of spec 016 for a server-side fetch, the import of

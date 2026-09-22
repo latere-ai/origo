@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/test/e2e/cluster"
+	"latere.ai/x/origo/test/e2e/cluster"
 )
 
 // fakeKubectl puts a kubectl on PATH that records every invocation to a

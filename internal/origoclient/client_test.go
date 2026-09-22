@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/origoclient"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/origoclient"
 )
 
 // recorder is a stand-in Origo: it records every request and answers what the

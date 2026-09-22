@@ -14,8 +14,8 @@ import (
 	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/authorizer"
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/authorizer"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 // Action is what a request wants to do with a repository, in the shared

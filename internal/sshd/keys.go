@@ -18,8 +18,8 @@ import (
 	"latere.ai/x/pkg/cache"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/metrics"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/metrics"
 )
 
 // The values of spec 024's key resolution contract. They are spec 007's

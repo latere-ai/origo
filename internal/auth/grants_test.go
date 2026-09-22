@@ -13,9 +13,9 @@ import (
 	"latere.ai/x/pkg/authkit"
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/internal/contract"
-	authorizerstub "github.com/latere-ai/origo/test/stubs/authorizer"
-	"github.com/latere-ai/origo/test/stubs/issuer"
+	"latere.ai/x/origo/internal/contract"
+	authorizerstub "latere.ai/x/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 // The personal access token rows of the identity epic's id-13. A person

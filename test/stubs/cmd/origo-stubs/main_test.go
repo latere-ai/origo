@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/test/stubs/sink"
-	"github.com/latere-ai/origo/test/stubs/source"
+	"latere.ai/x/origo/test/stubs/sink"
+	"latere.ai/x/origo/test/stubs/source"
 )
 
 // lockedBuffer is a bytes.Buffer run writes to from its goroutine.

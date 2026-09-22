@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/compact"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/limits"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/internal/wal"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/internal/compact"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/limits"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/internal/wal"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // stubCompactor answers what a test fixes, for the states a real

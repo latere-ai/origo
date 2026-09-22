@@ -14,8 +14,8 @@ import (
 	pkgmetrics "latere.ai/x/pkg/metrics"
 	"latere.ai/x/pkg/wait"
 
-	"github.com/latere-ai/origo/internal/metrics"
-	"github.com/latere-ai/origo/internal/tracing"
+	"latere.ai/x/origo/internal/metrics"
+	"latere.ai/x/origo/internal/tracing"
 )
 
 // ErrStorageOpen is the refusal of a Store call while its breaker is

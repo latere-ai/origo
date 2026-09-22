@@ -17,8 +17,8 @@ import (
 
 	"latere.ai/x/pkg/authz"
 
-	"github.com/latere-ai/origo/authorizer"
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/authorizer"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // wire is spec 028's table written out: the four action strings and the
@@ -172,7 +172,7 @@ func TestTheActionStringsHaveOneHomeInTheModule(t *testing.T) {
 			if err != nil || !slices.Contains(table, s) || rel == home {
 				return true
 			}
-			t.Errorf("%s:%d: the literal %q; read it from github.com/latere-ai/origo/authorizer",
+			t.Errorf("%s:%d: the literal %q; read it from latere.ai/x/origo/authorizer",
 				rel, fset.Position(lit.Pos()).Line, s)
 			return true
 		})

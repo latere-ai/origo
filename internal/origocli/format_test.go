@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/latere-ai/origo/internal/origoclient"
+	"latere.ai/x/origo/internal/origoclient"
 )
 
 // These are the pure pieces of the byte rules. They are tested in the package

@@ -15,9 +15,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/config"
-	"github.com/latere-ai/origo/test/conformance"
-	"github.com/latere-ai/origo/test/stubs/sink"
+	"latere.ai/x/origo/internal/config"
+	"latere.ai/x/origo/test/conformance"
+	"latere.ai/x/origo/test/stubs/sink"
 )
 
 // mutationTargetEnv and mutationReportEnv carry the target and the

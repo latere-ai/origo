@@ -38,7 +38,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/latere-ai/origo/internal/contract"
+	"latere.ai/x/origo/internal/contract"
 )
 
 // The two read-API headers a client reads. internal/api owns them and a

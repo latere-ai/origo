@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/limits"
+	"latere.ai/x/origo/internal/limits"
 )
 
 func receiveBody(t *testing.T, caps string, options []string, pack string, refs ...string) []byte {

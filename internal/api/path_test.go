@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/gittest"
+	"latere.ai/x/origo/internal/gittest"
 )
 
 // pathCases is the table of spec 009's path rules: every row's path

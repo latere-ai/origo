@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/latere-ai/origo/internal/auth"
-	"github.com/latere-ai/origo/internal/contract"
-	"github.com/latere-ai/origo/internal/placement"
-	"github.com/latere-ai/origo/test/stubs/authorizer"
+	"latere.ai/x/origo/internal/auth"
+	"latere.ai/x/origo/internal/contract"
+	"latere.ai/x/origo/internal/placement"
+	"latere.ai/x/origo/test/stubs/authorizer"
 )
 
 // makeRepo creates one repository through the route and returns nothing;
