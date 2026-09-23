@@ -445,8 +445,8 @@ func TestCherryPickIsAtomic(t *testing.T) {
 	}
 }
 
-// TestServerSideOperationsHonourLimits is spec 020's fifth criterion.
-func TestServerSideOperationsHonourLimits(t *testing.T) {
+// TestServerSideOperationsHonorLimits is spec 020's fifth criterion.
+func TestServerSideOperationsHonorLimits(t *testing.T) {
 	// The clock stands still, so the repository's bucket refills for no
 	// request of the sweep below and the 61st is the one that is
 	// refused.

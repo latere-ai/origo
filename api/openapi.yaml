@@ -1,7 +1,7 @@
 # Origo's HTTP surface as an OpenAPI 3.1 document, generated from the
 # endpoint, header and code tables of the design specs by `make docs`.
 # Do not edit: a test fails when this file is not what a fresh run
-# produces, and the specs are where a route's behaviour is stated.
+# produces, and the specs are where a route's behavior is stated.
 #
 # It names no server, because a document in a repository describes no one
 # installation, and no release, because what a client pins is the contract

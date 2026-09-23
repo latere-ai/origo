@@ -716,9 +716,9 @@ func print(w io.Writer, r *report) {
 		res := "pass"
 		switch {
 		case c.Fallback && c.Pass:
-			res = "honoured"
+			res = "honored"
 		case c.Fallback:
-			res = "not honoured"
+			res = "not honored"
 		case c.Optional && !c.Pass:
 			res = "absent"
 		case !c.Pass:

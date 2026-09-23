@@ -222,7 +222,7 @@ consumer's.
   with an 11 MiB file, and one with six 10 MiB files are refused with
   the documented code and reason; the 61st operation on a repository
   in one minute is 429 with `details.limit: "repository"` (proposed:
-  `internal/api`, `TestServerSideOperationsHonourLimits`).
+  `internal/api`, `TestServerSideOperationsHonorLimits`).
 - A change whose `path` the rules of spec 009 refuse, and one whose
   path is empty, is 400 `invalid_change` with `details.index` and
   `details.reason: "path"` and no subprocess starts (proposed:
@@ -256,7 +256,7 @@ and the per-subject rate in `internal/limits` and `internal/auth`.
 | `create_branch` with `from`, 409 on an existing branch, 400 without `from`, and a dry run that answers `committed: false` and leaves `objects/` and `spool/` untouched | `internal/api`, `TestCreateBranchFromAndDryRunWritesNothing` |
 | `merge` fast-forwards when it can, writes a two-parent commit when it cannot, and a conflict is 409 `merge_conflict` naming the paths with the branch unchanged | `internal/api`, `TestMergeStrategiesAndConflict` |
 | Cherry-picking three commits of which the second conflicts commits nothing and names the second | `internal/api`, `TestCherryPickIsAtomic` |
-| `over_quota` on a pack past `quota_bytes`, `too_many` at 1 001 changes, `too_large` at 11 MiB, the body limit at six 10 MiB files, and 429 `details.limit: "repository"` on the 61st operation | `internal/api`, `TestServerSideOperationsHonourLimits` |
+| `over_quota` on a pack past `quota_bytes`, `too_many` at 1 001 changes, `too_large` at 11 MiB, the body limit at six 10 MiB files, and 429 `details.limit: "repository"` on the 61st operation | `internal/api`, `TestServerSideOperationsHonorLimits` |
 | A path the read rules refuse and an empty one are 400 `invalid_change` with `index` and `reason: "path"`, and no subprocess starts | `internal/api`, `TestChangePathsUseTheReadRules` |
 | Twenty concurrent requests with one `expected_head` make one commit and nineteen `non_fast_forward` answers | `internal/api`, `TestConcurrentCommitsSerializeOnExpectedHead` |
 | No request body panics a handler | `internal/api`, `FuzzOperationBody` |

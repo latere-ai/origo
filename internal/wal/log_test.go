@@ -514,12 +514,12 @@ func TestSixteenWritersTwentyRoundsOneWinnerPerSequence(t *testing.T) {
 	}
 }
 
-// TestHeadCheckIsLabelledAndCommitsAreAnnounced is spec 005's two
+// TestHeadCheckIsLabeledAndCommitsAreAnnounced is spec 005's two
 // additions to the log: the currency check carries result 404, 200, or
 // error, so a test tells a check that found the copy current from one
 // that found a newer index, and every index object the log creates is
 // reported through OnCommit with its sequence.
-func TestHeadCheckIsLabelledAndCommitsAreAnnounced(t *testing.T) {
+func TestHeadCheckIsLabeledAndCommitsAreAnnounced(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemStore()
 	reg := pkgmetrics.NewRegistry()

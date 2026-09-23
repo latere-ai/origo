@@ -46,7 +46,7 @@ type Group struct {
 // Groups is the whole reference, in the order an operator meets it.
 var Groups = []Group{{
 	Title: "The bucket",
-	Intro: "Object storage is the source of truth. Every node of one installation reads and writes one bucket under the prefix `" + Prefix + "`, and two installations never share a prefix. The endpoint must honour a conditional create (`PUT` with `If-None-Match: *`); `origod check` proves it before you trust it.",
+	Intro: "Object storage is the source of truth. Every node of one installation reads and writes one bucket under the prefix `" + Prefix + "`, and two installations never share a prefix. The endpoint must honor a conditional create (`PUT` with `If-None-Match: *`); `origod check` proves it before you trust it.",
 	Variables: []Variable{
 		{"ORIGO_S3_ENDPOINT", "yes", "none", "the bucket's API endpoint, an absolute URL such as `https://fra1.digitaloceanspaces.com`."},
 		{"ORIGO_S3_REGION", "yes", "none", "the bucket's region, as the provider names it."},

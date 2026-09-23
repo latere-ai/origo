@@ -273,7 +273,7 @@ Audit export beyond the log itself.
   and a host whose name resolves to a public address on the check and
   to `127.0.0.1` on the next lookup (a resolver the test controls) is
   dialed at the first address and never reaches the loopback listener
-  (proposed: `internal/api`, `TestEgressDialerHonoursTheAllowList`,
+  (proposed: `internal/api`, `TestEgressDialerHonorsTheAllowList`,
   `TestEgressDialerAdmitsOnlyThePinnedClusterAddress`,
   `TestEgressDialerAllowLoopbackIsATestSeam`,
   `TestEgressDialerPinsTheResolvedAddress`; `internal/config`,
@@ -341,7 +341,7 @@ a test in the tree:
 | a `.git`, NTFS, or HFS+ tree entry or a broken object is rejected with git's message and no entry is written | `internal/httpgit`, `TestMaliciousPackWritesNothing` |
 | a reference name, owner, or slug with a metacharacter, `..`, or a control character is refused; the fuzz finds nothing git refuses | `internal/wal`, `TestValidRefName`, `TestValidLabel`, `FuzzValidRefName`, `FuzzValidLabel`, whose seed corpora run in the `test` gate on every push; the 40 second search of both ran in the dispatched `fuzz` job of run 34599562832 on the fixed recipe, which the last block of this Outcome records with the two functions' log lines |
 | a git subprocess observes exactly the documented environment | `internal/repo`, `TestSubprocessEnvironment`; `TestBareRepositoryConfiguration` for the four config keys |
-| the egress dialer on its own | `internal/api`, `TestEgressDialerHonoursTheAllowList`, `TestEgressDialerAdmitsOnlyThePinnedClusterAddress`, `TestEgressDialerAllowLoopbackIsATestSeam`, `TestEgressDialerPinsTheResolvedAddress`, `TestEgressPinAppliesOutsideClusterRanges`; `internal/config`, `TestEgressAllowPinsOnlyExactHosts`, `TestEgressCABundleIsReadAtStartup` |
+| the egress dialer on its own | `internal/api`, `TestEgressDialerHonorsTheAllowList`, `TestEgressDialerAdmitsOnlyThePinnedClusterAddress`, `TestEgressDialerAllowLoopbackIsATestSeam`, `TestEgressDialerPinsTheResolvedAddress`, `TestEgressPinAppliesOutsideClusterRanges`; `internal/config`, `TestEgressAllowPinsOnlyExactHosts`, `TestEgressCABundleIsReadAtStartup` |
 | a production configuration admits no loopback source; the seam is written in `_test.go` files only | `cmd/origod`, `TestEgressAdmitsNoLoopbackInProduction`; `internal/api`, `TestAllowLoopbackIsSetOnlyByTests` |
 | a gossip datagram without a valid MAC is dropped; 10 000 datagrams cause at most one catch-up | spec 005, `TestGossipDropsABadMAC`, `TestGossipCatchUpIsRateLimited` |
 | the egress proxy on its own: a followed redirect, a refused hop, `CONNECT` 405, `git ls-remote` sends no `CONNECT` | `internal/api`, `TestEgressProxyFollowsRedirectsAndRefusesConnect` |

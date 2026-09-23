@@ -17,7 +17,7 @@ integers of bytes.
 
 ## The bucket
 
-Object storage is the source of truth. Every node of one installation reads and writes one bucket under the prefix `origo/`, and two installations never share a prefix. The endpoint must honour a conditional create (`PUT` with `If-None-Match: *`); `origod check` proves it before you trust it.
+Object storage is the source of truth. Every node of one installation reads and writes one bucket under the prefix `origo/`, and two installations never share a prefix. The endpoint must honor a conditional create (`PUT` with `If-None-Match: *`); `origod check` proves it before you trust it.
 
 | Variable | Required | Default | What it is |
 |---|---|---|---|

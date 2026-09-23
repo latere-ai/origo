@@ -119,12 +119,12 @@ func egressError(t *testing.T, err error) *EgressError {
 	return ee
 }
 
-// TestEgressDialerHonoursTheAllowList: a host not on the list, or one
+// TestEgressDialerHonorsTheAllowList: a host not on the list, or one
 // that resolves to a loopback, private, link-local, or unique-local
 // address, or into ORIGO_CLUSTER_CIDRS though a wildcard lists it, is
 // refused with the egress error and opens no connection; with the list
 // unset every host is refused.
-func TestEgressDialerHonoursTheAllowList(t *testing.T) {
+func TestEgressDialerHonorsTheAllowList(t *testing.T) {
 	ln := newCountingListener(t)
 	res := &fakeResolver{answers: map[string][]string{
 		"loop.example.com":    {"127.0.0.1"},
