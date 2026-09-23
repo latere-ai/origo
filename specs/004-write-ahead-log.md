@@ -40,7 +40,7 @@ reads the quarantined objects with `GIT_ALTERNATE_OBJECT_DIRECTORIES`
 were built by spec 008, their only consumer, on 2026-09-08. The spike in
 [docs/spikes/2026-09-06-conditional-writes.md](../docs/spikes/2026-09-06-conditional-writes.md)
 is the evidence for the commit primitive: `PUT If-None-Match: *` is
-honoured by MinIO and DigitalOcean Spaces and documented by AWS, `PUT
+honored by MinIO and DigitalOcean Spaces and documented by AWS, `PUT
 If-Match` is refused by Spaces, `CopyObject` conditions are ignored by
 both, and versioning refuses no write. `pkg/s3` has no `If-Match` and its
 fake answers 412 to one, so a compare-and-swap cannot enter the design
@@ -88,7 +88,7 @@ spec 008's Current state and affects say so.
 | One mutable index, `PUT If-Match: <etag>` | compare-and-swap on the ETag | Spaces answers 412 to every `If-Match` `PUT`; the primitive is not portable |
 | `CopyObject` with a destination condition | write the candidate to a scratch key, copy it over the index under `If-Match` | MinIO and Spaces accept the header and ignore it: the copy overwrites |
 | Versioned bucket, order by version | unconditional `PUT`, `ListObjectVersions` names the first | refuses no write; a loser learns it lost after its push was acknowledged |
-| Immutable index objects, `PUT If-None-Match: *` on the next one | chosen: one create per commit, exactly one creator succeeds | honoured on every store the spike ran; one primitive, no ETag bookkeeping |
+| Immutable index objects, `PUT If-None-Match: *` on the next one | chosen: one create per commit, exactly one creator succeeds | honored on every store the spike ran; one primitive, no ETag bookkeeping |
 
 ## Design
 

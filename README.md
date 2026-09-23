@@ -75,7 +75,7 @@ against a throwaway cluster by the project's own tests before it is
 published, so a command that drifts from the manifests fails the build
 rather than your installation.
 
-You supply four things: a bucket at any S3 compatible endpoint that honours
+You supply four things: a bucket at any S3 compatible endpoint that honors
 conditional creates, an OIDC issuer, one HTTP endpoint that answers whether
 a subject may read, write, or administer a repository, and a hostname.
 Origo authenticates and authorizes every request, and it asks you both
@@ -146,7 +146,7 @@ covers the quality gate, how to run it locally, and how a change is
 reviewed. [`SECURITY.md`](SECURITY.md) is how to report a vulnerability;
 please do not open an issue for one.
 
-## Acknowledgements
+## Acknowledgments
 
 The storage design follows the approach described by Cursor's engineering
 team in [Git at any scale](https://cursor.com/blog/git-at-any-scale): a

@@ -148,7 +148,7 @@ origin. Left to the catch-all that is a 401 with
 `WWW-Authenticate: Basic`, which is the dialog this spec exists to
 remove, arriving a moment later from a request the person never made.
 Two things close it, and the page carries both because the first is a
-bet on browser behaviour that Origo cannot test: the document declares
+bet on browser behavior that Origo cannot test: the document declares
 `<link rel="icon" href="data:,">`, which tells a browser not to ask, and
 `GET /favicon.ico` answers 204 without a token for the browsers that ask
 anyway. Neither fetches anything from anywhere.

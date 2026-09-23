@@ -105,13 +105,13 @@ No label ever carries a repository id, owner, slug, subject, reference,
 or path. Every metric in the table is registered at start-up in
 `internal/metrics/register.go`, one function `Register(reg) *Set` that
 returns the handles the recording packages take, so `GET /metrics`
-carries every name before anything is recorded. A labelled counter is
+carries every name before anything is recorded. A labeled counter is
 registered with one `Add` of 0 per combination of its label
 vocabularies, the cross product where a metric has two; gauges are
 registered with `Registry.Gauge`, read at scrape time, and carry one
 series per label value. Two kinds of series are absent until something
 is recorded, and the criterion below asks for presence by name for
-them: a labelled histogram, because `latere.ai/x/pkg/metrics` creates a
+them: a labeled histogram, because `latere.ai/x/pkg/metrics` creates a
 cell only through `Observe`, which would record an observation (the
 item below), and `origo_requests_total` and
 `origo_request_duration_seconds`, whose `route` is the mux pattern and

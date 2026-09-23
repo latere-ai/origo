@@ -46,7 +46,7 @@ Defined by [003 protocol contract](../specs/003-protocol-contract.md).
 
 Defined by [003 protocol contract](../specs/003-protocol-contract.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | GET | `/{repo}/info/refs` | `?service=git-upload-pack` or `git-receive-pack`; any other value 400 `invalid_request`; protocol v2 advertised when the client sends `Git-Protocol: version=2`, v0 otherwise |
 | POST | `/{repo}/git-upload-pack` | a fetch or clone; `Content-Encoding: gzip` accepted |
@@ -54,7 +54,7 @@ Defined by [003 protocol contract](../specs/003-protocol-contract.md).
 
 Defined by [007 authentication and delegation](../specs/007-authentication-and-delegation.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/v1/repos/{id}/tokens` | action `admin`; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
 | GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; unauthenticated like `GET /readyz` and `GET /version` (spec 002), and the only unauthenticated path that is part of the contract |
@@ -68,12 +68,12 @@ Defined by [009 read api and archive](../specs/009-read-api-and-archive.md).
 | GET | `/v1/repos/{id}/commits/{sha}` | the commit as above plus `"stats": {"files", "additions", "deletions"}` from `git show --numstat`; binary files count as a file with 0 lines |
 | GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=&base=&head=`; `text/x-diff` from `git diff -M --no-color --end-of-options <base> <head> -- <path>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
 | GET | `/v1/repos/{id}/tree/{sha}` | `?path=&recursive=0&cursor=`; `{"entries": [{"path", "mode", "type", "sha", "size"}], "next_cursor"}` from `git ls-tree -l`; 5 000 entries per page, `cursor` the last path |
-| GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honoured; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
+| GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honored; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
 | GET | `/v1/repos/{id}/archive/{sha}.tar.gz` | `git archive --format=tar.gz --prefix=<slug>-<7 hex>/ <sha>` streamed; entries in git's tree order, mtime the commit time, no `.git`; reproducible for one git version |
 
 Defined by [010 lfs](../specs/010-lfs.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/{repo}/info/lfs/objects/batch` | `{"operation": "download"\|"upload", "objects": [{"oid", "size"}], "transfers": ["basic"]}`, body at most 1 MiB (spec 012); action `read` for download, `write` for upload; answers each object with its action, or with no `actions` for an upload of an object the store already holds (Objects, below) |
 | POST | `/{repo}/info/lfs/verify` | the `verify` action of an upload: `{"oid", "size"}`; action `write`, because it completes the upload; 200 when the object exists with that size, 422 otherwise. The check is the size alone, from one `HEAD` of `lfs/<oid>`; the hash is not checked, because the node would have to read the whole object to compute it, and the bytes never passing through a node is the point of the presigned transfer. An object whose bytes do not match its `oid` is what the client's own `git lfs` refuses on download |
@@ -81,16 +81,16 @@ Defined by [010 lfs](../specs/010-lfs.md).
 
 Defined by [014 repository migration](../specs/014-repository-migration.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source, one the egress rules of spec 016 refuse, or one that does not answer `ls-remote`, which is the caller's input and carries `field: "source"` in `details` |
 
 Defined by [019 repository administration](../specs/019-repository-administration.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap |
-| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defence for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
+| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defense for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository size rule of spec 012 (`quota_bytes` over packs and LFS bytes) as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
 | GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `import_not_found` when none of them is; `refs` and `bytes` are `meta`'s `import_refs` and `import_bytes`, written with `imported_at`: the length of the import entry's reference transaction and the bytes of the uploaded `.pack` files, the entry's `PacksBytes`, because the entry itself carries no pack and its `pack_bytes` is 0; the endpoint serves what `meta` holds, so `started_at` is null once an import has finished and `finished_at` is null for one that failed; action `read` |
@@ -116,7 +116,7 @@ Defined by [022 landing page](../specs/022-landing-page.md).
 
 Defined by [026 repository directory](../specs/026-repository-directory.md).
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
 

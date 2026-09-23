@@ -631,7 +631,7 @@ func TestGitErrorsAndCorruptionMarkers(t *testing.T) {
 		t.Fatal("a missing revision is not corruption")
 	}
 	if !IsCorruption(&Error{Stderr: "fatal: bad object HEAD"}) || !IsCorruption(&Error{Stderr: "error: packfile x is corrupt"}) {
-		t.Fatal("corruption markers not recognised")
+		t.Fatal("corruption markers not recognized")
 	}
 	if !errors.Is(ge, ge.Err) {
 		t.Fatal("Unwrap")

@@ -385,7 +385,7 @@ takes its stack branch instead of its live branch, finds nothing at
 `ORIGO_TEST_URL`, and skips there: the job's log reads
 `contract_test.go:136: nothing answers at ORIGO_TEST_URL
 (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. The
-job never dialled an installation. A skipped test passes, so the job is
+job never dialed an installation. A skipped test passes, so the job is
 green, and this spec does not read that green as the run.
 
 The `install from the release artifacts` job of the same run did run
@@ -397,7 +397,7 @@ spec 018's job row and no criterion here.
 
 Spec 017's Outcome records that limit and its lifting. The v0.1.3
 release run 34546335576 of 2026-09-11 is the run: its `live` job, id
-103120952813, dialled `https://code.latere.ai` and passed,
+103120952813, dialed `https://code.latere.ai` and passed,
 `contract_test.go:133: live run against ***: 51 passed` and
 `--- PASS: TestContract (173.69s)`. This spec's four cases are among
 them, `--- PASS: TestContract/020/commits`, `/merge`, `/cherry-pick`,

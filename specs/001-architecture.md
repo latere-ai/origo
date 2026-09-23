@@ -54,7 +54,7 @@ real git.
 The spike in
 [docs/spikes/2026-09-06-conditional-writes.md](../docs/spikes/2026-09-06-conditional-writes.md)
 is why the index is a sequence of immutable objects rather than one object
-updated by compare-and-swap: `PUT If-Match` is honoured by MinIO and
+updated by compare-and-swap: `PUT If-Match` is honored by MinIO and
 refused by Spaces, while `PUT If-None-Match: *` behaves the same on both
 and is documented by AWS.
 

@@ -78,7 +78,7 @@ func gossipPair(t *testing.T, s *stack) (*node, *node) {
 // gossip, B applies the entry in the background before any request,
 // so the fetch's currency check answers 404; without gossip the first
 // fetch on B finds the newer index with a 200. The time from A's
-// acknowledgement to B's catch-up is recorded.
+// acknowledgment to B's catch-up is recorded.
 func TestE2EGossipShortensTheCatchUp(t *testing.T) {
 	s := requireStack(t)
 	a, b := gossipPair(t, s)
@@ -102,7 +102,7 @@ func TestE2EGossipShortensTheCatchUp(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	caughtUp := time.Since(acknowledged)
-	t.Logf("MEASURE gossip: B applied the entry %s after A's acknowledgement", caughtUp)
+	t.Logf("MEASURE gossip: B applied the entry %s after A's acknowledgment", caughtUp)
 
 	// The fetch on B: one request (protocol v1's advertisement answers
 	// the references; v2 would add an ls-refs POST, a second check)

@@ -117,7 +117,7 @@ func Apply(t testing.TB, overlay string) {
 
 // Get returns the object of the stack's namespace as JSON, for a test
 // that asserts on what the overlay applied rather than on the stack's
-// behaviour.
+// behavior.
 func Get(t testing.TB, kind, name string) []byte {
 	t.Helper()
 	return GetIn(t, Namespace, kind, name)

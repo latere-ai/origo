@@ -482,7 +482,7 @@ repository-wide deny, and `026/directory`, spec 026's populated
 directory seeded through the stub's `/directory` endpoint, filtered by
 a read deny, the name mode beside it, and the 501 once the directory
 is taken away; 61 cases now, and a live run reports ten skipped names
-over the same six groups. The run's cleanup learnt to wait with them:
+over the same six groups. The run's cleanup learned to wait with them:
 a repository `019/forbidden` denied is still denied in the node's
 five-second decision cache when a fast tail of cases ends the run, so
 `deleteUntilGone` asks again after a 403 for up to its budget, the way
@@ -804,7 +804,7 @@ takes its stack branch instead of its live branch, finds nothing at
 `ORIGO_TEST_URL`, and skips there: the job's log reads
 `contract_test.go:136: nothing answers at ORIGO_TEST_URL
 (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. The
-job never dialled an installation. A skipped test passes, so the job is
+job never dialed an installation. A skipped test passes, so the job is
 green, and this spec does not read that green as the run.
 
 The `install from the release artifacts` job of the same run did run

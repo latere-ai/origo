@@ -19,7 +19,7 @@ make          # the quality gate
 public modules, so it runs the same on your machine as in CI.
 
 Install the hooks once with `git config core.hooksPath .githooks`. They run
-formatting and licence checks before a commit and the linter before a push,
+formatting and license checks before a commit and the linter before a push,
 so you see a finding before CI does.
 
 ## Sending a change
@@ -40,7 +40,7 @@ reasoning attached.
 formatting, the linter, modernization, known vulnerabilities, the suite
 with and without the race detector, per-package coverage at 90% or more,
 the suite with only the toolchain and git on `PATH`, the suite against an
-empty temporary directory, the licence notice, the dependency allow list,
+empty temporary directory, the license notice, the dependency allow list,
 and the spec tree. `go tool lateregate list` names them and
 `go tool lateregate <name>` runs one. `make test-integration` runs the
 store suite and the end-to-end suite against MinIO; run it before a change

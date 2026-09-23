@@ -86,7 +86,7 @@ accepted here, meaning the whole tree, and refused by spec 020.
 | GET | `/v1/repos/{id}/commits/{sha}` | the commit as above plus `"stats": {"files", "additions", "deletions"}` from `git show --numstat`; binary files count as a file with 0 lines |
 | GET | `/v1/repos/{id}/compare/{base}...{head}` | `?path=&base=&head=`; `text/x-diff` from `git diff -M --no-color --end-of-options <base> <head> -- <path>`; at most 1 MiB, cut at a file boundary with `Origo-Truncated: true`; binary files listed as `Binary files differ` |
 | GET | `/v1/repos/{id}/tree/{sha}` | `?path=&recursive=0&cursor=`; `{"entries": [{"path", "mode", "type", "sha", "size"}], "next_cursor"}` from `git ls-tree -l`; 5 000 entries per page, `cursor` the last path |
-| GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honoured; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
+| GET | `/v1/repos/{id}/blob/{sha}` | raw bytes of a blob with `Content-Type` from `http.DetectContentType` over the first 512 bytes and `Content-Length`; `Range` honored; a blob over 50 MiB without a `Range` of at most 50 MiB is 413 `blob_too_large` |
 | GET | `/v1/repos/{id}/archive/{sha}.tar.gz` | `git archive --format=tar.gz --prefix=<slug>-<7 hex>/ <sha>` streamed; entries in git's tree order, mtime the commit time, no `.git`; reproducible for one git version |
 
 The first draft named `.tar.zst`; zstd is not in the standard library
@@ -260,7 +260,7 @@ Divergences and interpretations, all kept and now in the Design:
 - On a repository with no commit every `ref` of the `commits` list
   answers the empty page, not only the default `HEAD`; the rule is
   "no reference besides `HEAD` in the index", read without git.
-- `blob` honours one `bytes=` range in the three forms; another form
+- `blob` honors one `bytes=` range in the three forms; another form
   is 400 `invalid_request` with `details.reason: "range"`, and a range
   past the end is 416 with `Content-Range: bytes */<size>` and the
   same envelope. The archive answers `Content-Disposition` with

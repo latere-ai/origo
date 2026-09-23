@@ -156,7 +156,7 @@ an allow on any of the three.
    page of 50 into 51 calls on the request path, against rule 5. The
    `list` answer *is* the read decision for the entries it names, for
    the representation this route serves and for nothing else. Every
-   other route keeps asking per repository, so an id learnt from a
+   other route keeps asking per repository, so an id learned from a
    directory page still costs a `read` decision when it is opened.
 
 **Caching.** A `list` answer is not cached. It is a page rather than a
@@ -170,7 +170,7 @@ action"`, without a call to the authorizer.
 
 ### The collection route
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
 
@@ -209,7 +209,7 @@ sees it stops asking.
 
 `test/stubs/authorizer` learns the action, to spec 013's table:
 
-| Control | Behaviour |
+| Control | Behavior |
 |---|---|
 | a PUT of `/directory` | `{"supported": <bool>, "repos": [{"id", "owner", "slug"}]}` sets the directory the stub answers `list` with. `supported` false, which is the default, answers `{"directory": false}`, so the kind stack and every existing test see an installation with no directory and nothing changes for them |
 | a `list` request | with a directory set, each entry is put through the same rule table a `read` request is, for the request's subject and actor, and only the allowed entries are returned; the page is cut at `limit` and `next_cursor` is the id of the last entry served, empty on the final page. So a rule that denies a subject one repository denies it in the directory too, with no second table to keep in step |
@@ -325,7 +325,7 @@ back on 2026-09-11 with `go test -v`, each reports `--- PASS`:
 `internal/api`; `TestEveryRouteRequiresAToken` in `cmd/origod`;
 `TestStubDirectory` in `internal/auth`.
 
-Two divergences, both of naming and neither of behaviour:
+Two divergences, both of naming and neither of behavior:
 
 - The criterion proposes `TestStubDirectory` in `test/stubs/authorizer`.
   It is in `internal/auth/directory_test.go`, beside the directory

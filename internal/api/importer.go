@@ -38,7 +38,7 @@ const (
 	// the connectivity check, the uploads, and the commit.
 	DefaultImportTimeout = 30 * time.Minute
 	// ImportLease is how long an importing_since whose node is out of
-	// the live set is honoured before another node clears it.
+	// the live set is honored before another node clears it.
 	ImportLease = 45 * time.Minute
 )
 

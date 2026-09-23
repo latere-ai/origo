@@ -21,7 +21,7 @@ import (
 // MemStore is an in-process Store with exactly the primitives spec 004
 // relies on and the semantics the spike verified on MinIO and Spaces:
 // Create refuses an existing key with ErrExists and leaves it untouched,
-// Head answers ErrNotFound or the ETag, Get honours If-None-Match, List
+// Head answers ErrNotFound or the ETag, Get honors If-None-Match, List
 // is lexical, and there is no compare-and-swap at all. The unit suite runs
 // on it; the integration suite runs the same tests on MinIO.
 type MemStore struct {

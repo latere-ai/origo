@@ -257,7 +257,7 @@ func TestImportLeaseExpires(t *testing.T) {
 	}
 	h.handler.Wait()
 
-	// A lease whose node is still in the live set is honoured whatever
+	// A lease whose node is still in the live set is honored whatever
 	// its age.
 	now = started
 	writeLease(t, h, repoA, "origod-2", started)

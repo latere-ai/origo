@@ -78,7 +78,7 @@ Origo can post a signed webhook for every reference update, so a build or a depl
 | `ORIGO_REPAIR_INTERVAL` | no | `10m` | how often a node looks for deliveries a node that went away left behind. |
 | `ORIGO_REPAIR_UNHEARD` | no | `5m` | how long a node must be silent before another node takes over its undelivered events. |
 
-## Storage behaviour and housekeeping
+## Storage behavior and housekeeping
 
 What a node does when the bucket is slow, and how often it tidies up after itself. The defaults suit a healthy bucket in the same region.
 

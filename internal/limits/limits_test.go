@@ -496,7 +496,7 @@ func TestRetryAfterIsWholeSecondsAtLeastOne(t *testing.T) {
 }
 
 // TestOptionsTakeTheSpecsValues proves every knob falls back to the
-// spec's figure and that a lowered one is honoured.
+// spec's figure and that a lowered one is honored.
 func TestOptionsTakeTheSpecsValues(t *testing.T) {
 	l := New(Options{})
 	if l.Slots().Size() != DefaultMaxGitProcs || l.MaxPush() != MaxPushBytes {

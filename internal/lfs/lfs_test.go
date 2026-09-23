@@ -930,7 +930,7 @@ func TestDefaultsAreTheSpecValues(t *testing.T) {
 	}
 }
 
-// TestWriteFallsBackToAnEmptyObject: a body that cannot be marshalled
+// TestWriteFallsBackToAnEmptyObject: a body that cannot be marshaled
 // still leaves the client on the LFS shape.
 func TestWriteFallsBackToAnEmptyObject(t *testing.T) {
 	rec := httptest.NewRecorder()

@@ -15,7 +15,7 @@ import (
 )
 
 // TestMainDispatchesAndExits: main holds wiring only, so what this file proves
-// is that the wiring is the whole of it. The behaviour is tested in
+// is that the wiring is the whole of it. The behavior is tested in
 // internal/origocli, which a test reaches without a process.
 func TestMainDispatchesAndExits(t *testing.T) {
 	var stdout, stderr bytes.Buffer

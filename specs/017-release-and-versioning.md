@@ -352,7 +352,7 @@ worked around, each for the user to decide on:
 |---|---|---|
 | GitHub's attestation API refuses a private repository on the `latere-ai` organization plan | lifted. It blocked the SBOM and provenance attestations and `release-verify`'s `gh attestation verify`, and nothing else, so a private release was otherwise complete: every artifact, the three SPDX documents as assets, and the cosign signatures | run 34416521585 of 2026-09-10, the `build` job, `actions/attest-sbom`: "Feature not available for the latere-ai organization. To enable this feature, please upgrade the billing plan, or make this repository public." The repository was made public afterwards (`gh api repos/latere-ai/origo --jq '.private,.visibility'` answers `false` and `public`), the four `attest-*` steps stopped skipping, and the `v0.1.1` tag run 34511419232 attached and verified both attestations on both images |
 | an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | lifted. It blocked every job of every workflow, so no push run, no dispatched run, and no release run started at all | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint. Run 34447226405 of the same day is the first green push run after it was restored |
-| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://code.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, for the 51 cases a live run can carry: the other eight sit in the six groups a live target cannot supply and close on the stack instead, which spec 021's Outcome states. It also holds the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: with `ORIGO_LIVE_URL` empty the test takes its stack branch, so the log reads `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)` and no installation was dialled. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
+| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://code.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, for the 51 cases a live run can carry: the other eight sit in the six groups a live target cannot supply and close on the stack instead, which spec 021's Outcome states. It also holds the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: with `ORIGO_LIVE_URL` empty the test takes its stack branch, so the log reads `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)` and no installation was dialed. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
 
 `v0.1.0` was cut on 2026-09-10 from a green `main` at commit `058eb6d`
 with `go tool lateregate release v0.1.0`, and the tagged commit is
@@ -395,7 +395,7 @@ set, the job ran on 34546335576, id 103102068011, applied
 matches the tag (v0.1.3)`, `release smoke passed`. With the unset half
 already proved on 34461460766, where the job reports `skipped` and the
 release published all eleven assets anyway, both states of the variable
-are now exercised on this repository and the criterion's behavioural
+are now exercised on this repository and the criterion's behavioral
 half is closed.
 
 ### The defect the first tag found
@@ -405,7 +405,7 @@ then skipped `install-release` and `release-verify`, so nothing verified
 what had been published. The cause is not in either job: `deploy` is
 skipped whenever `ORIGO_RELEASE_DEPLOY` is unset, and GitHub evaluates
 the implicit `success()` gate of a job over its whole ancestor closure,
-not over its direct `needs` alone, so the skip travelled through
+not over its direct `needs` alone, so the skip traveled through
 `publish`, which runs under `always()`, into the two jobs below it,
 which carried no condition. Both now carry
 `if: ${{ always() && needs.publish.result == 'success' }}`, the same
@@ -556,7 +556,7 @@ four:
 A fork therefore needs the namespace threaded from one place through
 the workflow, the manifests, and the archive script, with
 `ghcr.io/${{ github.repository_owner }}` as the default so this
-repository's behaviour does not change.
+repository's behavior does not change.
 
 That landed on 2026-09-11 and the four places are threaded:
 

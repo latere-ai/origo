@@ -44,13 +44,13 @@ Origo's route truth today is in three places, and they are not equals:
 
 | Where | What it holds | Who reads it |
 |---|---|---|
-| the endpoint tables of the specs | every method, path and behaviour, one row each, 40 rows over 11 specs | `tools/specindex/specs` parses them; `tools/apidoc` renders `docs/api.md` from them; the deck's own test fails on a name no spec defines |
+| the endpoint tables of the specs | every method, path and behavior, one row each, 40 rows over 11 specs | `tools/specindex/specs` parses them; `tools/apidoc` renders `docs/api.md` from them; the deck's own test fails on a name no spec defines |
 | `internal/api`, `internal/httpgit`, `internal/lfs`, `cmd/origod` | the registrations, one `mux.HandleFunc` each (`internal/api/api.go:189`, `read.go:66`, `admin.go:36`, `operations.go:92`, `internal/httpgit/handler.go:175`, `internal/lfs/lfs.go:117`, `cmd/origod/node.go:548`) | the router alone |
 | `internal/contract` | the 25 error codes, their statuses and their one user sentence each | every handler |
 
 The specs are the published truth: `docs/api.md` says so in its first
 paragraph, and it is the page a consumer codes against. The registrations
-carry no behaviour text at all, and `internal/contract` carries the codes but
+carry no behavior text at all, and `internal/contract` carries the codes but
 no route. So the document has one honest source and two constraints the design
 has to meet: the node must be able to answer it without a parser its build
 list does not carry (`.lateregate.yaml`, `depcheck`), and the file a consumer

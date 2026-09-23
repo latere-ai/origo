@@ -231,7 +231,7 @@ in the same change: spec 016's Transport paragraph no longer says there
 is no anonymous read in v1 and points here instead.
 
 The switch was off in `deploy/prod` when the release shipped, so the
-tag proved the behaviour and not a change of what the installation
+tag proved the behavior and not a change of what the installation
 admitted. Later on 2026-09-11, `05b7816` added
 `deploy/prod/anonymous-read.yaml`, which sets `ORIGO_ANONYMOUS_READ=1`
 on the node container, so the installation admits anonymous reads and a

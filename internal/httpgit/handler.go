@@ -538,7 +538,7 @@ func (h *Handler) receivePack(w http.ResponseWriter, r *http.Request) {
 		h.storageError(w, r, err)
 		return
 	}
-	// The repository's own state (spec 019) is the defence for a client
+	// The repository's own state (spec 019) is the defense for a client
 	// that sends git-receive-pack without asking for the advertisement:
 	// the same refusal travels as the hook's verdict, so the client
 	// reads the code and the sentence in the sideband and no entry is

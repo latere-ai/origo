@@ -766,7 +766,7 @@ func TestReadDeadlineIsOperationTimeout(t *testing.T) {
 }
 
 // TestBlobRange: the 60 MiB blob is 413 without a Range and 206 with
-// one of at most 50 MiB; every Range form is honoured on a small blob.
+// one of at most 50 MiB; every Range form is honored on a small blob.
 func TestBlobRange(t *testing.T) {
 	f := loadFixture(t)
 	h := newHarness(t)

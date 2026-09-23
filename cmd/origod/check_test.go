@@ -20,7 +20,7 @@ import (
 )
 
 // checkEnv is a configuration every requirement can meet: the fake
-// bucket, which honours the conditional create, the stub issuer and
+// bucket, which honors the conditional create, the stub issuer and
 // authorizer of the identity, a stub sink, and a writable directory.
 func checkEnv(t *testing.T) map[string]string {
 	t.Helper()

@@ -17,7 +17,7 @@ import (
 
 // TestClusterPodSecurityContext is spec 016's stack criterion: a node
 // of the kind stack runs with the documented security context in the
-// namespace labelled restricted, a pod that asks for privilege
+// namespace labeled restricted, a pod that asks for privilege
 // escalation is refused by Pod Security admission with the label named
 // in the refusal and never created, and the NetworkPolicy origod-gossip
 // exists with one ingress rule admitting UDP 7946 from the origod pods

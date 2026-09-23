@@ -271,7 +271,7 @@ func TestEgressPinAppliesOutsideClusterRanges(t *testing.T) {
 		}
 	}
 	// A pinned host that answers with a public address the pin does not
-	// name is refused too, with the ranges no part of the judgement.
+	// name is refused too, with the ranges no part of the judgment.
 	_, err := e.DialContext(ctx, "tcp", "outside.example.com:443")
 	if ee := egressError(t, err); ee.Address != "203.0.113.7" {
 		t.Errorf("outside: %q", ee.Address)

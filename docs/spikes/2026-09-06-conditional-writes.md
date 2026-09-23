@@ -11,12 +11,12 @@ Raw reports: [MinIO](2026-09-06-conditional-writes.minio.json),
 The first draft of spec 004 linearized pushes with one `PUT` on a mutable
 index object guarded by `If-Match: <etag>`, created the index with
 `If-None-Match: *`, and made consistent reads cheap with a conditional
-`GET` that answers 304. Does the object store honour these, what do they
+`GET` that answers 304. Does the object store honor these, what do they
 cost, and which of them can the design rely on across providers?
 
 The tool checks, with the wire status code as evidence:
 
-| Primitive | Required behaviour | Used by |
+| Primitive | Required behavior | Used by |
 |---|---|---|
 | `PUT If-None-Match: *`, key absent | 200 with an ETag | commit of `index/<n+1>` |
 | `PUT If-None-Match: *`, key present | 412 and the object is untouched | commit of `index/<n+1>` |
@@ -27,7 +27,7 @@ The tool checks, with the wire status code as evidence:
 | 16 writers race a CAS on one ETag, 20 rounds | exactly one 200 per round | the first draft only |
 
 Fallbacks, probed so a provider without a primitive is still
-characterised: `CopyObject` with `If-Match` / `If-None-Match` on the
+characterized: `CopyObject` with `If-Match` / `If-None-Match` on the
 destination, and bucket versioning.
 
 ## Providers
@@ -53,8 +53,8 @@ deleted it afterwards.
 | CAS race, 20 rounds x 16 writers | 1 applied per round | 20 x 200, 300 x 412 | pass |
 | CAS race, 50 rounds x 32 writers | 1 applied per round | 50 x 200, 1550 x 412 | pass |
 | `PUT If-Match: <any>` on absent key | informational | 404, nothing created | recorded |
-| `CopyObject If-None-Match: *` on existing destination | 412 | 200, destination overwritten | not honoured |
-| `CopyObject If-Match: <stale>` on destination | 412 | 200, destination overwritten | not honoured |
+| `CopyObject If-None-Match: *` on existing destination | 412 | 200, destination overwritten | not honored |
+| `CopyObject If-Match: <stale>` on destination | 412 | 200, destination overwritten | not honored |
 | Bucket versioning | informational | enabled; each `PUT` returns a version id; the last write is `IsLatest` | recorded |
 
 Latency, 200 samples per operation, 8 KiB body, the recorded run. MinIO
@@ -90,7 +90,7 @@ Run on 2026-09-06 with the current build and cluster credentials against
 a production DigitalOcean Spaces bucket in fra1, under
 `origo-spike/71b6b35776d30ba0/`, deleted at the end. An earlier run of
 the previous build (prefix `origo-spike/2f900c8e7cfc0f89/`) found the
-same `If-Match` behaviour; the recorded report is the later run. The
+same `If-Match` behavior; the recorded report is the later run. The
 bucket is named in neither this page nor the raw report: the finding is
 about the provider, not about one bucket.
 
@@ -108,8 +108,8 @@ about the provider, not about one bucket.
 | `PUT If-Match` timed, 200 samples | 200 | 412 on every sample | absent |
 | CAS race, 20 rounds x 16 writers | 1 applied per round | 0 x 200, 320 x 412 | absent |
 | `PUT If-Match: <any>` on absent key | informational | 412, nothing created | recorded |
-| `CopyObject If-None-Match: *` on existing destination | 412 | 200, destination overwritten | not honoured |
-| `CopyObject If-Match: <stale>` on destination | 412 | 200, destination overwritten | not honoured |
+| `CopyObject If-None-Match: *` on existing destination | 412 | 200, destination overwritten | not honored |
+| `CopyObject If-Match: <stale>` on destination | 412 | 200, destination overwritten | not honored |
 | Bucket versioning | informational | off | recorded |
 
 Spaces answers 412 to every `PUT If-Match`, including one that carries
@@ -154,9 +154,9 @@ row of the table above. The bucket is not named here, as above.
 | `PUT If-Match: <stale>` | 412 | pass, vacuous |
 | CAS race, 20 rounds x 16 writers | 0 applied / 20 rounds, 320 x 412 | absent |
 | `PUT If-Match: <any>` on absent key | 412, nothing created | recorded |
-| `CopyObject If-None-Match: *` on existing destination | 200, destination changed | not honoured |
-| `CopyObject If-Match: <stale>` on destination | 200, destination changed | not honoured |
-| `CopyObject If-Match: <current>` on destination | 200, destination replaced | honoured |
+| `CopyObject If-None-Match: *` on existing destination | 200, destination changed | not honored |
+| `CopyObject If-Match: <stale>` on destination | 200, destination changed | not honored |
+| `CopyObject If-Match: <current>` on destination | 200, destination replaced | honored |
 | Bucket versioning | off | recorded |
 
 Latency, from a laptop to fra1:
@@ -182,7 +182,7 @@ against anything built. `PUT If-Match` is refused on every use,
 including one carrying the ETag Spaces returned a moment earlier, so
 compare-and-swap does not exist on this provider; `CopyObject` ignores
 `If-None-Match: *` and a stale `If-Match` on the destination and
-overwrites, and honours only an `If-Match` that is already current,
+overwrites, and honors only an `If-Match` that is already current,
 which decides nothing. No Origo code path reaches either: `IfMatch`,
 `If-Match`, `CopyObject` and `CopySource` appear in no file under
 `internal/`, `cmd/` or `test/` outside two comments, the client
@@ -201,7 +201,7 @@ when credentials exist.
 
 ## Conclusion
 
-`If-Match` is not portable: MinIO honours it, Spaces refuses every use
+`If-Match` is not portable: MinIO honors it, Spaces refuses every use
 of it, and a design built on it would run on one of the two stores Origo
 must run on. Create-if-absent is portable: `PUT If-None-Match: *`
 behaves the same on MinIO and Spaces, and AWS documents it. `HEAD` and

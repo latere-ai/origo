@@ -134,7 +134,7 @@ document's thirty-line endpoint becomes an example, not a requirement.
 verifier becomes `latere.ai/x/pkg/authkit/jwt` with the options the
 family's C5 adds for Origo's rules: the token size bound, the `iat`
 age, the local issuer with a fixed key, and the reason table of spec
-007, which becomes the package's. The behaviour of every row of spec
+007, which becomes the package's. The behavior of every row of spec
 007's verification table is unchanged; `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure`
 is the proof.
 
@@ -196,7 +196,7 @@ Two departures from the design above, both deliberate:
   shipped: authkit/jwt on `pkg` main is RS256-only, one issuer by exact
   string, with no ES256, no token-size bound, no `iat` age, no local
   issuer with a fixed key, and no reason table. Until C5 adds those,
-  Origo keeps `internal/auth`'s verifier; its behaviour is unchanged and
+  Origo keeps `internal/auth`'s verifier; its behavior is unchanged and
   `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` is the proof. The
   audience became configurable in place. This is the one waiver.
 
@@ -253,7 +253,7 @@ through `test/stubs/authorizer`.
 One divergence from the Design stands, the waiver above: the verifier is
 Origo's own in `internal/auth` and not `latere.ai/x/pkg/authkit/jwt`,
 because the family's C5 has not shipped the options Origo's rules need.
-The audience became configurable in place and the behaviour of every row
+The audience became configurable in place and the behavior of every row
 of spec 007's verification table is unchanged. The second departure of
 `State on 2026-09-14`, that the release was coupled and not yet cut, is
 what `v0.4.1` closes: contract 1 went in the same release, and the
@@ -361,7 +361,7 @@ rows of the table above against pkg v0.72.0 and reds when either closes;
 `.lateregate.yaml`'s `verifier` waiver names it. Either of two changes
 to the package closes it on its own: a `kid` that names no key of the
 set refused rather than tried against every key, which makes the JWKS
-path whole; or `Config.ClockSkew` honoured for a token of
+path whole; or `Config.ClockSkew` honored for a token of
 `Config.LocalIssuer`, which makes the local path whole. An exported
 reader of the JOSE header would close it a third way, by letting a
 caller that keeps its own key sets hand the verifier the one key a `kid`
@@ -491,7 +491,7 @@ gate in front of `Validate` and holds no keys.
 Once an issuer has answered, the package paces itself and the gate steps
 aside: `CacheTTL` refreshes the set on the hour and a `kid` naming no key
 of it forces one refresh, at most one every fifteen seconds. That window
-is the one behaviour of spec 007 the move changed: the spec bounded the
+is the one behavior of spec 007 the move changed: the spec bounded the
 same refresh to one a minute. It is strictly more responsive to a rotation
 and strictly more fetches, it changes no refusal reason and nothing an
 operator sets, and it is the package's figure rather than a value Origo
@@ -622,7 +622,7 @@ the probe is that warm, and the keys it reads are kept. An issuer is
 read once per refresh interval rather than twice, and the first token of
 an issuer pays for no fetch (`TestStartUpWarmsTheSharedVerifier`).
 
-Two things follow, and the second is the only behaviour that changed.
+Two things follow, and the second is the only behavior that changed.
 
 - A warm reaches no network for a set inside the package's `CacheTTL`,
   which is `RefreshInterval` on this node's clock, so a pass fetches

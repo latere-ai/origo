@@ -162,7 +162,7 @@ rule that every variable a started spec defines is in the node's deck,
 which was true while Origo had one binary. These four make it false, so
 the test now reads the rule it always meant: a variable a started spec
 defines has a row on a page under `docs/`, and `docs/configuration.md`
-holds the node's deck and nothing else. The generalisation is spec 018's
+holds the node's deck and nothing else. The generalization is spec 018's
 criterion, unchanged in what it asserts about `make docs`.
 
 | Variable | Value |
@@ -649,7 +649,7 @@ API.
 - **LFS** (spec 010), **push events** (spec 008), **the archive**
   (spec 009): a tarball, a pointer file, and a webhook are not things an
   agent puts in a context window.
-- **A shell completion script, a pager, and colour.** Each is a
+- **A shell completion script, a pager, and color.** Each is a
   concession to a human at a terminal, and each costs bytes or an escape
   sequence in a model's context. The output is plain text on stdout in
   every environment.
@@ -733,7 +733,7 @@ replacing the surface:
 | 16 | nothing separated the payload from the commentary, so a truncation notice would have reached a `grep` and `origo cat x.go > x.go` would have written a note into the file | rule 3 of Byte defaults: data on stdout, every header, truncation and stale line on stderr |
 | 17 | the first draft was one binary with its formatting fused into its tool handlers, which is what made a second front end impossible | three packages with a stated boundary, and `internal/origoclient` formats nothing |
 | 18 | `ORIGO_TOKEN` sits one word from the node's `ORIGO_TOKEN_KEY`, and nothing caught a PEM key sent as a bearer | a value beginning `-----BEGIN` is refused at start-up by name |
-| 20 | the author variable was `Name <email>` on both sides. Spec 020's `author` is `{"name", "email"}` and `validateCommon` refuses an email with no `@`, so the whole string would have travelled as a name with an empty address and been refused on the wire | Configuration says the variable is one string here and two fields there, the command splits at the angle brackets, and the start-up refusal catches a missing `@` before a round trip |
+| 20 | the author variable was `Name <email>` on both sides. Spec 020's `author` is `{"name", "email"}` and `validateCommon` refuses an email with no `@`, so the whole string would have traveled as a name with an empty address and been refused on the wire | Configuration says the variable is one string here and two fields there, the command splits at the angle brackets, and the start-up refusal catches a missing `@` before a round trip |
 | 21 | the write receipt was read as five fields with `committed` a boolean. A real write answers 201 with `committed` absent, never `true`, and only a dry run carries `committed: false` with a null `entry_seq` | fact 5, and the receipt reads `committed` as present-and-false rather than as a boolean with a default |
 | 19 | spec 026's directory was read as making `origo repos` work for an agent. It does not: a repository-bound token's `list` is refused on its scope by `internal/auth`'s guard before the authorizer is asked, whatever directory the authorizer has, so the recommended credential answers `forbidden` and not `directory_unsupported`. Found by running the end-to-end test against a node rather than against a stand-in | Authentication states it as a property of the model, the command surface marks `repos` as the one command a bound token does not have, `directoryHint` explains both refusals, and the two end-to-end criteria assert the bound-token refusal and the issuer-token listing separately |
 | 22 | the commit route's budget was given as 300 seconds with the other three. `MergeBudget` is 300 and covers merge, cherry-pick and revert; the commit route runs under the 30 second budget the reads have | Configuration gives `origo commit` the 60 second client timeout of a read, and 330 to the other three |
@@ -902,7 +902,7 @@ client, which adds no refusal Origo does not send, reports that.
   `internal/origocli`, `TestTokenIsNeverWritten`).
 - `cmd/origo` exits 0 on a served command, 1 on a refusal, and 2 on an
   unknown command or a start-up refusal, and its `main` holds no
-  behaviour a test cannot reach through `origocli.Run` (proposed:
+  behavior a test cannot reach through `origocli.Run` (proposed:
   `cmd/origo`, `TestMainDispatchesAndExits`).
 - The command table of `docs/cli.md` names exactly the twelve commands
   the binary serves, and `skills/origo/SKILL.md` names no command and no
@@ -964,7 +964,7 @@ test-tiers` over the `TestE2E` prefix; all are `success`. Read back on
 `TestE2EOrigoDirectoryNeedsAnIssuerToken` (3.12s) and
 `TestE2EOrigoDocCommandsRun` (3.84s) in `test/e2e`.
 
-One divergence, of naming and not of behaviour. The directory criterion
+One divergence, of naming and not of behavior. The directory criterion
 proposes `TestE2EOrigoDirectoryUnsupported`, which is in no file. The
 criterion's two assertions are in `TestE2EOrigoDirectoryNeedsAnIssuerToken`
 in `test/e2e/origo_test.go`: against a node whose authorizer has no

@@ -18,7 +18,7 @@ status codes as evidence:
   stale, and N writers firing a CAS on one ETag see exactly one winner.
   Reported as `absent` when the provider refuses it; the run still passes.
 - Fallbacks a provider without conditional PUT would need: whether
-  `CopyObject` honours `If-Match` and `If-None-Match` on the destination,
+  `CopyObject` honors `If-Match` and `If-None-Match` on the destination,
   and whether the bucket can version objects.
 - Latency of the 304, the `HEAD` 404 and 200, a successful CAS PUT, and
   the unconditional GET and PUT, 200 samples each, reported as min, p50,

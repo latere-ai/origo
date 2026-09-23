@@ -23,7 +23,7 @@ import (
 //
 // The body is written as a literal rather than through the stub's typed
 // form on purpose. The identity gate reads the name act as delegation
-// vocabulary in any file that also carries the capitalised word for a
+// vocabulary in any file that also carries the capitalized word for a
 // token's fields, and a suite that proves a refusal has to be able to
 // build what is refused. Introducing that word here reds the gate, and
 // the reason will not be obvious from the message.

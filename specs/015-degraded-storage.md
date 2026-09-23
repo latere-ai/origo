@@ -131,7 +131,7 @@ it.
 |---|---|
 | `Origo-Stale` | on a response served without a currency check: the whole seconds since the last check that answered; absent on every consistent response |
 
-Stale serving is bounded and labelled so a consumer that must not read
+Stale serving is bounded and labeled so a consumer that must not read
 stale (a build fetching a commit it was just told about) can refuse the
 response by the header, while a clone that would otherwise fail gets a
 recent copy. `info/refs`, `git-upload-pack`, and every read endpoint of

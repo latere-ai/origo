@@ -4,7 +4,7 @@
 // Command origod is the Origo server: git hosting with a write-ahead log in
 // object storage as the source of truth. This file is the entry point and
 // holds wiring only: configuration, the listeners, and the run group. The
-// behaviour lives in the packages under internal/.
+// behavior lives in the packages under internal/.
 package main
 
 import (

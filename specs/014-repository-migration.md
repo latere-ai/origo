@@ -93,7 +93,7 @@ history, spec 004).
 
 ### Verification
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/v1/repos/{id}/verify` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`, the same body shape as spec 019's `import`, action `admin`; compares the source and Origo's copy and answers the document below; read-only on both sides and idempotent, a `POST` only because the source bearer travels in the body, where it is never logged, and not in a header or a query string; 400 `invalid_request` for a non-HTTPS source, one the egress rules of spec 016 refuse, or one that does not answer `ls-remote`, which is the caller's input and carries `field: "source"` in `details` |
 

@@ -53,7 +53,7 @@ this spec added `check` to it; spec 002's Outcome records both.
 | Requirement | Detail |
 |---|---|
 | Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
-| bucket | any S3 compatible endpoint that honours `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
+| bucket | any S3 compatible endpoint that honors `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
 | authorizer | an HTTP endpoint the operator runs (spec 007), held to the five rules of that spec's authorization endpoint contract, of which the operator-facing consequence is that the endpoint learns of a repository before Origo does, so a registration precedes every `POST /v1/repos`; a single-tenant installation satisfies the contract with a static allow-list that denies the probe id; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay, with the image `ghcr.io/latere-ai/origo-stubs:<version>` of the same release as `origod` (spec 017's artifact table), which the archive pins |
 | DNS and TLS | one hostname pointed at the ingress with a certificate the ingress holds |
@@ -158,7 +158,7 @@ exiting 1 on any failure:
 | Line | What passes |
 |---|---|
 | `bucket` | a listing under the prefix answers |
-| `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards. With `ORIGO_CHECK_SELFTEST=1` (spec 002) the check runs against an in-process HTTP server inside `origod check` that accepts every `PUT` and ignores the header, so the line must read `fail conditional-create: second create answered 200`; that is how the check's own detection is tested, since `pkg/s3/s3test` always honours the header |
+| `conditional-create` | a `PUT If-None-Match: *` on `origo/check/<uuid>` answers 200 and a second one 412; the key is deleted afterwards. With `ORIGO_CHECK_SELFTEST=1` (spec 002) the check runs against an in-process HTTP server inside `origod check` that accepts every `PUT` and ignores the header, so the line must read `fail conditional-create: second create answered 200`; that is how the check's own detection is tested, since `pkg/s3/s3test` always honors the header |
 | `issuer` | each issuer's discovery document and JWKS are fetched |
 | `authorizer` | a `POST` with `action: "read"`, an empty subject, and the probe repository id `00000000-0000-0000-0000-000000000001` answers 200 with `allow: false`; spec 007's authorizer contract reserves that id and requires the deny, so an allow is `fail authorizer: probe id allowed`, and the stub of spec 013 denies it |
 | `events` | when `ORIGO_EVENTS_URL` is set, a signed `ping` event (below) answers any status under 500; when it is unset the line is `ok events: not configured`, so the line count is seven either way |
@@ -201,7 +201,7 @@ the package `tools/specindex/specs`, the parser and the
 cross-reference model its `main` uses today, and `tools/apidoc`
 requires the `tools/specindex` module with a `replace ../specindex`
 directive in its `go.mod`, so both tools read one parser and a table
-shape one of them does not recognise is a finding in both. The export
+shape one of them does not recognize is a finding in both. The export
 is a builder item of this spec: `specindex` is a tool, not a package a
 spec owns, so moving its parser under `specs/` changes no other spec's
 status, and `make specindex` (`go test ./...` in that module) covers
@@ -534,7 +534,7 @@ archive beside `deploy/`, so the page a reader follows is the page of
 the release they unpacked, and the relative default the page names for
 the manifests resolves where they stand. `deploy_archive_test.sh`
 requires the page in the archive and fails without it, which is what
-keeps the two travelling together for every feature after SSH rather
+keeps the two traveling together for every feature after SSH rather
 than only this one.
 
 The page also says to check `kind.yaml` for the two ports before

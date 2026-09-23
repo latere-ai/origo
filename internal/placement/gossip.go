@@ -28,7 +28,7 @@ const (
 	// and refreshes the peer addresses.
 	HeartbeatEvery = 10 * time.Second
 	// AnnounceTimes and AnnounceGap: an announcement is sent this many
-	// times, this far apart, with no acknowledgement.
+	// times, this far apart, with no acknowledgment.
 	AnnounceTimes = 3
 	AnnounceGap   = 10 * time.Millisecond
 	// CatchUpEvery bounds the catch-ups one repository's announcements

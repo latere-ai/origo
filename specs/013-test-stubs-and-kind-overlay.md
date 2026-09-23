@@ -300,7 +300,7 @@ it:
 | `ApplyManifestExpectRefusal(t, path)` | `kubectl apply -f <path>` of a manifest under `test/e2e/testdata/` that admission must refuse: fails the test when the apply succeeds, and returns `kubectl`'s stderr, the refusal text, for the test to assert on; registers no cleanup because nothing was created | 016's refused pod (`privileged-pod.yaml`) |
 | `HPAStatus(t, name)` | `kubectl get hpa <name> -o json` and returns the current and desired replica counts | 005's autoscaler and replica cases |
 | `Apply(t, overlay)` | `kubectl apply -k <overlay>` and waits for the rollout, which restores the stack after a test changed it | 005 after its replica cases, any test that applied a manifest the cleanup of `ApplyManifest` cannot undo |
-| `Get(t, kind, name)` | `kubectl get <kind> <name> -o json` in the namespace and returns the bytes, for a test that asserts on an object the overlay applied rather than on the stack's behaviour | 016's pod security context and its gossip NetworkPolicy `origod-gossip` |
+| `Get(t, kind, name)` | `kubectl get <kind> <name> -o json` in the namespace and returns the bytes, for a test that asserts on an object the overlay applied rather than on the stack's behavior | 016's pod security context and its gossip NetworkPolicy `origod-gossip` |
 
 `test/e2e/testdata/` holds every fault manifest, one file per fault,
 and the CA file `up.sh` writes; a cluster criterion of another spec
@@ -498,7 +498,7 @@ Divergences and interpretations, all kept:
   target is set, its control endpoint answers a GET of its root with the target and
   a delay of 0, and the data listener forwards TCP with no delay. That
   shell lives in `test/stubs/cmd/origo-stubs/slowproxy.go`; spec 015
-  builds `test/stubs/slowproxy` with the fault behaviour and replaces it.
+  builds `test/stubs/slowproxy` with the fault behavior and replaces it.
   The overlay passes no target, so `30085` answers nothing until 015.
 - The sink records every delivery, a refused one included, with
   `Verified` and the status it answered, so spec 008's test sees an

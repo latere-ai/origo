@@ -98,7 +98,7 @@ var Groups = []Group{{
 		{"ORIGO_REPAIR_UNHEARD", "no", "`" + short(DefaultRepairUnheard) + "`", "how long a node must be silent before another node takes over its undelivered events."},
 	},
 }, {
-	Title: "Storage behaviour and housekeeping",
+	Title: "Storage behavior and housekeeping",
 	Intro: "What a node does when the bucket is slow, and how often it tidies up after itself. The defaults suit a healthy bucket in the same region.",
 	Variables: []Variable{
 		{"ORIGO_STORAGE_TIMEOUT", "no", "`" + short(DefaultStorageTimeout) + "`", "the deadline of one object storage call. Above zero. Raise it for a bucket in another region."},

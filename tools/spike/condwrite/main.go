@@ -51,12 +51,12 @@ type check struct {
 	// primary primitives, and a fallback matters only when those are absent.
 	Fallback bool `json:"fallback,omitempty"`
 	// Optional marks a primitive the design no longer relies on (If-Match
-	// on PUT, which not every provider honours). It is recorded so the
+	// on PUT, which not every provider honors). It is recorded so the
 	// provider table stays complete and never decides the exit status.
 	Optional bool `json:"optional,omitempty"`
 }
 
-// latency summarises N timed samples of one operation.
+// latency summarizes N timed samples of one operation.
 type latency struct {
 	Name string  `json:"name"`
 	N    int     `json:"n"`
@@ -467,7 +467,7 @@ func (p *probe) contend(ctx context.Context, tag string, keyFor func(round int) 
 		}
 		etag = e
 	}
-	note := fmt.Sprintf("%d rounds x %d writers: %d x 200, %d x 412, %d transport errors of which %d were applied without an acknowledgement, %d other",
+	note := fmt.Sprintf("%d rounds x %d writers: %d x 200, %d x 412, %d transport errors of which %d were applied without an acknowledgment, %d other",
 		p.o.rounds, p.o.writers, winners, losers, ambiguous, ackLost, other)
 	if len(bad) > 0 {
 		note += "; " + strings.Join(bad, "; ")
@@ -475,7 +475,7 @@ func (p *probe) contend(ctx context.Context, tag string, keyFor func(round int) 
 	return check{Expect: "exactly 1 applied per round, rest 412", Got: fmt.Sprintf("%d applied / %d rounds", winners+ackLost, p.o.rounds), Pass: len(bad) == 0 && winners+ackLost == p.o.rounds, Note: note}
 }
 
-// copyFallback asks whether CopyObject honours If-Match and If-None-Match
+// copyFallback asks whether CopyObject honors If-Match and If-None-Match
 // on the destination, the substitute a provider without conditional PUT
 // would need: write the candidate to a scratch key, then copy it over the
 // index under a condition.

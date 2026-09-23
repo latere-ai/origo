@@ -51,7 +51,7 @@ const KindPush = "push"
 // The values of kind_detail: what a push that changes no branch or tag
 // did instead. DetailUndelete is never on the wire, because an undelete
 // has exactly one event, spec 019's undeleted; the value exists so the
-// enqueue and the repair sweep both recognise the entry and skip it.
+// enqueue and the repair sweep both recognize the entry and skip it.
 const (
 	DetailDefaultBranch = "default_branch"
 	DetailUndelete      = "undelete"
@@ -284,7 +284,7 @@ type Dispatcher struct {
 	queue map[string]time.Time
 	wake  chan struct{}
 
-	// cursorMu serialises the read-modify-write of one node's cursors.
+	// cursorMu serializes the read-modify-write of one node's cursors.
 	cursorMu sync.Mutex
 
 	journal *journal

@@ -27,7 +27,7 @@ not, the autoscaler, the disk, and the materialization budget.
 ## Current state
 
 Built on 2026-09-08 as the Design describes, with the divergences the
-Outcome records. Before it, spec 004 gave one node correct behaviour:
+Outcome records. Before it, spec 004 gave one node correct behavior:
 `internal/repo.Cache.Acquire` ran the `HEAD index/<n+1>` currency check
 on every open and applied what the copy lacked; `cmd/origod` read the
 gossip socket and discarded every datagram; `ORIGO_NODE_NAME` and
@@ -81,7 +81,7 @@ The compaction primary of spec 006 is the first name.
 
 After every index object a node creates, it sends one datagram three
 times, 10 ms apart, to every peer address `ORIGO_GOSSIP_PEERS` names or
-resolves to, with no acknowledgement. A datagram is
+resolves to, with no acknowledgment. A datagram is
 a 32 byte tag followed by a payload: the tag is the HMAC-SHA256 of the
 payload bytes under `ORIGO_GOSSIP_SECRET` (spec 002: required whenever
 `ORIGO_GOSSIP_PEERS` is set, the same value on every node; a single node
@@ -287,7 +287,7 @@ the cache on shutdown.
   read on B returns the pushed commit with the `result="200"` count
   risen by one and the `result="404"` count by one beside it, because a
   check that finds a newer index walks `HEAD index/<m+1>` forward until
-  a 404. The test also records the time from A's acknowledgement until
+  a 404. The test also records the time from A's acknowledgment until
   B's counter rose (proposed: `test/e2e`,
   `TestE2EGossipShortensTheCatchUp`, two nodes of the one-node run's
   harness).

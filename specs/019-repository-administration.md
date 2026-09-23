@@ -57,10 +57,10 @@ hold and emits `undeleted`, the one event of an undelete: the `push`
 entry it commits (spec 004) produces no `push` event, by the payload
 rules of spec 008; after the purge it answers 410 `gone`.
 
-| Method | Path | Behaviour |
+| Method | Path | Behavior |
 |---|---|---|
 | POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap |
-| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defence for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
+| POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defense for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository size rule of spec 012 (`quota_bytes` over packs and LFS bytes) as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
 | GET | `/v1/repos/{id}/import` | `{"state": "running"\|"done"\|"failed", "refs", "bytes", "started_at", "finished_at", "error"}` from `meta`: `running` while `importing_since` is set, `failed` when `import_error` is set, `done` when `imported_at` is set, and 404 `import_not_found` when none of them is; `refs` and `bytes` are `meta`'s `import_refs` and `import_bytes`, written with `imported_at`: the length of the import entry's reference transaction and the bytes of the uploaded `.pack` files, the entry's `PacksBytes`, because the entry itself carries no pack and its `pack_bytes` is 0; the endpoint serves what `meta` holds, so `started_at` is null once an import has finished and `finished_at` is null for one that failed; action `read` |
@@ -536,7 +536,7 @@ takes its stack branch instead of its live branch, finds nothing at
 `ORIGO_TEST_URL`, and skips there: the job's log reads
 `contract_test.go:136: nothing answers at ORIGO_TEST_URL
 (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)`. The
-job never dialled an installation. A skipped test passes, so the job is
+job never dialed an installation. A skipped test passes, so the job is
 green, and this spec does not read that green as the run.
 
 The `install from the release artifacts` job of the same run did run
@@ -548,7 +548,7 @@ spec 018's job row and no criterion here.
 
 Spec 017's Outcome records that limit and its lifting. The v0.1.3
 release run 34546335576 of 2026-09-11 is the run: its `live` job, id
-103120952813, dialled `https://code.latere.ai` and passed,
+103120952813, dialed `https://code.latere.ai` and passed,
 `contract_test.go:133: live run against ***: 51 passed` and
 `--- PASS: TestContract (173.69s)`. This spec's cases are among them,
 `019/transfer`, `019/freeze`, `019/stats`, `019/gc`, `019/export`,

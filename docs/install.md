@@ -27,7 +27,7 @@ whose shape is your provider's rather than Origo's.
 | Kubernetes | 1.29 or newer | any distribution. Pod Security admission at `restricted` on the namespace is supported and recommended. |
 | An ingress controller | any | the manifests carry an `Ingress` with no class; your overlay names the controller and its settings. |
 | A hostname and a certificate | one name pointed at the ingress | clients only ever see this name. |
-| A bucket | any S3 compatible endpoint | it must honour a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO, DigitalOcean Spaces, and AWS S3 are known to. `origod check` proves it before you trust it. |
+| A bucket | any S3 compatible endpoint | it must honor a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO, DigitalOcean Spaces, and AWS S3 are known to. `origod check` proves it before you trust it. |
 | An OIDC issuer | discovery and a key set over HTTPS | it mints the tokens people and services present. Register one client for people and one for each service that acts on their behalf. |
 | An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. It has to know your repositories before Origo does, and with one tenant it can be a static list of subjects behind an HTTP handler. |
 | Disk | a default storage class, or nodes with local disk | the cache. Sized for the repositories in active use, not for all of them. |
