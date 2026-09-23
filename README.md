@@ -95,9 +95,9 @@ questions rather than deciding them itself.
   with no working copy anywhere.
 - **Push events.** A signed webhook per reference update, so a build, a
   deploy, or a review starts from a push.
-- **Delegation.** A service acts on behalf of a user or an organization
-  under an auditable claim, so it commits for its users without holding
-  their credentials.
+- **Acting for a person.** A service that commits for a user presents the
+  token its issuer minted for that user, so every push is recorded under the
+  user's identity. A token that names two parties at once is refused.
 - **A command for an agent.** `origo` reads and changes a repository from a
   shell without cloning it, printing lines a pipeline can filter, so
   `origo ls -r -n 0 | grep -i handler` finds a file in a large repository for
