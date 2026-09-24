@@ -1,8 +1,12 @@
 # Contributing
 
 Thanks for looking. This file is for people and agents changing Origo.
-Users read the [README](README.md) and [`docs/`](docs/README.md); the
-design and the reasoning behind it live in [`specs/`](specs/README.md).
+Users read the [README](README.md) and [`docs/`](docs/README.md).
+[`docs/internals/`](docs/internals/README.md) is the map for a
+contributor: the code layout, what the bucket holds, how a push and a
+read move through the packages, the test tiers, and the release
+process. The design records, with the reasoning behind each decision,
+live in [`specs/`](specs/README.md).
 
 ## Getting set up
 
@@ -28,7 +32,10 @@ Fork the repository, work on a branch, and open a pull request. Keep one
 logical change per commit, stage the files explicitly, and write the
 subject in the imperative, saying what changed for whoever reads the log.
 Maintainers push to `main` directly; the pipeline runs the gate on every
-push and pull request, and a `v*` tag cuts a release.
+push and pull request, and a `v*` tag cuts a release, as
+[`docs/internals/releasing.md`](docs/internals/releasing.md) describes.
+A change a user would notice gets a line under `## Unreleased` in
+`CHANGELOG.md`.
 
 If you are planning something large, open an issue first. A design that
 lands without a spec is harder to review than one that arrives with the
@@ -36,15 +43,18 @@ reasoning attached.
 
 ## The bar
 
-`make` runs the whole gate (`go tool lateregate`), fourteen checks:
-formatting, the linter, modernization, known vulnerabilities, the suite
-with and without the race detector, per-package coverage at 90% or more,
-the suite with only the toolchain and git on `PATH`, the suite against an
-empty temporary directory, the license notice, the dependency allow list,
-and the spec tree. `go tool lateregate list` names them and
-`go tool lateregate <name>` runs one. `make test-integration` runs the
-store suite and the end-to-end suite against MinIO; run it before a change
-that touches the log.
+`make` runs the whole gate (`go tool lateregate`): formatting, the
+linter, modernization, known vulnerabilities, the suite with and without
+the race detector, per-package coverage at 90% or more, the suite with
+only the toolchain and git on `PATH`, the suite against an empty
+temporary directory, the license notice, a tracing transport on every
+outbound HTTP client, the dependency allow list, the repository's
+identity rules, and the spec tree. `go tool lateregate list` names every
+check with whether it runs here, and `go tool lateregate <name>` runs
+one. `make test-integration` runs the store suite and the one-node
+end-to-end suite against MinIO; run it before a change that touches the
+log. [`docs/internals/testing.md`](docs/internals/testing.md) covers
+the cluster, conformance, and other tiers CI runs on a tag.
 
 A bug fix carries a test that fails without it. A change that lowers a
 threshold or adds a waiver records the reason in `.lateregate.yaml`, so
