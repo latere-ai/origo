@@ -76,6 +76,27 @@ func TestProductionOverlayPinsTheCurrentRelease(t *testing.T) {
 	}
 }
 
+// TestInstallNamesTheCurrentRelease pins the release the install page
+// downloads to the changelog. A reader copies that line as it stands, so a
+// version left behind installs an old release; `lateregate release` stamps
+// it, and this catches a stamp that stopped matching.
+func TestInstallNamesTheCurrentRelease(t *testing.T) {
+	dir := root(t)
+	want := newestRelease(t, dir)
+
+	body, err := os.ReadFile(filepath.Join(dir, "docs", "install.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^VERSION=(v\d+\.\d+\.\d+) +# the release you picked$`).FindSubmatch(body)
+	if m == nil {
+		t.Fatal("docs/install.md names no VERSION line")
+	}
+	if got := string(m[1]); got != want {
+		t.Errorf("docs/install.md downloads %s, CHANGELOG.md's newest release is %s", got, want)
+	}
+}
+
 // TestNoDocumentClaimsAPrivateRepository catches the class of claim that
 // outlives the condition it describes. The repository is public, and a
 // document saying otherwise is read by someone standing in the public

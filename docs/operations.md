@@ -1,7 +1,9 @@
 # Operating Origo
 
-For whoever runs an Origo installation. The design is in `specs/`; this
-page is what to do.
+For whoever runs an Origo installation after [`install.md`](install.md):
+what to back up, how to upgrade and scale, how to administer
+repositories over years, and what to do when the bucket or a
+dependency fails.
 
 ## What Origo needs
 
@@ -13,11 +15,31 @@ The bucket is the only durable state. Everything on a node is a cache.
 
 The write-ahead log in the bucket is the backup. Every push and every
 compaction is an object under `origo/repos/<id>/`, and a repository can be
-rebuilt from those objects alone on any node. Protect the bucket the way
-you protect any durable data: versioning on, a lifecycle rule that keeps
-deleted versions for at least the 7 day undelete hold, and replication to
-a second region if your provider offers it. There is nothing on a node
+rebuilt from those objects alone on any node. There is nothing on a node
 worth backing up.
+
+Origo manages each object's life itself. It creates objects with
+conditional writes, overwrites a few small bookkeeping objects such as a
+repository's metadata, and deletes what it no longer needs: entries
+folded by compaction, objects no index names once the sweep finds them,
+and a deleted repository once its seven day hold has passed. Protect the
+bucket in a way that works with that:
+
+- **Turn on object versioning** if your provider offers it. A deleted or
+  overwritten object is kept as a noncurrent version, which is what lets
+  you restore one object under "Restore a repository" below. Versioning
+  does not change how a conditional create behaves; `origod check`
+  proves the conditional create against your bucket as it is configured.
+- **Expire noncurrent versions, and only those,** after as many days as
+  you want to be able to restore, 30 for example. Without such a rule
+  the overwritten and deleted objects accumulate for as long as the
+  installation runs.
+- **Never add a rule that expires, transitions, or rewrites current
+  objects** under `origo/`. The log names those objects, and a
+  repository whose object is gone or moved to an archive class is
+  unavailable until it is restored.
+- **Replicate to a second region** if your provider offers it, as long
+  as the replica keeps the keys unchanged.
 
 ## Restore a repository
 
@@ -38,12 +60,26 @@ as before, and nothing on any node is removed. To restore it:
 
 ## Upgrade
 
-Push a tag. The release pipeline builds the image, applies `deploy/prod`,
-and waits for the rollout. The Deployment rolls one pod at a time with
-none unavailable; a replaced pod starts cold and warms as requests
-arrive. No migration step exists because there is no schema. A
-software bill of materials and build provenance ship with the release
-pipeline of spec 017; a release cut before it lands carries neither.
+Set the new image tag in your overlay and apply it, or set it on the
+running workload, with `VERSION` the tag you are moving to:
+
+```sh
+kubectl -n origo set image deployment/origod "*=ghcr.io/latere-ai/origod:$VERSION"
+kubectl -n origo rollout status deployment/origod --timeout=600s
+```
+
+`*=` sets both containers of the pod, the node and the check that runs
+before it, which are the same image. The Deployment rolls one pod at a
+time with none unavailable; a replaced pod starts cold and warms as
+requests arrive. There is no schema and no migration step.
+[`upgrades/`](upgrades/README.md) says what a version number promises,
+when a rollback is safe, and how to verify a release's signatures
+before you run it.
+
+The commands on this page name the Deployment `origod` that
+`deploy/base` ships. An overlay that replaces it, as the kind example
+does with a StatefulSet of the same name, uses its own kind in their
+place.
 
 ## Scale
 
@@ -156,7 +192,7 @@ kubectl -n origo create secret generic origod-ssh-host-key \
 	--from-file=ssh_host_ed25519_key=old_key \
 	--from-file=ssh_host_ed25519_key_new=new_key \
 	--dry-run=client -o yaml | kubectl apply -f -
-kubectl -n origo rollout restart statefulset/origod
+kubectl -n origo rollout restart deployment/origod
 ```
 
 with `ORIGO_SSH_HOST_KEYS` naming the two paths in the order the step
@@ -265,8 +301,8 @@ call in twenty fails for five minutes.
 
 ## Push events
 
-With `ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` set, every push is
-one signed `POST` to that URL, retried for 24 hours on a sink that
+With `ORIGO_EVENTS_URL` and `ORIGO_EVENTS_SECRET` set, every push and
+every administration change is one signed `POST` to that URL, retried for 24 hours on a sink that
 fails (1 s, 10 s, 1 min, 10 min, then hourly). After the 24 hours the
 event sits under `origo/events/dead/<repo>/` in the bucket and
 `origo_events_dead_total` counts it; to retry a dead event, move its
@@ -278,16 +314,53 @@ been unheard for `ORIGO_REPAIR_UNHEARD` and rebuilds the event from
 the log, so a sink sees an event more than once at worst and keys on
 its `id`. Nothing under `origo/events/` needs a backup: a pending
 event is rebuilt from the log, and a dead one is kept for the operator.
+The payloads and how a sink verifies a delivery are in
+[`api.md`](api.md#push-events).
 
 ## Dashboards and alerts
 
 Every metric a node exposes is on `/metrics` of the internal listener
 from the first scrape, at 0 until something records it, so a dashboard
-panel is never empty because a series has not appeared yet. The names
-are spec 011's table; the ones to watch first are
+panel is never empty because a series has not appeared yet. No label
+carries a repository, an owner, a subject, a reference, or a path:
+those are span attributes. The ones to watch first are
 `origo_storage_breaker_state`, `origo_wal_head_check_seconds`, and
-`origo_requests_in_flight`. No label carries a repository, an owner, a
-subject, a reference, or a path: those are span attributes.
+`origo_requests_in_flight`.
+
+| Metric | What it measures |
+|---|---|
+| `origo_requests_total`, `origo_request_duration_seconds`, `origo_requests_in_flight` | requests on the public listener, their duration, and how many are open |
+| `origo_pushes_total`, `origo_pushes_rejected_total`, `origo_push_duration_seconds` | pushes acknowledged, pushes the log refused, and the time spent in each phase of a push |
+| `origo_fetches_total` | clones and fetches served |
+| `origo_wal_commits_total`, `origo_wal_commit_conflicts_total`, `origo_wal_commit_retries_total`, `origo_wal_entry_bytes_total` | log commits, commits refused because a reference moved, rounds lost to a concurrent writer, and bytes written |
+| `origo_wal_head_check_seconds` | the latency of the check that a local copy is current, paid before every read |
+| `origo_repo_materialized_total`, `origo_repo_entries_applied_total`, `origo_repo_rebuilt_total`, `origo_repo_materialize_seconds` | copies built from the log, entries applied to copies, copies rebuilt as corrupt, and the time to bring a copy current |
+| `origo_cache_bytes`, `origo_cache_repos`, `origo_evictions_total{reason}` | the local cache and why copies left it |
+| `origo_compactions_total{result}`, `origo_compaction_seconds` | compaction runs and their duration |
+| `origo_storage_ops_total{result}`, `origo_storage_seconds`, `origo_storage_breaker_state` | calls to the bucket, their latency, and each breaker (0 closed, 1 open, 2 probing) |
+| `origo_stale_responses_total` | reads served while the bucket was unreachable |
+| `origo_log_integrity_errors_total` | objects the log names that are missing or fail their digest |
+| `origo_orphan_objects`, `origo_storage_bytes` | the weekly sweep's figures, described under Storage |
+| `origo_authorizer_seconds{result}` | calls to the authorization endpoint |
+| `origo_rate_limited_total{limit}` | refusals by limit |
+| `origo_events_delivered_total`, `origo_events_dead_total` | push events accepted by the sink, and events given up on after 24 hours |
+| `origo_gossip_packets_total` | gossip datagrams by direction |
+| `origo_ssh_sessions_total`, `origo_ssh_auth_total`, `origo_ssh_keys_seconds` | SSH sessions, authentication attempts, and calls to the key endpoint |
+
+The shipped alerts:
+
+| Alert | Fires when |
+|---|---|
+| `OrigoStorageErrors` | more than one bucket call in twenty fails for five minutes |
+| `OrigoBreakerOpen` | a storage breaker has been open for a minute: reads are served stale and writes refused |
+| `OrigoStaleServing` | a response was served from a copy that may be behind the log |
+| `OrigoLogIntegrity` | an object the log names is missing or damaged; see "Restore a repository" |
+| `OrigoSlowHeadCheck` | the currency check before a read is above 50 ms at the 99th percentile for ten minutes |
+| `OrigoSlowMaterialization` | bringing a copy current takes over a minute at the 99th percentile |
+| `OrigoCommitStorm` | a node loses more than ten commit rounds a second to concurrent writers for five minutes |
+| `OrigoCacheThrash` | the cache evicts under pressure more than a hundred times a minute; raise `ORIGO_CACHE_BYTES` |
+| `OrigoDeadEvents` | an event was given up on after 24 hours of refusals by the sink |
+| `OrigoReplicasPinned` | the autoscaler has sat at its maximum for fifteen minutes |
 
 The alerts are `deploy/base/prometheusrule.yaml`, a PrometheusRule the
 operator of a cluster running the Prometheus operator applies beside the
@@ -302,13 +375,13 @@ rule file the installation already has.
 on. With it set, the node exports traces, metrics, and log records over
 OTLP/HTTP to that endpoint: one trace per request on the public
 listener, with a span per phase of a push and per object storage call,
-and the repository, subject, and actor as span attributes. Unset, the
+and the repository and subject as span attributes. Unset, the
 spans are created and discarded and the node costs nothing for them.
 `OTEL_TRACES_SAMPLER_ARG` is the head-sampling ratio, one root trace in
 five by default.
 
 Every request on the public listener also writes one JSON line with its
-route, method, status, duration, repository, subject, actor, bytes each
-way, and `trace_id`, which is the id the response's `X-Trace-Id` header
+route, method, status, duration, repository, subject, bytes each way,
+and `trace_id`, which is the id the response's `X-Trace-Id` header
 and an LFS failure's `request_id` carry, so a report from a user leads
 to the line and the trace. A credential is never in a line.

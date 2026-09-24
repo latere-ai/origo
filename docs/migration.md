@@ -1,7 +1,7 @@
 # Migrating repositories into Origo
 
-For whoever moves repositories from another git host into Origo. The
-design is in `specs/`; this page is what to do.
+For whoever moves repositories from another git host into Origo: one
+repository by hand, then a batch, then the cut-over on the prior host.
 
 A migration moves one repository at a time through four states, and the
 whole batch through the same four:

@@ -27,17 +27,20 @@ whose shape is your provider's rather than Origo's.
 | Kubernetes | 1.29 or newer | any distribution. Pod Security admission at `restricted` on the namespace is supported and recommended. |
 | An ingress controller | any | the manifests carry an `Ingress` with no class; your overlay names the controller and its settings. |
 | A hostname and a certificate | one name pointed at the ingress | clients only ever see this name. |
-| A bucket | any S3 compatible endpoint | it must honor a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO, DigitalOcean Spaces, and AWS S3 are known to. `origod check` proves it before you trust it. |
+| A bucket | any S3 compatible endpoint | it must honor a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO and DigitalOcean Spaces are tested, and AWS S3 documents it. `origod check` proves it against your bucket before you trust it. |
 | An OIDC issuer | discovery and a key set over HTTPS | it mints the tokens people and services present. Register one client for people and one for each service that acts on their behalf. |
-| An authorization endpoint | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. It has to know your repositories before Origo does, and with one tenant it can be a static list of subjects behind an HTTP handler. |
+| An authorization endpoint, or none | one HTTP endpoint you run | Origo asks it, before every repository operation, whether a subject may read, write, or administer a repository. It has to know your repositories before Origo does, and with one tenant it can be a static list of subjects behind an HTTP handler. Without one, the built-in owner policy decides. |
 | Disk | a default storage class, or nodes with local disk | the cache. Sized for the repositories in active use, not for all of them. |
 | A key resolution endpoint | one HTTP endpoint you run | only if you want git over SSH. It answers which subject an offered public key belongs to; Origo stores no key. A file of fingerprints behind a bearer satisfies it. |
 | On your machine | `kubectl`, `openssl`, `curl`, `uuidgen`, `git`, `ssh-keygen` | nothing is installed in the cluster beyond the manifests. |
 
-Two of these are yours to write and have no default: the issuer and the
-authorization endpoint. Origo authenticates every request and authorizes
-every repository operation, and it asks you both questions. There is no
-mode in which it decides them itself.
+The issuer is yours and has no default: Origo authenticates every request
+against it and stores no users. Authorization is yours too, in one of two
+forms. Run an endpoint and Origo asks it before every repository
+operation, or leave `ORIGO_AUTHORIZER_URL` unset and the built-in owner
+policy lets a subject reach the repositories it created and lets the
+subjects in `ORIGO_ADMIN_SUBJECTS` reach every repository. Step 2 covers
+both.
 
 Trying it out first is reasonable. The example overlay
 `deploy/examples/kind` brings its own bucket, issuer, authorizer, and
@@ -54,7 +57,7 @@ it in an empty directory and stay in that directory for the rest of
 this page, because every path below is relative to it:
 
 ```
-VERSION=v0.1.1   # the release you picked
+VERSION=v0.10.0   # the release you picked
 curl -fLO "https://github.com/latere-ai/origo/releases/download/$VERSION/deploy-$VERSION.tar.gz"
 tar xzf "deploy-$VERSION.tar.gz"
 ```
@@ -76,8 +79,8 @@ deploy/examples/      overlays to copy: kind, digitalocean, aws
 ```
 
 That is the whole of the archive, and it is everything you apply with
-`kubectl`. The namespace and the three Secrets are not
-in it and are not in any file: this page prints the commands that
+`kubectl`. The namespace and the Secrets are not in it and are not in
+any file: this page prints the commands that
 create them, so you need nothing you did not download.
 
 You never apply `deploy/base` directly. You write an overlay that names
@@ -106,11 +109,11 @@ Both halves matter. A cluster made with a plain `kind create cluster`
 publishes no host port but the API server's, so nothing on this page
 can reach it and every address answers `curl: (7) Failed to connect`.
 And `kind.yaml` turns kind's own network plugin off, because the
-manifests carry NetworkPolicies and kind's plugin does not enforce
-them, so a cluster made from it has no networking at all until you
-install one: the node stays `NotReady` with `cni plugin not
-initialized`, `kubectl apply -k` still reports success, and every pod
-sits in `Pending` for as long as you let it. Cilium is what the
+manifests carry NetworkPolicies and the example stack is tested with
+Cilium enforcing them, so a cluster made from it has no networking at
+all until you install one: the node stays `NotReady` with `cni plugin
+not initialized`, `kubectl apply -k` still reports success, and every
+pod sits in `Pending` for as long as you let it. Cilium is what the
 project's own tests install and `versions.env` is where its version is
 pinned. Any plugin that enforces NetworkPolicy works in its place.
 
@@ -159,10 +162,15 @@ prefix `origo/`, so a bucket may hold other things, but two installations
 must never share one bucket and prefix: they would overwrite each other's
 log.
 
-Nothing else is needed. Do not turn on object versioning, lifecycle
-expiry, or a replication rule that rewrites keys; Origo manages the
-objects' whole life itself, and a rule that deletes or rewrites one
-corrupts a repository.
+Nothing else is needed. Origo manages each object's whole life itself:
+it writes, compacts, and deletes under `origo/` on its own schedule. So
+add no lifecycle rule that expires, transitions, or rewrites current
+objects under that prefix, and no replication rule that rewrites keys.
+A rule that deletes or moves an object the log names makes that
+repository unavailable until the object is restored. Object versioning
+is optional and safe, and it is what lets you restore one damaged
+object later; [`operations.md`](operations.md#backup) says how to set
+it up.
 
 ## 2. The issuer and the authorization endpoint
 
@@ -212,8 +220,10 @@ Content-Type: application/json
 
 The subject is `<issuer>|<sub>`: two issuers that agree on a `sub` are
 two subjects. The action is one of `repo.read`, `repo.write`,
-`repo.admin`, and `repo.list`. The three figures ride under `limits`.
-This is authorizer contract 2 ([[028-authorizer-contract-2]]).
+`repo.admin`, and `repo.list`. The optional figures ride under
+`limits`, and `repo.list` is answered with a page of repositories
+rather than a verdict; [`authorizer.md`](authorizer.md) has the whole
+contract.
 
 The URL is not a secret: it goes on the pods in your overlay, the way
 step 5 sets `ORIGO_SSH_KEYS_URL`. The bearer Origo presents with it,
@@ -272,7 +282,8 @@ authentication on it.
 
 Everything else is yours: your own permission model, your own answer
 caching through `ttl`. The full request, the action Origo sends per
-operation, and the optional figures are in [`api.md`](api.md).
+operation, the directory answer, and the optional figures are in
+[`authorizer.md`](authorizer.md).
 
 **The key resolution endpoint, if you want SSH.** Origo stores no SSH
 public key. It asks a second endpoint of yours which subject an offered
@@ -283,7 +294,7 @@ POST <your key endpoint>
 Authorization: Bearer <the value you put in ORIGO_SSH_KEYS_TOKEN>
 {"fingerprint": "SHA256:HxK…", "type": "ssh-ed25519", "public_key": "ssh-ed25519 AAAAC3Nz…"}
 
-200 {"found": true, "subject": "user_42", "key_id": "k_19", "ttl": 60}
+200 {"found": true, "subject": "https://issuer.example|user_42", "key_id": "k_19", "ttl": 60}
 200 {"found": false}
 ```
 
@@ -303,11 +314,14 @@ Five rules again, and they are the same shape as the five above.
 5. **Treat its availability as Origo's.** It is on the path of every SSH
    connection that is not answered from a node's cache.
 
-`subject` is the same string your issuer puts in `sub` for the same
-person, so one identity crosses both transports and your authorization
-endpoint needs no second table. Adding, naming, listing, and removing
-keys is your product surface; Origo has no opinion about it, and the
-call itself is how your store learns when a key was last used.
+`subject` is used verbatim as the caller's subject. Return the same
+`<issuer>|<sub>` string an HTTPS request carries for the same person,
+so one identity crosses both transports and your authorization
+endpoint needs no second table; with the built-in owner policy this is
+required, because a repository is owned by the subject that created it.
+Adding, naming, listing, and removing keys is your product surface;
+Origo has no opinion about it, and the call itself is how your store
+learns when a key was last used.
 
 **Where to start reading.** `test/stubs/sshkeys` in this repository is a
 working endpoint of about thirty lines of logic, and it is what the
@@ -598,7 +612,7 @@ ok git: 2.47.3
 | `bucket` | the endpoint, region, credentials, and bucket name are right and reachable |
 | `conditional-create` | the store refuses a second create of a key that exists, which is what keeps two nodes from committing the same push |
 | `issuer` | every issuer's discovery document and key set were fetched, so a token can be verified |
-| `authorizer` | your endpoint answered, and it denied the reserved probe id |
+| `authorizer` | your endpoint answered, and it denied the reserved probe id. With no endpoint configured the line reads `ok authorizer: owner policy` |
 | `events` | a signed delivery reached your webhook sink. With no sink configured the line reads `ok events: not configured`, which is not a failure; push events are optional |
 | `disk` | the cache directory is writable and the file system is large enough |
 | `git` | the git in the image runs and is new enough |
@@ -618,7 +632,9 @@ front of it routes to the new pods, and a request in that moment is
 refused or reset; the loop below is what waits it out, and it gives up
 rather than hanging when the address is wrong. `/version` answers the
 release the node runs, and opening the same address in a browser shows a
-small page naming it; there is no web interface beyond that page. The
+small page naming it. Origo serves no other web page; the optional
+[origo-web](https://github.com/latere-ai/origo-web) is a separate
+program that renders repositories in a browser. The
 `http://localhost:30080` below is the example stack's, the port its kind
 cluster maps, and it is the default only so this page can be walked on a
 throwaway cluster.
@@ -817,7 +833,7 @@ of it routes to the new pods.
 ## Pointing your platform at Origo
 
 Your platform holds the users and the permissions; Origo holds the
-repositories. Three things connect them:
+repositories. Four things connect them:
 
 - **The authorization endpoint** you wrote in step 2. It is the whole
   permission model, and Origo asks it every time.
@@ -863,7 +879,7 @@ a signed webhook, so a build starts from a push rather than a poll.
 | a push hangs or is cut off | the ingress controller is buffering the body or timing out | the two settings in step 3: no body size limit, and a long read timeout |
 | a clone works and a push is refused | your authorization endpoint denies `write` for that subject | its answer carries a `reason`, which Origo passes back to the client |
 | every operation on one repository is 403, `POST /v1/repos` included | your authorization endpoint has not been told about this repository, and rule 4 of step 2 makes it deny what it does not know | register the repository there under the id you gave Origo and grant the subject; the endpoint's own `reason` is in `details.reason` on the 403 |
-| every operation on every repository is 403 | the endpoint is answering, and refusing this subject | check that the subject in the token is the one you granted: it is the token's `sub`, or its `act` when a service is acting for someone |
+| every operation on every repository is 403 | the endpoint is answering, and refusing this subject | check that the subject you granted is the one Origo sends: `<issuer>\|<sub>` of the token, the issuer written without a trailing slash. A service acting for a person presents that person's token; a token carrying an `act` claim is refused earlier, with 401 |
 | 401 on every request | the token's issuer is not in `ORIGO_OIDC_ISSUERS`, or its audience is not one of `ORIGO_OIDC_AUDIENCE` | decode the token and compare |
 
 Origo's own alert rules, for a cluster running the Prometheus operator,

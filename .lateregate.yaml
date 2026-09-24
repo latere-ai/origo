@@ -4,14 +4,16 @@
 
 # The files that name the release. `lateregate release` rewrites each pattern's
 # version to the tag it cuts, in the same commit as the changelog, so these
-# never lag the tag and main does not go red after a cut. The two claims tests
-# in tools/docs enforce that they match the changelog's newest section.
+# never lag the tag and main does not go red after a cut. The claims tests in
+# tools/docs enforce that they match the changelog's newest section.
 release:
   stamp:
     - file: SECURITY.md
       pattern: 'v\d+\.\d+\.\d+ is the\s+current release'
     - file: deploy/prod/kustomization.yaml
       pattern: 'newTag: v\d+\.\d+\.\d+'
+    - file: docs/install.md
+      pattern: 'VERSION=v\d+\.\d+\.\d+ +# the release you picked'
 
 cover:
   trim_prefix: latere.ai/x/origo/

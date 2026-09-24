@@ -2,8 +2,8 @@
 # host ports are the ports table, each mapped to the NodePort of the
 # Service named in the table. up.sh renders a copy with PORT_OFFSET
 # added to every hostPort line; spec 018's install job uses this file as
-# it is. The default CNI is off because Cilium enforces NetworkPolicy
-# and kindnet does not.
+# it is. The default CNI is off because the stack's NetworkPolicies are
+# tested under Cilium, which up.sh installs in kindnet's place.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
