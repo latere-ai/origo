@@ -101,8 +101,8 @@ on standard error where the answer was cut, so you never have to guess it.
 | `origo show <commit>` | metadata, message, per-file stat | `-p`, `-path` |
 | `origo diff <a> <b>` | per-file stat and totals | `-p`, `-path`, `-max-bytes` |
 
-`0` always means all of them. Every read command takes `--json` and prints the
-API's own shape, which is what the `jq` above reads.
+`0` always means all of them. `repos`, `info`, `refs`, `ls` and `log` take
+`--json` and print the API's own shape, which is what the `jq` above reads.
 
 ## Reading the answer
 

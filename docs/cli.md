@@ -1,9 +1,9 @@
 # The origo command
 
 `origo` reads and changes a repository on an Origo installation without
-cloning it. It prints lines a shell can filter and takes `--json` on every
-read, so finding a file in a three thousand file repository is one command and
-one `grep` rather than a checkout.
+cloning it. It prints lines a shell can filter, and the listing commands take
+`--json` for the API's own shape, so finding a file in a three thousand file
+repository is one command and one `grep` rather than a checkout.
 
 It is built from the same tag as `origod` and ships in the same release
 archives. It runs where you run, not where Origo runs: nothing is deployed and
@@ -97,8 +97,9 @@ checks a plan without landing it:
 | `origo cherry-pick <sha>...` | replay commits onto a branch; `-mainline` picks a merge's parent |
 | `origo revert <sha>...` | replay them backwards; `-mainline` the same |
 
-`origo help` prints the whole surface. `origo version` prints the build
-identity.
+`--json` on `repos`, `info`, `refs`, `ls` and `log` prints the API's own
+JSON instead of lines. `origo help` prints the whole surface. `origo version`
+prints the build identity.
 
 ## What the defaults give you
 
@@ -215,6 +216,3 @@ one sentence.
   keeps no cache on disk and has no configuration file.
 - **Search content.** Origo serves no search endpoint. `origo ls -r -n 0 |
   grep` and `origo log -n 200 | grep` are what the shell gives you instead.
-
-The design and the reasoning behind each of those is
-[spec 025](../specs/025-agent-client.md).
