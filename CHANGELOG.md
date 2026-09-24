@@ -12,6 +12,12 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- The local stack, the kind example and CI run MinIO and `mc` from
+  `ghcr.io/latere-ai/minio` and `ghcr.io/latere-ai/mc`, the images of the
+  maintained forks of the MinIO server and client, pinned by tag and
+  digest. MinIO's own community images no longer answer anonymous pulls,
+  so an install that follows `deploy/examples/kind` with an earlier
+  release's manifests stops at MinIO in `ImagePullBackOff`.
 - The documentation is split by reader. `docs/api.md` is now written for
   a client author: authentication, naming a repository, every route with
   the permission it needs, the errors and headers a client branches on,

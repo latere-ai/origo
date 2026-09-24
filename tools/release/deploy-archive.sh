@@ -61,9 +61,12 @@ if grep -rn --include='*.yaml' -e ':unreleased' -e ':candidate' -e 'newTag: cand
   exit 1
 fi
 
-# Nothing in a fork's archive names the namespace the tree was written
-# with: a leftover would pull an image the fork cannot have published.
-if [ "$ns" != "$default_ns" ] && grep -rn --include='*.yaml' "$default_ns/" "$tmp/deploy"; then
+# Nothing in a fork's archive names Origo's images under the namespace
+# the tree was written with: a leftover would pull an image the fork
+# cannot have published. The MinIO server and client the kind overlay
+# runs are dependencies, pinned by digest under their own names, and
+# stay as they are.
+if [ "$ns" != "$default_ns" ] && grep -rn --include='*.yaml' -e "$default_ns/origod" -e "$default_ns/origo-stubs" "$tmp/deploy"; then
   echo "deploy-archive: $default_ns survives in an archive for $ns" >&2
   exit 1
 fi

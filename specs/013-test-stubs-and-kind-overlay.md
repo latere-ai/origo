@@ -656,3 +656,9 @@ the three files that name the image, `docker-compose.yml`,
 now with the tags and digests unchanged, and
 `TestMinIOImagesAreOnePinFromOneRegistry` in `cmd/origod` holds the
 three to one pin each on that registry.
+
+By 2026-09-24 `quay.io/minio` answered 401 to an anonymous pull as well,
+and upstream's repositories were archived. The three files now name
+`ghcr.io/latere-ai/minio` and `ghcr.io/latere-ai/mc`, the images of the
+maintained forks of the server and the client, by tag and index digest,
+and the test holds them to that registry.

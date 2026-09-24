@@ -373,25 +373,28 @@ func TestTheOriginIngressClaimsTheRepositoryPrefix(t *testing.T) {
 // test stack names MinIO to one reference each: the compose file of
 // spec 002's local stack, the kind overlay of spec 013, and the two
 // jobs of verify.yml that run MinIO beside the runner. Each is pinned
-// by tag and digest on quay.io, where MinIO publishes its images. On
-// 2026-09-11 Docker Hub began answering 404 for minio/minio and
-// minio/mc and 401 to an anonymous pull, while the namespace's other
-// repositories still answered, and every job that pulled them went red
-// on a pin that had resolved two hours earlier; whether MinIO removed
-// the two or made them private is not known. A reference that names
-// another registry, or differs between the three files, fails here on
-// the push that introduces it.
+// by tag and digest on ghcr.io/latere-ai, the images of the maintained
+// forks of the MinIO server and client. MinIO's own community images
+// stopped answering anonymous pulls: Docker Hub began answering 404
+// and 401 for minio/minio and minio/mc on 2026-09-11, and quay.io, which
+// served the same images after that, answered 401 by 2026-09-24; every
+// job that pulled them went red on a pin that had resolved hours
+// earlier. A reference that names another registry, or differs between
+// the three files, fails here on the push that introduces it.
 func TestMinIOImagesAreOnePinFromOneRegistry(t *testing.T) {
 	files := []string{"docker-compose.yml", "deploy/examples/kind/minio.yaml", ".github/workflows/verify.yml"}
-	ref := regexp.MustCompile(`\S*minio/(minio|mc):\S+`)
-	pinned := regexp.MustCompile(`^quay\.io/minio/(minio|mc):RELEASE\.[0-9TZ-]+@sha256:[0-9a-f]{64}$`)
+	// An image reference ending in minio or mc, with or without a
+	// registry; a URL such as http://minio:9000 has no path before the
+	// name and does not match.
+	ref := regexp.MustCompile(`(?:[\w.-]+/)?[\w.-]+/(minio|mc):\S+`)
+	pinned := regexp.MustCompile(`^ghcr\.io/latere-ai/(minio|mc):RELEASE\.[0-9TZ-]+@sha256:[0-9a-f]{64}$`)
 	seen := map[string]map[string]bool{}
 	for _, name := range files {
 		found := 0
 		for _, m := range ref.FindAllStringSubmatch(manifest(t, name), -1) {
 			found++
 			if !pinned.MatchString(m[0]) {
-				t.Errorf("%s names %q; want quay.io/minio/<image>:<release>@sha256:<digest>", name, m[0])
+				t.Errorf("%s names %q; want ghcr.io/latere-ai/<image>:<release>@sha256:<digest>", name, m[0])
 			}
 			if seen[m[1]] == nil {
 				seen[m[1]] = map[string]bool{}

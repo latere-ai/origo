@@ -384,7 +384,9 @@ Divergences from the first draft:
   same tags and digests, because Docker Hub began refusing both
   repositories that day for a reason not known; spec 013's Outcome
   records what was observed, the run that found it, and the test that
-  holds the pins.
+  holds the pins. Since 2026-09-24 they name `ghcr.io/latere-ai/minio`
+  and `ghcr.io/latere-ai/mc`, the maintained forks' images, because
+  `quay.io/minio` began refusing anonymous pulls too.
 - Two drifts found by a review on 2026-09-11. The coverage criterion
   read 97%: spec 016's CA bundle reader had a branch no test reached,
   spec 027 added `ORIGO_ANONYMOUS_READ` and the parse of

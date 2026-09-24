@@ -32,10 +32,16 @@ if grep -rn --include='*.yaml' -e ':unreleased' -e ':candidate' -e 'newTag: cand
   echo "FAIL a placeholder tag survived"; exit 1
 fi
 
-# Every ghcr.io image line names the version.
-if grep -rhn --include='*.yaml' 'image: ghcr.io/latere-ai/' "$work/unpacked" | grep -v ':v9.9.9'; then
+# Every image line of Origo's own images names the version.
+if grep -rhn --include='*.yaml' -e 'image: ghcr.io/latere-ai/origod' -e 'image: ghcr.io/latere-ai/origo-stubs' "$work/unpacked" | grep -v ':v9.9.9'; then
   echo "FAIL an image line is not at v9.9.9"; exit 1
 fi
+# The MinIO server and client are dependencies: their digest pins pass
+# through unchanged.
+for image in minio mc; do
+  grep -Eq "image: ghcr.io/latere-ai/$image:RELEASE\.[0-9TZ-]+@sha256:[0-9a-f]{64}$" "$work/unpacked/deploy/examples/kind/minio.yaml" ||
+    { echo "FAIL the kind overlay's $image pin did not pass through"; exit 1; }
+done
 
 # A tree without the placeholder is refused, not packed.
 mkdir -p "$work/tree/tools/release" "$work/tree/deploy"
@@ -47,9 +53,10 @@ if "$bash" "$work/tree/tools/release/deploy-archive.sh" v9.9.9 "$work/refused.ta
 fi
 [ ! -f "$work/refused.tar.gz" ] || { echo "FAIL the refused archive was written"; exit 1; }
 
-# A fork publishes under its own namespace: every image line in the
-# archive names it, the kind overlay's selector moves with the base's
-# name, and nothing in the archive names the namespace the tree carries.
+# A fork publishes under its own namespace: every Origo image line in
+# the archive names it, the kind overlay's selector moves with the
+# base's name, and no Origo image in the archive names the namespace the
+# tree carries. The MinIO dependency pins stay.
 fork="ghcr.io/example-fork"
 ORIGO_IMAGE_NAMESPACE="$fork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/deploy-fork.tar.gz"
 mkdir -p "$work/fork"
@@ -57,9 +64,11 @@ tar -xzf "$work/deploy-fork.tar.gz" -C "$work/fork"
 grep -q "image: $fork/origod:v9.9.9" "$work/fork/deploy/base/deployment.yaml" || { echo "FAIL the fork base does not pin the fork image"; exit 1; }
 grep -q "image: $fork/origo-stubs:v9.9.9" "$work/fork/deploy/examples/kind/origo-stubs.yaml" || { echo "FAIL the fork kind overlay does not pin origo-stubs"; exit 1; }
 grep -q "name: $fork/origod" "$work/fork/deploy/examples/kind/kustomization.yaml" || { echo "FAIL the fork kind overlay selects another namespace than its base"; exit 1; }
-if grep -rn --include='*.yaml' 'ghcr.io/latere-ai/' "$work/fork"; then
+if grep -rn --include='*.yaml' -e 'ghcr.io/latere-ai/origod' -e 'ghcr.io/latere-ai/origo-stubs' "$work/fork"; then
   echo "FAIL the tree's namespace survives in a fork's archive"; exit 1
 fi
+grep -q 'image: ghcr.io/latere-ai/minio:RELEASE' "$work/fork/deploy/examples/kind/minio.yaml" ||
+  { echo "FAIL a fork's archive does not keep the MinIO pin"; exit 1; }
 
 # A namespace an image reference cannot carry is refused.
 if ORIGO_IMAGE_NAMESPACE="ghcr.io/ExampleFork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/bad.tar.gz" 2>/dev/null; then
