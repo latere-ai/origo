@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Latere AI
 // SPDX-License-Identifier: MIT
 
-// Command apidoc renders docs/api.md, the reference a consumer codes
-// against: every endpoint, header, and error code the deck defines,
-// grouped by the spec that owns it and linked to it, and the one call
-// Origo makes rather than serves, the authorization endpoint, carried
-// verbatim from the spec that states its contract.
+// Command apidoc renders docs/internals/contract.md, the reference a
+// contributor checks a change against: every endpoint, header, and error
+// code the deck defines, grouped by the spec that owns it and linked to
+// it, and the one call Origo makes rather than serves, the authorization
+// endpoint, carried verbatim from the spec that states its contract.
 //
 // With -write it renders api/openapi.yaml beside the page, the same
 // surface as an OpenAPI 3.1 document, from the same reading of the same
@@ -20,7 +20,7 @@
 // finding in both. Nothing here decides what an endpoint or a code
 // means: each row is the row its spec states.
 //
-//	go run . -write   # rewrite docs/api.md
+//	go run . -write   # rewrite docs/internals/contract.md
 //	go run .          # print it
 package main
 
@@ -39,7 +39,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("apidoc", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dir := fs.String("specs", "../../specs", "the spec directory")
-	out := fs.String("out", "../../docs/api.md", "the page to write with -write")
+	out := fs.String("out", "../../docs/internals/contract.md", "the page to write with -write")
 	document := fs.String("openapi", "../../api/openapi.yaml", "the OpenAPI document to write with -write")
 	write := fs.Bool("write", false, "rewrite the page and the document")
 	if err := fs.Parse(args); err != nil {

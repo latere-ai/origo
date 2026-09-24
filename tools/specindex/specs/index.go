@@ -4,8 +4,8 @@
 // Package specs parses the spec deck: the names each spec defines, the
 // specs that mention them, and the rows the definitions live in. Command
 // specindex renders the cross-reference table from it and tools/apidoc
-// renders docs/api.md from the same data, so one parser reads every
-// table and a shape neither recognizes is a finding in both.
+// renders docs/internals/contract.md from the same data, so one parser
+// reads every table and a shape neither recognizes is a finding in both.
 package specs
 
 import (

@@ -8,8 +8,8 @@
 // like tools/spike, so it stays out of the service's build.
 //
 // The parser is the package specs beside this file, exported so
-// tools/apidoc renders docs/api.md from the same reading of the same
-// tables. A name is defined by a table whose first header cell is Code,
+// tools/apidoc renders docs/internals/contract.md from the same reading
+// of the same tables. A name is defined by a table whose first header cell is Code,
 // Variable, Metric, Event, Failpoint, or Header, or whose first two are
 // Method and Path; the backticked tokens of the first cell (or METHOD
 // plus the path) are the names. Every other backticked token that looks

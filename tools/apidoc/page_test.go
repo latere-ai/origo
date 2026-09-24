@@ -39,22 +39,22 @@ func index(t *testing.T) *specs.Index {
 	return idx
 }
 
-// TestAPIDocIsCurrent is spec 018's criterion: docs/api.md is what
-// `make docs` renders from the specs, and it carries every endpoint,
-// header, and code the cross-reference lists and no other name.
+// TestAPIDocIsCurrent is spec 018's criterion: docs/internals/contract.md
+// is what `make docs` renders from the specs, and it carries every
+// endpoint, header, and code the cross-reference lists and no other name.
 func TestAPIDocIsCurrent(t *testing.T) {
 	idx := index(t)
 	want, err := Page(idx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := filepath.Join(root(t), "docs", "api.md")
+	page := filepath.Join(root(t), "docs", "internals", "contract.md")
 	got, err := os.ReadFile(page)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != want {
-		t.Fatalf("docs/api.md differs from the specs; run make docs")
+		t.Fatalf("docs/internals/contract.md differs from the specs; run make docs")
 	}
 
 	name := regexp.MustCompile("`([^`]+)`")
@@ -186,7 +186,7 @@ func TestPageNamesTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"(../api/openapi.yaml)", "`GET /openapi.yaml`", "OpenAPI 3.1"} {
+	for _, want := range []string{"(../../api/openapi.yaml)", "`GET /openapi.yaml`", "OpenAPI 3.1"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the page does not name %s", want)
 		}
@@ -202,14 +202,14 @@ func TestRunWritesAndReportsFindings(t *testing.T) {
 	if code := run([]string{"-specs", specsDir, "-out", out, "-openapi", document, "-write"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("write: %d %q", code, stderr.String())
 	}
-	if body, err := os.ReadFile(out); err != nil || !bytes.Contains(body, []byte("# The Origo API")) {
+	if body, err := os.ReadFile(out); err != nil || !bytes.Contains(body, []byte("# Origo contract reference")) {
 		t.Fatalf("written page: %v", err)
 	}
 	if body, err := os.ReadFile(document); err != nil || !bytes.Contains(body, []byte("openapi: 3.1.0")) {
 		t.Fatalf("written document: %v", err)
 	}
 	stdout.Reset()
-	if code := run([]string{"-specs", specsDir}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "# The Origo API") {
+	if code := run([]string{"-specs", specsDir}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "# Origo contract reference") {
 		t.Fatalf("print: %d", code)
 	}
 	if code := run([]string{"-specs", filepath.Join(dir, "nowhere")}, &stdout, &stderr); code != 1 {

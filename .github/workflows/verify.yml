@@ -91,9 +91,9 @@ jobs:
           (cd tools/specindex && go run . -rules ../../deploy/base/prometheusrule.yaml) > out/rules.yaml
           promtool check rules out/rules.yaml
       # The generated reference: docs/configuration.md from
-      # internal/config, docs/api.md from the specs' endpoint, header,
-      # and code tables, and api/openapi.yaml from the same tables (spec
-      # 030), which the node embeds and serves. A change to a variable or
+      # internal/config, docs/internals/contract.md from the specs'
+      # endpoint, header, and code tables, and api/openapi.yaml from the
+      # same tables (spec 030), which the node embeds and serves. A change to a variable or
       # to a spec table that was not regenerated shows up here as a
       # documentation diff on the same push.
       - name: The generated documentation is current
