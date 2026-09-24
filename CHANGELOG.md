@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The documentation is split by reader. `docs/api.md` is now written for
+  a client author: authentication, naming a repository, every route with
+  the permission it needs, the errors and headers a client branches on,
+  the limits, and the push event payloads with how to verify one.
+  `docs/authorizer.md` is the whole contract of the authorization and
+  SSH key endpoints. The reference generated from the design specs moves
+  to `docs/internals/contract.md`, beside new pages on the architecture,
+  the test tiers, and the release process. A key endpoint now documents
+  that its `subject` is used verbatim and should be the
+  `<issuer>|<sub>` form an HTTPS request carries, which the owner policy
+  requires for a repository created over HTTPS.
+
 ### Fixed
 
 - The release smoke waits for the served version to reach the tag, up

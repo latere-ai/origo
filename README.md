@@ -75,11 +75,12 @@ against a throwaway cluster by the project's own tests before it is
 published, so a command that drifts from the manifests fails the build
 rather than your installation.
 
-You supply four things: a bucket at any S3 compatible endpoint that honors
-conditional creates, an OIDC issuer, one HTTP endpoint that answers whether
-a subject may read, write, or administer a repository, and a hostname.
-Origo authenticates and authorizes every request, and it asks you both
-questions rather than deciding them itself.
+You supply a bucket at any S3 compatible endpoint that honors conditional
+creates, an OIDC issuer, and a hostname. Origo verifies every request
+against your issuer and stores no users. Permission comes from one HTTP
+endpoint you write, which answers whether a subject may read, write, or
+administer a repository; for one person or one team, the built-in owner
+policy needs no endpoint at all.
 
 ## What you get
 
@@ -87,8 +88,9 @@ questions rather than deciding them itself.
   bearer token, or over SSH with a public key your key store resolves.
   Shallow and partial clones work at any reachable commit. Git LFS is
   supported.
-- **Consistent reads.** Every reference update is one compare-and-swap
-  against the log, so a read never sees a half-applied push.
+- **Consistent reads.** A push commits as one conditional create of the
+  repository's next log entry, and a node confirms its copy is current
+  before every read, so a read never sees a half-applied push.
 - **A read API.** Refs, log, diff, tree, blob, and an archive of any commit
   over JSON, so a product can show history and diffs without cloning.
 - **Server-side git.** Create a commit or merge a branch through the API,
@@ -130,14 +132,17 @@ not change.
 |---|---|
 | [Install](docs/install.md) | from a cluster and a bucket to a first push |
 | [Configuration](docs/configuration.md) | every environment variable with its default |
-| [API](docs/api.md) | endpoints, headers, and error codes a client relies on, and the authorization endpoint an operator writes |
-| [Operations](docs/operations.md) | backup, restore, scaling, and what to do during an outage |
+| [API](docs/api.md) | authentication, every route with the permission it needs, errors, limits, and push events |
+| [Authorization endpoint](docs/authorizer.md) | the endpoint that decides what Origo allows, for whoever writes it |
+| [Operations](docs/operations.md) | backup, restore, scaling, metrics and alerts, and what to do during an outage |
 | [Upgrades](docs/upgrades/README.md) | what a version number promises, and how to verify what you install |
 | [Migration](docs/migration.md) | moving repositories in from another git host |
 | [The origo command](docs/cli.md) | reading and changing a repository from a shell or an agent, without cloning it |
 
-[`docs/README.md`](docs/README.md) is the index. The design, and the
-reasoning behind it, is in [`specs/`](specs/README.md).
+[`docs/README.md`](docs/README.md) is the index. For contributors,
+[`docs/internals/`](docs/internals/README.md) explains how the code is
+laid out and tested, and [`specs/`](specs/README.md) holds the design
+records with the reasoning behind each decision.
 
 ## Contributing
 

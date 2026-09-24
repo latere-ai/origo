@@ -11,8 +11,12 @@ current release.
 What Origo protects, against whom, and how each threat is answered is
 written down in the
 [threat model](specs/016-security-and-threat-model.md), so a reviewer
-can check the design rather than take it on faith. Every request
-carries a token and is authorized before a repository is looked up. A
+can check the design rather than take it on faith. Every request that
+names a repository is authorized before the repository is looked up,
+so a refused caller cannot tell a private repository from a missing
+one. A request without a token is admitted only on the read routes of
+an installation that turns anonymous reads on, and is authorized the
+same way. A
 server-side fetch of another host reaches only a host the operator
 listed, and never a private, cluster, or loopback address. Git runs
 with a minimal environment, no shell, and its object checks on. The
