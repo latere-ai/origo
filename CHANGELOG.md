@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.10.1 - 2026-09-24
+
 ### Changed
 
 - The local stack, the kind example and CI run MinIO and `mc` from
