@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- The local stack, the kind example and CI run MinIO
+  `RELEASE.2026-09-25T12-30-31Z` from `ghcr.io/latere-ai/minio`, which adds
+  the maintained fork's security fixes (OIDC and LDAP STS, replication
+  metadata, S3 Select, unsigned-trailer and presigned payload checks,
+  SSE-C and admin authorization). The S3 behavior Origo relies on,
+  conditional create and conditional reads, is unchanged.
+
 ## v0.10.1 - 2026-09-24
 
 ### Changed

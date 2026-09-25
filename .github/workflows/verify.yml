@@ -50,7 +50,7 @@ permissions:
 # takes its subcommand as an argument, which the services key cannot
 # pass.
 env:
-  MINIO_IMAGE: ghcr.io/latere-ai/minio:RELEASE.2026-09-24T20-02-18Z@sha256:889173592b42fb0ff8d00d540ddbdcecbb4607115160b8e29243b3ed51a4aceb
+  MINIO_IMAGE: ghcr.io/latere-ai/minio:RELEASE.2026-09-25T12-30-31Z@sha256:025fb85cf53bad7b734dc05b012c65ce617105248ddd044d8974fb636f2a8824
   MC_IMAGE: ghcr.io/latere-ai/mc:RELEASE.2026-09-24T19-45-33Z@sha256:6e37dec77ff93cb690b9ba3f1fe2c3b34efa1cd77181fca909039819bd670a24
 
 jobs:
