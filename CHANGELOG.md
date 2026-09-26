@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.11.0 - 2026-09-26
+
 ### Added
 
 - Two actions in the authorizer vocabulary, `repo.delete` and
