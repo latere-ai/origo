@@ -59,6 +59,13 @@ committed: the commit log already holds that.
   which covers the sleep, the 3 second drain delay, and the 60 second
   grace period for requests in flight.
 
+### Fixed
+
+- The conformance suite's cleanup reads each repository it deleted back
+  until it answers 404, waiting out a deny still in the node's decision
+  cache. A run whose cases denied a repository's reads no longer leaves
+  that repository answering 403 for a few seconds after the run.
+
 ## v0.11.0 - 2026-09-26
 
 ### Added

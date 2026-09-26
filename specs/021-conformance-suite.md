@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-17
+updated: 2026-09-26
 author: changkun
 ---
 
@@ -866,3 +866,35 @@ that the test's map carries, a rule still said two specs' codes had no
 producer "today", and a divergence bullet still said the `live` job
 could not sit between deploy and publish until spec 017 restructured
 the pipeline, which it did. Each reads as the tree and the runs stand.
+
+## State on 2026-09-26: the cleanup reads each repository back
+
+The run's promise is that every id it created answers 404 after it, and
+`TestRunCleansUp` reads each one to hold that. From the release in which
+delete asks `repo.delete` (spec 028, State on 2026-09-26) the promise
+broke in CI and nowhere else: `TestRunCleansUp` found one repository
+answering 403 `forbidden`, a different id on each run.
+
+The repository is `019/forbidden`'s. That case denies every action on its
+repository and exercises nine operations, three of them reads, so the
+node's decision cache holds a `repo.read` deny and a `repo.admin` deny
+for five seconds, each keyed by its action. While delete asked
+`repo.admin`, the cleanup's delete met the cached `repo.admin` deny and
+waited it out in one-second steps, and the reads' deny, cached before
+the last administering call, expired first; the wait on one action hid
+the other. With delete on `repo.delete`, which the case never asks, the
+delete is accepted at once, and a read made inside the five seconds
+meets the cached `repo.read` deny. The cases after `019/forbidden`, spec
+020's four, `026/directory` and spec 012's two, took about 5.3 seconds on
+a laptop and less on the CI runner, so only CI read inside the window. A
+run with those seven cases skipped reproduces it on any machine.
+
+`deleteUntilGone` now takes a read beside the delete: once the delete is
+accepted, it reads the repository until it answers 404 or 410, waiting
+out a 403 and a 429 under the same thirty-second budget, and reports a
+repository still served after its delete. The promise is then the
+cleanup's own and does not depend on which actions a case happened to
+deny. `TestCleanupReadsEachRepositoryBackUntilGone` holds the waits and
+drives the session's cleanup against a node whose cache still refuses
+the read after the delete; without the read it fails.
+
