@@ -143,8 +143,9 @@ func TestMetricsVocabulary(t *testing.T) {
 		t.Errorf("the fixture load was not counted:\n%s", after)
 	}
 	for _, want := range []string{
-		`origo_requests_total{route="/{owner}/{slug}/{service...}",status_class="2xx"}`,
-		`origo_requests_total{route="/{owner}/{slug}/{service...}",status_class="4xx"}`,
+		`origo_requests_total{route="/{owner}/{slug}/git-receive-pack",status_class="2xx"}`,
+		`origo_requests_total{route="/{owner}/{slug}/info/refs?service=git-upload-pack",status_class="2xx"}`,
+		`origo_requests_total{route="/{owner}/{slug}/info/refs?service=git-receive-pack",status_class="4xx"}`,
 		`origo_request_duration_seconds_count{route="/v1/repos",status_class="2xx"}`,
 	} {
 		if !strings.Contains(after, want) {
@@ -198,7 +199,7 @@ func TestRequestLogRedactsCredentials(t *testing.T) {
 		if line == "" || json.Unmarshal([]byte(line), &rec) != nil {
 			continue
 		}
-		if rec["msg"] == "request" && rec["route"] == "/{owner}/{slug}/{service...}" && rec["bytes_in"].(float64) > 0 {
+		if rec["msg"] == "request" && rec["route"] == "/{owner}/{slug}/git-receive-pack" && rec["bytes_in"].(float64) > 0 {
 			push = rec
 		}
 	}
@@ -481,16 +482,13 @@ func TestRequestCountersWrapTheResponse(t *testing.T) {
 // that never passed the public listener's outermost wrapper, an internal
 // probe, has no details and asks for none.
 func TestDetailsAreEmptyOffThePublicListener(t *testing.T) {
-	if d := detailsFrom(context.Background()); d == nil || d.route != "" || d.repo != "" {
+	if d := detailsFrom(context.Background()); d == nil || d.subject != "" || d.repo != "" {
 		t.Fatalf("details off the listener: %+v", d)
 	}
 	r := httptest.NewRequest(http.MethodGet, "/v1/repos/"+repoID, nil)
 	r.SetPathValue("id", repoID)
 	if got := repoOf(r); got != repoID {
 		t.Fatalf("repo %q", got)
-	}
-	if got := routeOf(r); got != "" {
-		t.Fatalf("route of an unmatched request %q", got)
 	}
 }
 

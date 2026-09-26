@@ -347,6 +347,26 @@ those are span attributes. The ones to watch first are
 | `origo_gossip_packets_total` | gossip datagrams by direction |
 | `origo_ssh_sessions_total`, `origo_ssh_auth_total`, `origo_ssh_keys_seconds` | SSH sessions, authentication attempts, and calls to the key endpoint |
 
+`route` on `origo_requests_total` and `origo_request_duration_seconds`
+names the route that served the request. The same name follows the
+method in the request's root span name, and is `http.route` on that
+span and on the OpenTelemetry request metrics such as
+`http.server.request.duration`, so a dashboard built on either exporter
+splits traffic the same way. A name is a route's pattern, never a path:
+`{slug}` and `{id}` stand for the repository with or without `.git`.
+
+| Route | Requests |
+|---|---|
+| `/{owner}/{slug}/info/refs?service=git-upload-pack`, `/r/{id}/info/refs?service=git-upload-pack` | the ref advertisement that starts a clone or a fetch |
+| `/{owner}/{slug}/git-upload-pack`, `/r/{id}/git-upload-pack` | the pack a clone or a fetch downloads |
+| `/{owner}/{slug}/info/refs?service=git-receive-pack`, `/r/{id}/info/refs?service=git-receive-pack` | the ref advertisement that starts a push |
+| `/{owner}/{slug}/git-receive-pack`, `/r/{id}/git-receive-pack` | the pack a push uploads |
+| `/{owner}/{slug}/info/refs`, `/r/{id}/info/refs` | an advertisement that asked for neither smart service, which is refused |
+| `/{owner}/{slug}/info/lfs/objects/batch` and the other `info/lfs` routes, in either form | Git LFS |
+| `/v1/repos`, `/v1/repos/{id}`, `/v1/repos/{id}/refs`, and the other API routes | the repository API |
+| `/readyz`, `/version`, `/.well-known/jwks.json`, `/openapi.yaml`, `/{$}`, `/favicon.ico` | the unauthenticated routes; `/{$}` is the landing page |
+| `unknown` | a request no route serves |
+
 The shipped alerts:
 
 | Alert | Fires when |
@@ -374,7 +394,8 @@ rule file the installation already has.
 `OTEL_EXPORTER_OTLP_ENDPOINT` is the one variable that turns telemetry
 on. With it set, the node exports traces, metrics, and log records over
 OTLP/HTTP to that endpoint: one trace per request on the public
-listener, with a span per phase of a push and per object storage call,
+listener, its root span named by the method and the route of the table
+above, with a span per phase of a push and per object storage call,
 and the repository and subject as span attributes. Unset, the
 spans are created and discarded and the node costs nothing for them.
 `OTEL_TRACES_SAMPLER_ARG` is the head-sampling ratio, one root trace in

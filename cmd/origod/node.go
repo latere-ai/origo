@@ -118,7 +118,11 @@ type node struct {
 	// it runs without it.
 	ssh *sshd.Server
 
+	// public is the application surface behind the verifier and app the
+	// mux inside it, kept so the route names of the telemetry can ask it
+	// which pattern serves a request.
 	public     http.Handler
+	app        *http.ServeMux
 	checks     []readyCheck
 	background []func(context.Context) error
 
@@ -323,6 +327,7 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	// against the effective subject the token named, and in front of
 	// every route of the application surface.
 	n.public = n.verifier.Middleware(n.limits.Middleware(capture(app)))
+	n.app = app
 	// SSH (spec 024), when the operator turned it on: a third listener
 	// over the same guard, the same cache, and the same git handler, so
 	// a push over SSH is the same log entry. The key resolver's calls go
@@ -540,11 +545,13 @@ func (n *node) metricsHandler() http.Handler {
 // pattern needs two segments, so the two could not collide even in one
 // mux.
 //
-// Three wrappers sit in front (spec 011), outermost first: the in-flight
+// Four wrappers sit in front (spec 011), outermost first: the in-flight
 // gauge, which counts a request the moment it arrives; otel.Handler,
 // which opens the request's span, answers X-Trace-Id, and feeds the two
-// request metrics; and the request log line, inside the span so it
-// carries the trace id.
+// request metrics; ownRequest, which keeps the mux's pattern off the
+// request otel.Handler holds; and the request log line, inside the span
+// so it carries the trace id. The span, the metrics of both registries,
+// and the log line name the request by one router.
 func (n *node) publicHandler() http.Handler {
 	probes := n.internalHandler()
 	mux := http.NewServeMux()
@@ -555,9 +562,22 @@ func (n *node) publicHandler() http.Handler {
 	mux.HandleFunc("GET /{$}", landing)
 	mux.HandleFunc("GET /favicon.ico", favicon)
 	mux.Handle("/", n.public)
-	traced := otel.Handler(n.requestLog(contract.Middleware(mux)), "origod",
-		otel.WithMetricsHook(n.recordRequest))
+	route := router{public: mux, app: n.app}.route
+	traced := otel.Handler(ownRequest(n.requestLog(route, contract.Middleware(mux))), "origod",
+		otel.WithRouteTemplate(route), otel.WithMetricsHook(n.recordRequest))
 	return n.inFlight(traced)
+}
+
+// ownRequest serves next with a shallow copy of the request. A ServeMux
+// records the pattern it matched on the request it was handed, and
+// otelhttp labels its request metrics with that pattern ahead of the
+// route template, so without the copy every request the public mux
+// hands to the application would be recorded under its catch-all "/".
+// The template names the public mux's own routes by the same patterns.
+func ownRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(r.Context()))
+	})
 }
 
 // inFlight counts the requests started and not finished on the public
@@ -566,9 +586,9 @@ func (n *node) publicHandler() http.Handler {
 // cannot answer how many are running.
 //
 // It is also where the request's details are installed, outermost, so
-// every layer below shares one struct: the route, the repository, and
-// the identity are known only after the verifier and the application mux
-// have run, and each of those hands the next layer a request of its own.
+// every layer below shares one struct: the repository and the identity
+// are known only after the verifier and the application mux have run,
+// and each of those hands the next layer a request of its own.
 func (n *node) inFlight(next http.Handler) http.Handler {
 	n.metrics.RequestsInFlight.Bind(func() float64 { return float64(n.inFlightRequests.Load()) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -578,16 +598,11 @@ func (n *node) inFlight(next http.Handler) http.Handler {
 	})
 }
 
-// recordRequest is otel.Handler's metrics hook: the route is the mux
-// pattern the request matched and the status class its bucket, the only
-// two labels of the request series (spec 011). The route comes from the
-// details the application mux filled, because the pattern the hook sees
-// is the outer mux's catch-all; a path that never reaches the
-// application, a probe or an unmatched request, keeps the hook's own.
-func (n *node) recordRequest(ctx context.Context, route, _, statusClass string, d time.Duration) {
-	if inner := detailsFrom(ctx).route; inner != "" {
-		route = inner
-	}
+// recordRequest is otel.Handler's metrics hook: the route is the
+// router's name for the request, the one otel.Handler takes from the
+// route template, and the status class its bucket, the only two labels
+// of the request series (spec 011).
+func (n *node) recordRequest(_ context.Context, route, _, statusClass string, d time.Duration) {
 	labels := map[string]string{"route": route, "status_class": statusClass}
 	n.metrics.Requests.Inc(labels)
 	n.metrics.RequestDuration.Observe(labels, d.Seconds())
@@ -597,10 +612,11 @@ func (n *node) recordRequest(ctx context.Context, route, _, statusClass string, 
 // the route, the method, the status, the duration, the repository the
 // request named, the identity behind it, the bytes each way, and the
 // trace id the response header carries; never a credential, never object
-// bytes. What the request named and who it was are known only after the
-// mux and the verifier have run, which is what the details a capture
-// middleware fills in are for.
-func (n *node) requestLog(next http.Handler) http.Handler {
+// bytes. The route is the router's name, the one the span and the
+// metrics carry. What the request named and who it was are known only
+// after the mux and the verifier have run, which is what the details a
+// capture middleware fills in are for.
+func (n *node) requestLog(route func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		in := &countingReader{from: r.Body}
@@ -611,23 +627,18 @@ func (n *node) requestLog(next http.Handler) http.Handler {
 		ctx := r.Context()
 		d := detailsFrom(ctx)
 		next.ServeHTTP(out, r)
-		route := d.route
-		if route == "" {
-			route = routeOf(r)
-		}
 		n.logger.InfoContext(ctx, "request",
-			"route", route, "method", r.Method, "status", out.status,
+			"route", route(r), "method", r.Method, "status", out.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"repo", d.repo, "subject", d.subject,
 			"bytes_in", in.n, "bytes_out", out.n, "trace_id", tracing.ID(ctx))
 	})
 }
 
-// details are the fields of the log line and the route label that only
-// the layers below the verifier know. inFlight installs one and capture,
-// which runs behind the verifier, fills it.
+// details are the fields of the log line that only the layers below the
+// verifier know. inFlight installs one and capture, which runs behind
+// the verifier, fills it.
 type details struct {
-	route   string
 	repo    string
 	subject string
 }
@@ -652,20 +663,9 @@ func capture(next http.Handler) http.Handler {
 		tracing.Set(ctx, tracing.Subject(auth.Subject(ctx)))
 		next.ServeHTTP(w, r)
 		d := detailsFrom(ctx)
-		d.subject, d.repo, d.route = auth.Subject(ctx), repoOf(r), routeOf(r)
+		d.subject, d.repo = auth.Subject(ctx), repoOf(r)
 		tracing.Set(ctx, tracing.Repo(d.repo))
 	})
-}
-
-// routeOf is the mux pattern the request matched, without its method,
-// and "" when nothing matched. It is the route label and the route field
-// of the log line: a template, never a path, so neither grows with the
-// repositories.
-func routeOf(r *http.Request) string {
-	if _, path, ok := strings.Cut(r.Pattern, " "); ok {
-		return path
-	}
-	return r.Pattern
 }
 
 // repoOf is what the request named its repository: the id of the id

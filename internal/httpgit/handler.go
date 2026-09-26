@@ -175,18 +175,40 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /r/{id}/info/refs", h.infoRefs)
 	mux.HandleFunc("POST /r/{id}/git-upload-pack", h.uploadPack)
 	mux.HandleFunc("POST /r/{id}/git-receive-pack", h.receivePack)
-	mux.HandleFunc("/{owner}/{slug}/{service...}", h.byName)
+	mux.HandleFunc(NamePattern, h.byName)
+}
+
+// NamePattern is the one route of the label form: it matches every path
+// of three or more segments that no more specific pattern claims, and
+// byName dispatches what it matched by Operation.
+const NamePattern = "/{owner}/{slug}/{service...}"
+
+// Operation is what the label form serves for a method and the path
+// after /{owner}/{slug}/: "info/refs", "git-upload-pack", or
+// "git-receive-pack", and "" for anything else, which byName answers 400
+// as an unknown route. It is exported so the node names a request in its
+// telemetry by the operation this handler serves it with.
+func Operation(method, service string) string {
+	switch method + " " + service {
+	case "GET info/refs":
+		return "info/refs"
+	case "POST git-upload-pack":
+		return "git-upload-pack"
+	case "POST git-receive-pack":
+		return "git-receive-pack"
+	}
+	return ""
 }
 
 // byName dispatches the label form on the method and the service, and
 // answers what the unknown-route handler answers to anything else.
 func (h *Handler) byName(w http.ResponseWriter, r *http.Request) {
-	switch r.Method + " " + r.PathValue("service") {
-	case "GET info/refs":
+	switch Operation(r.Method, r.PathValue("service")) {
+	case "info/refs":
 		h.infoRefs(w, r)
-	case "POST git-upload-pack":
+	case "git-upload-pack":
 		h.uploadPack(w, r)
-	case "POST git-receive-pack":
+	case "git-receive-pack":
 		h.receivePack(w, r)
 	default:
 		contract.Write(w, http.StatusBadRequest, contract.CodeInvalid, map[string]any{"reason": "no such route"})

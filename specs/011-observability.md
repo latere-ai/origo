@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-12
+updated: 2026-09-26
 author: changkun
 ---
 
@@ -81,7 +81,7 @@ never recorded and are replaced by the names below.
 | `origo_repo_entries_applied_total` | counter | | entries applied to local copies (004, phase 1) |
 | `origo_repo_rebuilt_total` | counter | | local copies removed as corrupt and rebuilt (004, phase 1) |
 | `origo_repo_materialize_seconds` | histogram, buckets 10 ms to 60 s | | time to bring a local copy current (004, phase 1) |
-| `origo_requests_total` | counter | `route` (the mux pattern), `status_class` (`2xx` to `5xx`) | the `pkg/otel` metrics hook on the public listener |
+| `origo_requests_total` | counter | `route` (the request's route name, under Traces), `status_class` (`2xx` to `5xx`) | the `pkg/otel` metrics hook on the public listener |
 | `origo_request_duration_seconds` | histogram | `route`, `status_class` | same |
 | `origo_requests_in_flight` | gauge | | requests started and not finished on the public listener, counted by a middleware in `cmd/origod` around the public handler, because the `pkg/otel` hook fires only after a request ends; a dashboard signal (`docs/operations.md`), not an autoscaler input, which is CPU only (005) |
 | `origo_push_duration_seconds` | histogram | `phase` (`receive`, `entry`, `index`, `apply`) | the receive path (004) |
@@ -114,8 +114,8 @@ is recorded, and the criterion below asks for presence by name for
 them: a labeled histogram, because `latere.ai/x/pkg/metrics` creates a
 cell only through `Observe`, which would record an observation (the
 item below), and `origo_requests_total` and
-`origo_request_duration_seconds`, whose `route` is the mux pattern and
-has no vocabulary to seed.
+`origo_request_duration_seconds`, whose `route` is derived from the
+patterns of two muxes and has no list in one place to seed from.
 
 ### Traces
 
@@ -123,20 +123,48 @@ has no vocabulary to seed.
 "origod", Version, Replica, Stdout})` with `Stdout` a JSON handler on
 standard output, because `Bootstrap` defaults to standard error and the
 node's log lines stay on standard output (spec 002), wraps the public handler in
-`otel.Handler` with `WithMetricsHook` feeding the two request metrics,
-and wraps the storage transport in `otel.Transport`.
+`otel.Handler` with `WithRouteTemplate` naming the request and
+`WithMetricsHook` feeding the two request metrics, and wraps the storage
+transport in `otel.Transport`.
 
-`WithRouteTemplate` is not used: `latere.ai/x/pkg/otel` passes that
-function to the span name formatter, which runs before the mux has
-matched, so a template returning the pattern would name every root span
-`<METHOD> ` with an empty route. The route the metrics hook and the log
-line use comes instead from a details struct the outermost wrapper
-installs on the request's context and a middleware behind the verifier
-fills, because the verifier and the application mux each hand the next
-layer a request of their own and the pattern the outermost wrapper sees
-is the public mux's catch-all `/`. The same struct carries the
-repository, the subject, and the actor, which are known only there. A
-probe passes none of them and keeps the hook's own route.
+The template is the one name every signal of a request carries: the
+root span's name after the method, `http.route` on that span and on the
+OpenTelemetry request metrics (`http.server.request.duration` and the
+two body size histograms), the `route` label of `origo_requests_total`
+and `origo_request_duration_seconds`, which the metrics hook receives
+from the template, and the `route` field of the log line.
+`latere.ai/x/pkg/otel` passes the template to the span name formatter,
+which runs before the mux has matched, so the template reads no pattern
+a mux recorded: it asks the public mux, then the application mux, which
+pattern each would match (`http.ServeMux.Handler`), a function of the
+method, the path, and the query alone. The name is that pattern without
+its method, refined for smart HTTP:
+
+- the label form's single wildcard `/{owner}/{slug}/{service...}` is
+  named by the operation `internal/httpgit` dispatches it to,
+  `/{owner}/{slug}/info/refs`, `/{owner}/{slug}/git-upload-pack`, or
+  `/{owner}/{slug}/git-receive-pack`, from the same function its
+  handler dispatches with;
+- an `info/refs` name of either URL form carries
+  `?service=git-upload-pack` or `?service=git-receive-pack` when the
+  query names one of the two smart services, and no query otherwise;
+- a request no handler serves, the application's fallback, a method a
+  route does not take, or a label-form path that names no operation, is
+  `unknown`.
+
+A name carries a pattern's placeholders and never an id, an owner, a
+slug, or a reference, so the set is bounded by the routes the node
+registers. otelhttp labels its request metrics with the pattern of a
+mux that matched the request it holds, ahead of the template, so the
+public handler serves the public mux on a shallow copy of the request
+and the catch-all `/` stays off otelhttp's request; the public mux's
+own routes are named by the same patterns through the template.
+
+The repository and the subject are known only behind the verifier,
+which with the application mux hands the next layer a request of its
+own, so a details struct the outermost wrapper installs on the
+request's context and a middleware behind the verifier fills carries
+them to the log line. A probe passes neither.
 
 `internal/tracing` supplies Origo's scope and attributes through
 `pkg/otel.StartScoped`, `SetAttributes`, and `TraceIDs`. It imports
@@ -229,6 +257,14 @@ defaults.
 - The request log line for a push carries the listed fields and no
   `Authorization` value when the request used basic auth (proposed:
   `cmd/origod`, `TestRequestLogRedactsCredentials`).
+- Every request on the public listener, smart HTTP in both URL forms
+  and both spellings, LFS, the API, the public mux's own routes, and a
+  request no handler serves, is recorded on
+  `http.server.request.duration` and `origo_requests_total` under the
+  one route name of the Traces section, and its root span is named by
+  the method and that name (`cmd/origod`,
+  `TestRequestsAreNamedByRoute`, with a manual meter reader and a span
+  recorder installed before the handler is built).
 - `promtool check rules` passes on the rules document `tools/specindex
   -rules` prints out of `deploy/base/prometheusrule.yaml`, in the
   `specindex` job of `verify.yml`, which installs `promtool` and runs
@@ -250,6 +286,7 @@ node code.
 | every name at 0 on the first scrape, no fixture label is a repository, subject, reference, or path | `cmd/origod`, `TestMetricsVocabulary`; `internal/metrics`, `TestRegisterNamesEveryMetric` reading this file through `runtime.Caller`, and `TestEveryClosedVocabularyReadsZero` |
 | one push produces one trace with the five spans and the repository id as an attribute | `cmd/origod`, `TestPushTrace` against an in-memory OTLP receiver |
 | the request log line carries the listed fields and no credential | `cmd/origod`, `TestRequestLogRedactsCredentials` |
+| every request is recorded and its root span named under one route name | `cmd/origod`, `TestRequestsAreNamedByRoute` (2026-09-26) |
 | `promtool check rules` passes and every alert's metric is in the table | `tools/specindex`, `TestAlertRulesNameDefinedMetrics` and `TestRulesReportsAnUndefinedMetricAndAMalformedFile`; the `specindex` job of `verify.yml`, which installs `promtool` by pinned version and checksum |
 
 The `Set` `internal/metrics` returns is the handles, one field per row,
@@ -265,22 +302,23 @@ each as the rule, so a reader finds one answer:
   count through `Histogram.Init` (2026-09-12). This replaces the initial
   first-observation-only workaround. Counters retain their `Add(..., 0)` seed.
 - `origo_requests_total` and `origo_request_duration_seconds` carry no
-  series before the first request: `route` is the mux pattern, which has
-  no vocabulary to seed. `TestMetricsVocabulary` asserts presence by
-  name for every metric and a 0 series for every closed vocabulary.
-- The handler is wrapped without `WithRouteTemplate`.
-  `latere.ai/x/pkg/otel` passes that function to the span name formatter,
-  which runs before the mux has matched, so a template returning the
-  pattern would name every root span `<METHOD> ` with an empty route.
-  Without it the same pattern still reaches the metrics hook, which is
-  what the two labels needed.
-- The route the hook and the log line use comes from a details struct the
-  outermost wrapper installs on the request's context and a middleware
-  behind the verifier fills. The verifier and the application mux each
-  hand the next layer a request of their own, so the pattern the
-  outermost wrapper sees is the public mux's catch-all `/`; the same
-  struct carries the repository, subject, and actor, which are known
-  only there. A probe, which passes neither, keeps the hook's own route.
+  series before the first request: `route` is derived from the patterns
+  of two muxes, which no list in one place names to seed from.
+  `TestMetricsVocabulary` asserts presence by name for every metric and
+  a 0 series for every closed vocabulary.
+- The route name is the template's (2026-09-26). As built on 2026-09-08
+  the handler was wrapped without `WithRouteTemplate`, the metrics hook
+  and the log line read the application mux's pattern from the details
+  struct, and the OpenTelemetry request metrics and root spans carried
+  the public mux's catch-all `/` for every request it handed to the
+  application, which is nearly all of the traffic. `latere.ai/x/pkg`
+  v0.86.0 puts the template on the request metrics as well as the span,
+  and a template that asks the muxes instead of reading a recorded
+  pattern works before routing, so the node uses one; the hook takes its
+  route from it, and the details struct keeps the repository and the
+  subject only. The label form's smart HTTP operations, one
+  `/{owner}/{slug}/{service...}` series before, are three names, and
+  `info/refs` carries its service.
 - The log line is written by a wrapper of `cmd/origod` inside
   `otel.Handler`, not by `otel.Handler`, which logs nothing.
 - `promtool check rules` reads a Prometheus rules file, not a Kubernetes

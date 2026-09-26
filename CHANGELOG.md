@@ -19,6 +19,23 @@ committed: the commit log already holds that.
   such a token was decided on its holder's full access. An endpoint of
   your own receives `token_use` and the grants as before and decides for
   itself. The node builds against `latere.ai/x/pkg` v0.86.0.
+- Every signal of a request on the public listener names the route that
+  served it. The OpenTelemetry request metrics
+  (`http.server.request.duration` and the two body size histograms) and
+  the root span carried `http.route` `/` for every git, LFS, and API
+  request; they now carry the route, and the root span is named by the
+  method and the route. `origo_requests_total` and
+  `origo_request_duration_seconds` take the same names: a git operation
+  in the `/{owner}/{slug}` form, one `/{owner}/{slug}/{service...}`
+  series until now, is
+  `/{owner}/{slug}/info/refs?service=git-upload-pack`,
+  `/{owner}/{slug}/git-upload-pack`,
+  `/{owner}/{slug}/info/refs?service=git-receive-pack`, or
+  `/{owner}/{slug}/git-receive-pack`; an `info/refs` request in the
+  `/r/{id}` form carries its service the same way; and a request no
+  route serves is `unknown`, where it was `/`. A dashboard or an alert
+  that selects on the old `route` values needs the new ones, which
+  `docs/operations.md` lists.
 
 ## v0.11.0 - 2026-09-26
 
