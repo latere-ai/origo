@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/origo/internal/auth"
 )
@@ -408,6 +410,58 @@ func TestMinIOImagesAreOnePinFromOneRegistry(t *testing.T) {
 	for image, refs := range seen {
 		if len(refs) != 1 {
 			t.Errorf("minio/%s is pinned %d ways across the three files: %v", image, len(refs), slices.Sorted(maps.Keys(refs)))
+		}
+	}
+}
+
+// TestAStoppingPodServesWhileItsAddressIsWithdrawn holds the origod
+// container's preStop hook in every workload that runs the node: the
+// kubelet's own sleep action, because the image carries no shell an exec
+// hook could run, for at least a second, so requests an ingress
+// controller still sends after the pod starts terminating are served.
+// The sleep, the node's drain delay, and its grace period together fit
+// inside terminationGracePeriodSeconds, or the kubelet kills a push the
+// grace period promised to finish.
+func TestAStoppingPodServesWhileItsAddressIsWithdrawn(t *testing.T) {
+	grace := regexp.MustCompile(`(?m)^\s+terminationGracePeriodSeconds: (\d+)$`)
+	preStop := regexp.MustCompile(`(?m)^\s+lifecycle:\n\s+preStop:\n\s+sleep:\n\s+seconds: (\d+)$`)
+	for _, name := range []string{baseDeploy, "deploy/examples/kind/origod.yaml"} {
+		body := manifest(t, name)
+		var node string
+		starts := containerStart.FindAllStringSubmatchIndex(body, -1)
+		for i, m := range starts {
+			end := len(body)
+			if i+1 < len(starts) {
+				end = starts[i+1][0]
+			}
+			if body[m[2]:m[3]] == "origod" {
+				node = body[m[0]:end]
+			}
+		}
+		if node == "" {
+			t.Errorf("%s has no origod container", name)
+			continue
+		}
+		seconds := func(re *regexp.Regexp, text, what string) time.Duration {
+			m := re.FindAllStringSubmatch(text, -1)
+			if len(m) != 1 {
+				t.Errorf("%s sets %s %d times, want once", name, what, len(m))
+				return 0
+			}
+			n, err := strconv.Atoi(m[0][1])
+			if err != nil {
+				t.Errorf("%s: %s %q: %v", name, what, m[0][1], err)
+				return 0
+			}
+			return time.Duration(n) * time.Second
+		}
+		sleep := seconds(preStop, node, "a preStop sleep on the origod container")
+		limit := seconds(grace, body, "terminationGracePeriodSeconds")
+		if sleep < time.Second {
+			t.Errorf("%s: the preStop sleep is %s", name, sleep)
+		}
+		if need := sleep + defaultDrainDelay + gracePeriod; need > limit {
+			t.Errorf("%s: terminationGracePeriodSeconds is %s, less than the preStop sleep, the drain delay, and the grace period, %s", name, limit, need)
 		}
 	}
 }

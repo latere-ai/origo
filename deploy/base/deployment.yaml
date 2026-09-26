@@ -25,8 +25,9 @@ spec:
     spec:
       serviceAccountName: origod
       automountServiceAccountToken: false
-      # The drain delay plus the grace period of the node's shutdown, plus
-      # a margin: a push in flight finishes before the pod is killed.
+      # The preStop sleep, the drain delay, and the grace period of the
+      # node's shutdown, 5 + 3 + 60 seconds, plus a margin: a push in
+      # flight finishes before the pod is killed.
       terminationGracePeriodSeconds: 90
       # Replicas prefer to spread across nodes (spec 005): a node that
       # goes away takes one warm cache with it, not all of them.
@@ -203,6 +204,17 @@ spec:
             periodSeconds: 2
             timeoutSeconds: 2
             failureThreshold: 45
+          # The kubelet holds SIGTERM for five seconds once the pod is
+          # terminating. Its address leaves the Service's endpoints at
+          # that moment, and an ingress controller acts on the change a
+          # little later, so until then requests still arrive and the
+          # listener still serves them. The sleep is the kubelet's own
+          # action, so the image needs no shell. It is counted in
+          # terminationGracePeriodSeconds above.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           resources:
             requests:
               cpu: 250m

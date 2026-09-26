@@ -24,7 +24,7 @@ whose shape is your provider's rather than Origo's.
 
 | | What | Notes |
 |---|---|---|
-| Kubernetes | 1.29 or newer | any distribution. Pod Security admission at `restricted` on the namespace is supported and recommended. |
+| Kubernetes | 1.30 or newer | any distribution. The node's container stops with the kubelet's preStop sleep action, which 1.30 turns on by default. Pod Security admission at `restricted` on the namespace is supported and recommended. |
 | An ingress controller | any | the manifests carry an `Ingress` with no class; your overlay names the controller and its settings. |
 | A hostname and a certificate | one name pointed at the ingress | clients only ever see this name. |
 | A bucket | any S3 compatible endpoint | it must honor a conditional create, `PUT` with `If-None-Match: *`. That is what linearizes pushes. MinIO and DigitalOcean Spaces are tested, and AWS S3 documents it. `origod check` proves it against your bucket before you trust it. |

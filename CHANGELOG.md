@@ -36,6 +36,15 @@ committed: the commit log already holds that.
   route serves is `unknown`, where it was `/`. A dashboard or an alert
   that selects on the old `route` values needs the new ones, which
   `docs/operations.md` lists.
+- The origod container in `deploy/base` and in the kind example sleeps
+  5 seconds in a preStop hook before the kubelet sends SIGTERM, so a pod
+  that is stopping keeps serving while the ingress controller removes
+  its address, rather than answering from a closing listener. The hook
+  is the kubelet's sleep action, which needs no shell in the image and
+  Kubernetes 1.30 or newer, so the documented minimum rises from 1.29 to
+  1.30. `terminationGracePeriodSeconds` stays 90,
+  which covers the sleep, the 3 second drain delay, and the 60 second
+  grace period for requests in flight.
 
 ## v0.11.0 - 2026-09-26
 

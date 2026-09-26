@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-26
 author: changkun
 ---
 
@@ -132,8 +132,13 @@ of at most one key under `origo/`) and `disk` (create and remove a file
 under `ORIGO_DATA_DIR`). Shutdown on `SIGTERM` or `SIGINT`: readiness
 answers 503 at once, the node waits a 3 second drain delay, then closes
 the HTTP servers with a 60 second grace period, then the gossip socket,
-then the background loops. The Deployment's
-`terminationGracePeriodSeconds` is 90.
+then the background loops. Before the signal, the container's preStop
+hook sleeps 5 seconds with the kubelet's own sleep action, since the
+image has no shell: the pod's address leaves the Service's endpoints as
+it starts terminating and an ingress controller acts on that a little
+later, so requests that still arrive meet a serving listener. The
+Deployment's `terminationGracePeriodSeconds` is 90, which holds the 5,
+the 3, and the 60 with a margin.
 
 `origod -version` prints `origod <version> (<commit>, <date>)` and exits
 0; a bad flag exits 2; a configuration or start-up failure exits 1 with

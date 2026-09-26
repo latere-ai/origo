@@ -179,6 +179,12 @@ spec:
             periodSeconds: 2
             timeoutSeconds: 2
             failureThreshold: 45
+          # The base's preStop sleep, which terminationGracePeriodSeconds
+          # counts: SIGTERM waits while the address leaves the endpoints.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           # The stack runs on one kind node of a 4 vCPU runner: eight
           # pods (spec 005's replica counts) fit only with a small CPU
           # request, and the autoscaler's 70% target is of this value.

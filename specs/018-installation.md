@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-09-26
 author: changkun
 ---
 
@@ -52,7 +52,7 @@ this spec added `check` to it; spec 002's Outcome records both.
 
 | Requirement | Detail |
 |---|---|
-| Kubernetes | 1.29 or newer; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
+| Kubernetes | 1.30 or newer, the first release with the preStop sleep action of spec 002 on by default; a default storage class or nodes with local disk; an ingress controller; Pod Security admission at `restricted` on the namespace is supported and recommended |
 | bucket | any S3 compatible endpoint that honors `If-None-Match: *` on `PUT` (spec 004), verified by `origod check`; MinIO, DigitalOcean Spaces, and AWS S3 known good; the bucket endpoint reachable by LFS clients or `ORIGO_S3_PUBLIC_ENDPOINT` set (spec 010) |
 | identity | any OIDC issuer with discovery and JWKS over HTTPS (spec 007; plain HTTP only for the stub in the kind overlay); the operator registers one client for people and one for each service that will act on behalf of users |
 | authorizer | an HTTP endpoint the operator runs (spec 007), held to the five rules of that spec's authorization endpoint contract, of which the operator-facing consequence is that the endpoint learns of a repository before Origo does, so a registration precedes every `POST /v1/repos`; a single-tenant installation satisfies the contract with a static allow-list that denies the probe id; for a first installation the stub authorizer of spec 013 (`origo-stubs -allow <subjects>`, which allows a fixed list of subjects and denies the probe id) runs from the manifest the `kind` overlay carries, copied into the operator's overlay, with the image `ghcr.io/latere-ai/origo-stubs:<version>` of the same release as `origod` (spec 017's artifact table), which the archive pins |
