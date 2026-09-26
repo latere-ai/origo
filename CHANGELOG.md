@@ -12,6 +12,19 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- Delete asks the authorizer for `repo.delete` and undelete for
+  `repo.undelete`, where both asked `repo.admin`, so an authorization
+  endpoint can refuse a deletion and still let a repository's
+  administrators rename it, freeze it and mint its tokens. The two
+  actions are in the vocabulary from the release before this one. An
+  endpoint of your own that answers an unknown action with an error must
+  decide both before the nodes move to this release, or every delete and
+  undelete answers 503 `authorizer_unavailable`; one that decides them as
+  `repo.admin` keeps today's behavior. The owner policy allows an owner
+  both, so a node with no endpoint changes nothing. A personal access
+  token granted `origo:repo.admin` alone no longer covers a delete or an
+  undelete; one that should carries `origo:repo.delete` or
+  `origo:repo.undelete`.
 - With no authorization endpoint configured, the owner policy narrows a
   token minted from a service account's key by the grants it carries, as
   it already narrowed a personal access token: an operation the grants do
