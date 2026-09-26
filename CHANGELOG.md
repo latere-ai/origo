@@ -10,6 +10,20 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- Two actions in the authorizer vocabulary, `repo.delete` and
+  `repo.undelete`, published by `latere.ai/x/origo/authorizer` beside the
+  four it had. No operation asks them in this release: delete and
+  undelete still ask `repo.admin`. The next minor release asks them
+  instead, so an endpoint can refuse a deletion without refusing the
+  rest of a repository's administration. An authorization endpoint of
+  your own that answers an unknown action with an error, as one built on
+  `latere.ai/x/pkg/authz/server` does, should decide both before the
+  nodes move to that release; `docs/authorizer.md` says how. With no
+  endpoint configured, the owner policy already allows an owner every
+  action on its repository, and nothing changes.
+
 ### Changed
 
 - The local stack, the kind example and CI run MinIO

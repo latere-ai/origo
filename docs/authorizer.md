@@ -93,6 +93,24 @@ sends `{"allow": true}` alone is complete:
 On a creation the resource carries the id, owner, and slug the caller
 sent, so the endpoint decides from the name the caller chose.
 
+### Deleting apart from administering
+
+The vocabulary also names `repo.delete` and `repo.undelete`, and no
+operation asks them in this release. From the next minor release, delete
+asks `repo.delete` and undelete asks `repo.undelete` in place of
+`repo.admin`, with the repository id alone in the resource. They let an
+endpoint decide whether a repository may stop existing separately from
+who administers it: an endpoint that keeps its own registry of
+repositories, and deletes at Origo itself when it removes a row, can
+refuse a deletion by anyone else while the repository's administrators
+keep renaming it and minting its tokens.
+
+An endpoint that answers an action it does not know with an error, as
+one built on `latere.ai/x/pkg/authz/server` does, has to decide both
+before its nodes move to that release, or every delete and undelete
+answers 503 `authorizer_unavailable`. An endpoint with no rule of its
+own for them decides them as it decides `repo.admin`.
+
 A request made with a repository-bound token never reaches the
 endpoint: the token's scope decides it. The one exception is a write
 under such a token, for which Origo asks for `repo.write` under the
@@ -175,8 +193,8 @@ few dozen lines behind the bearer, in any language.
 The vocabulary is published so an endpoint does not copy strings from
 this page:
 
-- `latere.ai/x/origo/authorizer` declares the four actions, the
-  resource kind `Repository`, and the table as a shared vocabulary.
+- `latere.ai/x/origo/authorizer` declares the actions, the resource
+  kind `Repository`, and the table as a shared vocabulary.
   `authorizer.PageActions()` names `repo.list` as the action answered
   with a page.
 - `latere.ai/x/pkg/authz/server` carries the bearer check, the body

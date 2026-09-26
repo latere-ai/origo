@@ -41,6 +41,15 @@ first request for each repository, so the first request for a
 repository after a rollout is slower than the ones after it. There is no
 schema and no migration step.
 
+The one exception is an authorization endpoint of your own. A minor
+release can add an action to the vocabulary without asking it, and a
+later minor release starts asking it for an operation. An endpoint that
+answers an action it does not know with an error has to decide the new
+action before the nodes reach the release that asks it, or that
+operation answers 503 `authorizer_unavailable`. The changelog of the
+release that adds an action says which release asks it;
+[`authorizer.md`](../authorizer.md) describes each one.
+
 Rolling back to an earlier release is supported inside one minor series.
 Across a major it is not: the newer release may have written objects the
 older one refuses, which is the refusal below.
