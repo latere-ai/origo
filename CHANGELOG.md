@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.12.0 - 2026-09-26
+
 ### Changed
 
 - Delete asks the authorizer for `repo.delete` and undelete for
