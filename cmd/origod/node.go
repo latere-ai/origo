@@ -545,13 +545,15 @@ func (n *node) metricsHandler() http.Handler {
 // pattern needs two segments, so the two could not collide even in one
 // mux.
 //
-// Four wrappers sit in front (spec 011), outermost first: the in-flight
+// Three wrappers sit in front (spec 011), outermost first: the in-flight
 // gauge, which counts a request the moment it arrives; otel.Handler,
 // which opens the request's span, answers X-Trace-Id, and feeds the two
-// request metrics; ownRequest, which keeps the mux's pattern off the
-// request otel.Handler holds; and the request log line, inside the span
-// so it carries the trace id. The span, the metrics of both registries,
-// and the log line name the request by one router.
+// request metrics; and the request log line, inside the span so it
+// carries the trace id. The span, the metrics of both registries, and
+// the log line name the request by one router. otel.Handler takes the
+// route from the router's template ahead of any mux pattern, so the
+// catch-all "/" the public mux matches for the application never names
+// a request.
 func (n *node) publicHandler() http.Handler {
 	probes := n.internalHandler()
 	mux := http.NewServeMux()
@@ -563,21 +565,9 @@ func (n *node) publicHandler() http.Handler {
 	mux.HandleFunc("GET /favicon.ico", favicon)
 	mux.Handle("/", n.public)
 	route := router{public: mux, app: n.app}.route
-	traced := otel.Handler(ownRequest(n.requestLog(route, contract.Middleware(mux))), "origod",
+	traced := otel.Handler(n.requestLog(route, contract.Middleware(mux)), "origod",
 		otel.WithRouteTemplate(route), otel.WithMetricsHook(n.recordRequest))
 	return n.inFlight(traced)
-}
-
-// ownRequest serves next with a shallow copy of the request. A ServeMux
-// records the pattern it matched on the request it was handed, and
-// otelhttp labels its request metrics with that pattern ahead of the
-// route template, so without the copy every request the public mux
-// hands to the application would be recorded under its catch-all "/".
-// The template names the public mux's own routes by the same patterns.
-func ownRequest(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(r.Context()))
-	})
 }
 
 // inFlight counts the requests started and not finished on the public
