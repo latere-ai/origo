@@ -50,7 +50,7 @@ Content-Type: application/json
 | `subject` | the issuer URL with any trailing slash removed, a pipe, and the token's `sub`. Empty for an anonymous request and for the probe described below. Over SSH it is the subject your key endpoint returned |
 | `issuer`, `sub` | the two halves apart, so an endpoint keyed by issuer does not split the string. Empty over SSH |
 | `claims` | every verified claim of the token, verbatim. Origo reads none of them, so a plan, a team, or a role is read here |
-| `action` | `repo.read`, `repo.write`, `repo.admin`, or `repo.list` |
+| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, or `repo.undelete` |
 | `resource.kind` | `Repository`, always |
 | `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list` |
 | `resource.owner`, `resource.slug` | set when the request named the repository by owner and slug, and on a creation; empty when it named the id |
@@ -87,29 +87,30 @@ sends `{"allow": true}` alone is complete:
 |---|---|
 | `repo.read` | clone and fetch, the LFS download, `GET /v1/repos/{id}`, a name lookup, every read route, the import state, `export.bundle`, and `stats` |
 | `repo.write` | push, the LFS upload and verify, and the four server-side operations (commits, merge, cherry-pick, revert) |
-| `repo.admin` | create, rename, delete, undelete, minting a repository-bound token, transfer, freeze, unfreeze, import, verify, and `gc` |
+| `repo.admin` | create, rename, minting a repository-bound token, transfer, freeze, unfreeze, import, verify, and `gc` |
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories this subject may see |
+| `repo.delete` | delete |
+| `repo.undelete` | undelete, inside the seven-day hold |
 
 On a creation the resource carries the id, owner, and slug the caller
 sent, so the endpoint decides from the name the caller chose.
 
 ### Deleting apart from administering
 
-The vocabulary also names `repo.delete` and `repo.undelete`, and no
-operation asks them in this release. From the next minor release, delete
-asks `repo.delete` and undelete asks `repo.undelete` in place of
-`repo.admin`, with the repository id alone in the resource. They let an
-endpoint decide whether a repository may stop existing separately from
-who administers it: an endpoint that keeps its own registry of
-repositories, and deletes at Origo itself when it removes a row, can
-refuse a deletion by anyone else while the repository's administrators
-keep renaming it and minting its tokens.
+Delete asks `repo.delete` and undelete asks `repo.undelete`, with the
+repository id alone in the resource, rather than `repo.admin`. They let
+an endpoint decide whether a repository may stop existing separately
+from who administers it: an endpoint that keeps its own registry of
+repositories, and deletes at Origo itself when it removes a row, refuses
+a deletion by anyone else while the repository's administrators keep
+renaming it and minting its tokens. An endpoint with no rule of its own
+for them decides them as it decides `repo.admin`.
 
 An endpoint that answers an action it does not know with an error, as
-one built on `latere.ai/x/pkg/authz/server` does, has to decide both
-before its nodes move to that release, or every delete and undelete
-answers 503 `authorizer_unavailable`. An endpoint with no rule of its
-own for them decides them as it decides `repo.admin`.
+one built on `latere.ai/x/pkg/authz/server` does, has to know both
+before its nodes run a release that asks them, or every delete and
+undelete answers 503 `authorizer_unavailable`. They are in the
+vocabulary from the release before the one that first asks them.
 
 A request made with a repository-bound token never reaches the
 endpoint: the token's scope decides it. The one exception is a write

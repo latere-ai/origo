@@ -160,8 +160,8 @@ None of these needs a token.
 | GET | `/v1/repos` | `repo.list` | with `?cursor=&limit=`, the repositories the caller may see, a page at a time; with `?owner=&slug=`, the one repository of that name (action `repo.read`) |
 | GET | `/v1/repos/{id}` | `repo.read` | the repository: `id`, `owner`, `slug`, `default_branch`, `size_bytes`, `head`, `updated_at`, `pushed_at`, `frozen_at`, `verified_at`, `verified_equal` |
 | PATCH | `/v1/repos/{id}` | `repo.admin` | change any of `owner`, `slug`, `default_branch` |
-| DELETE | `/v1/repos/{id}` | `repo.admin` | delete it. 202 with `purge_after`, seven days on. Every route answers 404 from then on, and 410 `gone` once the objects are purged |
-| POST | `/v1/repos/{id}/undelete` | `repo.admin` | bring a deleted repository back whole, inside the seven days |
+| DELETE | `/v1/repos/{id}` | `repo.delete` | delete it. 202 with `purge_after`, seven days on. Every route answers 404 from then on, and 410 `gone` once the objects are purged |
+| POST | `/v1/repos/{id}/undelete` | `repo.undelete` | bring a deleted repository back whole, inside the seven days |
 
 Create a repository only after your authorization endpoint knows about
 it. Origo asks the endpoint before it creates anything, and an endpoint
