@@ -80,6 +80,21 @@ func case007Forbidden(t *testing.T, s *session) {
 	expectError(t, s.call(t, "GET", "/v1/repos/"+unknown, ""), http.StatusForbidden, contract.CodeForbidden)
 	// Admin is still allowed on the denied repository.
 	expectStatus(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`), http.StatusCreated)
+	// The two ends of a repository are actions of their own (spec 028):
+	// a deny of repo.delete and repo.undelete refuses the delete and the
+	// undelete, each naming its action, and leaves every other action,
+	// administering included, to the rules that allow it.
+	kept := s.create(t, "deny-delete")
+	s.setRules(t,
+		authorizer.Rule{Resource: kept, Action: "repo.delete", Allow: false, Reason: "not welcome"},
+		authorizer.Rule{Resource: kept, Action: "repo.undelete", Allow: false, Reason: "not welcome"},
+	)
+	d = expectError(t, s.call(t, "DELETE", "/v1/repos/"+kept, ""), http.StatusForbidden, contract.CodeForbidden)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.delete", "delete deny details: %v", d)
+	d = expectError(t, s.call(t, "POST", "/v1/repos/"+kept+"/undelete", ""), http.StatusForbidden, contract.CodeForbidden)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.undelete", "undelete deny details: %v", d)
+	expectStatus(t, s.call(t, "GET", "/v1/repos/"+kept, ""), http.StatusOK)
+	expectStatus(t, s.call(t, "POST", "/v1/repos/"+kept+"/tokens", `{"scope":"read","ttl":60}`), http.StatusCreated)
 }
 
 func case007AuthorizerUnavailable(t *testing.T, s *session) {

@@ -26,7 +26,7 @@ const (
 	// operations of spec 020.
 	ActionWrite = "repo.write"
 	// ActionAdmin is creating a repository, changing it, transferring,
-	// freezing, deleting, importing, collecting garbage, and minting a
+	// freezing, importing, verifying, collecting garbage, and minting a
 	// repository-bound token.
 	ActionAdmin = "repo.admin"
 	// ActionList is the directory of spec 026: which repositories may

@@ -807,3 +807,59 @@ func TestOrigoPreferOnEveryRepositoryResponse(t *testing.T) {
 		t.Fatalf("refused: %d %q, want %q", status, header.Get(placement.Header), one)
 	}
 }
+
+// TestDeleteAndUndeleteAskTheirOwnActions is spec 028's section of
+// 2026-09-26 at the routes: DELETE asks repo.delete and undelete asks
+// repo.undelete, so an authorizer that allows a caller repo.admin and
+// refuses the two ends of a repository refuses exactly those. The
+// caller still renames and mints tokens, the refusal names the action it
+// refused in details.action, and nothing is deleted or brought back.
+func TestDeleteAndUndeleteAskTheirOwnActions(t *testing.T) {
+	h := newHarness(t)
+	h.create(repoA, "acme", "app")
+	h.authz.ClearRequests()
+	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
+		t.Fatalf("delete: %d", status)
+	}
+	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/undelete", ""); status != 200 {
+		t.Fatalf("undelete: %d", status)
+	}
+	reqs := h.authz.Requests()
+	if len(reqs) != 2 || reqs[0].Action != "repo.delete" || reqs[1].Action != "repo.undelete" || reqs[0].Resource.ID != repoA || reqs[1].Resource.ID != repoA {
+		t.Fatalf("the authorizer saw %+v, want repo.delete then repo.undelete on %s", reqs, repoA)
+	}
+	// An administrator who is not the one writer: every administering
+	// call but the two.
+	h.authz.SetRules(
+		authorizer.Rule{Allow: true},
+		authorizer.Rule{Subject: "carol", Action: "repo.delete", Allow: false, Reason: "platform_only"},
+		authorizer.Rule{Subject: "carol", Action: "repo.undelete", Allow: false, Reason: "platform_only"},
+	)
+	h.as(auth.Principal{Subject: "carol"})
+	status, out := h.do("DELETE", "/v1/repos/"+repoA, "")
+	if status != 403 || code(out) != contract.CodeForbidden || details(out)["action"] != "repo.delete" || details(out)["reason"] != "platform_only" {
+		t.Fatalf("a refused delete: %d %v", status, out)
+	}
+	if status, out := h.do("GET", "/v1/repos/"+repoA, ""); status != 200 || out["id"] != repoA {
+		t.Fatalf("the refused delete deleted: %d %v", status, out)
+	}
+	if status, out := h.do("PATCH", "/v1/repos/"+repoA, `{"slug":"renamed"}`); status != 200 || out["slug"] != "renamed" {
+		t.Fatalf("a rename by the same caller: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 201 {
+		t.Fatalf("a token minted by the same caller: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "alice"})
+	if status, _ := h.do("DELETE", "/v1/repos/"+repoA, ""); status != 202 {
+		t.Fatalf("the one writer's delete: %d", status)
+	}
+	h.as(auth.Principal{Subject: "carol"})
+	status, out = h.do("POST", "/v1/repos/"+repoA+"/undelete", "")
+	if status != 403 || code(out) != contract.CodeForbidden || details(out)["action"] != "repo.undelete" {
+		t.Fatalf("a refused undelete: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "alice"})
+	if status, out := h.do("GET", "/v1/repos/"+repoA, ""); status != 404 || code(out) != contract.CodeRepoNotFound {
+		t.Fatalf("the refused undelete brought it back: %d %v", status, out)
+	}
+}

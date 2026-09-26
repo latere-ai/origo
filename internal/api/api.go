@@ -451,8 +451,11 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 
 func noCatchUp(context.Context, *wal.Index) error { return nil }
 
+// delete asks repo.delete and not repo.admin (spec 028), so an
+// authorizer can refuse the end of a repository to a caller it lets
+// rename, freeze and mint tokens for it.
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	m, ix, ok := h.load(w, r, auth.ActionAdmin, true)
+	m, ix, ok := h.load(w, r, auth.ActionDelete, true)
 	if !ok {
 		return
 	}
@@ -478,8 +481,10 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// undelete asks repo.undelete, apart from repo.admin for the reason
+// delete does: it returns a repository to existence (spec 028).
 func (h *Handler) undelete(w http.ResponseWriter, r *http.Request) {
-	m, ix, ok := h.load(w, r, auth.ActionAdmin, true)
+	m, ix, ok := h.load(w, r, auth.ActionUndelete, true)
 	if !ok {
 		return
 	}
