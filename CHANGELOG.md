@@ -10,6 +10,21 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A request on the public listener that no route serves is recorded
+  under `route` `unmatched` on `origo_requests_total` and
+  `origo_request_duration_seconds` and in the request log line, where it
+  was `unknown`. Its root span and the OpenTelemetry request metrics
+  (`http.server.request.duration` and the two body size histograms)
+  carry no `http.route` for it, and the span is named by the method
+  alone, where they carried `unknown` and the span was named, for
+  example, `GET unknown`. `unmatched` is the value every service built
+  on `latere.ai/x/pkg/otel` gives such a request. A dashboard or an
+  alert that selects on `route="unknown"` needs `unmatched`; the shipped
+  alerts select on no route. The node builds against `latere.ai/x/pkg`
+  v0.87.0, and `docs/operations.md` lists the route names.
+
 ## v0.12.0 - 2026-09-26
 
 ### Changed
