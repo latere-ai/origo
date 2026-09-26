@@ -5,7 +5,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"regexp"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	pkgotel "latere.ai/x/pkg/otel"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -103,6 +107,29 @@ func hookCounts(t *testing.T, internal string) map[string]float64 {
 	return out
 }
 
+// loggedRoute is the route field of the request line whose trace id is
+// traceID, and whether the node has written that line yet.
+func loggedRoute(t *testing.T, logs *lockedBuffer, traceID string) (string, bool) {
+	t.Helper()
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if line == "" {
+			continue
+		}
+		var rec struct {
+			Msg     string `json:"msg"`
+			Route   string `json:"route"`
+			TraceID string `json:"trace_id"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line %q: %v", line, err)
+		}
+		if rec.Msg == "request" && rec.TraceID == traceID {
+			return rec.Route, true
+		}
+	}
+	return "", false
+}
+
 // grown names the keys whose value rose between two snapshots.
 func grown[V uint64 | float64](before, after map[string]V) []string {
 	var out []string
@@ -117,16 +144,20 @@ func grown[V uint64 | float64](before, after map[string]V) []string {
 
 // TestRequestsAreNamedByRoute is the route vocabulary of the public
 // listener held through the real handler: every request, git smart
-// HTTP in both URL forms and both spellings, LFS, the API, the named
-// routes of the public mux, and requests no handler serves, lands on
-// one http.server.request.duration point whose http.route is the
-// route's name and never a path, its root span is named by the method
-// and the same route, and the metrics hook counts it under the same
-// name, so the Prometheus series and the OpenTelemetry ones agree.
+// HTTP in both URL forms and both spellings, LFS, the API, and the
+// named routes of the public mux, lands on one
+// http.server.request.duration point whose http.route is the route's
+// name and never a path, its root span is named by the method and the
+// same route, and the metrics hook and the log line record it under
+// the same name, so the Prometheus series, the log, and the
+// OpenTelemetry signals agree. A request no handler serves carries no
+// http.route, its span is named by the method alone, and the hook and
+// the log line record it as pkg/otel's UnmatchedRoute.
 func TestRequestsAreNamedByRoute(t *testing.T) {
 	tel := installTelemetry(t)
 	env, id := servingEnv(t)
-	n, stop := startNode(t, env)
+	var logs lockedBuffer
+	n, stop := startNodeLogging(t, env, slog.New(slog.NewJSONHandler(&logs, nil)))
 	defer func() { _ = stop() }()
 	public, internal, _ := n.addrs()
 	base := "http://" + public
@@ -180,16 +211,22 @@ func TestRequestsAreNamedByRoute(t *testing.T) {
 		{"GET", "/r/" + repoID + ".git/info/lfs/locks", "", "/r/{id}/info/lfs/locks"},
 		{"GET", "/v1/repos/" + repoID, "", "/v1/repos/{id}"},
 		{"GET", "/v1/repos/" + repoID + "/refs", "", "/v1/repos/{id}/refs"},
-		// What no handler serves is one bucket, whatever the path holds.
-		{"GET", label + ".git/git-upload-pack", "", routeUnknown},
-		{"POST", label + ".git/info/refs", "", routeUnknown},
-		{"GET", label + ".git/objects/info/packs", "", routeUnknown},
-		{"GET", "/nothing", "", routeUnknown},
-		{"GET", label, "", routeUnknown},
-		{"POST", "/version", "", routeUnknown},
-		{"PUT", "/v1/repos/" + repoID, "", routeUnknown},
+		// What no handler serves has no route, whatever the path holds.
+		{"GET", label + ".git/git-upload-pack", "", ""},
+		{"POST", label + ".git/info/refs", "", ""},
+		{"GET", label + ".git/objects/info/packs", "", ""},
+		{"GET", "/nothing", "", ""},
+		{"GET", label, "", ""},
+		{"POST", "/version", "", ""},
+		{"PUT", "/v1/repos/" + repoID, "", ""},
 	} {
 		t.Run(row.method+" "+row.path, func(t *testing.T) {
+			// The Prometheus label and the log field need a value where
+			// the OpenTelemetry signals carry none.
+			wantLabel, wantSpan := row.route, row.method+" "+row.route
+			if row.route == "" {
+				wantLabel, wantSpan = pkgotel.UnmatchedRoute, row.method
+			}
 			beforeOTel, beforeHook, beforeSpans := tel.durations(t), hookCounts(t, internal), len(tel.serverSpans())
 			var body io.Reader
 			if row.body != "" {
@@ -210,36 +247,53 @@ func TestRequestsAreNamedByRoute(t *testing.T) {
 			if err := resp.Body.Close(); err != nil {
 				t.Fatal(err)
 			}
+			traceID := resp.Header.Get("X-Trace-Id")
+			if traceID == "" {
+				t.Fatal("the response carries no X-Trace-Id")
+			}
 
 			// The handler records after it writes the response, so the
 			// point can trail the client by a moment.
 			var otelRoutes, hookRoutes []string
 			var spans []sdktrace.ReadOnlySpan
+			var logRoute string
+			var logged bool
 			for deadline := time.Now().Add(5 * time.Second); ; {
 				otelRoutes = grown(beforeOTel, tel.durations(t))
 				hookRoutes = grown(beforeHook, hookCounts(t, internal))
 				spans = tel.serverSpans()[beforeSpans:]
-				if (len(otelRoutes) > 0 && len(hookRoutes) > 0 && len(spans) > 0) || time.Now().After(deadline) {
+				logRoute, logged = loggedRoute(t, &logs, traceID)
+				if (len(otelRoutes) > 0 && len(hookRoutes) > 0 && len(spans) > 0 && logged) || time.Now().After(deadline) {
 					break
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
+			// A point without http.route counts under "".
 			if !slices.Equal(otelRoutes, []string{row.route}) {
 				t.Errorf("http.server.request.duration grew under %q, want %q (status %d)", otelRoutes, row.route, resp.StatusCode)
 			}
-			if !slices.Equal(hookRoutes, []string{row.route}) {
-				t.Errorf("origo_requests_total grew under %q, want %q", hookRoutes, row.route)
+			if !slices.Equal(hookRoutes, []string{wantLabel}) {
+				t.Errorf("origo_requests_total grew under %q, want %q", hookRoutes, wantLabel)
+			}
+			if !logged {
+				t.Errorf("no request line carries trace id %s", traceID)
+			} else if logRoute != wantLabel {
+				t.Errorf("request line route %q, want %q", logRoute, wantLabel)
 			}
 			if len(spans) != 1 {
 				t.Fatalf("%d server spans ended", len(spans))
 			}
-			if name, want := spans[0].Name(), row.method+" "+row.route; name != want {
-				t.Errorf("span name %q, want %q", name, want)
+			if name := spans[0].Name(); name != wantSpan {
+				t.Errorf("span name %q, want %q", name, wantSpan)
 			}
+			spanRoute, hasRoute := "", false
 			for _, kv := range spans[0].Attributes() {
-				if kv.Key == "http.route" && kv.Value.AsString() != row.route {
-					t.Errorf("span http.route %q, want %q", kv.Value.AsString(), row.route)
+				if kv.Key == "http.route" {
+					spanRoute, hasRoute = kv.Value.AsString(), true
 				}
+			}
+			if hasRoute != (row.route != "") || spanRoute != row.route {
+				t.Errorf("span http.route %q (set %v), want %q", spanRoute, hasRoute, row.route)
 			}
 		})
 	}
@@ -252,7 +306,7 @@ func TestRequestsAreNamedByRoute(t *testing.T) {
 				t.Errorf("http.route %q carries %q", route, bad)
 			}
 		}
-		if route == "" || route == "/" {
+		if route == "/" {
 			t.Errorf("a request was recorded under http.route %q", route)
 		}
 	}

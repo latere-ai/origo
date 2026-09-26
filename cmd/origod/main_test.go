@@ -160,6 +160,13 @@ func TestListenerCollisionFailsStartup(t *testing.T) {
 // function that waits for run to return.
 func startNode(t *testing.T, env map[string]string) (*node, func() error) {
 	t.Helper()
+	return startNodeLogging(t, env, slog.New(slog.DiscardHandler))
+}
+
+// startNodeLogging is startNode with the node writing its log lines to
+// logger, for a test that reads them.
+func startNodeLogging(t *testing.T, env map[string]string, logger *slog.Logger) (*node, func() error) {
+	t.Helper()
 	cfg, err := config.Load(getenv(env))
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +174,7 @@ func startNode(t *testing.T, env map[string]string) (*node, func() error) {
 	if err := cfg.Resolve(); err != nil {
 		t.Fatal(err)
 	}
-	n, err := newNode(cfg, slog.New(slog.DiscardHandler))
+	n, err := newNode(cfg, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,14 +8,10 @@ import (
 	"net/url"
 	"strings"
 
+	"latere.ai/x/pkg/otel"
+
 	"latere.ai/x/origo/internal/httpgit"
 )
-
-// routeUnknown is the route of a request no handler serves: the
-// application's own fallback, a method a route does not take, or a
-// label-form path that names no smart HTTP operation. One bucket keeps
-// the label bounded whatever a client puts in the path.
-const routeUnknown = "unknown"
 
 // router names a request by the route that serves it. The name is the
 // root span's name after the method, http.route on that span and on the
@@ -37,8 +33,14 @@ const routeUnknown = "unknown"
 //     any other service, <form>/git-upload-pack, and
 //     <form>/git-receive-pack;
 //   - LFS and the repository API by their patterns, such as
-//     /{owner}/{slug}/info/lfs/objects/batch and /v1/repos/{id}/refs;
-//   - routeUnknown for everything else.
+//     /{owner}/{slug}/info/lfs/objects/batch and /v1/repos/{id}/refs.
+//
+// A request no route serves, the application's own fallback, a method
+// a route does not take, or a label-form path that names no smart HTTP
+// operation, has no name: route returns "", which leaves the span and
+// the OpenTelemetry request metrics without http.route and names the
+// span by its method alone. The Prometheus label and the log field need
+// a value and take it from routeLabel.
 //
 // A name never carries an id, an owner, a slug, or a reference, only
 // the placeholders of a pattern.
@@ -63,18 +65,30 @@ func (rt router) route(r *http.Request) string {
 	}
 	_, p := rt.app.Handler(r)
 	if p == "" || strings.HasSuffix(p, "/") {
-		return routeUnknown
+		return ""
 	}
 	route := pathOf(p)
 	if p == httpgit.NamePattern {
 		op := httpgit.Operation(r.Method, serviceOf(r))
 		if op == "" {
-			return routeUnknown
+			return ""
 		}
 		route = "/{owner}/{slug}/" + op
 	}
 	if strings.HasSuffix(route, "/info/refs") {
 		route += advertised(r)
+	}
+	return route
+}
+
+// routeLabel is a route as the Prometheus request metrics and the log
+// line record it: the router's name, or otel.UnmatchedRoute for a
+// request no route serves. That is one bucket whatever a client puts in
+// the path, and the value every service built on pkg/otel counts such
+// requests under.
+func routeLabel(route string) string {
+	if route == "" {
+		return otel.UnmatchedRoute
 	}
 	return route
 }

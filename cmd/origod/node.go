@@ -600,10 +600,10 @@ func (n *node) inFlight(next http.Handler) http.Handler {
 
 // recordRequest is otel.Handler's metrics hook: the route is the
 // router's name for the request, the one otel.Handler takes from the
-// route template, and the status class its bucket, the only two labels
-// of the request series (spec 011).
+// route template, as routeLabel records it, and the status class its
+// bucket, the only two labels of the request series (spec 011).
 func (n *node) recordRequest(_ context.Context, route, _, statusClass string, d time.Duration) {
-	labels := map[string]string{"route": route, "status_class": statusClass}
+	labels := map[string]string{"route": routeLabel(route), "status_class": statusClass}
 	n.metrics.Requests.Inc(labels)
 	n.metrics.RequestDuration.Observe(labels, d.Seconds())
 }
@@ -613,9 +613,9 @@ func (n *node) recordRequest(_ context.Context, route, _, statusClass string, d 
 // request named, the identity behind it, the bytes each way, and the
 // trace id the response header carries; never a credential, never object
 // bytes. The route is the router's name, the one the span and the
-// metrics carry. What the request named and who it was are known only
-// after the mux and the verifier have run, which is what the details a
-// capture middleware fills in are for.
+// metrics carry, as routeLabel records it. What the request named and
+// who it was are known only after the mux and the verifier have run,
+// which is what the details a capture middleware fills in are for.
 func (n *node) requestLog(route func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -628,7 +628,7 @@ func (n *node) requestLog(route func(*http.Request) string, next http.Handler) h
 		d := detailsFrom(ctx)
 		next.ServeHTTP(out, r)
 		n.logger.InfoContext(ctx, "request",
-			"route", route(r), "method", r.Method, "status", out.status,
+			"route", routeLabel(route(r)), "method", r.Method, "status", out.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"repo", d.repo, "subject", d.subject,
 			"bytes_in", in.n, "bytes_out", out.n, "trace_id", tracing.ID(ctx))
