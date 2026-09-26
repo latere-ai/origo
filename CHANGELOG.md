@@ -10,6 +10,16 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- With no authorization endpoint configured, the owner policy narrows a
+  token minted from a service account's key by the grants it carries, as
+  it already narrowed a personal access token: an operation the grants do
+  not cover is refused 403 `forbidden` with reason `grant`. Until now
+  such a token was decided on its holder's full access. An endpoint of
+  your own receives `token_use` and the grants as before and decides for
+  itself. The node builds against `latere.ai/x/pkg` v0.86.0.
+
 ## v0.11.0 - 2026-09-26
 
 ### Added

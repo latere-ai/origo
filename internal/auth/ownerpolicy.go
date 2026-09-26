@@ -27,8 +27,9 @@ import (
 // wires the lookup over its log.
 //
 // It reads two claims after it has decided, and only to narrow: a
-// personal access token carries what its holder narrowed the credential
-// to, and a decision point intersects its answer with that set (identity
+// personal access token or a service account key's token carries what
+// its holder narrowed the credential to, and a decision point intersects
+// its answer with that set (identity
 // id-13). With no endpoint configured this policy is the node's decision
 // point, so the intersection is applied here or it is applied nowhere,
 // and a key scoped to one repository would reach every repository its

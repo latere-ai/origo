@@ -155,7 +155,8 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	// clock a test moves. The client is the node's, with the fetch budget
 	// as its timeout: the package bounds a fetch no other way.
 	//
-	// ReadsGrants is the promise a personal access token is verified
+	// ReadsGrants is the promise a token minted from a stored key, a
+	// personal access token or a service account's key, is verified
 	// under (identity id-13): the token carries what its holder narrowed
 	// the credential to, as RFC 9396's authorization_details, and the
 	// node forwards both that claim and token_use to the decision point,

@@ -110,6 +110,14 @@ func patReq(subject, action, id string, grants ...map[string]any) authz.Request 
 	return req
 }
 
+// sakReq is patReq for a token minted from a service account's key,
+// which grants narrow as they narrow a personal access token.
+func sakReq(subject, action, id string, grants ...map[string]any) authz.Request {
+	req := patReq(subject, action, id, grants...)
+	req.Claims["token_use"] = authkit.TokenUseServiceAccountKey
+	return req
+}
+
 // noGrantsReq is the envelope of a personal access token whose claims
 // name no grant at all. An absent claim is not full authority: the
 // credential says what it may do, and this says nothing.
@@ -156,6 +164,8 @@ func TestTheOwnerPolicyNarrowsAScopedToken(t *testing.T) {
 		{"a kind-wide grant covers every repository", patReq(alice, "repo.read", also, readAny), true, ""},
 		{"a grant is not authority", patReq(alice, "repo.read", yours, grant("origo:repo.read", yours)), false, authz.ReasonNotOwner},
 		{"an unqualified action covers nothing", patReq(alice, "repo.read", mine, grant("repo.read", mine)), false, authz.ReasonGrant},
+		{"a service account key's token is narrowed", sakReq(alice, "repo.write", mine, readMine), false, authz.ReasonGrant},
+		{"a service account key's token keeps what it was granted", sakReq(alice, "repo.read", mine, readMine), true, ""},
 		{"a token of another class is not narrowed", ownerReq(alice, "repo.write", mine), true, ""},
 		{"no grant at all covers nothing", patReq(alice, "repo.read", mine), false, authz.ReasonGrant},
 		{"an absent claim covers nothing", noGrantsReq(alice, "repo.read", mine), false, authz.ReasonGrant},
