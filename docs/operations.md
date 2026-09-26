@@ -354,6 +354,9 @@ span and on the OpenTelemetry request metrics such as
 `http.server.request.duration`, so a dashboard built on either exporter
 splits traffic the same way. A name is a route's pattern, never a path:
 `{slug}` and `{id}` stand for the repository with or without `.git`.
+A request no route serves is `unmatched` in the `route` label and in the
+log line's `route` field; its span and the OpenTelemetry request metrics
+carry no `http.route`, and the span is named by the method alone.
 
 | Route | Requests |
 |---|---|
@@ -365,7 +368,7 @@ splits traffic the same way. A name is a route's pattern, never a path:
 | `/{owner}/{slug}/info/lfs/objects/batch` and the other `info/lfs` routes, in either form | Git LFS |
 | `/v1/repos`, `/v1/repos/{id}`, `/v1/repos/{id}/refs`, and the other API routes | the repository API |
 | `/readyz`, `/version`, `/.well-known/jwks.json`, `/openapi.yaml`, `/{$}`, `/favicon.ico` | the unauthenticated routes; `/{$}` is the landing page |
-| `unknown` | a request no route serves |
+| `unmatched` | a request no route serves: a path no route matches, a method its route does not take, or a repository path that names no git operation |
 
 The shipped alerts:
 
@@ -395,7 +398,8 @@ rule file the installation already has.
 on. With it set, the node exports traces, metrics, and log records over
 OTLP/HTTP to that endpoint: one trace per request on the public
 listener, its root span named by the method and the route of the table
-above, with a span per phase of a push and per object storage call,
+above, or by the method alone when no route serves the request, with a
+span per phase of a push and per object storage call,
 and the repository and subject as span attributes. Unset, the
 spans are created and discarded and the node costs nothing for them.
 `OTEL_TRACES_SAMPLER_ARG` is the head-sampling ratio, one root trace in
