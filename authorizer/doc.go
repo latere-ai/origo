@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Package authorizer is the vocabulary an authorization endpoint for
-// Origo is written against: the four actions origod asks, and the one
-// resource kind it names them on. Import it to write the endpoint
+// Origo is written against: the actions of Origo spec 028's table, and
+// the one resource kind they are named on. Import it to write the endpoint
 // ORIGO_AUTHORIZER_URL points at, in Go, instead of keeping a copy of
 // the strings.
 //
@@ -35,8 +35,15 @@
 // directory at all (Origo spec 026). The shared vocabulary carries no
 // flag for that shape, so PageActions names the action instead, for
 // authz/server's Options.PageActions and for the conformance suite's
-// WithPageActions. The other three actions answer an allow or a deny
-// with the optional limits object.
+// WithPageActions. Every other action answers an allow or a deny with
+// the optional limits object.
+//
+// repo.delete and repo.undelete are apart from repo.admin so that an
+// endpoint can decide the existence of a repository separately from its
+// administration. An endpoint that keeps a registry of repositories and
+// is the only writer of it refuses both to everyone but itself, and a
+// repository's administrators keep renaming it, minting its tokens and
+// freezing it under repo.admin.
 //
 // The promise, as for every package at this module's root: additive
 // within a module major, and the same on every build. An action string

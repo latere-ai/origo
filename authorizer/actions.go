@@ -14,9 +14,9 @@ import (
 // repository, and repo.list names the kind with no id.
 const KindRepository = "Repository"
 
-// The four actions of Origo spec 028's table, which are also the value
-// of details.action on a 403 forbidden. These four strings are declared
-// here and nowhere else in the module: internal/contract reads them from
+// The six actions of Origo spec 028's table, which are also the value
+// of details.action on a 403 forbidden. These strings are declared here
+// and nowhere else in the module: internal/contract reads them from
 // here, and so does every consumer outside it.
 const (
 	// ActionRead is a clone, a fetch, an LFS download, the read API and
@@ -34,10 +34,21 @@ const (
 	// the kind and no id, and its answer is a page rather than a
 	// decision (see PageActions).
 	ActionList = "repo.list"
+	// ActionDelete is deleting a repository, which starts spec 019's
+	// hold. It is its own action and not a use of repo.admin so that an
+	// endpoint keeping a registry of repositories beside Origo can hold
+	// the end of a repository to the writer of that registry, and still
+	// let the repository's administrators rename it, mint its tokens and
+	// freeze it (spec 028, State on 2026-09-26).
+	ActionDelete = "repo.delete"
+	// ActionUndelete is bringing a deleted repository back inside the
+	// hold. It returns a repository to existence as ActionDelete ends
+	// it, so it is kept apart from repo.admin for the same reason.
+	ActionUndelete = "repo.undelete"
 )
 
 // vocabulary is spec 028's table as data, in the spec's order: every
-// action origod asks, each paired with the resource kind it acts on. It
+// action of the contract, each paired with the resource kind it acts on. It
 // is the package's one declaration of that table, and Vocabulary,
 // Actions, Kind, and Known are four readings of the same value.
 var vocabulary = must(authz.NewVocabulary("origo",
@@ -45,6 +56,8 @@ var vocabulary = must(authz.NewVocabulary("origo",
 	authz.Action{Name: ActionWrite, Kind: KindRepository},
 	authz.Action{Name: ActionAdmin, Kind: KindRepository},
 	authz.Action{Name: ActionList, Kind: KindRepository},
+	authz.Action{Name: ActionDelete, Kind: KindRepository},
+	authz.Action{Name: ActionUndelete, Kind: KindRepository},
 ))
 
 // must is the constructor's error, which is a mistake in the table above
@@ -89,7 +102,7 @@ func Actions() []string {
 func PageActions() []string { return []string{ActionList} }
 
 // Kind is the resource kind an action acts on: Repository for each of
-// the four, and "" for a string outside the vocabulary.
+// the six, and "" for a string outside the vocabulary.
 func Kind(action string) string {
 	kind, _ := vocabulary.Kind(action)
 	return kind

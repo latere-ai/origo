@@ -22,9 +22,9 @@ import (
 // contract's vocabulary (Origo spec 028).
 type Action string
 
-// The four actions Origo names in an envelope, typed over the strings
-// the published vocabulary declares, so the node, the agent client and
-// an operator's endpoint read one value.
+// The actions Origo names in an envelope, typed over the strings the
+// published vocabulary declares, so the node, the agent client and an
+// operator's endpoint read one value.
 const (
 	ActionRead  Action = authorizer.ActionRead
 	ActionWrite Action = authorizer.ActionWrite
@@ -33,6 +33,12 @@ const (
 	// subject see. It names no repository, so its resource carries the
 	// kind and no id.
 	ActionList Action = authorizer.ActionList
+	// ActionDelete and ActionUndelete are deleting a repository and
+	// bringing it back inside the hold, apart from ActionAdmin so an
+	// endpoint can decide a repository's existence separately from its
+	// administration (spec 028).
+	ActionDelete   Action = authorizer.ActionDelete
+	ActionUndelete Action = authorizer.ActionUndelete
 )
 
 // ResourceKind is the kind every repository envelope names.

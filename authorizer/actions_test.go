@@ -21,7 +21,7 @@ import (
 	"latere.ai/x/origo/internal/contract"
 )
 
-// wire is spec 028's table written out: the four action strings and the
+// wire is spec 028's table written out: the six action strings and the
 // resource kind exactly as they travel. It is the one deliberate second
 // copy of them, here so a rename of the constants cannot rename the
 // wire quietly; every other copy in the module is a compile error by
@@ -31,9 +31,11 @@ var wire = []authz.Action{
 	{Name: "repo.write", Kind: "Repository"},
 	{Name: "repo.admin", Kind: "Repository"},
 	{Name: "repo.list", Kind: "Repository"},
+	{Name: "repo.delete", Kind: "Repository"},
+	{Name: "repo.undelete", Kind: "Repository"},
 }
 
-// TestTheVocabularyIsSpec028sTable: the vocabulary is the four rows in
+// TestTheVocabularyIsSpec028sTable: the vocabulary is the six rows in
 // the spec's order, and Actions, Kind, and Known read that same value.
 func TestTheVocabularyIsSpec028sTable(t *testing.T) {
 	v := authorizer.Vocabulary()
@@ -43,7 +45,7 @@ func TestTheVocabularyIsSpec028sTable(t *testing.T) {
 	if !slices.Equal(v.Actions, wire) {
 		t.Fatalf("the table is %v, want %v", v.Actions, wire)
 	}
-	if got, want := authorizer.Actions(), []string{"repo.read", "repo.write", "repo.admin", "repo.list"}; !slices.Equal(got, want) {
+	if got, want := authorizer.Actions(), []string{"repo.read", "repo.write", "repo.admin", "repo.list", "repo.delete", "repo.undelete"}; !slices.Equal(got, want) {
 		t.Errorf("Actions() = %v, want %v", got, want)
 	}
 	for _, a := range wire {
@@ -64,7 +66,7 @@ func TestTheVocabularyIsSpec028sTable(t *testing.T) {
 // TestThePageActionIsTheDirectoryAndNothingElse: repo.list is the one
 // action whose answer is a page of Origo's own shape (spec 026), and the
 // shared vocabulary carries no flag for it, so the package names it for
-// authz/server's Options.PageActions. The three that answer a decision
+// authz/server's Options.PageActions. The five that answer a decision
 // are not named.
 func TestThePageActionIsTheDirectoryAndNothingElse(t *testing.T) {
 	pages := authorizer.PageActions()
@@ -104,7 +106,7 @@ func TestEveryReaderGetsItsOwnCopy(t *testing.T) {
 
 // TestTheNodeAndTheClientReadTheSameStrings: internal/contract is what
 // the node writes into details.action and what the agent client
-// branches on, and it reads the four strings from this package rather
+// branches on, and it reads the six strings from this package rather
 // than declaring them.
 func TestTheNodeAndTheClientReadTheSameStrings(t *testing.T) {
 	for _, pair := range [][2]string{
@@ -112,6 +114,8 @@ func TestTheNodeAndTheClientReadTheSameStrings(t *testing.T) {
 		{contract.ActionWrite, authorizer.ActionWrite},
 		{contract.ActionAdmin, authorizer.ActionAdmin},
 		{contract.ActionList, authorizer.ActionList},
+		{contract.ActionDelete, authorizer.ActionDelete},
+		{contract.ActionUndelete, authorizer.ActionUndelete},
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("internal/contract says %q where the vocabulary says %q", pair[0], pair[1])
@@ -137,7 +141,7 @@ func TestTheNodeAndTheClientReadTheSameStrings(t *testing.T) {
 // drives an installation it did not build, so both speak the wire rather
 // than the node's constants.
 func TestTheActionStringsHaveOneHomeInTheModule(t *testing.T) {
-	table := []string{"repo.read", "repo.write", "repo.admin", "repo.list", "Repository"}
+	table := []string{"repo.read", "repo.write", "repo.admin", "repo.list", "repo.delete", "repo.undelete", "Repository"}
 	home := filepath.Join("authorizer", "actions.go")
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(moduleRoot(t), func(path string, d fs.DirEntry, err error) error {
