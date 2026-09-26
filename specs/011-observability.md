@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/, internal/metrics/, cmd/origod/, deploy/, .github/workflows/, tools/specindex/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-26
+updated: 2026-09-27
 author: changkun
 ---
 
@@ -149,16 +149,21 @@ its method, refined for smart HTTP:
   `?service=git-upload-pack` or `?service=git-receive-pack` when the
   query names one of the two smart services, and no query otherwise;
 - a request no handler serves, the application's fallback, a method a
-  route does not take, or a label-form path that names no operation, is
-  `unknown`.
+  route does not take, or a label-form path that names no operation,
+  has no name: the template returns `""`, so its span and the
+  OpenTelemetry request metrics carry no `http.route` and the span is
+  named by the method alone. The metrics hook and the log line record
+  it as `otel.UnmatchedRoute`, `unmatched`, the value every service on
+  `pkg/otel` gives such a request.
 
 A name carries a pattern's placeholders and never an id, an owner, a
 slug, or a reference, so the set is bounded by the routes the node
-registers. otelhttp labels its request metrics with the pattern of a
-mux that matched the request it holds, ahead of the template, so the
-public handler serves the public mux on a shallow copy of the request
-and the catch-all `/` stays off otelhttp's request; the public mux's
-own routes are named by the same patterns through the template.
+registers. `otel.Handler` decides the route once the handler returns,
+from the template ahead of the pattern of any mux that matched, and
+writes it onto the request otelhttp holds, so the public mux's
+catch-all `/` never names a request and the public handler hands the
+mux the request as it arrives; the public mux's own routes are named
+by the same patterns through the template.
 
 The repository and the subject are known only behind the verifier,
 which with the application mux hands the next layer a request of its
@@ -258,13 +263,15 @@ defaults.
   `Authorization` value when the request used basic auth (proposed:
   `cmd/origod`, `TestRequestLogRedactsCredentials`).
 - Every request on the public listener, smart HTTP in both URL forms
-  and both spellings, LFS, the API, the public mux's own routes, and a
-  request no handler serves, is recorded on
-  `http.server.request.duration` and `origo_requests_total` under the
-  one route name of the Traces section, and its root span is named by
-  the method and that name (`cmd/origod`,
-  `TestRequestsAreNamedByRoute`, with a manual meter reader and a span
-  recorder installed before the handler is built).
+  and both spellings, LFS, the API, and the public mux's own routes, is
+  recorded on `http.server.request.duration`, `origo_requests_total`,
+  and the log line under the one route name of the Traces section, and
+  its root span is named by the method and that name; a request no
+  handler serves is recorded without `http.route`, under `unmatched` on
+  `origo_requests_total` and the log line, and its root span is named
+  by the method alone (`cmd/origod`, `TestRequestsAreNamedByRoute`,
+  with a manual meter reader and a span recorder installed before the
+  handler is built).
 - `promtool check rules` passes on the rules document `tools/specindex
   -rules` prints out of `deploy/base/prometheusrule.yaml`, in the
   `specindex` job of `verify.yml`, which installs `promtool` and runs
@@ -286,7 +293,7 @@ node code.
 | every name at 0 on the first scrape, no fixture label is a repository, subject, reference, or path | `cmd/origod`, `TestMetricsVocabulary`; `internal/metrics`, `TestRegisterNamesEveryMetric` reading this file through `runtime.Caller`, and `TestEveryClosedVocabularyReadsZero` |
 | one push produces one trace with the five spans and the repository id as an attribute | `cmd/origod`, `TestPushTrace` against an in-memory OTLP receiver |
 | the request log line carries the listed fields and no credential | `cmd/origod`, `TestRequestLogRedactsCredentials` |
-| every request is recorded and its root span named under one route name | `cmd/origod`, `TestRequestsAreNamedByRoute` (2026-09-26) |
+| every request is recorded and its root span named under one route name, a request no route serves under none and `unmatched` | `cmd/origod`, `TestRequestsAreNamedByRoute` (2026-09-26, 2026-09-27) |
 | `promtool check rules` passes and every alert's metric is in the table | `tools/specindex`, `TestAlertRulesNameDefinedMetrics` and `TestRulesReportsAnUndefinedMetricAndAMalformedFile`; the `specindex` job of `verify.yml`, which installs `promtool` by pinned version and checksum |
 
 The `Set` `internal/metrics` returns is the handles, one field per row,
@@ -319,6 +326,19 @@ each as the rule, so a reader finds one answer:
   subject only. The label form's smart HTTP operations, one
   `/{owner}/{slug}/{service...}` series before, are three names, and
   `info/refs` carries its service.
+- A request no route serves has no route name (2026-09-27). As built
+  on 2026-09-26 it was `unknown` on every signal, and the public
+  handler served the public mux on a shallow copy of the request so the
+  catch-all `/` stayed off otelhttp's request, which labeled its
+  request metrics with a matched mux pattern ahead of the template.
+  `latere.ai/x/pkg` v0.87.0 decides one route per request after the
+  handler, the template ahead of any mux pattern, and writes it onto
+  otelhttp's request, so the copy is gone; it also sets the convention
+  for a request no route serves, no `http.route` on the OpenTelemetry
+  signals and `otel.UnmatchedRoute` on a service's own, so the template
+  returns `""`, and the `route` label of the request series and the log
+  field read `unmatched`. `TestRequestsAreNamedByRoute` now reads the
+  log line of every request it makes as well.
 - The log line is written by a wrapper of `cmd/origod` inside
   `otel.Handler`, not by `otel.Handler`, which logs nothing.
 - `promtool check rules` reads a Prometheus rules file, not a Kubernetes
