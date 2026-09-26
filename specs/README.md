@@ -1074,7 +1074,7 @@ name, or when a spec names something no spec defines.
 <!-- specindex:begin -->
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
-| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026 |
+| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026, 028 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030 |
@@ -1219,7 +1219,7 @@ name, or when a spec names something no spec defines.
 | event | `undeleted` | [019](019-repository-administration.md) | 008 |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
 | event | `verified` | [014](014-repository-migration.md) | 008 |
-| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
+| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019, 028 |
 | endpoint | `GET /` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 002, 005, 016, 022 |
 | endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
@@ -1252,7 +1252,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
-| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 019 |
+| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 019, 028 |
 | endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
 | endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | - |

@@ -10,7 +10,7 @@ depends_on:
 affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-17
+updated: 2026-09-26
 author: changkun
 ---
 
@@ -671,3 +671,86 @@ a shorter set (`internal/config`, `TestConfiguredAudienceSet`). The fifth
 acceptance row's test, `TestAudienceIsConfigurable`, gains the list case:
 a verifier holding two names admits each of them on its own and refuses a
 third.
+
+## State on 2026-09-26: deletion is its own action
+
+The table gains two rows, `repo.delete` and `repo.undelete`, both of kind
+`Repository`, after `repo.list`:
+
+| Action | Operation |
+|---|---|
+| `repo.delete` | `DELETE /v1/repos/{id}`, which starts spec 019's hold |
+| `repo.undelete` | `POST /v1/repos/{id}/undelete`, which ends it inside the hold |
+
+### Why an authorizer needs them
+
+A contract 2 request carries the action and the resource, never the
+route. While `DELETE /v1/repos/{id}` asks `repo.admin`, so do `PATCH`,
+`undelete`, `tokens`, `transfer`, `freeze`, `unfreeze`, `import`,
+`verify` and `gc`, and an endpoint cannot refuse one without refusing the
+rest. That matters to an endpoint that keeps a registry of repositories
+beside Origo and is the only writer of it: it deletes at Origo itself,
+inside the change that removes its row, and has to refuse a deletion by
+anyone else, the repository's administrators included, or the registry
+keeps a row for a repository Origo has deleted. With `repo.admin`
+answering both, the choice is between leaving that direct deletion open
+and taking away the administrators' rename, token minting and freeze.
+
+`repo.undelete` is apart for the same reason in the other direction. A
+repository brought back after such a registry dropped its row is a
+repository no row names, reachable by no name the registry resolves and
+owned by nobody.
+
+Creation stays `repo.admin`. A create names an id no registry holds yet,
+and rule 4 of spec 007 already makes an endpoint decide an unknown id
+without the repository, from the owner and slug the resource carries, so
+an endpoint that registers repositories itself refuses a create by anyone
+else today.
+
+### The order, and why it is two releases
+
+An endpoint that validates the action against the vocabulary it was
+built with, which is every endpoint on `latere.ai/x/pkg/authz/server`,
+answers an action outside that table with a 400. Origo reads a 400 as no
+answer and renders it `authorizer_unavailable`, a 503. A node that asked
+`repo.delete` before its endpoint knew the action would therefore refuse
+every deletion and every undelete of the installation.
+
+So the rows arrive a release before any route asks them:
+
+1. The release that carries this section publishes the two rows and asks
+   neither. Every route asks exactly what spec 007's table says, and
+   `DELETE` and `undelete` still ask `repo.admin`.
+2. An endpoint built against this module reads the two rows from
+   `Vocabulary()`, decides them, and is deployed.
+3. The next minor release moves `DELETE` to `repo.delete` and `undelete`
+   to `repo.undelete`, and spec 007's table with it.
+
+This is not the compatibility window the family's decision of 2026-09-13
+rules out. No release serves two contracts: each has one table and one
+action per route, and nothing selects between them. What the first
+release adds is table rows that are not yet sent, which is the promise
+the `authorizer` package already makes, a new action being a new row
+first.
+
+### What does not change
+
+- The owner policy allows an owner every action on its repository and an
+  admin subject every action on every repository, so both keep deleting
+  and undeleting with no rule added.
+- The envelope, the resource of kind `Repository` with the id alone on
+  both routes, the answer shape and the five rules.
+- A personal access token is narrowed by the qualified action (**State on
+  2026-09-17: a personal access token carries what it may do**). From the
+  release that moves the two routes, a key granted `origo:repo.admin`
+  alone no longer covers a deletion; one that deletes carries
+  `origo:repo.delete`.
+
+### Acceptance
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| The table carries `repo.delete` and `repo.undelete` after `repo.list`, and `Actions`, `Kind` and `Known` read them | `authorizer`, `TestTheVocabularyIsSpec028sTable` | built |
+| The node's and the client's constants are the published strings | `authorizer`, `TestTheNodeAndTheClientReadTheSameStrings` | built |
+| The shared conformance suite drives the two rows against an endpoint told this table | `authorizer`, `TestConformanceAgainstTheStub` | built |
+| `DELETE` asks `repo.delete` and `undelete` asks `repo.undelete`, and a deny of either reaches the caller as a 403 naming it in `details.action` | the next minor release | not built |
