@@ -1219,7 +1219,7 @@ name, or when a spec names something no spec defines.
 | event | `undeleted` | [019](019-repository-administration.md) | 008 |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
 | event | `verified` | [014](014-repository-migration.md) | 008 |
-| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019, 028 |
+| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028 |
 | endpoint | `GET /` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 002, 005, 016, 022 |
 | endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
@@ -1252,7 +1252,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
-| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 019, 028 |
+| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 007, 019, 028 |
 | endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
 | endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | - |

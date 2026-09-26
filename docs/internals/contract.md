@@ -295,7 +295,7 @@ Content-Type: application/json
 | `subject` | the issuer URL with its trailing slash removed, a pipe, and the token's `sub`. It is empty for an anonymous request (spec 027) and for the probe below |
 | `issuer`, `sub` | the same two halves apart, so an endpoint keyed by issuer does not split the string again |
 | `claims` | every verified claim of the token, verbatim. Origo reads none of them; a plan, a team, or a role is read here |
-| `action` | `repo.read`, `repo.write`, `repo.admin`, or `repo.list` |
+| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, or `repo.undelete` |
 | `resource.kind` | `Repository` on every call, the one kind Origo names |
 | `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list`, which names no repository |
 | `resource.owner`, `resource.slug` | set on the name form and on a creation, empty on the id form |
@@ -316,8 +316,10 @@ The action Origo sends per operation:
 |---|---|
 | `repo.read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
 | `repo.write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
-| `repo.admin` | `POST /v1/repos`, `PATCH`, `DELETE`, `undelete`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+| `repo.admin` | `POST /v1/repos`, `PATCH`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories may this subject see (spec 026) |
+| `repo.delete` | `DELETE /v1/repos/{id}`, which starts spec 019's hold |
+| `repo.undelete` | `POST /v1/repos/{id}/undelete`, which ends it inside the hold |
 
 `repo.list` is the one action whose answer is not a decision. Its
 resource carries the kind alone, and the endpoint answers a page of
@@ -333,7 +335,12 @@ the actions and not their answer shapes.
 Spec 019 marks three of its own operations `repo.read`, and the
 per-operation row wins over the sentence that calls its operations
 `repo.admin`: a reader who may clone may also read the size of what
-they cloned. On `POST /v1/repos` the resource carries the id, owner,
+they cloned. Deleting and undeleting are apart from `repo.admin` so an
+endpoint can decide whether a repository may stop existing separately
+from who administers it: one that keeps its own registry of
+repositories and deletes at Origo itself refuses both to everyone else
+and still lets the administrators rename, freeze and mint (spec 028,
+State on 2026-09-26). On `POST /v1/repos` the resource carries the id, owner,
 and slug the body names, so the endpoint decides a creation from the
 name the caller chose.
 

@@ -753,4 +753,7 @@ first.
 | The table carries `repo.delete` and `repo.undelete` after `repo.list`, and `Actions`, `Kind` and `Known` read them | `authorizer`, `TestTheVocabularyIsSpec028sTable` | built |
 | The node's and the client's constants are the published strings | `authorizer`, `TestTheNodeAndTheClientReadTheSameStrings` | built |
 | The shared conformance suite drives the two rows against an endpoint told this table | `authorizer`, `TestConformanceAgainstTheStub` | built |
-| `DELETE` asks `repo.delete` and `undelete` asks `repo.undelete`, and a deny of either reaches the caller as a 403 naming it in `details.action` | the next minor release | not built |
+| `DELETE` asks `repo.delete` and `undelete` asks `repo.undelete`, and a deny of either reaches the caller as a 403 naming it in `details.action` while the same caller still renames and mints | `internal/api`, `TestDeleteAndUndeleteAskTheirOwnActions`; `test/conformance`, `007/forbidden`, which denies the two on a repository of its own | built |
+
+The routes moved in the release after the one that published the rows,
+as step 3 above says, and spec 007's action table moved with them.
