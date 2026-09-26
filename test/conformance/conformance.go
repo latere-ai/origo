@@ -413,27 +413,30 @@ func (s *session) record(id string) {
 	s.created = append(s.created, id)
 }
 
-// cleanup deletes every repository the run created by id, waiting out
-// a rate limit and a deny the run itself flipped, and reports the ids.
+// cleanup deletes every repository the run created by id and reads each
+// one back until it answers gone, waiting out a rate limit and a deny the
+// run itself flipped, and reports the ids.
 func (s *session) cleanup(t *testing.T) []string {
 	t.Helper()
 	s.mu.Lock()
 	ids := slices.Clone(s.created)
 	s.mu.Unlock()
 	for _, id := range ids {
-		if err := deleteUntilGone(func() response { return s.call(t, "DELETE", "/v1/repos/"+id, "") }, cleanupSleep); err != nil {
+		del := func() response { return s.call(t, "DELETE", "/v1/repos/"+id, "") }
+		read := func() response { return s.call(t, "GET", "/v1/repos/"+id, "") }
+		if err := deleteUntilGone(del, read, cleanupSleep); err != nil {
 			t.Errorf("cleanup of %s: %v", id, err)
 		}
 	}
 	return ids
 }
 
-// cleanupBudget bounds the waiting one delete does across its
-// refusals, and denyCacheWait is the pause after a 403: a case that
+// cleanupBudget bounds the waiting one repository's cleanup does across
+// its refusals, and denyCacheWait is the pause after a 403: a case that
 // denied its own repository has had the rule removed by the time the
 // run ends, but the node keeps a deny in its decision cache for spec
-// 007's five seconds, so the first delete after a fast tail of cases
-// can still be refused on the cached verdict.
+// 007's five seconds, so a request after a fast tail of cases can still
+// be refused on the cached verdict.
 const (
 	cleanupBudget = 30 * time.Second
 	denyCacheWait = time.Second
@@ -444,21 +447,41 @@ const (
 var cleanupSleep = time.Sleep
 
 // deleteUntilGone runs del until it is accepted or the repository is
-// already gone, sleeping out a 429 for its Retry-After and a 403 for
-// the deny cache while the budget lasts, and answers the refusal it
-// gave up on.
-func deleteUntilGone(del func() response, sleep func(time.Duration)) error {
+// already gone, then runs read until the repository reads as gone,
+// sleeping out a 429 for its Retry-After and a 403 for the deny cache
+// while one budget across both lasts, and answers the refusal it gave
+// up on.
+//
+// The read is what makes the cleanup's promise, that every id the run
+// created answers 404 after it, hold whatever the run denied. The
+// decision cache holds a deny per action, and a delete asks
+// repo.delete: a case that denied every action of its repository and
+// read it, as 019/forbidden does, leaves a repo.read deny cached that no
+// delete meets, so an accepted delete says nothing about what the next
+// read answers for the rest of the five seconds.
+func deleteUntilGone(del, read func() response, sleep func(time.Duration)) error {
 	var waited time.Duration
+	deleted := false
 	for {
-		r := del()
+		var r response
+		if deleted {
+			r = read()
+		} else {
+			r = del()
+		}
 		var wait time.Duration
-		switch r.status {
-		case http.StatusAccepted, http.StatusNotFound, http.StatusGone:
+		switch {
+		case r.status == http.StatusNotFound, r.status == http.StatusGone:
 			return nil
-		case http.StatusTooManyRequests:
+		case r.status == http.StatusAccepted && !deleted:
+			deleted = true
+			continue
+		case r.status == http.StatusTooManyRequests:
 			wait = retryAfter(r.header)
-		case http.StatusForbidden:
+		case r.status == http.StatusForbidden:
 			wait = denyCacheWait
+		case deleted:
+			return fmt.Errorf("read %d after the delete was accepted: %s", r.status, r.body)
 		default:
 			return fmt.Errorf("%d %s", r.status, r.body)
 		}
