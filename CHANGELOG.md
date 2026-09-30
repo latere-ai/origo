@@ -12,6 +12,11 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- The production overlay delivers push events to platformd's
+  `/internal/origo/events`, signed with `ORIGO_EVENTS_SECRET` from the
+  `origod-events` Secret, which must exist before a release applies the
+  overlay.
+
 - A request on the public listener that no route serves is recorded
   under `route` `unmatched` on `origo_requests_total` and
   `origo_request_duration_seconds` and in the request log line, where it

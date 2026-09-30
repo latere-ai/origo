@@ -187,6 +187,7 @@ func TestOverlayPatchesReachBothContainers(t *testing.T) {
 	overlays := []string{
 		"deploy/prod/public-url.yaml",
 		"deploy/prod/audience.yaml",
+		"deploy/prod/events.yaml",
 		"deploy/examples/digitalocean/public-url.yaml",
 		"deploy/examples/aws/public-url.yaml",
 	}

@@ -1,0 +1,39 @@
+# Push events (spec 008): every event is delivered to platformd, which
+# fires the Topos triggers a push reaches for their owners (platform spec
+# 124). The sink is a URL, not a secret: it names an in-cluster Service,
+# so it is set here where a reviewer sees it, next to ORIGO_AUTHORIZER_URL
+# in authorizer.yaml. The key that signs each delivery is platformd's
+# PLATFORM_ORIGO_EVENTS_SECRET and lives in the origod-events Secret, which
+# is not optional: a node given the URL without the key would refuse to
+# start, so a missing Secret holds the pod before it runs and the running
+# nodes keep serving.
+#
+# Set on both containers: the check delivers a signed ping to the sink
+# with the node's environment, and a sink that answers below 500 passes it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: origod
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: check
+          env:
+            - name: ORIGO_EVENTS_URL
+              value: http://platformd-internal.latere.svc.cluster.local/internal/origo/events
+            - name: ORIGO_EVENTS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: origod-events
+                  key: ORIGO_EVENTS_SECRET
+      containers:
+        - name: origod
+          env:
+            - name: ORIGO_EVENTS_URL
+              value: http://platformd-internal.latere.svc.cluster.local/internal/origo/events
+            - name: ORIGO_EVENTS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: origod-events
+                  key: ORIGO_EVENTS_SECRET
