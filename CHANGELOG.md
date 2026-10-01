@@ -30,6 +30,10 @@ committed: the commit log already holds that.
   alerts select on no route. The node builds against `latere.ai/x/pkg`
   v0.87.0, and `docs/operations.md` lists the route names.
 
+### Fixed
+
+- A dependency carried two published vulnerabilities in the telemetry SDK; it is upgraded.
+
 ## v0.12.0 - 2026-09-26
 
 ### Changed
