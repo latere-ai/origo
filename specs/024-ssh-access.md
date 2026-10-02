@@ -55,8 +55,8 @@ SSH package; `golang.org/x/crypto/ssh` is the fourth now, confined to
 `internal/sshd`.
 
 No component of the hosted installation held an SSH public key then,
-and none does now. Its identity service serves the authorizer of spec
-007 and has no key concept; this spec states what a key store must answer and leaves the
+and none did when this spec was written. Its identity service served the
+authorizer of spec 007 and had no key concept; this spec states what a key store must answer and leaves the
 store to the operator, with `test/stubs/sshkeys` as the reference.
 
 ## Design
@@ -517,8 +517,9 @@ wide margin.
 
 ## A task for the operator's identity service
 
-In the hosted installation the key store belongs to the identity
-service, beside the authorizer it serves. This is what that service's
+When this spec was written, the hosted installation's key store was to
+sit in its identity service, beside the authorizer that service served.
+This is what that service's
 own specification must cover, stated here so the requirement is
 recorded and carried into it by whoever owns that service:
 
