@@ -73,7 +73,7 @@ flowchart LR
 | `test/stubs` | the issuer, authorizer, SSH key store, event sink, git source, slow bucket proxy, and in-process contract stub the tests and the example stack run |
 | `test/conformance`, `test/e2e` | the contract as executable tests against any base URL, and the end-to-end and cluster suites; see [`testing.md`](testing.md) |
 | `tools` | the documentation generators, the spec index, the executable-docs runner, the release scripts, and the smoke test |
-| `deploy` | the base manifests, the example overlays, the one-time bootstrap resources, and the production overlay of the installation Latere runs |
+| `deploy` | the base manifests, the example overlays, the one-time bootstrap resources, and the production overlay of the hosted installation |
 
 Two dependency rules are enforced by the gate. The build of
 `./cmd/origod` reaches the standard library, `latere.ai/x/pkg`, the

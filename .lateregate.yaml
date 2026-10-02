@@ -22,7 +22,7 @@ cover:
       main and nothing else: it reads the environment, opens a signal
       context, and passes both to origocli.Run, which returns the exit
       code. Spec 025 draws that boundary on purpose, so the package holds
-      no behaviour a test could call. The exit codes a shell reads are
+      no behavior a test could call. The exit codes a shell reads are
       proved by TestTheBinaryCarriesTheExitCodesThroughTheProcess, which
       runs the built binary as a subprocess and therefore attributes no
       coverage to it, and every decision behind them is covered in
@@ -121,13 +121,13 @@ license:
   spdx: MIT
   holder: Latere AI
 
-# The identity shape of the family: specs/infrastructure/identity.md in latere-ai/specs
+# The identity shape every core of the family shares.
 identity:
   role: core
   audience: origo
   config_prefix: ORIGO
   api_group: origo.latere.ai
-  # deploy/prod is Latere's own overlay in the core's tree.
+  # deploy/prod is the hosted installation's overlay in the core's tree.
   skip:
     - deploy/prod
   # The same overlay, declared: the no-latere-value rule reads the

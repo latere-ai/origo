@@ -4,9 +4,8 @@
 write-ahead log in S3 compatible object storage. Repositories on disk are
 only a cache. There is no database, no leader, and no consensus cluster.
 
-Latere runs Origo at [code.latere.ai](https://code.latere.ai) for its own
-repositories, behind a sign-in; it is not a hosted service. Anyone with a
-Kubernetes cluster and an S3 compatible bucket can run their own.
+Origo is not a hosted service. Anyone with a Kubernetes cluster and an S3
+compatible bucket can run their own.
 
 [![CI](https://github.com/latere-ai/origo/actions/workflows/verify.yml/badge.svg)](https://github.com/latere-ai/origo/actions/workflows/verify.yml)
 [![Release](https://img.shields.io/github/v/release/latere-ai/origo)](https://github.com/latere-ai/origo/releases)
@@ -116,7 +115,7 @@ With [origo-web](https://github.com/latere-ai/origo-web) in front of it, a
 person signs in, creates a repository, registers a public key, and clones:
 
 ```sh
-git clone git@code.example.com:owner/name.git
+git clone git@git.example.com:owner/name.git
 ```
 
 Commit and push as anywhere else. Over HTTPS a public repository clones
