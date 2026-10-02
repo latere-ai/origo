@@ -8,7 +8,7 @@
 # Required tools: curl, grep.
 #
 # Environment:
-#   BASE_URL       the public origin, default https://git.latere.ai
+#   BASE_URL       the public origin of the installation to check; required
 #   TAG            release tag, for evidence output; the served version must match
 #   VERSION_WAIT   seconds to wait for the served version to reach TAG, default 90:
 #                  the rollout is complete before the ingress stops answering
@@ -20,7 +20,10 @@
 
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://git.latere.ai}"
+if [ -z "${BASE_URL:-}" ]; then
+  echo "tools/smoke/release.sh: BASE_URL is required: the public origin of the installation to check" >&2
+  exit 2
+fi
 BASE_URL="${BASE_URL%/}"
 TAG="${TAG:-}"
 COMMIT="${COMMIT:-unknown}"

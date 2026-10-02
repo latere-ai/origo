@@ -85,4 +85,16 @@ case "$out" in
   *) echo "FAIL the wait for the rollout is not reported:"; echo "$out"; exit 1 ;;
 esac
 
+# 7. Without BASE_URL the smoke refuses before it dials anything: it has
+#    no installation of its own to fall back on.
+status=0
+out=$(env -u BASE_URL TAG=v1.2.3 "$bash" "$dir/release.sh" 0<&- 2>&1) || status=$?
+if [ "$status" -ne 2 ]; then
+  echo "FAIL release.sh without BASE_URL exited $status, want 2:"; echo "$out"; exit 1
+fi
+case "$out" in
+  *"BASE_URL is required"*) ;;
+  *) echo "FAIL release.sh without BASE_URL does not name the variable:"; echo "$out"; exit 1 ;;
+esac
+
 echo "release_test.sh passed"
