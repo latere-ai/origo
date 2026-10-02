@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/auth/, internal/api/, internal/contract/, cmd/origod/, test/stubs/authorizer/, docs/api.md, specs/007-authentication-and-delegation.md, specs/013-test-stubs-and-kind-overlay.md, specs/README.md]
 effort: medium
 created: 2026-09-10
-updated: 2026-09-12
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -307,8 +307,8 @@ three existing actions, their answer shape, or their caches.
 Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
 34617034527 at commit `a60893d`, whose every job passed, `conformance
 against the live installation` and `verify the published release` among
-them. The installation serves the release: `GET
-https://code.latere.ai/version` answers `{"version":"v0.2.0",...}`.
+them. The hosted installation serves the release: `GET /version`
+answers `{"version":"v0.2.0",...}`.
 
 The frontmatter said `drafted` until 2026-09-11 while the route,
 the interface and the tests were on main and in a release. The status

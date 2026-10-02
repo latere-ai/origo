@@ -10,7 +10,7 @@ depends_on:
 affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-09-26
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -23,15 +23,13 @@ repository. Two sibling open cores, Cella and Lux, ask the same
 question of the same kind of endpoint, with a different envelope. The
 family decided on 2026-09-13 that the three cores share one contract,
 so that one authorizer serves all three and an operator writes one
-endpoint (latere-ai/specs, `decisions/2026-09-13-one-platform-open-cores.md`).
-This spec is Origo's side of that decision: the shared envelope as
+endpoint. This spec is Origo's side of that decision: the shared envelope as
 Origo's authorizer contract 2, subjects qualified by their issuer, a
 built-in owner policy, a configurable audience, and the shared
 verifier. Contract 2 replaces contract 1 in one release: the family
-runs no compatibility windows between its own components
-(latere-ai/specs, `decisions/2026-09-13-no-compatibility-windows.md`),
-and the one authorizer Origo has, auth today, changes in the same
-batch.
+runs no compatibility windows between its own components, a rule it
+decided the same day, and the one authorizer the hosted installation
+runs for Origo changes in the same batch.
 
 The client protocol contract of [[003-protocol-contract]], the one a
 git client and an API caller code against, is unchanged and stays
@@ -40,7 +38,8 @@ contract between a node and the operator's authorizer.
 
 ## Current state
 
-Spec 007's authorizer is contract 1 and is what code.latere.ai runs.
+Spec 007's authorizer is contract 1 and is what the hosted installation
+runs.
 It sends `{subject, actor, repo: {id, owner, slug}, action}` and reads
 `{allow, reason, ttl, replicas, quota_bytes, requests_per_minute}`,
 with spec 026's `list` action in a body of its own. Subjects are the
@@ -98,7 +97,7 @@ Content-Type: application/json
 | `repo` | `{id, owner, slug}` | `resource: {kind: "Repository", id, owner, slug}`; `repo.list` carries `{kind: "Repository"}` and no id |
 | `request` | absent | `id`, `ip`, `user_agent` |
 | figures | `ttl`, `replicas`, `quota_bytes`, `requests_per_minute` at the top level | `ttl` at the top level; the three figures under `limits` |
-| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged, and `next_cursor` stays the authorizer's value passed through: issue #1 stays open until `filter` over the node's own name index replaces the directory answer, which the family record dates to the registry's move to `platformd` |
+| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged, and `next_cursor` stays the authorizer's value passed through: issue #1 stays open until `filter` over the node's own name index replaces the directory answer, which the family dates to the registry's move to the platform control plane |
 
 The five rules of spec 007 hold word for word. The probe id
 `00000000-0000-0000-0000-000000000001` is unchanged and is the
@@ -151,14 +150,16 @@ package's stub with Origo's rule table.
 Contract 1's envelope, its `actor` field, its bare-`sub` subjects and
 the constant audience are removed in the release that ships contract
 2; nothing selects between them. The stub authorizer, `origod check`
-and the conformance suite speak contract 2 alone. auth's authorizer
-for Origo changes to contract 2 in the same coordinated batch, so the
-installation's authorizer and node roll together.
+and the conformance suite speak contract 2 alone. The hosted
+installation's authorizer for Origo changes to contract 2 in the same
+coordinated batch, so the installation's authorizer and node roll
+together.
 
 ## Not in this spec
 
 Moving the authorizer, the registry, the grants and the SSH keys from
-auth to the platform control plane (the family's id-06); the `act`
+the identity service to the platform control plane, which is the
+family's own work; the `act`
 claim, which the family's D5 removed from the verifier and the minter on
 2026-09-13 ahead of this spec; the `filter`-based `repo.list`, which waits for the
 registry to sit beside the node's name index.
@@ -201,9 +202,10 @@ Two departures from the design above, both deliberate:
   audience became configurable in place. This is the one waiver.
 
 - **Release is coupled and not yet cut.** Contract 1 is removed in the
-  same release that ships contract 2, and auth's authorizer for Origo
-  changes to contract 2 in the same coordinated batch (the identity
-  epic's id-06 git-plane move to `platformd`). The node code and its
+  same release that ships contract 2, and the hosted installation's
+  authorizer for Origo changes to contract 2 in the same coordinated
+  batch, the move of the git plane's decisions to the platform control
+  plane. The node code and its
   overlay audience variable are ready; the tag waits for that batch.
   Moving to `complete` waits for the release.
 
@@ -215,17 +217,18 @@ job of that run passed: `artifacts, images, signatures, attestations`,
 `conformance against the published image`, `deploy and smoke`,
 `conformance against the live installation`, `publish the release`,
 `verify the published release`, `install from the release artifacts`.
-The installation serves it: `GET https://code.latere.ai/version` answers
+The hosted installation serves it: `GET /version` answers
 `{"version":"v0.4.1","commit":"7988ecb","build_time":"2026-09-14T22:49:32Z"}`.
 `Current state` above describes the contract 1 installation of
-2026-09-13; `v0.4.1` is what code.latere.ai runs now.
+2026-09-13; `v0.4.1` is what the hosted installation ran from that
+release on.
 
 `v0.4.0` carries the same node changes and published nothing. It was
 gate-green, and its release run 34898933307 failed in `conformance
 against the published image`: the stack came up, and six
-create-then-clone subtests of `TestContract` — `007/tokens`,
+create-then-clone subtests of `TestContract` (`007/tokens`,
 `007/authorizer_unavailable`, `008/push`, `008/event-off`,
-`009/blob_too_large`, `010/lfs_locks_unsupported` — read `Connection
+`009/blob_too_large`, `010/lfs_locks_unsupported`) read `Connection
 reset by peer` from origod in the kind cluster. That job runs before
 deploy, so nothing reached the installation. The node's own side was
 cleared by reproducing the clone single-node and across a two-node
@@ -258,7 +261,8 @@ of spec 007's verification table is unchanged. The second departure of
 `State on 2026-09-14`, that the release was coupled and not yet cut, is
 what `v0.4.1` closes: contract 1 went in the same release, and the
 production overlay points `ORIGO_AUTHORIZER_URL` and `ORIGO_SSH_KEYS_URL`
-at `platformd` (`deploy/prod/authorizer.yaml`, `deploy/prod/ssh.yaml`),
+at the platform control plane (`deploy/prod/authorizer.yaml`,
+`deploy/prod/ssh.yaml`),
 with the authorizer URL moved out of the `origod-auth` Secret into the
 manifest, because a URL is not a secret and only the bearer is.
 ## State on 2026-09-16: the vocabulary is an importable package
@@ -290,15 +294,14 @@ validate. Spec 007's endpoint section was rewritten to contract 2 in the
 same change, since `make docs` renders it into `docs/api.md` and it
 still described contract 1.
 
-The work is the identity epic's id-11, piece (c)
-(latere-ai/specs, `infrastructure/identity/id-11-one-authorizer-library.md`),
-whose acceptance row is that no repository re-declares another
-repository's action strings. `platformd` re-declared these four in
-`internal/repositories/vocabulary.go` because Origo exported nothing
-importable; that file becomes `authorizer.Vocabulary()` and
-`authorizer.PageActions()` on Origo's next tag, the way its Lux section
-already reads `latere.ai/x/lux/authorizer`. Lux did the same promotion
-in lux v0.2.0, and the package mirrors its shape.
+The work is Origo's part of the family's one authorizer library, whose
+acceptance row is that no repository re-declares another repository's
+action strings. The platform control plane re-declared these four in its
+own source because Origo exported nothing importable; that declaration
+becomes `authorizer.Vocabulary()` and `authorizer.PageActions()` on
+Origo's next tag, the way its Lux section already reads
+`latere.ai/x/lux/authorizer`. Lux made the same promotion first, and the
+package mirrors its shape.
 
 ## State on 2026-09-16: the verifier stays, and its waiver is a test
 
@@ -535,13 +538,12 @@ signature of their own. `.lateregate.yaml` carries no `waive` block.
 
 ## State on 2026-09-17: a personal access token carries what it may do
 
-A person can push to Origo over HTTPS with a personal access token
-(latere-ai/specs, `infrastructure/identity/id-12-personal-access-tokens.md`).
-The key mints a short token whose `token_use` is `pat`, and from id-13
-that token also carries what its holder narrowed the credential to: a
-set of grants, one action of a published vocabulary paired with a
-resource selector, as RFC 9396's `authorization_details`
-(`infrastructure/identity/id-13-pat-scopes.md`).
+A person can push to Origo over HTTPS with a personal access token,
+which the family's identity work added. The key mints a short token
+whose `token_use` is `pat`, and since the family scoped those keys that
+token also carries what its holder narrowed the credential to: a set of
+grants, one action of a published vocabulary paired with a resource
+selector, as RFC 9396's `authorization_details`.
 
 **Nothing on the wire moves.** The envelope is this spec's, field for
 field. `claims` already carries every verified claim of the token
@@ -556,8 +558,9 @@ reads neither is unaffected. The node reads them nowhere it decides.
 
 ### The rule, and where it is applied
 
-`platformd` is the decision point for a node that names one
-(`ORIGO_AUTHORIZER_URL`), and it intersects its answer with the grants.
+The authorizer a node names (`ORIGO_AUTHORIZER_URL`) is its decision
+point, and the hosted installation's, the platform control plane,
+intersects its answer with the grants.
 The rule is `latere.ai/x/pkg/authz`'s and is written once there:
 
 ```

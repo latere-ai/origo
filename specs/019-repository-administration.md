@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-17
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -548,7 +548,7 @@ spec 018's job row and no criterion here.
 
 Spec 017's Outcome records that limit and its lifting. The v0.1.3
 release run 34546335576 of 2026-09-11 is the run: its `live` job, id
-103120952813, dialed `https://code.latere.ai` and passed,
+103120952813, dialed the hosted installation and passed,
 `contract_test.go:133: live run against ***: 51 passed` and
 `--- PASS: TestContract (173.69s)`. This spec's cases are among them,
 `019/transfer`, `019/freeze`, `019/stats`, `019/gc`, `019/export`,

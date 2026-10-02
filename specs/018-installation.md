@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-26
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -36,8 +36,8 @@ headless gossip Service, an Ingress, a PodDisruptionBudget, and a
 ServiceAccount; `deploy/prod` set the namespace `origo`;
 `deploy/bootstrap` held the Namespace and Secret templates. The Ingress
 assumed the `nginx` class and the cert-manager issuer
-`letsencrypt-prod` with host `code.latere.ai`; the Deployment set
-`ORIGO_PUBLIC_URL` to `https://code.latere.ai` and read the bootstrap
+`letsencrypt-prod` with the hosted installation's host; the Deployment
+set `ORIGO_PUBLIC_URL` to that host's URL and read the bootstrap
 Secrets `origod-s3` and `origod-auth` (spec 007) through `envFrom`.
 There was no HPA, no PrometheusRule, no `deploy/examples`, no `origod
 check`, no `docs/install.md`, and no `docs/configuration.md`; spec
@@ -89,7 +89,7 @@ either create it or patch it away. The HorizontalPodAutoscaler scales on CPU onl
 in every example overlay; no overlay installs a metrics adapter, and
 `origo_requests_in_flight` (spec 011) is a dashboard signal, not an
 autoscaler input (spec 005). The
-Latere values move out of the base into `deploy/prod`. An operator
+hosted installation's values move out of the base into `deploy/prod`. An operator
 writes an overlay with their hostname, ingress class, storage class or
 local-volume choice, replica bounds, and the Secret with their bucket
 and issuer values, and applies it with `kubectl apply -k`.
@@ -466,7 +466,8 @@ Eight defects, each what the page said, what happened, and the change:
 7. **A global setting changed with no warning.** `kind create cluster`
    made its cluster the current context in the shared kubeconfig, and
    while this walk was running another session operating the production
-   cluster failed with `namespaces latere not found`. The page runs
+   cluster failed with `namespaces <name> not found`, for a production
+   namespace the kind cluster does not have. The page runs
    bare `kubectl` throughout and never said which cluster it acts on.
    The cluster section exports `KUBECONFIG` to a file of its own and
    says why, and the settings section ends with `kubectl config

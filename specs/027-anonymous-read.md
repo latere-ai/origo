@@ -10,7 +10,7 @@ depends_on:
 affects: [internal/auth/, internal/limits/, internal/config/, cmd/origod/, docs/install.md, docs/api.md, specs/016-security-and-threat-model.md]
 effort: small
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -52,8 +52,8 @@ and the installation runs it with the switch off, as the Outcome
 records. Nothing in this spec is reachable before an operator sets the
 variable, so the release changed nothing for an installation that does
 not, and `TestTheSwitchChangesNothingForARefusedCaller` is what says
-so. The consumer that decides visibility, auth's spec 077, is that
-deck's to deploy.
+so. Deciding visibility is the consumer's: the hosted installation's
+authorizer specifies and deploys that side on its own.
 
 ## Design
 
@@ -114,8 +114,9 @@ needs it); the LFS batch, whose download answer is a presigned bucket URL
 that would outlive the request and the bucket; `GET
 /v1/repos/{id}/export.bundle` (an unbounded server-side build);
 `GET /v1/repos/{id}/import`; `GET /v1/repos` (the directory); every
-write; every operation of spec 019. Consumer-side reasoning for each is
-in auth's spec 077.
+write; every operation of spec 019. The consumer-side reasoning for each
+is recorded with the hosted installation's authorizer, outside this
+repository.
 
 ### The refusal is the 401 that already exists
 
@@ -210,8 +211,8 @@ of visibility stored on the node.
 Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
 34617034527 at commit `a60893d`, whose every job passed, `conformance
 against the live installation` and `verify the published release` among
-them. The installation serves it: `GET https://code.latere.ai/version`
-answers `{"version":"v0.2.0","commit":"a60893d",...}`.
+them. The hosted installation serves it: `GET /version` answers
+`{"version":"v0.2.0","commit":"a60893d",...}`.
 
 Every criterion of the table has a passing test in the tree, and every
 one of them ran in the `gate / test`, `gate / race` and `gate / cover`

@@ -1,5 +1,5 @@
 ---
-title: "The API at the platform origin: /v1/repos answers at api.latere.ai beside code.latere.ai"
+title: "The API at the platform origin: /v1/repos answers at the shared origin beside the git host"
 status: complete
 track: infra
 depends_on:
@@ -10,7 +10,7 @@ depends_on:
 affects: [deploy/prod/ingress-api.yaml, deploy/prod/audience.yaml, deploy/prod/kustomization.yaml, deploy/base/deployment.yaml, internal/auth/verifier.go, internal/auth/conformance_test.go, internal/config/config.go, internal/config/document.go, cmd/origod/node.go, cmd/origod/manifests_test.go, docs/configuration.md, docs/install.md, specs/007-authentication-and-delegation.md, specs/028-authorizer-contract-2.md, .lateregate.yaml]
 effort: small
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -20,49 +20,53 @@ author: changkun
 
 ### Scope
 
-Two changes to Latere's installation: a second Ingress rule serving `/v1/repos`
-at `api.latere.ai`, and a second accepted audience so a token minted for the
-origin verifies. No route is renamed, and a self-hoster running `deploy/base`
-gets nothing new.
+Two changes to the hosted installation's overlay, `deploy/prod`: a second
+Ingress rule serving `/v1/repos` at the platform origin, the one API host
+in front of every core, and a second accepted audience so a token minted
+for the origin verifies. No route is renamed, and a self-hoster running
+`deploy/base` gets nothing new. Below, `api.example.com` stands for the
+origin and `git.example.com` for Origo's own git host beside it.
 
-Out of scope: the console's Repos screens (platform spec 67, ps-02); SSH keys and
-the registry, platformd's; ps-04; ps-11; any route, field or reason rename.
+Out of scope: the console's Repos screens and where the authorizer runs,
+which are the platform's; SSH keys and the registry, which the platform
+control plane holds; retiring the API paths on the git host, a later step
+of the same move; any route, field or reason rename.
 
 ### Problem
 
-The family decided on 2026-09-20 that `api.latere.ai/v1` is partitioned by
-capability prefix, one prefix per core, and that Origo's prefix is `repos`
-(latere-ai/specs, `decisions/2026-09-20-origin-capability-prefixes.md` and the
-"Revision, 2026-09-20" of `infrastructure/platform/ps-01-one-origin.md`). Origo
-owes no restructuring for it: the JSON API is already mounted at `/v1/repos`
-(`internal/api/api.go:189`, `read.go:66`, `admin.go:36`, `operations.go:92`), so
-the capability prefix and the resource collection are one path. Missing are the
-route and the audience. The origin's Ingress rules are arcad's alone, so
-`api.latere.ai/v1/repos` answers 404 from nginx, and the node verifies the
-single audience `origo` (`internal/auth/verifier.go:325`,
-`internal/config/config.go:280`), so a personal access token or a platform key
-addressed to `api.latere.ai` is refused with `audience` even once the route
-exists. Open cores' "one audience" sentence was amended the same day: a core
-accepts exactly two, its own name and the platform origin, and the boundary
-between cores is the authorizer's.
+The family decided on 2026-09-20 that the origin's `/v1` is partitioned by
+capability prefix, one prefix per core, and that Origo's prefix is
+`repos`. Origo owes no restructuring for it: the JSON API is already
+mounted at `/v1/repos` (`internal/api/api.go:189`, `read.go:66`,
+`admin.go:36`, `operations.go:92`), so the capability prefix and the
+resource collection are one path. Missing are the route and the audience.
+The origin's Ingress rules were arcad's alone, so
+`api.example.com/v1/repos` answered 404 from nginx, and the node verifies
+the single audience `origo` (`internal/auth/verifier.go:325`,
+`internal/config/config.go:280`), so a personal access token or a
+platform key addressed to the origin is refused with `audience` even once
+the route exists. The open cores' "one audience" rule was amended the
+same day: a core accepts exactly two, its own name and the platform
+origin, and the boundary between cores is the authorizer's.
 
 ### The two hosts
 
 ```
-code.latere.ai                          api.latere.ai
- origod-tls, on origod's object          api-latere-ai-tls, on arcad's object
+git.example.com                         api.example.com
+ TLS on origod's own object              TLS on arcad's object
  /{owner}/{slug}/info/refs               /v1/repos            ─┐ origod,
  /{owner}/{slug}/git-upload-pack         /v1/repos/{id}        │ no rewrite,
  /{owner}/{slug}/git-receive-pack        /v1/repos/{id}/refs   │ no base path
  /{owner}/{slug}/info/lfs/…              …every route the mux ─┘
  git over SSH, TCP 22                     already registers
- /v1/…  unchanged until ps-04            /v1/storage/…  arcad
- /readyz, /version                       /v1/environments/…, /v1/models/… as
- /.well-known/jwks.json                   each core arrives
+ /v1/…  unchanged until the git          /v1/storage/…  arcad
+        host's API paths retire          /v1/environments/…, /v1/models/… as
+ /readyz, /version                        each core arrives
+ /.well-known/jwks.json
  /  origo-web
 ```
 
-Transport stays `code.latere.ai`: clone, LFS and SSH URLs name that host
+Transport stays on the git host: clone, LFS and SSH URLs name that host
 whichever host a JSON request arrived on.
 
 ## Options
@@ -72,8 +76,8 @@ whichever host a JSON request arrived on.
 | | Shape | For | Against |
 |---|---|---|---|
 | A | A second host block inside `deploy/prod/ingress.yaml` | One file and one object for the installation's routing | That object carries `use-regex: "true"` (`deploy/prod/ingress.yaml:39`), which turns every path in it into a regular expression, and an unanchored `/v1/repos` matches anywhere in a path. Its own comment says regular expressions are tried before any prefix (`deploy/prod/ingress.yaml:24`) |
-| B | A second object in `deploy/prod`, `origod-api`, host `api.latere.ai`, no `use-regex` | The regex annotation stays with the host that needs it and the origin rule is a plain `pathType: Prefix`. It is the shape arcad already runs on this host | A second file and a second object to keep in step |
-| C | The base Ingress grows the rule | Nothing, for Latere | The base names no host and `TestBaseIngressIsControllerNeutral` (`cmd/origod/manifests_test.go:41`) enforces that; `api.latere.ai` is Latere's address, not an operator's |
+| B | A second object in `deploy/prod`, `origod-api`, on the origin's host, no `use-regex` | The regex annotation stays with the host that needs it and the origin rule is a plain `pathType: Prefix`. It is the shape arcad already runs on this host | A second file and a second object to keep in step |
+| C | The base Ingress grows the rule | Nothing, for the hosted installation | The base names no host and `TestBaseIngressIsControllerNeutral` (`cmd/origod/manifests_test.go:41`) enforces that; the origin's name is one installation's address, not every operator's |
 
 **Recommendation: B.** The annotation decides it: A widens either the git paths
 or the new one, and nginx rejects a whole document rather than one rule, so that
@@ -85,7 +89,7 @@ failure lands on a release apply.
 |---|---|---|---|
 | A | A second variable, the plural of the existing name | No change to a variable an operator already sets | Two variables for one fact, and two rows in `internal/config/document.go:77` |
 | B | `ORIGO_OIDC_AUDIENCE` becomes a comma-separated list whose first entry is the primary, following Cella (`cella/internal/config/identity.go:100`, `audiences_test.go`) | One variable, one row, and the sibling core's shape unchanged. A single value keeps its present meaning exactly | The name is singular and holds a set |
-| C | The verifier accepts `api.latere.ai` unconditionally | No configuration at all | A self-hoster would accept a Latere name, and the cores hold no Latere value |
+| C | The verifier accepts the origin's name unconditionally, compiled in | No configuration at all | A self-hoster would accept another installation's name, and the cores hold no installation's value |
 
 **Recommendation: B.** The primary is what the node mints with, a distinction a
 bare set cannot carry, and Cella has the shape already.
@@ -94,7 +98,7 @@ bare set cannot carry, and Cella has the shape already.
 
 | | Shape | For | Against |
 |---|---|---|---|
-| A | `/readyz`, `/version` and `/.well-known/jwks.json` are not routed at `api.latere.ai` | The key set must resolve under `ORIGO_PUBLIC_URL`, which is `https://code.latere.ai` and does not move; the release smoke reads the probes at that host (`.github/workflows/release.yml:472`) | A reader who knows arcad's object carries four probes finds the hosts inconsistent |
+| A | `/readyz`, `/version` and `/.well-known/jwks.json` are not routed at the origin | The key set must resolve under `ORIGO_PUBLIC_URL`, which is the git host and does not move; the release smoke reads the probes at that host (`.github/workflows/release.yml:472`) | A reader who knows arcad's object carries four probes finds the hosts inconsistent |
 | B | The three are exposed under `/v1/repos/...` | The prefix stays honest | Three new routes for a caller that does not exist, and `/version` under a collection is not a version of the collection |
 
 **Recommendation: A.** A repository-bound token's `iss` is `ORIGO_PUBLIC_URL`
@@ -108,27 +112,27 @@ probe surface per host, owned by the core that publishes that host.
 
 `deploy/prod/ingress-api.yaml`, a new `resources` entry of
 `deploy/prod/kustomization.yaml:22` and not a patch, since the patches list
-merges into the base and this object has no counterpart there. It carries `host:
-api.latere.ai`, `/v1/repos` at `pathType: Prefix`, backend `origod:http`, no
+merges into the base and this object has no counterpart there. It carries the
+origin's host, `/v1/repos` at `pathType: Prefix`, backend `origod:http`, no
 `use-regex`, no `rewrite-target`:
 
 - No `tls` block and no `cert-manager.io/cluster-issuer`: the origin's
-  certificate is arcad's (`arca/deploy/prod/ingress.yaml:49`, `:60`, secret
-  `api-latere-ai-tls`), and a second issuer annotation on one host is a second
-  claim on one certificate.
+  certificate is arcad's, issued through arcad's own Ingress object, and a
+  second issuer annotation on one host is a second claim on one certificate.
 - `proxy-body-size: "0"`, `proxy-read-timeout: "600"` and `proxy-send-timeout:
   "600"`, or one request behaves differently per host: an operation body is
   bounded at 64 MiB by the node (`internal/api/operations.go:39`) against a
   controller default of 1 MiB, so `POST /v1/repos/{id}/merge` would take a
-  controller 413 at the origin and the node's readable error at
-  `code.latere.ai`. `archive` and `export.bundle` stream for minutes.
+  controller 413 at the origin and the node's readable error at the git
+  host. `archive` and `export.bundle` stream for minutes.
 
 Two nginx constraints govern the rule. The admission webhook refuses a path
 holding a dot under `Exact` or `Prefix` and rejects the whole document rather
-than the one rule (`arca/deploy/prod/ingress.yaml:142`); `/v1/repos` holds no dot,
-so a plain `Prefix` applies. And the controller does not refuse two Ingresses
-claiming one path on one host: what keeps `/v1/repos` Origo's is one prefix per
-core plus each repository's own deploy test, ps-01 criterion 6. nginx also
+than the one rule, which arcad's object on the same host already works
+around; `/v1/repos` holds no dot, so a plain `Prefix` applies. And the
+controller does not refuse two Ingresses claiming one path on one host: what
+keeps `/v1/repos` Origo's is one prefix per core plus each repository's own
+deploy test, which the move to one origin asks of every core. nginx also
 renders `Prefix` as a prefix location, not the segment-bounded match the
 Kubernetes type defines, so `/v1/reposX` reaches origod and 404s in its mux; no
 other origin prefix begins with `/v1/repos`, so nothing is shadowed.
@@ -154,14 +158,15 @@ the package checks `aud` after `exp`, spec 007's table checks it before, and
 `internal/auth/verifier.go:143` says so in as many words. Handing the set to the
 package would reorder two refusal reasons a client reads.
 
-Latere's manifests name `origo,api.latere.ai` in both containers, set in
-`deploy/prod` because the second name is Latere's address; the base keeps
-`origo` (`deploy/base/deployment.yaml:83`, `:155`). The value carries no scheme:
+The hosted installation's manifests name a two-entry list in both
+containers, `origo` and then the origin's name, set in `deploy/prod` because
+the second name is that installation's address; the base keeps `origo`
+(`deploy/base/deployment.yaml:83`, `:155`). The value carries no scheme:
 ci-gate's audience rule refuses a value beginning with `http` or holding `,http`
 (`ci-gate/internal/identity/deploy.go:66`), and an address is not an audience.
 `.lateregate.yaml:125` keeps the scalar `audience: origo`, the primary, because
 the gate's block reads one string (`ci-gate/internal/config/identity.go:78`) and
-reading a list for the core role is ps-01's work there.
+reading a list for the core role is the gate's own work under the same move.
 `TestEveryNodeNamesItsAudience` (`cmd/origod/manifests_test.go:230`) compares
 the manifest value against
 `auth.DefaultAudience` and fails on a pair; it becomes a check that the *first*
@@ -182,7 +187,7 @@ configured audiences".
 `ORIGO_ANONYMOUS_READ` is on here (`deploy/prod/anonymous-read.yaml`). The route
 set is a list, not a rule, and eight of its ten entries are `/v1/repos/{id}/...`
 reads (`internal/auth/anonymous.go:46`), so those reads become anonymous at
-`api.latere.ai` too. That is intended and not a widening: the authorizer still
+the origin too. That is intended and not a widening: the authorizer still
 decides each one, and the directory `GET /v1/repos` is withheld from the list, so
 an unauthenticated directory request answers 401 at either host. The anonymous
 bucket is keyed by the sentinel subject inside the node, so the hosts share one
@@ -191,36 +196,37 @@ bucket is keyed by the sentinel subject inside the node, so the hosts share one
 No `/v1/repos` response embeds an absolute URL built from `ORIGO_PUBLIC_URL`:
 the `Repository` representation carries none (`internal/api/api.go:201`),
 `archive` streams the tarball rather than redirecting, and the variable is read
-only as the local issuer and the signer's `iss`. A body served at `api.latere.ai`
-is byte for byte the body served at `code.latere.ai`. The absolute URLs Origo
-does write are transport URLs and keep naming `code.latere.ai`: LFS hrefs are
+only as the local issuer and the signer's `iss`. A body served at the origin
+is byte for byte the body served at the git host. The absolute URLs Origo
+does write are transport URLs and keep naming the git host: LFS hrefs are
 presigned bucket URLs plus a verify href from the request's own host
 (`internal/lfs/lfs.go:486`), and LFS is not routed at the origin.
 
 ### Cutover
 
-Additive. `code.latere.ai/v1/repos` keeps serving until ps-04 retires the host's
-API paths. The no-compatibility-windows decision governs contracts between
-services and is not weakened: no contract has two shapes, one address gains a
-second name, the distinction ps-04 already draws for a hostname. The Ingress
-object and the audience list ship in one release, because the route without the
-second audience serves 401 to every key-minted caller. origo-web needs no change,
-since `ORIGOWEB_ORIGO_URL` is the in-cluster Service
-(`origo-web/deploy/prod/settings.yaml:37`); latere-cli needs none, since it names
-`code.latere.ai` only as a git credential host. platformd's console Repos section
-is a new caller, with its own leaf in the platform deck (spec 67).
+Additive. `/v1/repos` on the git host keeps serving until a later step of
+the move retires that host's API paths. The family's no-compatibility-windows
+decision governs contracts between services and is not weakened: no contract
+has two shapes, one address gains a second name, which is the distinction the
+family already draws for a hostname. The Ingress object and the audience list
+ship in one release, because the route without the second audience serves 401
+to every key-minted caller. origo-web needs no change, since
+`ORIGOWEB_ORIGO_URL` is the in-cluster Service in its own overlay; latere-cli
+needs none, since it names the git host only as a git credential host. The
+platform console's Repos section is a new caller, specified on the platform's
+side.
 
 ## Acceptance criteria
 
 | # | Criterion | How it is checked |
 |---|---|---|
-| 1 | `GET https://api.latere.ai/v1/repos` answers the directory for a person's actor token, `aud=origo`, and for a PAT-minted token, `aud=api.latere.ai` | two requests after the release, recorded in the Outcome |
-| 2 | A token addressed to a third audience is 401 with the package's `audience` reason | `internal/auth/conformance_test.go` runs `conformance.Run` a second time with `Service{Audience: "api.latere.ai"}` over a verifier holding the full list; `RefusesOtherAudience` is that case |
+| 1 | `GET /v1/repos` at the origin answers the directory for a person's actor token, `aud=origo`, and for a PAT-minted token addressed to the origin | two requests after the release, recorded in the Outcome |
+| 2 | A token addressed to a third audience is 401 with the package's `audience` reason | `internal/auth/conformance_test.go` runs `conformance.Run` a second time with the origin's name as `Service.Audience` over a verifier holding the full list; `RefusesOtherAudience` is that case |
 | 3 | `ORIGO_OIDC_AUDIENCE` reads a list, first entry primary, and refuses an empty or repeated entry | `internal/config`, a table test in the shape of Cella's `TestConfiguredAudienceSet` |
 | 4 | A repository-bound token still carries `aud: ["origo"]`, verifies locally, and `aud` is still weighed before `exp` | `internal/auth`, the signer test and the existing reason-order test, both with the list configured |
-| 5 | The prod overlay claims exactly `/v1/repos` on `api.latere.ai`, with no `tls` block, no cert-manager annotation and no `use-regex`, and both containers name a list whose first entry is the core's own audience | a deploy test beside `cmd/origod/manifests_test.go` reading `deploy/prod/ingress-api.yaml`; `TestEveryNodeNamesItsAudience`, amended |
+| 5 | The prod overlay claims exactly `/v1/repos` on the origin's host, with no `tls` block, no cert-manager annotation and no `use-regex`, and both containers name a list whose first entry is the core's own audience | a deploy test beside `cmd/origod/manifests_test.go` reading `deploy/prod/ingress-api.yaml`; `TestEveryNodeNamesItsAudience`, amended |
 | 6 | A 64 MiB operation body succeeds at both hosts | one request per host after the release |
-| 7 | No `/v1/repos` response body names `code.latere.ai`, and origo-web and latere-cli are unchanged | `internal/api`, a sweep of the representation and the read answers for the host string; `git grep` for `code.latere.ai/v1` over both trees |
+| 7 | No `/v1/repos` response body names the git host, and origo-web and latere-cli are unchanged | `internal/api`, a sweep of the representation and the read answers for the host string; `git grep` for the git host followed by `/v1` over both trees |
 
 ## Dependencies
 
@@ -228,8 +234,8 @@ is a new caller, with its own leaf in the platform deck (spec 67).
 [[027-anonymous-read]] for the route set the second host inherits,
 [[026-repository-directory]] for the collection route criterion 1 calls, and
 [[007-authentication-and-delegation]] for the verification table whose `aud` row
-moves. Outside the tree, latere-ai/specs
-`infrastructure/platform/ps-01-one-origin.md`, which this is Origo's half of.
+moves. Outside the tree, the family's plan to serve every core under one
+platform origin, which this is Origo's half of.
 
 ## State on 2026-09-20
 
@@ -240,7 +246,7 @@ because the route does not exist until `deploy/prod` is applied.
 ### What was built
 
 **The route.** `deploy/prod/ingress-api.yaml`, the object `origod-api`:
-`ingressClassName: nginx`, host `api.latere.ai`, one rule, `/v1/repos` at
+`ingressClassName: nginx`, the origin's host, one rule, `/v1/repos` at
 `pathType: Prefix`, backend `origod:http`. No `tls` block, no
 `cert-manager.io/cluster-issuer`, no `use-regex`, no `rewrite-target`;
 `proxy-body-size: "0"`, `proxy-read-timeout: "600"` and
@@ -258,9 +264,9 @@ still by hand and still before `exp`. The signer still mints with the
 primary (`cmd/origod/node.go`), so a repository-bound token carries
 `aud: ["origo"]` unchanged.
 
-**Latere's values.** `deploy/prod/audience.yaml` sets
-`origo,api.latere.ai` on the node and on the check; `deploy/base`
-keeps `origo`, so a self-hoster gets nothing new.
+**The hosted installation's values.** `deploy/prod/audience.yaml` sets
+`origo` followed by the origin's name on the node and on the check;
+`deploy/base` keeps `origo`, so a self-hoster gets nothing new.
 `.lateregate.yaml` is untouched and still names the scalar `origo`, the
 primary. `docs/configuration.md` is regenerated from
 `internal/config/document.go`, and `docs/install.md` says the variable
@@ -275,24 +281,25 @@ dated note each.
 | 3 | `internal/config`, `TestConfiguredAudienceSet`, table-driven over the default, a list, a reordered list, a trimmed list, and the four malformed values | passing |
 | 4 | `internal/auth`, `TestSignerMintsAndServesItsKey` (the minted token names the primary alone) and `TestVerifierAcceptsTwoIssuersAndRefusesEachFailure` (the reason order, now over a verifier holding the list) | passing |
 | 5 | `cmd/origod`, `TestTheOriginIngressClaimsTheRepositoryPrefix` (the resource entry, one host, one path, `/v1/repos` at `Prefix` to `origod:http`, and the absence of `tls`, `secretName`, `cert-manager.io/`, `use-regex` and `rewrite-target`) and `TestEveryNodeNamesItsAudience`, amended to read the first entry of the list and extended to the prod patch | passing |
-| 7, the half a tree can answer | no file of `internal/api` or `internal/lfs` names `code.latere.ai`; `git grep code.latere.ai/v1` finds nothing in origo outside this document and nothing in origo-web, and latere-cli names `code.latere.ai` only as a git credential host and in clone URLs | passing |
+| 7, the half a tree can answer | no file of `internal/api` or `internal/lfs` names the git host; a `git grep` for the git host followed by `/v1` finds nothing in origo outside this document and nothing in origo-web, and latere-cli names the git host only as a git credential host and in clone URLs | passing |
 
 Each was run once against the tree without the change and once with it:
 the ingress test fails on a `tls` block, a `secretName` and a
 `use-regex` annotation; the audience test fails on a list whose primary
-is the origin; `TestConformance/api.latere.ai` fails with `audience` on
-a verifier holding one name; and `TestConfiguredAudienceSet` fails on
-every malformed value with the entry check removed.
+is the origin; `TestConformance`, in its run for the origin's audience,
+fails with `audience` on a verifier holding one name; and
+`TestConfiguredAudienceSet` fails on every malformed value with the entry
+check removed.
 
 ### What waits for the release
 
-Criteria 1 and 6 are requests at `https://api.latere.ai`, and the host
-answers 404 from nginx until this overlay is applied: the directory for a
-person's actor token and for a PAT-minted token addressed to
-`api.latere.ai`, and a 64 MiB operation body at both hosts. The object
-and the audience list ship in one release, because the route without the
-second audience serves 401 to every key-minted caller. Record both in the
-Outcome, then the spec is `complete`.
+Criteria 1 and 6 are requests at the origin, and the origin answers 404
+from nginx until this overlay is applied: the directory for a person's
+actor token and for a PAT-minted token addressed to the origin, and a
+64 MiB operation body at both hosts. The object and the audience list
+ship in one release, because the route without the second audience serves
+401 to every key-minted caller. Record both in the Outcome, then the spec
+is `complete`.
 
 ## Outcome
 
@@ -301,9 +308,9 @@ install all passed by 18:09 UTC.
 
 | # | Criterion | Proof |
 |---|---|---|
-| 1 | `/v1/repos` answers at the origin | `GET https://api.latere.ai/v1/repos` without a token answers the node's `unauthenticated` envelope, byte-identical to `code.latere.ai/v1/repos`; the authenticated calls (a person's `origo` actor token, a PAT-minted `api.latere.ai` token) are the maintainer's step in the specs repo's window runbook |
-| 3, 5 | the list audience | both containers run `ORIGO_OIDC_AUDIENCE=origo,api.latere.ai` |
-| 5 | the Ingress | `origod-api` on `api.latere.ai`, one rule `/v1/repos` Prefix, no tls, no cert-manager annotation, no regex |
+| 1 | `/v1/repos` answers at the origin | on the hosted installation, `GET /v1/repos` at the origin without a token answers the node's `unauthenticated` envelope, byte-identical to the same request at the git host; the authenticated calls (a person's `origo` actor token, a PAT-minted token addressed to the origin) are left to the maintainer, who makes them by hand outside this repository |
+| 3, 5 | the list audience | both containers of the hosted installation run `ORIGO_OIDC_AUDIENCE` set to `origo` followed by the origin's name |
+| 5 | the Ingress | `origod-api` on the origin's host, one rule `/v1/repos` Prefix, no tls, no cert-manager annotation, no regex |
 | 7 | bodies name no host | the two hosts' bodies compared equal |
 
 Criterion 6 (a 64 MiB operation body at both hosts) is not yet

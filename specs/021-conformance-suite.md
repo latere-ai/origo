@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-09-26
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -754,8 +754,8 @@ builds the stack target with the three stub endpoints and the `Fault`,
 fails on any failed case, fails when a `Fault` is wired and anything is
 skipped, and fails on a non-empty `Report.Unverified`, so a green stack
 run is every case of the deck answered, spec 020's four rows and spec
-019's included. The step ran without `-v` — that flag landed later, in
-spec 017's `1f4bbb9` — so no case is named in the log and the evidence
+019's included. The step ran without `-v` (that flag landed later, in
+spec 017's `1f4bbb9`), so no case is named in the log and the evidence
 is the package's `ok` plus those three assertions inside the test. The
 one way out that leaves no trace is `stackTarget`'s skip when nothing
 answers at `ORIGO_TEST_URL`, which the job's passing `Bring the stack
@@ -818,7 +818,7 @@ waits on is that branch against the installation `ORIGO_LIVE_URL`
 names, which is a deployed Origo and not a cluster a job made.
 
 Spec 017's Outcome records that limit and its lifting. The two secrets
-were set, `https://code.latere.ai` answers, and the v0.1.3 release run
+were set, the hosted installation answers, and the v0.1.3 release run
 34546335576 of 2026-09-11 produced the run this spec waited on. Its
 `live` job, id 103120952813, reports
 `contract_test.go:133: live run against ***: 51 passed` and

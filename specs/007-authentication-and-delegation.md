@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-26
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -20,8 +20,8 @@ author: changkun
 > configurable audience, and moves the verifier to the shared package,
 > in one release. The five rules, the probe id, and the cache and retry
 > rules are unchanged and are the shared contract's. Delegation through
-> `act` was removed on 2026-09-13 by the family's decision D5 (its
-> id-06): the verifier refuses a token carrying `act` with the reason
+> `act` was removed on 2026-09-13 by the family's decision D5: the
+> verifier refuses a token carrying `act` with the reason
 > `delegation`, the minter copies no such claim, the entry header and
 > the push event name the subject alone, and contract 1's `actor` field
 > left with contract 1. The sections below describe the system as it is;
@@ -34,8 +34,8 @@ author: changkun
 > since v0.4.1. Contract 1's envelope is 028's migration table, which is
 > its record. The section also names
 > `latere.ai/x/origo/authorizer`, the vocabulary package of the
-> identity epic's id-11 (c), so an endpoint written in Go imports the
-> action strings rather than copying them out of the page.
+> family's one authorizer library, so an endpoint written in Go imports
+> the action strings rather than copying them out of the page.
 
 ## Overview
 
@@ -532,9 +532,10 @@ and a mismatch fails the fetch (`TestDiscoveryIssuerMustMatch`).
 ## State on 2026-09-20: the `aud` row reads the configured set
 
 Spec 029 gives one node more than one audience. `ORIGO_OIDC_AUDIENCE` is
-a comma separated list whose first entry is the primary, and Latere's
-installation sets `origo,api.latere.ai`, so a token addressed to the
-platform origin verifies on the route that origin publishes. The
+a comma separated list whose first entry is the primary, and the hosted
+installation sets `origo` followed by the platform origin's name, so a
+token addressed to the origin verifies on the route that origin
+publishes. The
 verification table above is amended in one cell and nowhere else: its
 `aud` row, which reads "contains `origo`", reads "contains one of the
 configured audiences" from this date, with the same refusal `audience`

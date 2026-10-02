@@ -14,7 +14,7 @@ depends_on:
 affects: [internal/sshd/, internal/config/, internal/repo/, internal/auth/, cmd/origod/, deploy/, docs/, test/e2e/]
 effort: large
 created: 2026-09-10
-updated: 2026-09-12
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -54,9 +54,9 @@ invariant 7, as spec 011 amended it), and `latere.ai/x/pkg` carried no
 SSH package; `golang.org/x/crypto/ssh` is the fourth now, confined to
 `internal/sshd`.
 
-No component of Latere's stack held an SSH public key then, and none
-does now. Auth serves the authorizer of spec 007 and has no key
-concept; this spec states what a key store must answer and leaves the
+No component of the hosted installation held an SSH public key then,
+and none does now. Its identity service serves the authorizer of spec
+007 and has no key concept; this spec states what a key store must answer and leaves the
 store to the operator, with `test/stubs/sshkeys` as the reference.
 
 ## Design
@@ -82,7 +82,7 @@ worse.
 
 Neither buys anything. Origo's nodes are already stateless and
 interchangeable (invariant 3), so the reason a front end usually
-exists — an application that cannot hold a long-lived connection — does
+exists, an application that cannot hold a long-lived connection, does
 not apply to a Go binary that already holds streaming clone connections
 for minutes. One listener in the process the writes already run in keeps
 invariants 1 and 2 in one place.
@@ -124,9 +124,8 @@ answer.
 Origo never stores a public key. It asks one endpoint the operator runs,
 named by `ORIGO_SSH_KEYS_URL` and called with the bearer
 `ORIGO_SSH_KEYS_TOKEN`, which is the shape spec 007 already uses for the
-authorizer. This section is provider-agnostic; nothing in it is
-Latere's, and an operator who does not run Latere's auth implements it
-as it stands.
+authorizer. This section is provider-agnostic; nothing in it belongs
+to one installation, and any operator implements it as it stands.
 
 **The call.** Per public key offered during authentication, with a 5
 second timeout and one retry when the connection failed before a
@@ -187,8 +186,8 @@ tenth of the calls and a coarser figure.
 
 **A single-tenant operator needs no service.** A file of fingerprints
 and subjects served behind the same bearer satisfies this in full;
-`authorized_keys` is already that table. The lifecycle — add, name,
-list, remove, show last used — is the operator's product surface and
+`authorized_keys` is already that table. The lifecycle (add, name,
+list, remove, show last used) is the operator's product surface and
 Origo has no opinion about it.
 
 **The node's cache.** An answer is cached by fingerprint for its `ttl`,
@@ -219,8 +218,8 @@ what 016's write row requires.
 **A key names one subject.** A public key carries no claims and no
 signature over anything but the session, so the key store resolves it to
 one subject and asserts nothing else. An operator who wants a machine to
-push gives the machine a subject of its own — a deploy key is its own
-subject — and grants that subject what it needs through the authorizer,
+push gives the machine a subject of its own (a deploy key is its own
+subject) and grants that subject what it needs through the authorizer,
 which is the machinery that already exists. A service that must push *as
 a person* uses HTTPS with the token that person's issuer minted for
 Origo (spec 007).
@@ -353,8 +352,9 @@ handshake and authentication together, at most 3 public key attempts
 method, and no banner that names the installation.
 
 **Refusals after authentication** travel on the session's stderr as
-`<code>: <sentence>` — `contract.Line` of the code, byte for byte the
-form spec 021 fixed for the sideband — and the exit status is 1. Git
+`<code>: <sentence>`, which is `contract.Line` of the code, byte for
+byte the form spec 021 fixed for the sideband, and the exit status is
+1. Git
 prints stderr verbatim, so a person sees the same sentence they would
 read in a JSON envelope. No new error code is defined by this spec: the
 codes are 003's, 007's, 012's, and 015's, unchanged.
@@ -502,7 +502,8 @@ wide margin.
 ## Not in this spec
 
 - Storing, adding, listing, or removing a public key. That is the
-  operator's, and the task below states what Latere's auth must build.
+  operator's, and the task below states what an identity service must
+  build to hold the keys.
 - `git-lfs-authenticate`, and with it LFS over an SSH remote. Named in
   decision 9 with what it would take.
 - The JSON API, the read API, the archive, and the administration and
@@ -516,16 +517,17 @@ wide margin.
 
 ## A task for the operator's identity service
 
-Latere's key store is auth's, beside the authorizer of its spec 072.
-This is what that spec must cover, stated here so the requirement is
-recorded and written into auth's own deck by whoever owns it:
+In the hosted installation the key store belongs to the identity
+service, beside the authorizer it serves. This is what that service's
+own specification must cover, stated here so the requirement is
+recorded and carried into it by whoever owns that service:
 
 | Item | What it must cover |
 |---|---|
 | storage | one relation keyed by the SHA-256 fingerprint, unique installation-wide, carrying the principal, a name the person chose, the algorithm, the key blob, created, last used, and optional expiry and revocation times |
-| the resolve endpoint | a `POST` under `/internal/origo/`, the request and answer above, under `/internal/` behind the same NetworkPolicy and bearer rotation as the authorizer of spec 072, answering from the same in-memory snapshot so no call queries Postgres |
+| the resolve endpoint | a `POST` under `/internal/origo/`, the request and answer above, under `/internal/` behind the same NetworkPolicy and bearer rotation as that service's authorizer, answering from the same in-memory snapshot so no call queries Postgres |
 | last used | written from the resolve call, batched and at most once per key per minute, so the request path writes nothing |
-| the subject | the principal's `sub`, the same value auth's OIDC tokens carry, so one identity crosses HTTPS and SSH |
+| the subject | the principal's `sub`, the same value the service's OIDC tokens carry, so one identity crosses HTTPS and SSH |
 | the management API | add with a name, list with fingerprints and last used, remove; a key already registered to anyone is refused with a distinct error the UI can render, and the person is told which of their own keys it is when it is theirs |
 | acceptance | `ssh-ed25519`, `ecdsa-sha2-nistp256/384/521`, and `ssh-rsa` at 2048 bits or more; `ssh-dss` refused; options and commands in an `authorized_keys` line stripped and never stored as semantics |
 | audit | a row on add and on remove, none on resolve, because a resolve happens on every connection |
@@ -623,8 +625,8 @@ where the stack criteria are proved.
 One thing outside Origo gates the *use* of it rather than the build: an
 installation needs a key store answering the contract of decision 3. The
 stub of `test/stubs/sshkeys` satisfies it for the test stack and for a
-first installation, and Latere's own is the task above, in auth's deck
-beside its spec 072. A self-hoster needs neither: a file of fingerprints
+first installation, and the hosted installation's is the task above,
+for its identity service. A self-hoster needs neither: a file of fingerprints
 behind a bearer is the whole requirement.
 
 ## Outcome
@@ -711,8 +713,8 @@ release runs 34546335576 and 34617034527.
 The two things this spec names as somebody else's stay there:
 `git-lfs-authenticate` and LFS over an SSH remote, which is a spec of
 its own, and certificate authentication, which is a smaller design and a
-different contract. Latere's key store is auth's,
-in the task above, and the stub of `test/stubs/sshkeys` is what serves
+different contract. The hosted installation's key store is its
+identity service's, in the task above, and the stub of `test/stubs/sshkeys` is what serves
 the stack and a first installation until it exists.
 
 ### The stack proof

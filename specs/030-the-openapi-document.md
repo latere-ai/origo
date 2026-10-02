@@ -9,7 +9,7 @@ depends_on:
 affects: [tools/apidoc/openapi.go, tools/apidoc/openapi_test.go, tools/apidoc/main.go, tools/apidoc/page.go, tools/apidoc/page_test.go, tools/apidoc/go.mod, api/openapi.yaml, api/openapi.go, api/openapi_test.go, cmd/origod/node.go, cmd/origod/openapi_test.go, cmd/origod/main_test.go, deploy/prod/ingress.yaml, docs/api.md, Makefile, .github/workflows/verify.yml, CHANGELOG.md, specs/020-server-side-git-operations.md, specs/022-landing-page.md, specs/README.md]
 effort: medium
 created: 2026-09-20
-updated: 2026-09-22
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -21,21 +21,21 @@ author: changkun
 
 One document: Origo's HTTP surface as OpenAPI 3.1, generated from the same
 spec tables `docs/api.md` is generated from, committed at `api/openapi.yaml`,
-and served by the node at `GET /openapi.yaml`. One Ingress rule so Latere's
+and served by the node at `GET /openapi.yaml`. One Ingress rule so the hosted
 installation answers it, and one line on `docs/api.md` pointing at it.
 
 Out of scope: a request or response schema per route, because the tables state
 bodies in prose and a schema invented from prose would claim types no spec
-states; the platform's Repos pages, which are platform spec 68's; any route,
+states; the platform's Repos pages, which the platform specifies; any route,
 code, header or field change. No endpoint moves and no self-hoster has to do
 anything.
 
 ### Problem
 
 The maintainer decided on 2026-09-20 that each capability's documentation
-renders its API overview from that capability's own OpenAPI document
-(latere-ai/platform, `specs/68-docs-over-the-capabilities.md`, option A of
-"Where Origo's OpenAPI document comes from"). Arca publishes one at
+renders its API overview from that capability's own OpenAPI document, and
+that Origo's comes from Origo's own tree and is vendored by tag rather than
+written on the platform's side. Arca publishes one at
 `arca/api/openapi.yaml` and serves it; Origo publishes none, so the platform's
 Repos pages can only link `docs/api.md`, and no client generator, no request
 collection and no linter can read Origo's surface without parsing Markdown.
@@ -64,7 +64,7 @@ vendors must be the file the node serves.
 |---|---|---|---|
 | A | `tools/apidoc` gains a second writer over the index it already builds: one operation per endpoint row of the specs | One source for both documents, so `docs/api.md` and the OpenAPI document cannot disagree; the deck's own findings already fail the run, so a table shape neither tool recognizes is caught at `make docs` | The document is only as precise as the tables, which state bodies in prose |
 | B | A route table in the main module, as Arca does (`arca/internal/apidocs`, one row per registration) | The document cannot disagree with the router; the node builds it in process | Origo's registrations carry no text, so every summary would be written a second time beside the one the spec already states, and `docs/api.md` would keep its own source: two route truths, which is the fault this document exists to avoid |
-| C | Hand-written and committed | Full control of every schema | It drifts the day a route lands, which is what platform spec 68 refused for its own half |
+| C | Hand-written and committed | Full control of every schema | It drifts the day a route lands, which is what the platform refused for its own half |
 
 **Recommendation: A.** The row a reader sees on `docs/api.md` and the operation
 a generator reads are then one row read twice. What A does not prove, that the
@@ -91,8 +91,8 @@ in the documentation rather than a fault.
 | | Shape | For | Against |
 |---|---|---|---|
 | A | Every row of every endpoint table: the JSON API, the git transport and LFS under a `transport` tag, and the probes and the landing page under a `service` tag with `x-scope: operator` | The document describes what a node answers, which is what a self-hoster reading it at their own installation needs; a consumer hides a group by its tag or its scope | A platform page that hides nothing renders six routes no integrator calls |
-| B | The `/v1` routes alone | Nothing to hide | The document would answer at a node and not describe that node: the git transport is the product, and a reader who fetched the document from `code.latere.ai` would not find the clone paths in it |
-| C | A, but the transport rows excluded | The origin serves `/v1/repos` alone (spec 029), so the document would match the origin | The document is not the origin's; it is the installation's, and Latere's own transport is at `code.latere.ai` |
+| B | The `/v1` routes alone | Nothing to hide | The document would answer at a node and not describe that node: the git transport is the product, and a reader who fetched the document from the git host would not find the clone paths in it |
+| C | A, but the transport rows excluded | The origin serves `/v1/repos` alone (spec 029), so the document would match the origin | The document is not the origin's; it is the installation's, and an installation behind a shared origin keeps its transport on its git host |
 
 **Recommendation: A.** One document per installation, covering what that
 installation serves, with the marks a consumer needs to show a subset.
@@ -219,8 +219,8 @@ because `//go:embed` reads no parent directory; it holds the embedded bytes
 and the handler, which writes them with `application/yaml` and nothing else.
 The bytes are the file, so no rendering happens at start-up or per request.
 
-Latere's installation publishes it at `code.latere.ai` and not at
-`api.latere.ai`: one probe surface per host, owned by the core that publishes
+The hosted installation publishes it at its git host and not at the
+platform origin: one probe surface per host, owned by the core that publishes
 that host, which is spec 029's decision for `/readyz` and `/version` and
 holds for this route for the same reason. `deploy/prod/ingress.yaml` gains
 one path, written as a regular expression anchored at the end like the
@@ -239,7 +239,7 @@ the route already.
 | 4 | `info.version` is the contract version of spec 003 and a deck that states none renders no document | `tools/apidoc`, `TestDocumentStatesTheContractVersion`; `api/openapi_test.go`, the committed file against `contract.Version` |
 | 5 | The node answers `GET /openapi.yaml` with no token, `application/yaml`, and the bytes of `api/openapi.yaml` | `cmd/origod`, `TestOpenAPIDocumentIsServed` against a running node |
 | 6 | Every route the document serves without a bearer is one the node serves without a bearer, and a route it marks with the bearer scheme refuses an unauthenticated request with `unauthenticated` | `cmd/origod`, `TestTheDocumentsUnauthenticatedRoutesAreTheNodes`, over the public and the internal listener |
-| 7 | Latere's installation claims exactly one new path, `/openapi.yaml`, on `code.latere.ai` and nothing on `api.latere.ai`, and the base overlay is unchanged | `cmd/origod`, `TestTheProdIngressPublishesTheDocument` |
+| 7 | The hosted installation's overlay claims exactly one new path, `/openapi.yaml`, on its git host and nothing on the platform origin, and the base overlay is unchanged | `cmd/origod`, `TestTheProdIngressPublishesTheDocument` |
 | 8 | `docs/api.md` points at the document and at the route it is served from | `tools/apidoc`, `TestPageNamesTheDocument`, and `TestAPIDocIsCurrent` for the committed page |
 
 ## Dependencies
@@ -247,18 +247,17 @@ the route already.
 [[003-protocol-contract]] for the contract version and the error envelope the
 document renders, [[018-installation]] for the generated-page rule this
 document joins, and [[029-the-api-at-the-platform-origin]] for the host
-decision the route follows. Outside the tree, latere-ai/platform
-`specs/68-docs-over-the-capabilities.md`, which vendors `api/openapi.yaml` by
-tag as `docs/repos/openapi.yaml` and renders the Repos API page from it.
+decision the route follows. Outside the tree, the platform's
+documentation vendors `api/openapi.yaml` by tag and renders the Repos API
+page from it.
 
 What the platform gets, stated as it is rather than as it will be: its
 renderer groups by the first tag and hides an operation whose `x-scope`
-holds `admin` or opens with `platform.`
-(`frontend/src/docs/api/model.ts`, `isDeveloperOp`). So Origo's seven
-groups render, its `operator` mark hides nothing there yet, and the six
-probe and page routes show until that repository extends the filter,
-which is its own spec 68's third engine change. Nothing in this tree
-waits on it: the mark is in the document and the group is one name.
+holds `admin` or opens with `platform.`. So Origo's seven groups render,
+its `operator` mark hides nothing there yet, and the six probe and page
+routes show until the platform extends that filter, a change its own
+specification already plans. Nothing in this tree waits on it: the mark
+is in the document and the group is one name.
 
 ## State on 2026-09-20
 
@@ -278,7 +277,8 @@ is 41 operations over 36 paths, seven groups and 25 declared refusals.
 
 **The route.** `api/openapi.go` embeds the file and serves it;
 `cmd/origod/node.go` mounts `GET /openapi.yaml` on the public listener before
-the verifier. `deploy/prod/ingress.yaml` publishes it at `code.latere.ai`.
+the verifier. `deploy/prod/ingress.yaml` publishes it at the hosted
+installation's git host.
 
 **The page.** `docs/api.md` carries one line naming the document and the
 route, rendered from the page template.
@@ -322,12 +322,13 @@ each failed for the reason it exists:
 ### What waits for a release
 
 Two things outside the tree, which is why the status is `testing` and not
-`complete`. The route answers at `code.latere.ai` when the overlay is applied:
+`complete`. The route answers at the git host when the overlay is applied:
 the manifest test reads the rule, and only an apply proves nginx takes it, the
 dot in the path being what the admission webhook is particular about. And the
 platform vendors `api/openapi.yaml` from a tag, so its Repos API page renders
-once Origo is tagged; until then platform spec 68's freshness check skips the
-capability, which is what that spec says it does. The Outcome records both,
+once Origo is tagged; until then the platform's freshness check skips the
+capability, which is what the platform's specification says it does. The
+Outcome records both,
 and the spec is then `complete`.
 
 ## Outcome
@@ -338,8 +339,8 @@ are now observed in production.
 
 | # | Criterion | Proof |
 |---|---|---|
-| 5, 7 | the route answers at `code.latere.ai` | `GET https://code.latere.ai/openapi.yaml` with no token answers 200, `application/yaml`, and the bytes are those of the tag's `api/openapi.yaml` (checked by `cmp` on 2026-09-22) |
-| - | the platform renders from the document | latere-ai/platform vendors the v0.9.0 document as `docs/repos/openapi.yaml` and renders the Repos API page from it; the page answers 200 at `platform.latere.ai/docs/repos/api/repositories` since platform v0.16.0 |
+| 5, 7 | the route answers at the git host | on the hosted installation, `GET /openapi.yaml` at the git host with no token answers 200, `application/yaml`, and the bytes are those of the tag's `api/openapi.yaml` (checked by `cmp` on 2026-09-22) |
+| - | the platform renders from the document | the platform vendors the v0.9.0 document and renders the Repos API page from it, and the hosted platform serves that page with 200 |
 
 The summaries the generator wrote at v0.9.0 read badly as page labels;
 `175c403` shortens them in the tree, and the platform refreshes operation

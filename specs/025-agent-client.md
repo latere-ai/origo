@@ -12,7 +12,7 @@ depends_on:
 affects: [cmd/origo/, internal/origoclient/, internal/origocli/, docs/cli.md, docs/README.md, skills/origo/SKILL.md, Makefile, .lateregate.yaml, .github/workflows/release.yml, test/e2e/, specs/README.md]
 effort: large
 created: 2026-09-10
-updated: 2026-09-12
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -947,8 +947,8 @@ Built and shipped in `v0.2.0`, released on 2026-09-11 by the tag run
 against the live installation` and `verify the published release` among
 them. The release carries `origo` beside `origod` for the four
 platforms, which is what `TestTheReleaseCarriesBothBinaries` holds
-against the workflow. The installation the run deployed answers `GET
-https://code.latere.ai/version` with `{"version":"v0.2.0",...}`.
+against the workflow. The hosted installation the run deployed answers
+`GET /version` with `{"version":"v0.2.0",...}`.
 
 Every criterion has a passing test in the tree. The unit tests ran in
 the `gate / test`, `gate / race` and `gate / cover` jobs of the verify

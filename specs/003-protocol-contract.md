@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/contract/, internal/httpgit/, internal/api/, internal/auth/, internal/events/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -321,7 +321,7 @@ same run.
 
 Spec 021's live run has now run, which is what this spec waited on.
 The `conformance against the live installation` job of the v0.1.3
-release run 34546335576, on 2026-09-11 against `https://code.latere.ai`,
+release run 34546335576, on 2026-09-11 against the hosted installation,
 reports `contract_test.go:133: live run against ***: 51 passed` and
 `--- PASS: TestContract (173.69s)`. Every 003 case a live target can
 carry is in those 51. One of this spec's cases is not
@@ -354,7 +354,7 @@ from the published artifacts, not an installation, so that run closes
 spec 018's job row and no criterion here.
 
 Spec 017's Outcome records that limit and records its lifting: the two
-secrets were set and `https://code.latere.ai` answers. The v0.1.3
+secrets were set and the hosted installation answers. The v0.1.3
 release run 34546335576 of 2026-09-11 dialed it. Its `live` job, id
 103120952813, ran `TestContract` in live mode and passed, skipping
 exactly the six groups and naming each: `003/storage_unavailable`,

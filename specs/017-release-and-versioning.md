@@ -10,7 +10,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, Dockerfile.stubs, Makefile, CHANGELOG.md, tools/release/, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-12
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -146,9 +146,9 @@ makes. On a `v*` tag:
    002), runs `apply -k deploy/prod/` with the image pinned to the tag
    and `rollout status` with a 10 minute wait, then
    `tools/smoke/release.sh` runs against the public URL, whose markdown
-   output is the evidence. Latere sets the variable and the secret on
-   its own repository; a fork does not, so a tag on a fork publishes
-   every artifact and skips this step.
+   output is the evidence. This repository sets the variable and the
+   secret; a fork does not, so a tag on a fork publishes every artifact
+   and skips this step.
 4. `live`: the live run of spec 021, `TestContract` against
    `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` (spec 002) and that spec's
    six-entry skip list, after step 3 and skipped when the secret is
@@ -316,8 +316,8 @@ held by two tests since 2026-09-11. The user decided on 2026-09-12
 that the tests are the criterion and no maintainer cuts a tag on a
 fork to prove what they already hold; the row and the checklist entry
 were reworded to say so. Two rows that were open with it closed on
-real tags before that. The `live` job ran against
-`https://code.latere.ai` on the v0.1.3 run 34546335576 of 2026-09-11,
+real tags before that. The `live` job ran against the hosted
+installation on the v0.1.3 run 34546335576 of 2026-09-11,
 once the two secrets were set and the installation answered. The
 compatibility assertion ran in the same release, against
 `fixture-v0.1.1.tar.gz`, the fixture an earlier release attached.
@@ -352,7 +352,7 @@ worked around, each for the user to decide on:
 |---|---|---|
 | GitHub's attestation API refuses a private repository on the `latere-ai` organization plan | lifted. It blocked the SBOM and provenance attestations and `release-verify`'s `gh attestation verify`, and nothing else, so a private release was otherwise complete: every artifact, the three SPDX documents as assets, and the cosign signatures | run 34416521585 of 2026-09-10, the `build` job, `actions/attest-sbom`: "Feature not available for the latere-ai organization. To enable this feature, please upgrade the billing plan, or make this repository public." The repository was made public afterwards (`gh api repos/latere-ai/origo --jq '.private,.visibility'` answers `false` and `public`), the four `attest-*` steps stopped skipping, and the `v0.1.1` tag run 34511419232 attached and verified both attestations on both images |
 | an organization budget on the `actions` product SKU, `budget_amount` 80 with `prevent_further_usage` true, reached at 17 787 minutes and $80.00 net in September 2026 | lifted. It blocked every job of every workflow, so no push run, no dispatched run, and no release run started at all | runs 34433190432, 34433196681 and 34433964953 of 2026-09-10, every job annotated "The job was not started because an Actions budget is preventing further use."; the organization's billing budgets endpoint. Run 34447226405 of the same day is the first green push run after it was restored |
-| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and `https://code.latere.ai` does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, for the 51 cases a live run can carry: the other eight sit in the six groups a live target cannot supply and close on the stack instead, which spec 021's Outcome states. It also holds the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: with `ORIGO_LIVE_URL` empty the test takes its stack branch, so the log reads `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)` and no installation was dialed. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
+| no installation for the `live` job to run against: the repository carries no `ORIGO_LIVE_URL` and no `ORIGO_LIVE_TOKEN` secret, no `ORIGO_RELEASE_DEPLOY` variable and no `production` environment, and the hosted installation's hostname does not resolve | the `live` job runs and its `TestContract` skips, so the release publishes without a live conformance run; `deploy and smoke` is skipped with it. This is what holds specs 003, 019, 020, and 021 at `testing`, for the 51 cases a live run can carry: the other eight sit in the six groups a live target cannot supply and close on the stack instead, which spec 021's Outcome states. It also holds the `live` row below | the tag run 34461460766, job `conformance against the live installation`, 40 s: with `ORIGO_LIVE_URL` empty the test takes its stack branch, so the log reads `contract_test.go:136: nothing answers at ORIGO_TEST_URL (http://localhost:30080)` then `--- SKIP: TestContract (0.00s)` and no installation was dialed. `gh api /repos/latere-ai/origo/actions/secrets` and `.../variables` both answer `total_count: 0` |
 
 `v0.1.0` was cut on 2026-09-10 from a green `main` at commit `058eb6d`
 with `go tool lateregate release v0.1.0`, and the tagged commit is
@@ -375,7 +375,7 @@ up-script check, and the mutation job, all green.
 | the bill of materials as a release asset, spec 016's supply-chain row in its shipping half | the `build` job of the first tag: the three SPDX documents are uploaded with the other assets | closed by run 34461460766: `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json` are on the release |
 | conformance against the image the tag published, on the kind stack | the `conformance` job of the first tag | closed by run 34461460766: `--- PASS: TestContract (65.84s)` over the groups 003, 007, 008, 009, 010, 015, 019, 020, and 012, with `TestSameAnswersOnStubAndStack` beside it |
 | the bill of materials and the provenance *attached to* a published image and verified, the other half of spec 016's supply-chain row | the repository becoming public, which is what turns the four `attest-*` steps and `release-verify`'s `Verify the attestations` step back on | closed by the `v0.1.1` tag run 34511419232 on the now-public repository: `Verify the attestations` succeeded there, and four `gh attestation verify` runs on 2026-09-11, over `origod` and `origo-stubs` at `v0.1.1` for the SPDX and the SLSA predicate types, each exit 0 against the tag's workflow identity |
-| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | closed by the v0.1.3 run 34546335576 of 2026-09-11. The two secrets are set and `https://code.latere.ai` answers, so the `live` job, id 103120952813, took its live branch: `contract_test.go:133: live run against ***: 51 passed` and `--- PASS: TestContract (173.69s)`, with the eight case names of exactly the six groups reported skipped. Run 34461460766's `live` job had run and skipped, neither secret being set then, and nothing here read that green as the run |
+| the `live` job: `TestContract` against `ORIGO_LIVE_URL` with `ORIGO_LIVE_TOKEN` and spec 021's six-entry skip list | the first tag on a repository where the two secrets are set and something answers at the URL | closed by the v0.1.3 run 34546335576 of 2026-09-11. The two secrets are set and the hosted installation answers, so the `live` job, id 103120952813, took its live branch: `contract_test.go:133: live run against ***: 51 passed` and `--- PASS: TestContract (173.69s)`, with the eight case names of exactly the six groups reported skipped. Run 34461460766's `live` job had run and skipped, neither secret being set then, and nothing here read that green as the run |
 | the fork tag, with `ORIGO_RELEASE_DEPLOY` unset and with it set | a maintainer, recorded in the release notes | closed on 2026-09-12 by rewording, not by a run. Unset ran on 34461460766 and set on 34546335576, the two run ids above. The namespace was threaded on 2026-09-11: `ORIGOD_IMAGE` and `STUBS_IMAGE` are now `ORIGO_IMAGE_NAMESPACE` or, unset, `ghcr.io/${{ github.repository_owner }}`, `release-verify` greps `${ORIGOD_IMAGE}` out of the deploy archive, `deploy-archive.sh` rewrites the namespace and the version together, and the deploy step moves `deploy/prod`'s image name with it, so a fork's tag pushes, signs, attests, deploys and verifies its own packages, and `TestReleasePublishesUnderTheRepositoryOwnersNamespace` with `deploy_archive_test.sh` hold that on every push. The user decided the criterion is those tests and not a tag a maintainer cuts on a fork |
 | `TestPreviousReleaseFixture` against a fixture a release actually attached | the second tag | closed by the v0.1.3 run 34546335576. Its `conformance against the published image` job, id 103101443762, read `previous release fixture: /home/runner/work/_temp/previous/fixture-v0.1.1.tar.gz`, uploaded the copy through the S3 client, cloned it from the published image's node, and matched `rev-list --all`: `--- PASS: TestPreviousReleaseFixture (0.06s)`, `the fixture of v0.1.1 (4 commits) serves on this release`. Run 34461460766 had reported `--- SKIP`, no earlier release carrying a fixture |
 | `install-release` with `ORIGO_INSTALL_IMAGE` and `ORIGO_INSTALL_MANIFESTS` | spec 018, which owns step 6 of the pipeline | closed by run 34461460766: the job ran in 3 m 43 s against the published images and the published `deploy-v0.1.0.tar.gz` |
@@ -383,8 +383,8 @@ up-script check, and the mutation job, all green.
 Every row of the table is closed. Three of the four that were open
 closed by something outside a tag arriving: the repository was made
 public, which turned the attestation steps back on and closed the
-supply-chain row on `v0.1.1`; the two live secrets were set with
-`https://code.latere.ai` behind them, which closed the `live` row on
+supply-chain row on `v0.1.1`; the two live secrets were set with the
+hosted installation behind them, which closed the `live` row on
 `v0.1.3`; and a fourth tag gave the compatibility assertion a real
 previous fixture to read. The fourth, the fork, closed by decision, and
 it is worth saying exactly what a fork would have added, because the

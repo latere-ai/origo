@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/placement/, internal/repo/, internal/wal/, internal/config/, cmd/origod/, deploy/, deploy/examples/kind/, Makefile, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-10-02
 author: changkun
 ---
 
@@ -455,7 +455,8 @@ states:
   and the test saw that one on the runner.
 - The base's `HorizontalPodAutoscaler` names the Deployment; the
   overlay's patch names the StatefulSet. `deploy/prod` carries bounds
-  of its own, 2 to 8 since the overlay moved into the `latere` cluster,
+  of its own, 2 to 8 since the overlay moved into the hosted
+  installation's cluster,
   which the Scaling section states.
 - The kind overlay's pods request 50m CPU, not the base's 250m: the
   first stack run left `origod-3` unschedulable, `Insufficient cpu`, on
@@ -567,6 +568,6 @@ A review on 2026-09-11 read the Design against the tree and found the
 code as stated, every named test present, and two sentences behind
 the tree: the Scaling section and an Outcome bullet said `deploy/prod`
 carried the autoscaler at 2 to 32, while the overlay has carried 2 to
-8 since it moved into the `latere` cluster, for the reason its file
+8 since it moved into the hosted installation's cluster, for the reason its file
 gives; and the item for spec 006 still said the sweeper deleted index
 objects, which 006 removed the same day. Both read as the tree stands.
