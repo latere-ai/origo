@@ -49,13 +49,14 @@ afterwards: the run is the evidence for that criterion on that commit,
 not a claim about the newest run, so a later verifier reads it as
 history and does not ask for a fresh one.
 
-The dispatch gate is on the dependencies' state, not on `complete`: a
-validated spec is dispatched when every spec in its `depends_on` is at
-`testing` or later. `testing` means the design is built and what
-remains is a criterion another spec owns the test for, which is the
-case for a spec whose criteria name a later spec (003 and 004 do, and
-each says which spec owns each deferred criterion), so waiting for
-`complete` would wait for the dependents themselves.
+A spec's status records its own acceptance criteria. Review, not the
+gate, holds the order `depends_on` states: it dispatches a validated
+spec once every spec in its `depends_on` is at `testing` or later, not
+`complete`. `testing` means the design is built and what remains is a
+criterion another spec owns the test for, which is the case for a spec
+whose criteria name a later spec (003 and 004 do, and each says which
+spec owns each deferred criterion), so waiting for `complete` would wait
+for the dependents themselves.
 
 ## Index
 
