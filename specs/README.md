@@ -91,6 +91,7 @@ for the dependents themselves.
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at the shared origin beside the git host | small | complete | 007, 026, 027, 028 |
 | [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
+| [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | drafted | 007, 026, 028, 029 |
 
 ## Dependency graph
 
@@ -1077,14 +1078,14 @@ name, or when a spec names something no spec defines.
 <!-- specindex:begin -->
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
-| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026, 028 |
+| error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026, 028, 031 |
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026, 031 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 003, 021 |
@@ -1171,7 +1172,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025 |
 | variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | - |
-| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025, 028 |
+| variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025, 028, 031 |
 | variable | `ORIGO_URL` | [025](025-agent-client.md) | - |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
@@ -1230,7 +1231,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /metrics` | [002](002-repository-scaffold.md) | 011, 013, 030 |
 | endpoint | `GET /openapi.yaml` | [030](030-the-openapi-document.md) | 022 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 030 |
-| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027, 029 |
+| endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027, 029, 031 |
 | endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
 | endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
 | endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
@@ -1254,7 +1255,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029 |
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
-| endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | - |
+| endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | 031 |
 | endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 007, 019, 028 |
 | endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |

@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/auth/, internal/api/, internal/contract/, cmd/origod/, test/stubs/authorizer/, docs/api.md, specs/007-authentication-and-delegation.md, specs/013-test-stubs-and-kind-overlay.md, specs/README.md]
 effort: medium
 created: 2026-09-10
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -305,7 +305,10 @@ three existing actions, their answer shape, or their caches.
   family declares. Whether the directory moves to a `Filter`, given that
   it holds repositories granted one at a time and public ones as well as
   an owner's, is the open question.
-  [origo#1](https://github.com/latere-ai/origo/issues/1).
+  [origo#1](https://github.com/latere-ai/origo/issues/1). Spec 031
+  drafts the answer: the directory stays a page and the node seals the
+  cursor, because a filter over the name index lists by a label Origo
+  does not own and cannot carry the grants.
 
 ## Outcome
 
