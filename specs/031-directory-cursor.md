@@ -7,7 +7,8 @@ depends_on:
   - specs/026-repository-directory.md
   - specs/028-authorizer-contract-2.md
   - specs/029-the-api-at-the-platform-origin.md
-affects: [internal/auth/, internal/api/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/authorizer.md, docs/api.md, specs/026-repository-directory.md, specs/028-authorizer-contract-2.md, specs/README.md]
+  - specs/030-the-openapi-document.md
+affects: [internal/auth/, internal/api/, internal/config/document.go, cmd/origod/, test/conformance/, docs/authorizer.md, docs/api.md, docs/configuration.md, docs/internals/contract.md, api/openapi.yaml, CHANGELOG.md, specs/026-repository-directory.md, specs/028-authorizer-contract-2.md, specs/README.md]
 effort: small
 created: 2026-10-07
 updated: 2026-10-07
@@ -42,8 +43,10 @@ second: **the node seals the authorizer's cursor**. Every `next_cursor` a
 caller sees is one the node wrote, an authenticated encryption of the
 authorizer's cursor under a key every node of an installation already
 holds, and the authorizer only ever receives back a cursor it wrote, on a
-request from the subject it wrote it for. The authorizer contract,
-`latere.ai/x/pkg/authz`, and every authorizer stay as they are.
+request from the subject it wrote it for. `latere.ai/x/pkg/authz` does
+not change, and the authorizer contract changes in one place: a
+`next_cursor` longer than 512 bytes is no answer, a bound every endpoint
+that pages by id is far inside.
 
 The reason in one line: Origo records no owner, so a `filter` over its
 own index either lists repositories the authorizer would refuse or cannot
@@ -57,7 +60,9 @@ The directory is spec 026's, built and shipped in `v0.2.0`:
 - `internal/api/collection.go`, `directory`: one call through
   `Guard.Directory`, the representation rendered per id that survives,
   and `next_cursor` the authorizer's, passed through unread and null on
-  the last page.
+  the last page. An error from `Guard.Directory` goes to `WriteRefusal`,
+  which renders a `*Denied` as 403 and every other error as 503
+  `authorizer_unavailable`.
 - `internal/auth/guard.go`, `listEnvelope`: the caller's `cursor` and
   `limit` go into the `resource` of a `repo.list` request. `Client.List`
   sends it through the shared client's `Ask`, uncached, and parses spec
@@ -66,48 +71,47 @@ The directory is spec 026's, built and shipped in `v0.2.0`:
   served (`cmd/origod/ownerpolicy.go`, `Owned`).
 - `test/stubs/authorizer` pages by the id of the last entry served, and
   so does the hosted installation's authorizer.
-- `docs/authorizer.md`, "The directory": the rule quoted above.
+- `docs/authorizer.md`, "The directory": the rule quoted above. Spec
+  026's route row says `next_cursor` is "the authorizer's, or null", and
+  `make docs` carries that row into `api/openapi.yaml` and
+  `docs/internals/contract.md`.
 
-The family recorded when this would change. Spec 028's row for the
-`repo.list` answer, and the family's note on the open cores behind it,
-say the page stays until the repository registry moves to the platform
-control plane, where a `filter` over the node's own name index replaces
-it. The registry has moved: the hosted installation's authorizer is the
-platform control plane, and it holds the registry, the grants, the owners
-and the visibility. So the precondition is met, and the replacement still
-does not hold, for two reasons the sentence did not have. Origo's name
-index is an index of names, not of ownership, and the directory carries
-grants made one repository at a time. The Design shows both.
+Spec 028's row for the `repo.list` answer says the page stays until a
+`filter` over the node's own name index replaces it, a move it dates to
+the registry's move to the platform control plane. That move has
+happened: the hosted installation's authorizer is the platform control
+plane, and it holds the registry and the grants. So the date has come,
+and the replacement still does not hold, for two reasons the row did not
+have. Origo's name index is an index of names, not of ownership, and the
+directory carries grants made one repository at a time. The Design shows
+both.
 
-### What the directory holds
+### Two facts the directory rests on
 
-The hosted installation's authorizer lists a repository when the
-caller's role on it reaches read. The role has five sources:
+1. **Ownership lives in the authorizer.** Origo stores no user and no
+   permission (spec 026). The authorizer decides which repositories a
+   subject may read, keyed by the id (spec 007, rule 3), and the
+   directory is its answer.
+2. **Grants are made one repository at a time, with no bound.** An
+   authorizer may let a subject read a repository it neither owns nor
+   reaches through an organization, one grant per repository, and
+   nothing in the contract bounds how many a subject holds.
 
-| Source | Which repositories | Can `Filter{owners, labels}` say it |
-|---|---|---|
-| owner | a person's own, in the person's own context; a service's own | as owner labels, which the Design shows Origo cannot trust |
-| organization | an organization's, on a token active in that organization, by the caller's role there | as the organization's label, with the same caveat |
-| registrar | every repository a service client registered, under whichever owner's label it registered it | no: that label also holds the owner's other repositories |
-| grant | one repository granted to the caller by one of its administrators | no |
-| platform administrator | every repository, on a token minted for the console's administration routes | as no filter at all |
-
-Visibility is not a source. A public repository is in a caller's
-directory only when the caller holds a role on it, the hosted authorizer
-refuses a list with no subject, and spec 027 keeps `GET /v1/repos` out of
-the anonymous route set. Origo stores no visibility (spec 027). Nothing
-about public repositories needs expressing in any option below, and a
-listing of public repositories is a separate feature.
+Visibility does not enter the node's side. Origo stores none (spec 027),
+and spec 027 keeps `GET /v1/repos` out of the anonymous route set.
+Whether a public repository appears in a signed-in subject's directory
+is the authorizer's answer, as today, so nothing about public
+repositories needs expressing in any option below.
 
 ### Who reads the directory
 
 Three consumers: the browsing interface of spec 023 in
 `latere-ai/origo-web`, `origo repos` of spec 025, and spec 021's
 conformance case `026/directory`. The interface and the command treat
-`next_cursor` as opaque and send it back unchanged; the case reads one
-page and never pages. A platform that keeps its own registry can list a
-context's repositories from it rather than from this route, and the
-hosted installation's console does.
+`next_cursor` as opaque and send it back unchanged; `origo repos` also
+changes `limit` from page to page, asking for what it still wants
+(`internal/origocli/read.go`), and stops at the first null cursor. The
+case reads one page and never pages.
 
 ### What the node can list
 
@@ -186,22 +190,27 @@ refused under rule 5.
 **(a) Extend `Filter` with ids.** `latere.ai/x/pkg/authz.Filter` gains a
 list of resource ids, read as a union with `owners`, and `repo.list`
 answers a decision whose filter names the caller's owner labels and every
-repository granted or registered to the caller. The node lists the
-labels from its name index, adds the ids, and pages with a cursor of its
-own.
+repository granted to the caller. The node lists the labels from its name
+index, adds the ids, and pages with a cursor of its own.
 
-- **The family contract.** `Filter` is every core's. The shared
+- **The family contract, changed twice.** First, the ids: the shared
   conformance suite's `checkFilter` refuses any key but `owners` and
   `labels`, so it learns a third, and that key is a union where `labels`
   is a conjunction. A core that reads a filter naming no owner as
   narrowing nothing, as Arca does, would read a filter of ids alone as
-  every object.
+  every object. Second, the owners: the contract defines `filter.owners`
+  as rendered subjects (`checkFilter` in
+  `latere.ai/x/pkg/authz/conformance`), and an owner label is a name, not
+  a subject, so `owners` would carry a second kind of string for one
+  core. `labels` cannot carry the owner labels instead: it is a
+  conjunction holding one value per key, and a set of owner labels is a
+  disjunction over one key.
 - **The size.** The shared client bounds a decision body at 64 KiB
   (`maxDecisionBytes` in `latere.ai/x/pkg/authz`), past which the body is
   no answer and the caller sees 503 `authorizer_unavailable`. An id is 39
   bytes of JSON with its quotes and comma, so the bound holds about 1,680
   ids, and a subject granted 2,000 repositories one at a time has no
-  directory at all. Raising the bound is a second change to the shared
+  directory at all. Raising the bound is a third change to the shared
   contract, and the ids then travel whole on every page, because the
   shared client caches only a request that names an id: a walk of a
   subject with 10,000 grants is 50 pages of 200 and moves about 19 MiB
@@ -209,10 +218,11 @@ own.
 - **The owners half.** It has the label problem above. Either the node
   asks `repo.read` per entry, or the owners go into the ids too, which
   makes the size problem every large organization's.
-- **The owner policy.** It keys ownership on `meta.creator`, a subject,
-  while the hosted authorizer would name labels. One `owners` field would
-  mean two kinds of string, so the node keeps two indexes or the owner
-  policy changes what it owns by.
+- **The owner policy.** It keys ownership on `meta.creator`, a rendered
+  subject, which fits the contract's `owners`; the hosted authorizer
+  would name labels. One field would mean two kinds of string on one
+  node, so the node keeps two indexes or the owner policy changes what
+  it owns by.
 - **The node.** Per page of 50: one `LIST` per label, 50 name reads for
   their ids, then the 100 reads of `meta` and the newest index it makes
   today, and a merge of the granted ids after the names. The order
@@ -230,9 +240,12 @@ own.
 **(b) Seal the authorizer's cursor.** `repo.list` stays a page. The node
 encrypts the authorizer's `next_cursor` before the caller sees it and
 decrypts the caller's `cursor` before the authorizer does, under a key
-derived from `ORIGO_TOKEN_KEY`, with the subject bound in.
+derived from `ORIGO_TOKEN_KEY`, with the subject and the authorizer bound
+in.
 
-- **The family contract and every authorizer.** Unchanged.
+- **The family contract.** `latere.ai/x/pkg/authz` is unchanged. Origo's
+  authorizer contract gains one bound: a `next_cursor` longer than 512
+  bytes is no answer.
 - **The size.** The authorizer pages as it does today: at most 200
   entries per answer, about 24 KiB at typical label lengths and under 64
   KiB at the longest labels spec 003 allows, against a 1 MiB bound. A
@@ -247,20 +260,21 @@ derived from `ORIGO_TOKEN_KEY`, with the subject bound in.
   the order is still the authorizer's.
 
 **(c) Owners as a filter, grants another way.** `repo.list` answers a
-decision with the caller's owner labels as `filter.owners`. The one
-component that can enumerate a subject's grants is the authorizer, so
-"another way" is a second page action, with two calls per page and two
-cursors merged into one, which keeps the exception and adds a merge; or
-it is nothing, and a granted repository leaves the directory and is
-opened by name or id. Either way the label problem above stays.
+decision with the caller's owner labels as `filter.owners`, which is the
+second of (a)'s contract changes: labels where the contract has rendered
+subjects. The one component that can enumerate a subject's grants is the
+authorizer, so "another way" is a second page action, with two calls per
+page and two cursors merged into one, which keeps the exception and adds
+a merge; or it is nothing, and a granted repository leaves the directory
+and is opened by name or id. Either way the label problem above stays.
 
 | | (a) ids in `Filter` | (b) sealed cursor | (c) owners filter, grants dropped |
 |---|---|---|---|
-| change to `latere.ai/x/pkg/authz` | `Filter` gains ids, conformance learns a key | none | none |
-| change to every authorizer that lists | a new answer shape | none | a new answer shape |
+| change to `latere.ai/x/pkg/authz` | `Filter` gains ids, and `owners` carries labels | none | `owners` carries labels |
+| change to every authorizer that lists | a new answer shape | a `next_cursor` of at most 512 bytes | a new answer shape |
 | a person with one grant on someone else's repository | listed | listed, as today | not listed, opened by name or id |
 | a subject with 2,000 grants | 503 on every page | 10 pages of 200 | grants not listed |
-| a repository moved under another label | listed to that label's members unless re-checked | listed to whom the registry gives a role, as today | listed to that label's members unless re-checked |
+| a repository moved under another label | listed to that label's members unless re-checked | listed to whom the registry gives access, as today | listed to that label's members unless re-checked |
 | node reads per page of 50 | one `LIST` per label, 50 name reads, then 100 | 100, as today | as (a) |
 | authorizer answer per page | every id, 39 bytes each | at most 200 entries | owner labels |
 | who orders the page | the node | the authorizer | the node |
@@ -270,12 +284,12 @@ opened by name or id. Either way the label problem above stays.
 ### The recommendation
 
 **(b).** It is the one option that keeps the directory exactly the
-authorizer's read set at every size, and it asks nothing of any
-authorizer. A person with one grant on someone else's repository sees it
-at `GET /v1/repos` after this spec as before it, and a third-party
-authorizer answers them exactly what it answers today. Spec 007's five
-rules hold word for word, and spec 026's rule 6 still holds, because the
-page is still the authorizer's.
+authorizer's read set at every size, and it asks of an authorizer one
+bound its cursor already meets. A person with one grant on someone
+else's repository sees it at `GET /v1/repos` after this spec as before
+it, and a third-party authorizer answers them exactly what it answers
+today. Spec 007's five rules hold word for word, and spec 026's rule 6
+still holds, because the page is still the authorizer's.
 
 It closes the cursor half of issue #1: every cursor a caller sees is the
 node's, opaque by construction, which is what the family's pagination
@@ -291,40 +305,60 @@ planned:
 2. Grants per subject are bounded, or are modeled as owners, such as a
    team a repository belongs to.
 
-Spec 028's row for the `repo.list` answer is corrected when this spec is
-built: the page stays, and the cursor the caller sees is the node's.
+When this spec is built, spec 028 gains a dated section recording the
+512-byte bound as a change to authorizer contract 2 and the page staying
+the answer to `repo.list`, and the changelog names the bound for
+operators who run their own endpoint.
 
-**Option (a) changes the family's shared contract**, `latere.ai/x/pkg/authz.Filter`
-and its conformance suite, for every core. It is the owner's decision,
-and this spec recommends against it.
+**Options (a) and (c) change the family's shared contract**: (a) adds
+ids to `latere.ai/x/pkg/authz.Filter` and puts labels in `owners`, (c)
+puts labels in `owners`, and the conformance suite follows each. That is
+the owner's decision, and this spec recommends against both.
 
 ### The sealed cursor
 
 | Part | Value |
 |---|---|
-| key | HKDF-SHA256 over the 32-byte private scalar of `ORIGO_TOKEN_KEY`, empty salt, info `origo directory cursor v1`, 32 bytes, derived once at start |
+| key | HKDF-SHA256 over the private scalar of `ORIGO_TOKEN_KEY` in its fixed-width encoding, the 32 bytes `(*ecdsa.PrivateKey).Bytes()` returns, with an empty salt and the info `origo directory cursor v1`; 32 bytes, derived once at start |
 | cipher | AES-256-GCM, a fresh random 12-byte nonce per seal |
-| associated data | `repo.list`, one zero byte, and the request's rendered subject |
+| associated data | `repo.list`, a zero byte, the authorizer URL (`ORIGO_AUTHORIZER_URL`, empty for the owner policy), a zero byte, and the request's rendered subject |
 | plaintext | the authorizer's `next_cursor`, byte for byte |
 | wire form | `v1.` followed by the unpadded base64url of the nonce, the ciphertext, and the tag |
 | bounds | an authorizer `next_cursor` of at most 512 bytes, so a sealed cursor is at most 723 characters |
 
+The fixed width matters: the scalar's big-integer bytes drop leading
+zeros, so one key in roughly 256 would derive from 31 bytes on one path
+and 32 on another.
+
 **Writing.** An empty `next_cursor` from the authorizer is null on the
-wire, as today. One over 512 bytes is no answer: 503
-`authorizer_unavailable`, the authorizer's fault, logged with its
-length. Anything else is sealed for the request's subject.
+wire, as today. One over 512 bytes is no answer: an `*Unavailable`,
+which `WriteRefusal` renders as 503 `authorizer_unavailable`, logged
+with its length. Anything else is sealed.
 
 **Reading.** An empty `cursor` asks for the first page. A `cursor` longer
 than 723 characters, not starting with `v1.`, not base64url, shorter than
-a nonce and a tag, or failing to open under the request's subject is 400
-`invalid_request` with `details.reason: "cursor"`, before the authorizer
-is called. Anything that opens goes into the `resource` as `cursor`,
-exactly as spec 026 sends it today.
+a nonce and a tag, or failing to open under this node's authorizer and
+the request's subject, is refused before the authorizer is called, with
+a typed error, `auth.ErrCursor`. `WriteRefusal` would render it as a 503
+like any error it does not know, so `directory` in `collection.go` tests
+for it first and answers `invalid(w, "cursor", "cursor")`. Anything that
+opens goes into the `resource` as `cursor`, exactly as spec 026 sends it
+today.
+
+| Status | Code | `details` | When |
+|---|---|---|---|
+| 400 | `invalid_request` | `reason: "cursor"`, `field: "cursor"` | a `cursor` this installation did not write, or wrote for another subject or another authorizer |
 
 **Where.** `internal/auth`, beside `Guard.Directory`, which holds the
 principal and serves both listers, so the owner policy's page is sealed
 by the same path and there is no second one. `cmd/origod` already parses
 `ORIGO_TOKEN_KEY` for the signer and hands the guard the derived key.
+Spec 026's route row gains the refusal and says `next_cursor` is the
+node's, and `make docs` carries both into `api/openapi.yaml`, whose
+generation spec 030 owns, and `docs/internals/contract.md`. The
+`ORIGO_TOKEN_KEY` row of `internal/config/document.go`, the source of
+`docs/configuration.md`, says that replacing the key also ends every
+directory walk in flight.
 
 ```mermaid
 sequenceDiagram
@@ -332,11 +366,11 @@ sequenceDiagram
   participant N as origod, any node
   participant A as authorizer
   C->>N: GET /v1/repos?cursor=v1.S1
-  N->>N: open S1 under the subject, else 400 reason cursor
+  N->>N: open S1 under the authorizer and the subject, else 400 reason cursor
   N->>A: repo.list, resource.cursor X as the authorizer wrote it
   A-->>N: repos, next_cursor Y
   N->>N: meta and newest index per id, drop what is gone
-  N->>N: seal Y under the subject as v1.S2
+  N->>N: seal Y under the authorizer and the subject as v1.S2
   N-->>C: repos, next_cursor v1.S2
 ```
 
@@ -388,14 +422,24 @@ sequenceDiagram
   less than the first: whoever holds `ORIGO_TOKEN_KEY` mints
   repository-bound tokens, which is more than reading a cursor. HKDF's
   info string keeps the two uses apart; the derived key signs nothing
-  and the signing key encrypts nothing.
-- **The subject in the associated data.** A cursor opens only on a
-  request from the subject it was issued to, so an authorizer may keep
-  per-subject state in it, and a cursor seen by one person cannot be
-  replayed under another. The active organization is not bound: a token
-  refreshed in the middle of a walk keeps walking, and the authorizer
-  decides each page from the claims of the request in front of it, as it
-  does today.
+  and the signing key encrypts nothing. The reuse holds while the node
+  can read its signing key's bytes. A node whose signing key moves into
+  a key service that never exports it needs a cursor secret of its own,
+  and that move is the point to add one.
+- **The authorizer and the subject in the associated data.** A cursor
+  opens only on a request from the subject it was issued to, and only
+  while the node asks the authorizer that wrote it. So an authorizer may
+  keep per-subject state in it, a cursor seen by one person cannot be
+  replayed under another, and an operator who points
+  `ORIGO_AUTHORIZER_URL` elsewhere, or unsets it for the owner policy,
+  never hands the new answerer a cursor the old one wrote.
+- **No organization.** Origo reads no claim (spec 028), so it has no
+  organization to bind. The authorizer reads the claims of each request
+  and scopes each page by them, so a cursor carried into a token of
+  another organization resumes a position in that context's list and
+  reveals nothing of the first.
+- **No `limit`.** A caller may change `limit` between pages, as `origo
+  repos` does, so the cursor carries none.
 - **No expiry.** A cursor is a position, not a permission; the token of
   each request decides each page. It lives until `ORIGO_TOKEN_KEY`
   rotates. Spec 007 says a rotation invalidates outstanding
@@ -406,94 +450,109 @@ sequenceDiagram
   and proxies that cap a request line at a few KiB. The stub, the owner
   policy and the hosted authorizer all page by a 36-byte id.
 - **The `v1.` prefix.** It names the construction, so a later one can be
-  told apart, and it sorts after every hexadecimal id, which the rollout
-  below relies on.
+  told apart.
 
 ### What changes for an authorizer
 
-Nothing it must do. The paragraph of `docs/authorizer.md` that asks an
-endpoint to keep the cursor free of what the caller may not see is
-replaced: Origo encrypts `next_cursor` before any caller sees it and
-sends it back as `cursor` only on a request from the subject it was
-issued to, exactly as the endpoint wrote it; it may carry whatever the
-endpoint needs to resume, up to 512 bytes; and it is not an
-authorization, so the endpoint decides each page from the request, as it
-decides every other answer. The 512-byte bound is the one new limit, and
-every endpoint that pages by id is far inside it.
+One bound, and nothing else to do. A `next_cursor` longer than 512 bytes
+is no answer, which is a change to authorizer contract 2, recorded in
+spec 028 and the changelog as the recommendation says; every endpoint
+that pages by id is far inside it. The paragraph of `docs/authorizer.md`
+that asks an endpoint to keep the cursor free of what the caller may not
+see is replaced: Origo encrypts `next_cursor` before any caller sees it
+and sends it back as `cursor` only to the endpoint that wrote it, on a
+request from the subject it was issued to, exactly as written; it may
+carry whatever the endpoint needs to resume, up to 512 bytes; and it is
+not an authorization, so the endpoint decides each page from the
+request, as it decides every other answer.
 
 ### Rollout
 
-The node changes alone. No authorizer question gains or loses a field,
-so the order "a core that adds fields to its questions rolls after its
-authorizer" has nothing to order, and the release is one step. While the
-Deployment rolls, old and new nodes serve the same walk:
+The node changes alone, and no authorizer question gains a field, so the
+order "a core that adds fields to its questions rolls after its
+authorizer" has nothing to order. The order that matters is between
+nodes. The base Deployment runs two replicas and replaces them one at a
+time, so for a while old and new nodes serve one walk. Shipped in one
+step, a sealed cursor reaching an old node would go to the authorizer as
+it is; an authorizer that pages by id finds no entry after it and
+answers an empty last page, and `origo repos` stops at that null cursor
+and reads a shorter directory as the whole of it. A directory that is
+silently short is the failure to avoid, so the change ships in two
+releases:
 
-- A sealed cursor reaching an old node goes to the authorizer as it is.
-  An authorizer that pages by id finds no entry at or after it, because
-  `v` sorts after every hexadecimal digit, and answers an empty last
-  page: the walk ends early, with nothing repeated and nothing of
-  another subject. The stub starts a page only at the id the cursor
-  names and answers the same. Any other authorizer answers it as it
-  answers a cursor it never wrote; a non-200 is 503 for that request.
-- A raw cursor an old node passed through, reaching a new node, is 400
-  with `details.reason: "cursor"`, and the caller starts the walk again.
+| Release | A `v1.` cursor | Any other cursor | `next_cursor` it writes |
+|---|---|---|---|
+| first | opened, as above | passed to the authorizer, as today | the authorizer's, as today |
+| second | opened | 400, `details.reason: "cursor"` | sealed, with the 512-byte bound |
 
-Both end when the last old node stops. The node writes no state and
-reads none, so a rollback is the same window in reverse.
+While the second rolls, a sealed cursor reaching a node of the first is
+opened, so no walk is shortened. A raw cursor a node of the first wrote,
+reaching a node of the second, is the 400: the caller sees it and starts
+the walk again, and it stops happening when the last old node stops. A
+third release that passed raw cursors through for one more roll would
+remove that too; it is not worth a release, because the failure it
+removes is loud. Rolling the second back to the first is clean, because
+the first opens what the second wrote, and rolling the first back is
+clean, because it writes nothing new.
 
 ```mermaid
 sequenceDiagram
   participant C as caller
-  participant N as new node
-  participant O as old node
+  participant N as node of the second release
+  participant O as node of the first release
   participant A as authorizer
   C->>N: first page
   N->>A: repo.list
   A-->>N: repos, next_cursor Y
   N-->>C: next_cursor v1.S
   C->>O: second page, cursor v1.S
-  O->>A: repo.list, resource.cursor v1.S as sent
-  A-->>O: empty page, no next_cursor
-  O-->>C: no repos, next_cursor null, the walk stops early
-  C->>O: a new walk, first page
-  O-->>C: next_cursor Y unsealed
-  C->>N: cursor Y
+  O->>O: open S under the authorizer and the subject
+  O->>A: repo.list, resource.cursor Y
+  A-->>O: repos, next_cursor Z
+  O-->>C: next_cursor Z, unsealed
+  C->>N: third page, cursor Z
   N-->>C: 400 invalid_request, reason cursor
+  Note over C: the caller starts the walk again
 ```
 
 ## Not in this spec
 
 Moving `repo.list` to a decision with a `filter`, and any change to
-`latere.ai/x/pkg/authz`: `Filter`, `PageActions`, the `Lister`, or the
-conformance suite. An owner key Origo records, and `PATCH` or `transfer`
-asking about the label they move to, which are the first precondition of
-a later move to a filter. Public repositories in a directory, and
-anonymous listing (spec 027). An order the node imposes on a page, which
-stays the authorizer's (spec 026). The read API's cursors, which the node
-already writes from its own index. A cursor key of its own, and an
-overlap window when `ORIGO_TOKEN_KEY` rotates. Caching a directory
-answer.
+`latere.ai/x/pkg/authz`: `Filter`, its `owners`, `PageActions`, the
+`Lister`, or the conformance suite. An owner key Origo records, and
+`PATCH` or `transfer` asking about the label they move to, which are the
+first precondition of a later move to a filter. Public repositories in a
+directory, and anonymous listing (spec 027). An order the node imposes
+on a page, which stays the authorizer's (spec 026). The read API's
+cursors, which the node already writes from its own index. A cursor key
+of its own, and an overlap window when `ORIGO_TOKEN_KEY` rotates. A third
+release passing raw cursors through. Caching a directory answer.
 
 ## Acceptance criteria
 
 | Criterion | Test that proves it | State |
 |---|---|---|
 | A directory page's `next_cursor` starts with `v1.`, neither it nor its base64url decoding contains the authorizer's cursor, and the next request carrying it reaches the authorizer with the authorizer's cursor byte for byte in `resource.cursor` | `internal/auth`, `TestTheDirectoryCursorIsSealed`, against the stub with a recognizable cursor | proposed |
-| A cursor sealed for one subject and presented by another is 400 `invalid_request` with `details.reason: "cursor"`, and the authorizer is not called | `internal/auth`, `TestTheDirectoryCursorOpensForItsSubjectAlone`, the stub's `Requests()` unchanged | proposed |
+| A cursor sealed for one subject and presented by another, and one sealed under one authorizer URL and presented to a node holding another or none, are each 400 `invalid_request` with `details.reason` and `details.field` both `cursor`, never 503, and the authorizer is not called | `internal/api`, `TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone`, the stub's `Requests()` unchanged | proposed |
 | A cursor without the `v1.` prefix, one that is not base64url, one shorter than a nonce and a tag, one with a byte flipped, one longer than 723 characters, and a bare repository id are each that 400, with no authorizer call | `internal/api`, `TestCollectionQueryIsValidated`, gaining the cursor rows | proposed |
+| A walk that changes `limit` between pages, 1 then 2 then 1, returns each repository once and ends with a null cursor | `internal/api`, `TestTheDirectoryCursorCarriesNoLimit` | proposed |
 | An authorizer `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | proposed |
+| The key derives from the fixed-width scalar: a key whose scalar has a leading zero byte derives the same cursor key on every node | `internal/auth`, `TestTheCursorKeyReadsTheFixedWidthScalar` | proposed |
 | Two nodes holding one `ORIGO_TOKEN_KEY` open each other's cursors, and a node holding another key refuses them with the 400 | `cmd/origod`, `TestNodesSharingTheTokenKeyShareCursors` | proposed |
 | With no authorizer configured, the owner policy's directory is sealed by the same path, and a walk of three repositories at `limit=1` returns each once and ends with a null cursor | `cmd/origod`, `TestTheOwnerPolicyDirectoryWalks` | proposed |
 | `GET /v1/repos` serves the representation of each id that survives, with a sealed `next_cursor`, one authorizer call, and null on the last page | `internal/api`, `TestDirectoryServesWhatSurvives`, updated | proposed |
-| The stub answers a cursor it never wrote with an empty page and no `next_cursor`, which is what a walk straddling a rollout relies on | `test/stubs/authorizer`, `TestStubEndsAWalkOnACursorItNeverWrote` | proposed |
+| In the first release a `v1.` cursor is opened, any other passes through, and `next_cursor` is the authorizer's; the second release rewrites this test into the rows above | `internal/api`, `TestTheDirectoryOpensASealedCursorBeforeItSeals` | proposed |
 | Against the stack, `026/directory` walks the seeded directory at `limit=1` through sealed cursors and finds each repository once | `test/conformance`, `026/directory` | proposed |
-| `docs/authorizer.md` states the sealed cursor, the subject binding and the 512-byte bound, and no longer asks an endpoint to keep the cursor free of what the caller may not see | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | proposed |
+| Spec 026's route row names the `cursor` refusal and says `next_cursor` is the node's, and the generated `api/openapi.yaml` and `docs/internals/contract.md` carry both | `tools/apidoc`, `TestOpenAPIDocumentIsCurrent` and `TestAPIDocIsCurrent` | proposed |
+| The `ORIGO_TOKEN_KEY` row says that replacing the key ends every directory walk in flight, and `docs/configuration.md` carries it | `internal/config`, `TestConfigurationDocIsCurrent` | proposed |
+| `docs/authorizer.md` states the sealed cursor, the binding to the endpoint and the subject, and the 512-byte bound, and no longer asks an endpoint to keep the cursor free of what the caller may not see | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | proposed |
 
 ## Open
 
 - **Which option.** This spec recommends (b), the sealed cursor, which
-  needs no change outside this repository. Option (a) changes the
-  family's shared contract, `latere.ai/x/pkg/authz.Filter` and its
-  conformance suite, and is the owner's to decide. Choosing it also
-  needs the two preconditions of the recommendation, or the per-entry
-  read it implies, before it is sound.
+  needs no change outside this repository and one bound in Origo's own
+  authorizer contract. Options (a) and (c) change the family's shared
+  contract, `latere.ai/x/pkg/authz.Filter` and its conformance suite, and
+  are the owner's to decide. Choosing either also needs the two
+  preconditions of the recommendation, or the per-entry read it implies,
+  before it is sound.

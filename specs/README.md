@@ -91,7 +91,7 @@ for the dependents themselves.
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at the shared origin beside the git host | small | complete | 007, 026, 027, 028 |
 | [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
-| [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | drafted | 007, 026, 028, 029 |
+| [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | drafted | 007, 026, 028, 029, 030 |
 
 ## Dependency graph
 
@@ -1108,7 +1108,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002, 029 |
 | variable | `ORIGO_AUTHOR` | [025](025-agent-client.md) | - |
 | variable | `ORIGO_AUTHORIZER_TOKEN` | [002](002-repository-scaffold.md) | 007, 013, 016 |
-| variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013, 028 |
+| variable | `ORIGO_AUTHORIZER_URL` | [002](002-repository-scaffold.md) | 007, 013, 028, 031 |
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |
 | variable | `ORIGO_CHECK_SELFTEST` | [002](002-repository-scaffold.md) | 018 |
 | variable | `ORIGO_CLUSTER_CIDRS` | [002](002-repository-scaffold.md) | 013, 016 |
