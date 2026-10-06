@@ -12,6 +12,11 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- `docs/authorizer.md` states that Origo hands an authorizer's
+  `next_cursor` to the caller exactly as sent, so an endpoint puts nothing
+  in it the caller may not see. Paging by the id of the last repository on
+  the page keeps that rule. Origo does not wrap the cursor.
+
 - `checksums.txt` now sums every archive a release publishes: the eight
   binary archives, `deploy-<version>.tar.gz`, and
   `fixture-<version>.tar.gz`. Before, it covered the binary archives

@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/auth/, internal/api/, internal/contract/, cmd/origod/, test/stubs/authorizer/, docs/api.md, specs/007-authentication-and-delegation.md, specs/013-test-stubs-and-kind-overlay.md, specs/README.md]
 effort: medium
 created: 2026-09-10
-updated: 2026-10-02
+updated: 2026-10-06
 author: changkun
 ---
 
@@ -295,11 +295,16 @@ three existing actions, their answer shape, or their caches.
   name, and takes the directory away for the 501. It sits in the
   deny-flipping group, so the stack and the stub run it and a live run
   skips it by name. The overlay is unchanged and still seeds nothing.
-- **Whether `next_cursor` should be opaque.** Today it is whatever the
-  authorizer sent, passed through unread, which is what lets an endpoint
-  choose its own paging. Whether Origo should wrap it so an endpoint
-  cannot leak an internal key through it is undecided; nothing in the
-  interface reads it. Filed as
+- **Whether `next_cursor` should be opaque.** Closed on 2026-10-06: it
+  stays whatever the authorizer sent, passed through unread, which is
+  what lets an endpoint choose its own paging, and `docs/authorizer.md`
+  tells the endpoint that every caller who can list sees it, so it puts
+  nothing there the caller may not see. Wrapping it on the node would
+  need a key every node shares, a secret to provision and rotate, to
+  guard against an endpoint the operator runs and can correct. The stub
+  and platformd both page by the id of the last repository on the page,
+  which the caller already holds. Wrapping stays possible later without
+  a client change, since clients already treat the cursor as opaque.
   [origo#1](https://github.com/latere-ai/origo/issues/1).
 
 ## Outcome
@@ -342,10 +347,9 @@ Two divergences, both of naming and neither of behavior:
   `directory_unsupported` is in the table at 501 with its sentence, and
   `docs/api.md` carries the route and the code.
 
-One question under Open is still open and does not hold the spec:
-whether `next_cursor` should be opaque is a decision nothing in the
-interface waits on. The other, the populated directory on the stack,
-closed on 2026-09-12 through spec 021's suite.
+Both questions under Open are closed: the populated directory on the
+stack on 2026-09-12 through spec 021's suite, and the opacity of
+`next_cursor` on 2026-10-06 by a rule in the authorizer contract.
 
 A review on 2026-09-11 read the Design against `internal/auth`,
 `internal/api/collection.go`, the contract table, the stub, and the

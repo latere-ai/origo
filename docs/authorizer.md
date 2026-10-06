@@ -132,7 +132,11 @@ sent them. Answer one of three shapes:
 ```
 
 The first is a page of the repositories the subject may see, with
-`next_cursor` null on the last page. The second refuses the question.
+`next_cursor` null on the last page. Origo hands `next_cursor` to the
+caller exactly as you sent it and sends it back as `cursor` for the next
+page, so every caller who can list sees it: put nothing in it that caller
+may not see. The id of the last repository on the page, which the caller
+already holds, keeps that rule, and the stub authorizer pages that way. The second refuses the question.
 The third says this installation lists no repositories, and callers get
 501 `directory_unsupported`. A page is never cached, and Origo drops any
 id from it that it no longer holds.
