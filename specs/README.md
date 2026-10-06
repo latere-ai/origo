@@ -907,8 +907,8 @@ this repository as
 [#1](https://github.com/latere-ai/origo/issues/1),
 [#2](https://github.com/latere-ai/origo/issues/2),
 [#3](https://github.com/latere-ai/origo/issues/3), and
-[#4](https://github.com/latere-ai/origo/issues/4). #1, #2 and #3 are closed,
-as the Open sections of specs 026 and 017 say.
+[#4](https://github.com/latere-ai/origo/issues/4). #2 and #3 are closed,
+as spec 017's Open says.
 
 ## Later
 
