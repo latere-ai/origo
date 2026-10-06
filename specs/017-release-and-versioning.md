@@ -10,7 +10,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, Dockerfile.stubs, Makefile, CHANGELOG.md, tools/release/, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-06
 author: changkun
 ---
 
@@ -74,7 +74,7 @@ piped in, which is every pipeline run. The fix greps the saved body,
 |---|---|---|
 | `ghcr.io/latere-ai/origod:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.ci` over the shared runtime stage of spec 002: `debian:trixie-slim` pinned by digest, which ships git 2.47, above the 2.40 floor `origod check` (spec 018) enforces; signed with cosign keyless; an SPDX bill of materials, which ships as a release asset and is attached to the image as a referrer only when the repository is public (see the attestation note below) |
 | `ghcr.io/latere-ai/origo-stubs:<version>` | GHCR, `linux/amd64` and `linux/arm64` | `Dockerfile.stubs` of spec 013, the stub issuer, authorizer, sink, and source in one image, published beside `origod` under the same tag and signed the same way, with its own bill of materials under the same attestation rule; pinned in the `kind` overlay of `deploy-<version>.tar.gz` beside `origod`, so spec 018's `install-release` job and an operator's first installation run the stub authorizer from a released, signed image and not from a checkout |
-| `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with SHA-256 sums, signed |
+| `origod_<version>_<os>_<arch>.tar.gz` | the GitHub release | `linux` and `darwin`, `amd64` and `arm64`; `checksums.txt` with the SHA-256 sum of every archive of this table, the deploy archive and the fixture included, signed |
 | `origo_<version>_<os>_<arch>.tar.gz` | the GitHub release | the agent client of spec 025, the same four pairs from the same `release-archives` loop and the same `checksums.txt`. It runs on the machine an agent runs on rather than in a cluster, so it takes an archive and no image. `release-verify` downloads by an explicit pattern before `sha256sum -c`, so `--pattern 'origo_*.tar.gz'` sits beside `origod_*`: neither glob matches the other's name, and a sum with no file beside it fails the tag |
 | `deploy-<version>.tar.gz` | the GitHub release | `deploy/base` and `deploy/examples` with the image pinned to the version, so an operator's overlay references one artifact |
 | `fixture-<version>.tar.gz` | the GitHub release | the bucket prefix `origo/repos/<id>/` of a fixture repository the harness pushes through the candidate image in the `kind` stack before `TestContract` and keeps, so the next release can prove it reads what this one wrote |
@@ -112,11 +112,11 @@ callable step, so the two steps are written inline here, the same
 makes. On a `v*` tag:
 
 1. `build`: `go build` for the four `os/arch` pairs with the `-ldflags`
-   of spec 002 setting `internal/version`, the archives and
-   `checksums.txt`; `docker buildx` of `Dockerfile.ci` and of
+   of spec 002 setting `internal/version`, the archives;
+   `docker buildx` of `Dockerfile.ci` and of
    `Dockerfile.stubs` for `linux/amd64` and `linux/arm64`, each pushed
    as one multi-arch image; `cosign sign` keyless with the workflow's
-   OIDC identity on both images and on `checksums.txt`; an SPDX bill of
+   OIDC identity on both images; an SPDX bill of
    materials from the module graph and each image, attached with
    `attest-sbom` and provenance with `attest-build-provenance` when
    the repository is public, by the attestation rule above; the deploy
@@ -139,7 +139,12 @@ makes. On a `v*` tag:
    through `ORIGO_TEST_S3_ENDPOINT` and its sibling variables, which
    the job exports with the overlay's fixed values (spec 013, the MinIO
    row: `http://localhost:30900`, bucket `origo-test`), and packs them
-   as `fixture-<version>.tar.gz`; a failure stops the release.
+   as `fixture-<version>.tar.gz`; a failure stops the release. Then
+   `checksums` writes `checksums.txt` over every archive the release
+   publishes, the eight binary archives, the deploy archive, and the
+   fixture, and signs it with `cosign sign-blob` under the same keyless
+   identity. It runs here and not in `build` because the fixture exists
+   only once this step has packed it.
 3. `deploy`: runs only when the repository variable
    `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl`, with the
    kubeconfig held in the repository secret `ORIGO_KUBECONFIG` (spec
@@ -482,17 +487,29 @@ as a previous release's, and the version re-cut.
 
 ### Open
 
-- `checksums.txt` covers the four binary archives alone, as the artifact
-  table's row says. Whether `deploy-<version>.tar.gz` and
-  `fixture-<version>.tar.gz` join it is not settled: the fixture is
-  produced in a later job than the checksums, so covering it needs the
-  signing moved after `conformance`. Filed as
+Nothing. Both items this section held are closed:
+
+- **What `checksums.txt` covers.** Closed on 2026-10-06: it covers every
+  archive the release publishes. The `checksums` job writes and signs it
+  after `conformance`, which packs the fixture, and `release-verify`
+  fails a release whose sums do not name the deploy archive and the
+  fixture. Before, the sums covered the eight binary archives alone, so
+  the `sha256sum -c --ignore-missing` that `docs/upgrades/README.md`
+  gives an operator passed a downloaded deploy archive unchecked; that
+  page now also checks the archive is listed.
+  `TestChecksumsCoverEveryArchiveTheReleasePublishes` in
+  `tools/release/workflow_test.go` holds the shape.
   [origo#2](https://github.com/latere-ai/origo/issues/2).
-- The `deploy` job takes its kubeconfig from `ORIGO_KUBECONFIG`, where
-  the shared pipeline mints a short-lived one from a provider token. A
-  long-lived kubeconfig in a repository secret is what spec 002's table
-  fixes; whether the release should mint instead is for a later round.
-  Filed as [origo#3](https://github.com/latere-ai/origo/issues/3).
+- **Where the `deploy` job's kubeconfig comes from.** Closed on
+  2026-10-06 with no change. The question compared `ORIGO_KUBECONFIG`
+  with a shared pipeline that minted a short-lived kubeconfig from a
+  provider token; that pipeline no longer does. Every deploying
+  repository now holds a kubeconfig for its own rollout ServiceAccount,
+  which is what `ORIGO_KUBECONFIG` carries: `origod-rollout` of
+  `deploy/bootstrap/rollout-identity.yaml`, bound to one namespace and to
+  the kinds `deploy/prod` holds, with no verb on Secrets, Namespaces, or
+  delete. A cloud provider token in a repository would reach further than
+  that. [origo#3](https://github.com/latere-ai/origo/issues/3).
 
 ### Coverage
 

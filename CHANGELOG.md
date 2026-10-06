@@ -12,6 +12,14 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- `checksums.txt` now sums every archive a release publishes: the eight
+  binary archives, `deploy-<version>.tar.gz`, and
+  `fixture-<version>.tar.gz`. Before, it covered the binary archives
+  alone, so `sha256sum -c --ignore-missing` passed a downloaded deploy
+  archive without checking it. Earlier releases do not list the deploy
+  archive, and the check in `docs/upgrades/README.md` now stops on a
+  release whose sums leave it out.
+
 - The production overlay delivers push events to platformd's
   `/internal/origo/events`, signed with `ORIGO_EVENTS_SECRET` from the
   `origod-events` Secret, which must exist before a release applies the

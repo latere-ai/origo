@@ -117,6 +117,23 @@ func dependsOn(jobs map[string]workflowJob, name, ancestor string) bool {
 	return false
 }
 
+// jobText is the lines of one job of a workflow, from its id to the next
+// key at the same indent, and empty when the workflow has no such job.
+func jobText(text, name string) string {
+	var b strings.Builder
+	in := false
+	for line := range strings.SplitSeq(text, "\n") {
+		if m := jobID.FindStringSubmatch(line); m != nil {
+			in = m[1] == name
+		}
+		if in {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 func readWorkflow(t *testing.T, name string) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -140,7 +157,7 @@ func readWorkflow(t *testing.T, name string) string {
 // published and nothing verified it.
 func TestReleaseSurvivesASkippedDeploy(t *testing.T) {
 	jobs := parseJobs(readWorkflow(t, "release.yml"))
-	for _, name := range []string{"build", "conformance", "deploy", "live", "publish", "install-release", "release-verify"} {
+	for _, name := range []string{"build", "conformance", "checksums", "deploy", "live", "publish", "install-release", "release-verify"} {
 		if _, ok := jobs[name]; !ok {
 			t.Fatalf("release.yml has no job %q; the parser or the workflow changed shape", name)
 		}
@@ -180,6 +197,43 @@ jobs:
 	got := silentlySkipped(jobs, "deploy")
 	if want := []string{"install-release", "release-verify"}; !slices.Equal(got, want) {
 		t.Errorf("silentlySkipped = %v, want %v", got, want)
+	}
+}
+
+// TestChecksumsCoverEveryArchiveTheReleasePublishes holds spec 017's rule
+// that checksums.txt sums every archive an operator downloads, the deploy
+// archive and the fixture with the binaries, and that the published release
+// is checked against it. conformance packs the fixture, so the one job that
+// signs the sums needs it as well as build. When build signed sums over the
+// binaries alone, an operator who ran `sha256sum -c --ignore-missing` over a
+// downloaded deploy archive, as docs/upgrades/README.md says to, checked
+// nothing.
+func TestChecksumsCoverEveryArchiveTheReleasePublishes(t *testing.T) {
+	text := readWorkflow(t, "release.yml")
+	jobs := parseJobs(text)
+	var signers []string
+	for name := range jobs {
+		if strings.Contains(jobText(text, name), "cosign sign-blob") {
+			signers = append(signers, name)
+		}
+	}
+	if len(signers) != 1 {
+		t.Fatalf("jobs signing checksums.txt = %v, want exactly one", signers)
+	}
+	signer := signers[0]
+	for _, packer := range []string{"build", "conformance"} {
+		if signer != packer && !dependsOn(jobs, signer, packer) {
+			t.Errorf("%s signs checksums.txt without needing %s, which packs an archive the sums cover", signer, packer)
+		}
+	}
+	if !dependsOn(jobs, "publish", signer) {
+		t.Errorf("publish does not need %s, so it can publish sums nobody signed", signer)
+	}
+	verify := jobText(text, "release-verify")
+	for _, archive := range []string{"deploy-${TAG}.tar.gz", "fixture-${TAG}.tar.gz"} {
+		if !strings.Contains(verify, `grep -q " `+archive+`$" checksums.txt`) {
+			t.Errorf("release-verify does not check that checksums.txt names %s", archive)
+		}
 	}
 }
 

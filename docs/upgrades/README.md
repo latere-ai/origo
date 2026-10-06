@@ -95,6 +95,7 @@ gh release download "$VERSION" --repo latere-ai/origo \
   --pattern 'checksums.txt*' --pattern 'deploy-*.tar.gz' --pattern 'origo*_*.tar.gz'
 cosign verify-blob --bundle checksums.txt.cosign.bundle \
   --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" checksums.txt
+grep -q " deploy-$VERSION.tar.gz$" checksums.txt
 sha256sum -c --ignore-missing checksums.txt
 ```
 
@@ -103,6 +104,9 @@ repository's release workflow for a tag. The second pair proves the
 checksum file was, and `sha256sum -c` then proves every archive you
 downloaded, the deploy manifests among them, matches it; the file also
 lists archives you did not download, which `--ignore-missing` skips.
+`--ignore-missing` would skip the deploy archive the same way if the
+file did not list it, so the `grep` before it stops on a release whose
+sums leave the manifests out.
 
 The bill of materials is a release asset: `sbom-origod.spdx.json`,
 `sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json`, one per

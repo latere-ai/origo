@@ -7,15 +7,17 @@
 # invocations the shared workflow makes.
 #
 #   build           the eight binary archives, origod and origo for the
-#                   four platforms, checksums.txt, the two
-#                   multi-arch images, the signatures, the bills of
-#                   materials, and the deploy archive; the SBOM and
+#                   four platforms, the two multi-arch images and their
+#                   signatures, the bills of materials, and the deploy
+#                   archive; the SBOM and
 #                   provenance attestations are attached only when the
 #                   repository is public, because GitHub's attestation
 #                   API refuses a private repository on this plan
 #   conformance     the kind stack of spec 013 from the published images:
 #                   the release fixture, spec 021's TestContract, and the
 #                   fixture the previous release attached
+#   checksums       checksums.txt over every archive the release publishes,
+#                   the fixture included, and its signature
 #   deploy          only with the repository variable ORIGO_RELEASE_DEPLOY:
 #                   deploy/prod applied, the rollout waited for, the smoke
 #   live            spec 021's run against ORIGO_LIVE_URL
@@ -96,8 +98,9 @@ jobs:
           go-version-file: go.mod
 
       # Every archive RELEASE_BINARIES names for every platform of
-      # RELEASE_PLATFORMS, and checksums.txt over all of them: origod and
-      # origo, the agent client of spec 025, for the four os/arch pairs.
+      # RELEASE_PLATFORMS: origod and origo, the agent client of spec 025,
+      # for the four os/arch pairs. The checksums.txt make writes beside
+      # them is a local build's; the release's own is the checksums job's.
       # The -ldflags of spec 002 set internal/version, so a binary from
       # the pipeline and one from `make build` carry their identity the
       # same way. The binaries stay under out/release/bin/<os>_<arch>/,
@@ -250,17 +253,15 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       # Keyless: the workflow's OIDC identity is the signer, which is
       # what an operator outside Latere can check without holding a key.
-      # A sigstore bundle carries the signature, the certificate, and
-      # the transparency-log proof in one file, so checksums.txt is
-      # verified from the release assets alone.
-      - name: Sign the images and checksums.txt
+      # checksums.txt is signed by the checksums job, once the fixture it
+      # also covers exists.
+      - name: Sign the images
         env:
           COSIGN_YES: 'true'
         run: |
           set -euo pipefail
           cosign sign "${ORIGOD_IMAGE}@${{ steps.origod.outputs.digest }}"
           cosign sign "${STUBS_IMAGE}@${{ steps.stubs.outputs.digest }}"
-          cd out/release && cosign sign-blob --bundle checksums.txt.cosign.bundle checksums.txt
 
       # The candidate-images artifact of spec 013, in the shape the
       # `build` job of verify.yml uploads, so step 2 hands it to up.sh
@@ -301,8 +302,6 @@ jobs:
           name: release-artifacts
           path: |
             out/release/*.tar.gz
-            out/release/checksums.txt
-            out/release/checksums.txt.cosign.bundle
             out/release/*.spdx.json
           if-no-files-found: error
 
@@ -414,6 +413,48 @@ jobs:
         with:
           name: conformance-evidence
           path: release-evidence/conformance.md
+          if-no-files-found: error
+
+  # checksums.txt over every archive the release publishes: the binaries
+  # and the deploy archive from build, and the fixture, which exists only
+  # once conformance has packed it. An operator verifies the deploy
+  # archive before applying it (docs/upgrades/README.md), so a sum that
+  # left it out would let a swapped manifest pass that check.
+  checksums:
+    name: sum and sign the archives
+    needs: [build, conformance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: archives
+          pattern: 'release-*'
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # A sigstore bundle carries the signature, the certificate, and the
+      # transparency-log proof in one file, so checksums.txt is verified
+      # from the release assets alone.
+      - name: Sum and sign every archive
+        env:
+          COSIGN_YES: 'true'
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test -f "archives/deploy-${TAG}.tar.gz"
+          test -f "archives/fixture-${TAG}.tar.gz"
+          mkdir -p out/checksums
+          (cd archives && sha256sum *.tar.gz) > out/checksums/checksums.txt
+          cat out/checksums/checksums.txt
+          cd out/checksums && cosign sign-blob --bundle checksums.txt.cosign.bundle checksums.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-checksums
+          path: |
+            out/checksums/checksums.txt
+            out/checksums/checksums.txt.cosign.bundle
           if-no-files-found: error
 
   # Step 3. Latere's own installation. The repository variable and the
@@ -587,8 +628,8 @@ jobs:
   # as the body, then the evidence of the steps that ran.
   publish:
     name: publish the release
-    needs: [build, conformance, deploy, live]
-    if: ${{ always() && needs.build.result == 'success' && needs.conformance.result == 'success' && needs.deploy.result != 'failure' && needs.live.result == 'success' }}
+    needs: [build, conformance, checksums, deploy, live]
+    if: ${{ always() && needs.build.result == 'success' && needs.conformance.result == 'success' && needs.checksums.result == 'success' && needs.deploy.result != 'failure' && needs.live.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -805,6 +846,10 @@ jobs:
             --pattern 'checksums.txt*' \
             --pattern 'deploy-*.tar.gz' --pattern 'fixture-*.tar.gz'
           sha256sum -c checksums.txt
+          # The deploy archive and the fixture are summed with the
+          # binaries, so a release whose sums leave either out fails here.
+          grep -q " deploy-${TAG}.tar.gz$" checksums.txt
+          grep -q " fixture-${TAG}.tar.gz$" checksums.txt
           identity="^https://github.com/${GITHUB_REPOSITORY}/\.github/workflows/release\.yml@refs/tags/"
           cosign verify-blob --bundle checksums.txt.cosign.bundle \
             --certificate-identity-regexp "$identity" \

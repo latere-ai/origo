@@ -44,13 +44,14 @@ only when the ones before `publish` pass:
 
 | Job | What it does |
 |---|---|
-| `build` | builds `origod` and `origo` for linux and darwin on amd64 and arm64 into eight archives, `checksums.txt` over them, the two multi-arch images (`origod`, `origo-stubs`), the deploy archive, and the release fixture. Signs both images and `checksums.txt` keylessly with cosign, writes three SPDX bills of materials (one per image, one for the module graph), and attaches SBOM and build provenance attestations to each image |
-| `conformance` | brings up the kind stack from the published images and runs the conformance suite, the release fixture, and the previous release's fixture on this build, which is what proves the log format still reads |
+| `build` | builds `origod` and `origo` for linux and darwin on amd64 and arm64 into eight archives, the two multi-arch images (`origod`, `origo-stubs`), and the deploy archive. Signs both images keylessly with cosign, writes three SPDX bills of materials (one per image, one for the module graph), and attaches SBOM and build provenance attestations to each image |
+| `conformance` | brings up the kind stack from the published images and runs the conformance suite, the release fixture, and the previous release's fixture on this build, which is what proves the log format still reads, then packs this release's fixture |
+| `checksums` | writes `checksums.txt` over every archive the release publishes, the eight binary archives, the deploy archive and the fixture, and signs it keylessly with cosign |
 | `deploy` | only when the repository variable `ORIGO_RELEASE_DEPLOY` is set: applies `deploy/prod`, waits for the rollout, and runs `tools/smoke/release.sh`, which waits for the served version to reach the tag |
 | `live` | the conformance suite against `ORIGO_LIVE_URL` |
 | `publish` | creates the GitHub release with the changelog section and the evidence of the jobs above, and uploads every artifact |
 | `install-release` | walks `docs/install.md` on a bare kind cluster against the published images and the published deploy archive, with nothing from this workflow's own build |
-| `release-verify` | on a clean runner, verifies the image signatures, the attestations, the `checksums.txt` bundle, every archive against it, and that verification refuses a foreign identity |
+| `release-verify` | on a clean runner, verifies the image signatures, the attestations, the `checksums.txt` bundle, every archive against it, that it names the deploy archive and the fixture, and that verification refuses a foreign identity |
 
 The same tag also runs the tag-only jobs of `verify.yml`: the cluster
 tier, the kind up-script check, and the mutation job. See
@@ -61,7 +62,7 @@ tier, the kind up-script check, and the mutation job. See
 | Asset | Contents |
 |---|---|
 | `origod_<version>_<os>_<arch>.tar.gz`, `origo_<version>_<os>_<arch>.tar.gz` | the node and the agent client, statically linked |
-| `checksums.txt`, `checksums.txt.cosign.bundle` | SHA-256 of every archive, and its keyless signature |
+| `checksums.txt`, `checksums.txt.cosign.bundle` | SHA-256 of every archive, the deploy archive and the fixture included, and its keyless signature |
 | `deploy-<version>.tar.gz` | `deploy/base` and `deploy/examples` with both images pinned to the version, and the `docs/install.md` of that version |
 | `fixture-<version>.tar.gz` | a repository log written by this release, which the next release must read |
 | `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json`, `sbom-source.spdx.json` | the bills of materials |
