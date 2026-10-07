@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.13.0 - 2026-10-07
+
 ### Added
 
 - An action in the authorizer vocabulary, `repo.rename`, published by
