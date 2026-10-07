@@ -169,6 +169,12 @@ The third says this installation lists no repositories, and callers get
 501 `directory_unsupported`. A page is never cached, and Origo drops any
 id from it that it no longer holds.
 
+Origo reads a `cursor` that begins `v1.` as one it encrypted itself and
+never sends it to you as it arrived, so do not begin a `next_cursor`
+with `v1.`. From the next minor release, Origo encrypts every
+`next_cursor` before a caller sees it, and a `next_cursor` longer than
+512 bytes is no answer.
+
 ## The five rules
 
 An endpoint that keeps these serves any installation.

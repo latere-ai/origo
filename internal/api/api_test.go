@@ -50,6 +50,7 @@ type harness struct {
 	srv     *httptest.Server
 	authz   *authorizer.Server
 	guard   *auth.Guard
+	cursors *auth.Cursors
 	key     *ecdsa.PrivateKey
 	signer  *auth.Signer
 	limits  *limits.Limits
@@ -81,6 +82,17 @@ type harnessConfig struct {
 	sweepTick     time.Duration
 	logger        *slog.Logger
 	bucketed      bool
+	// cursorAuthorizer, when set, is the authorizer URL the directory
+	// cursor key is bound to in place of the stub's, for a node that was
+	// pointed at another authorizer or none (spec 031).
+	cursorAuthorizer *string
+}
+
+// withCursorAuthorizer binds the harness's cursor key to url rather than
+// the stub authorizer's, the way a node whose ORIGO_AUTHORIZER_URL names
+// another endpoint, or none, binds its own.
+func withCursorAuthorizer(url string) harnessOption {
+	return func(c *harnessConfig) { c.cursorAuthorizer = &url }
 }
 
 // withLogger sends the handler's lines to a logger of the test's own,
@@ -246,6 +258,17 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 	h := &harness{t: t, store: store, log: l, cache: cache, authz: authz, key: key, principal: auth.Principal{Subject: "alice"}}
 	h.guard = auth.NewGuard(client, logger)
+	// The directory cursor key, as cmd/origod derives it: from the
+	// signing key, bound to the authorizer the guard asks.
+	cursorAuthorizer := authz.URL()
+	if cfg.cursorAuthorizer != nil {
+		cursorAuthorizer = *cfg.cursorAuthorizer
+	}
+	h.cursors, err = auth.NewCursors(key, cursorAuthorizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.guard.SetCursors(h.cursors)
 	h.signer = auth.NewSigner(key, issuer, "", nil)
 	var dispatcher *events.Dispatcher
 	if cfg.sink != nil {

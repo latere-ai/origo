@@ -72,6 +72,7 @@ const (
 // other principal by the authorizer.
 type Guard struct {
 	authorizer Authorizer
+	cursors    *Cursors
 	logger     *slog.Logger
 }
 
@@ -82,6 +83,12 @@ func NewGuard(a Authorizer, logger *slog.Logger) *Guard {
 	}
 	return &Guard{authorizer: a, logger: logger}
 }
+
+// SetCursors gives the guard the directory cursor key (Origo spec 031).
+// The node derives it from ORIGO_TOKEN_KEY and the authorizer it
+// configured, and sets it before the guard serves a request. A guard
+// with none opens no sealed cursor.
+func (g *Guard) SetCursors(c *Cursors) { g.cursors = c }
 
 // Authorize decides one request for the principal. It returns nil on an
 // allow, a *Denied on a deny, and an *Unavailable when no decision
@@ -135,6 +142,14 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 // does not implement Lister is an installation with no directory, which
 // is the same answer as {"directory": false}: the caller renders it as
 // the one 501 and stops asking.
+//
+// A cursor with the sealed prefix is opened under the subject and the
+// authorizer before the lister sees it, and one that does not open is
+// ErrCursor with no call made (spec 031). Any other cursor is the
+// authorizer's and passes through, and next_cursor is the authorizer's
+// as written: this is the first of the spec's two releases, which opens
+// what the second seals so that a walk crossing from a node of the
+// second onto a node of this one is not cut short while the two roll.
 func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit int) (Directory, error) {
 	if p.Bound != nil {
 		return Directory{}, &Denied{Subject: p.Subject, Action: ActionList, Reason: ReasonScope}
@@ -142,6 +157,13 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 	lister, ok := g.authorizer.(Lister)
 	if !ok {
 		return Directory{}, nil
+	}
+	if isSealed(cursor) {
+		opened, err := g.cursors.Open(p.Subject, cursor)
+		if err != nil {
+			return Directory{}, err
+		}
+		cursor = opened
 	}
 	if limit <= 0 {
 		limit = DefaultListLimit

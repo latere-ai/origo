@@ -107,6 +107,14 @@ func (h *Handler) directory(w http.ResponseWriter, r *http.Request, cursor, rawL
 		limit = n
 	}
 	dir, err := h.guard.Directory(r.Context(), auth.FromContext(r.Context()), cursor, limit)
+	if errors.Is(err, auth.ErrCursor) {
+		// A cursor this installation did not write is the caller's
+		// request at fault. WriteRefusal would answer it as the 503 of
+		// an error it does not know, so it is answered here first.
+		h.logger.InfoContext(r.Context(), "directory cursor refused", "error", err)
+		invalid(w, "cursor", "cursor")
+		return
+	}
 	if err != nil {
 		auth.WriteRefusal(w, r, err, h.logger)
 		return

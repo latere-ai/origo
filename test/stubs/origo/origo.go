@@ -17,6 +17,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -107,11 +108,15 @@ func New(t testing.TB) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authzClient, err := auth.NewClient(auth.ClientOptions{URL: s.authz.URL(), Token: s.authz.Token(), HTTP: client, Metrics: set})
-	if err != nil {
+	// The authorizer client and the directory cursor key bound to it,
+	// derived from the signing key as cmd/origod derives it.
+	authzClient, clientErr := auth.NewClient(auth.ClientOptions{URL: s.authz.URL(), Token: s.authz.Token(), HTTP: client, Metrics: set})
+	cursors, cursorErr := auth.NewCursors(key, s.authz.URL())
+	if err := errors.Join(clientErr, cursorErr); err != nil {
 		t.Fatal(err)
 	}
 	guard := auth.NewGuard(authzClient, logger)
+	guard.SetCursors(cursors)
 	signer := auth.NewSigner(key, url, "", nil)
 
 	// The rest of what cmd/origod wires, so the stub serves the whole

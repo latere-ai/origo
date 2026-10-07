@@ -1,6 +1,6 @@
 ---
 title: "Directory cursor: the node seals the authorizer's cursor, and the directory stays a page"
-status: drafted
+status: in-progress
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -533,15 +533,15 @@ release passing raw cursors through. Caching a directory answer.
 | Criterion | Test that proves it | State |
 |---|---|---|
 | A directory page's `next_cursor` starts with `v1.`, neither it nor its base64url decoding contains the authorizer's cursor, and the next request carrying it reaches the authorizer with the authorizer's cursor byte for byte in `resource.cursor` | `internal/auth`, `TestTheDirectoryCursorIsSealed`, against the stub with a recognizable cursor | proposed |
-| A cursor sealed for one subject and presented by another, and one sealed under one authorizer URL and presented to a node holding another or none, are each 400 `invalid_request` with `details.reason` and `details.field` both `cursor`, never 503, and the authorizer is not called | `internal/api`, `TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone`, the stub's `Requests()` unchanged | proposed |
+| A cursor sealed for one subject and presented by another, and one sealed under one authorizer URL and presented to a node holding another or none, are each 400 `invalid_request` with `details.reason` and `details.field` both `cursor`, never 503, and the authorizer is not called | `internal/api`, `TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone`, the stub's `Requests()` unchanged | built |
 | A cursor without the `v1.` prefix, one that is not base64url, one shorter than a nonce and a tag, one with a byte flipped, one longer than 723 characters, and a bare repository id are each that 400, with no authorizer call | `internal/api`, `TestCollectionQueryIsValidated`, gaining the cursor rows | proposed |
 | A walk that changes `limit` between pages, 1 then 2 then 1, returns each repository once and ends with a null cursor | `internal/api`, `TestTheDirectoryCursorCarriesNoLimit` | proposed |
 | An authorizer `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | proposed |
-| The key derives from the fixed-width scalar: a key whose scalar has a leading zero byte derives the same cursor key on every node | `internal/auth`, `TestTheCursorKeyReadsTheFixedWidthScalar` | proposed |
+| The key derives from the fixed-width scalar: a key whose scalar has a leading zero byte derives the same cursor key on every node | `internal/auth`, `TestTheCursorKeyReadsTheFixedWidthScalar` | built |
 | Two nodes holding one `ORIGO_TOKEN_KEY` open each other's cursors, and a node holding another key refuses them with the 400 | `cmd/origod`, `TestNodesSharingTheTokenKeyShareCursors` | proposed |
 | With no authorizer configured, the owner policy's directory is sealed by the same path, and a walk of three repositories at `limit=1` returns each once and ends with a null cursor | `cmd/origod`, `TestTheOwnerPolicyDirectoryWalks` | proposed |
 | `GET /v1/repos` serves the representation of each id that survives, with a sealed `next_cursor`, one authorizer call, and null on the last page | `internal/api`, `TestDirectoryServesWhatSurvives`, updated | proposed |
-| In the first release a `v1.` cursor is opened, any other passes through, and `next_cursor` is the authorizer's; the second release rewrites this test into the rows above | `internal/api`, `TestTheDirectoryOpensASealedCursorBeforeItSeals` | proposed |
+| In the first release a `v1.` cursor is opened, any other passes through, and `next_cursor` is the authorizer's; the second release rewrites this test into the rows above | `internal/api`, `TestTheDirectoryOpensASealedCursorBeforeItSeals` | built |
 | Against the stack, `026/directory` walks the seeded directory at `limit=1` through sealed cursors and finds each repository once | `test/conformance`, `026/directory` | proposed |
 | Spec 026's route row names the `cursor` refusal and says `next_cursor` is the node's, and the generated `api/openapi.yaml` and `docs/internals/contract.md` carry both | `tools/apidoc`, `TestOpenAPIDocumentIsCurrent` and `TestAPIDocIsCurrent` | proposed |
 | The `ORIGO_TOKEN_KEY` row says that replacing the key ends every directory walk in flight, and `docs/configuration.md` carries it | `internal/config`, `TestConfigurationDocIsCurrent` | proposed |

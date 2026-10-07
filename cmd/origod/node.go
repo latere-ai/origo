@@ -282,6 +282,16 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 		logger.Info("authorizer configured", "mode", "owner policy", "admin_subjects", len(cfg.AdminSubjects))
 	}
 	guard := auth.NewGuard(authorizer, logger)
+	// The directory cursor key (Origo spec 031), derived from
+	// ORIGO_TOKEN_KEY, which every node of the installation holds, so a
+	// cursor sealed on one node opens on any other. It is bound to the
+	// authorizer this node asks, empty for the owner policy, so a cursor
+	// one authorizer wrote never reaches another.
+	cursors, err := auth.NewCursors(cfg.TokenKey, cfg.AuthorizerURL)
+	if err != nil {
+		return nil, err
+	}
+	guard.SetCursors(cursors)
 	// The signer mints with the primary alone (Origo spec 029): a
 	// repository-bound token is this node's own, so it carries the one
 	// name the node is known by and not every address it answers at.

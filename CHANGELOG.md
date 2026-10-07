@@ -10,6 +10,22 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- `GET /v1/repos` reads a `cursor` that begins `v1.` as a directory
+  cursor a node encrypted: it decrypts it before the authorization
+  endpoint sees it, and answers 400 `invalid_request` with
+  `details.reason: "cursor"` when it was not written by this
+  installation, for this caller, under this endpoint. Nothing encrypts
+  a cursor yet: `next_cursor` is still the endpoint's own, and any other
+  `cursor` reaches the endpoint as before. This release prepares the
+  next minor release, which encrypts every `next_cursor`, so a listing
+  that moves between nodes of the two releases while they roll is not
+  cut short. An authorization endpoint of your own whose `next_cursor`
+  begins with `v1.` must change it before the nodes move to this
+  release. From the next minor release, a `next_cursor` longer than 512
+  bytes is no answer, and the caller sees 503 `authorizer_unavailable`.
+
 ## v0.14.0 - 2026-10-07
 
 ### Changed

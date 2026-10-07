@@ -4,7 +4,9 @@
 package api
 
 import (
+	"encoding/base64"
 	"net/http"
+	"strings"
 	"testing"
 
 	"latere.ai/x/origo/internal/auth"
@@ -200,9 +202,19 @@ func TestNameModeMatchesTheIdRoute(t *testing.T) {
 }
 
 // TestCollectionQueryIsValidated: the two modes are exclusive and each
-// is bounded.
+// is bounded, and a cursor this installation did not write is refused
+// before the authorizer is called (spec 031).
 func TestCollectionQueryIsValidated(t *testing.T) {
 	h := newHarness(t)
+	sealed, err := h.cursors.Seal("alice", repoA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flipped, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(sealed, "v1."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flipped[len(flipped)/2] ^= 0x01
 	for _, row := range []struct{ query, reason, field string }{
 		{"?owner=acme", "owner and slug are given together", "slug"},
 		{"?slug=app", "owner and slug are given together", "owner"},
@@ -211,14 +223,22 @@ func TestCollectionQueryIsValidated(t *testing.T) {
 		{"?limit=0", "limit", "limit"},
 		{"?limit=201", "limit", "limit"},
 		{"?limit=many", "limit", "limit"},
+		// A sealed cursor that is not base64url, one shorter than a nonce
+		// and a tag, one with a byte flipped, and one longer than the
+		// longest cursor this installation writes.
+		{"?cursor=v1.not*base64url", "cursor", "cursor"},
+		{"?cursor=v1." + base64.RawURLEncoding.EncodeToString(make([]byte, 27)), "cursor", "cursor"},
+		{"?cursor=v1." + base64.RawURLEncoding.EncodeToString(flipped), "cursor", "cursor"},
+		{"?cursor=v1." + strings.Repeat("A", 721), "cursor", "cursor"},
 	} {
+		h.authz.ClearRequests()
 		status, out := h.do(http.MethodGet, "/v1/repos"+row.query, "")
 		if status != http.StatusBadRequest || code(out) != contract.CodeInvalid {
 			t.Errorf("%s: %d %v", row.query, status, out)
 			continue
 		}
 		d := details(out)
-		if row.reason == "modes" || row.reason == "limit" {
+		if row.reason == "modes" || row.reason == "limit" || row.reason == "cursor" {
 			if d["reason"] != row.reason {
 				t.Errorf("%s: reason %v, want %q", row.query, d["reason"], row.reason)
 			}
@@ -226,10 +246,123 @@ func TestCollectionQueryIsValidated(t *testing.T) {
 		if row.field != "" && d["field"] != row.field {
 			t.Errorf("%s: field %v, want %q", row.query, d["field"], row.field)
 		}
+		if n := len(h.authz.Requests()); n != 0 {
+			t.Errorf("%s: the authorizer was called %d times", row.query, n)
+		}
 	}
 	// A limit inside the bounds is not a refusal.
 	h.authz.SetDirectory(true)
 	if status, out := h.do(http.MethodGet, "/v1/repos?limit=200", ""); status != http.StatusOK {
 		t.Errorf("limit=200: %d %v", status, out)
 	}
+}
+
+// sealedFor seals the authorizer's cursor for the subject under the
+// harness's key, the cursor a node of the next release hands out.
+func sealedFor(t *testing.T, c *auth.Cursors, subject, cursor string) string {
+	t.Helper()
+	out, err := c.Seal(subject, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestTheDirectoryOpensASealedCursorBeforeItSeals is the first of spec
+// 031's two releases: a v1. cursor is opened before the authorizer sees
+// it, any other cursor passes through as the authorizer's, and the
+// next_cursor served is still the authorizer's. A walk that reaches a
+// node of this release with a cursor a node of the next one sealed is
+// therefore not cut short.
+func TestTheDirectoryOpensASealedCursorBeforeItSeals(t *testing.T) {
+	h := newHarness(t)
+	makeRepo(t, h, repoA, "acme", "app")
+	makeRepo(t, h, repoB, "acme", "lib")
+	h.authz.SetDirectory(true,
+		authorizer.DirectoryEntry{ID: repoA, Owner: "acme", Slug: "app"},
+		authorizer.DirectoryEntry{ID: repoB, Owner: "acme", Slug: "lib"},
+	)
+
+	// next_cursor is the authorizer's, as it wrote it.
+	status, out := h.do(http.MethodGet, "/v1/repos?limit=1", "")
+	if status != http.StatusOK || len(entries(out)) != 1 || out["next_cursor"] != repoA {
+		t.Fatalf("the first page is %d %v", status, out)
+	}
+
+	for name, cursor := range map[string]string{
+		"sealed": sealedFor(t, h.cursors, "alice", repoA),
+		"raw":    repoA,
+	} {
+		h.authz.ClearRequests()
+		status, out := h.do(http.MethodGet, "/v1/repos?limit=1&cursor="+cursor, "")
+		if status != http.StatusOK || len(entries(out)) != 1 || out["next_cursor"] != nil {
+			t.Fatalf("%s: the second page is %d %v", name, status, out)
+		}
+		if row, _ := entries(out)[0].(map[string]any); row["id"] != repoB {
+			t.Fatalf("%s: the second page holds %v", name, row)
+		}
+		// The authorizer receives its own cursor byte for byte, whether
+		// the caller sent it sealed or as the authorizer wrote it.
+		seen := h.authz.Requests()
+		if len(seen) != 1 || seen[0].Resource.String("cursor") != repoA {
+			t.Fatalf("%s: the authorizer saw %+v", name, seen)
+		}
+	}
+}
+
+// TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone: a sealed
+// cursor opens only on a request from the subject it was sealed for, and
+// only on a node asking the authorizer it was sealed under. Anything else
+// is the 400 of a cursor this installation did not write, never a 503,
+// and the authorizer is not called.
+func TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone(t *testing.T) {
+	h := newHarness(t)
+	makeRepo(t, h, repoA, "acme", "app")
+	makeRepo(t, h, repoB, "acme", "lib")
+	h.authz.SetDirectory(true,
+		authorizer.DirectoryEntry{ID: repoA, Owner: "acme", Slug: "app"},
+		authorizer.DirectoryEntry{ID: repoB, Owner: "acme", Slug: "lib"},
+	)
+	another, err := auth.NewCursors(h.key, "http://another-authorizer.invalid/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, err := auth.NewCursors(h.key, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forBob := sealedFor(t, h.cursors, "bob", repoA)
+	refused := func(h *harness, name, cursor string) {
+		t.Helper()
+		h.authz.ClearRequests()
+		status, out := h.do(http.MethodGet, "/v1/repos?cursor="+cursor, "")
+		if status != http.StatusBadRequest || code(out) != contract.CodeInvalid {
+			t.Fatalf("%s: %d %v", name, status, out)
+		}
+		if d := details(out); d["reason"] != "cursor" || d["field"] != "cursor" {
+			t.Fatalf("%s: the details are %v", name, d)
+		}
+		if n := len(h.authz.Requests()); n != 0 {
+			t.Fatalf("%s: the authorizer was called %d times", name, n)
+		}
+	}
+	refused(h, "another subject", forBob)
+	refused(h, "another authorizer", sealedFor(t, another, "alice", repoA))
+	refused(h, "no authorizer", sealedFor(t, none, "alice", repoA))
+
+	// The subject it was sealed for opens it.
+	h.as(auth.Principal{Subject: "bob"})
+	if status, out := h.do(http.MethodGet, "/v1/repos?cursor="+forBob, ""); status != http.StatusOK || len(entries(out)) != 1 {
+		t.Fatalf("bob's own cursor: %d %v", status, out)
+	}
+
+	// A node bound to no authorizer, the owner policy's, refuses a cursor
+	// sealed under one with the same key.
+	bare := newHarness(t, withCursorAuthorizer(""))
+	stubs, err := auth.NewCursors(bare.key, bare.authz.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare.authz.SetDirectory(true)
+	refused(bare, "a node holding none", sealedFor(t, stubs, "alice", repoA))
 }
