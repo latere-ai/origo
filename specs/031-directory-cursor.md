@@ -38,8 +38,8 @@ page instead (`authorizer.PageActions()`). Issue #1 asks which of two ways
 makes the directory's cursor Origo's: move the directory onto a `filter`,
 or keep the page and make the cursor opaque by construction.
 
-This spec weighs three options with their costs and recommends the
-second: **the node seals the authorizer's cursor**. Every `next_cursor` a
+This spec weighs three options with their costs, and the owner chose
+the second on 2026-10-07: **the node seals the authorizer's cursor**. Every `next_cursor` a
 caller sees is one the node wrote, an authenticated encryption of the
 authorizer's cursor under a key every node of an installation already
 holds, and the authorizer only ever receives back a cursor it wrote, on a
@@ -549,10 +549,7 @@ release passing raw cursors through. Caching a directory answer.
 
 ## Open
 
-- **Which option.** This spec recommends (b), the sealed cursor, which
-  needs no change outside this repository and one bound in Origo's own
-  authorizer contract. Options (a) and (c) change the family's shared
+- **Which option.** Decided by the owner on 2026-10-07: (b), the sealed
+  cursor. Options (a) and (c) would have changed the family's shared
   contract, `latere.ai/x/pkg/authz.Filter` and its conformance suite, and
-  are the owner's to decide. Choosing either also needs the two
-  preconditions of the recommendation, or the per-entry read it implies,
-  before it is sound.
+  are not taken.

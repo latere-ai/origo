@@ -295,8 +295,9 @@ three existing actions, their answer shape, or their caches.
   name, and takes the directory away for the 501. It sits in the
   deny-flipping group, so the stack and the stub run it and a live run
   skips it by name. The overlay is unchanged and still seeds nothing.
-- **Whether `next_cursor` should be opaque.** Open. Today it is
-  whatever the authorizer sent, passed through unread, and
+- **Whether `next_cursor` should be opaque.** Decided on 2026-10-07,
+  built by spec 031. Until it is built, it is whatever the authorizer
+  sent, passed through unread, and
   `docs/authorizer.md` tells the endpoint that every caller who can list
   sees it, so it puts nothing there the caller may not see. That rule is
   documentation, not construction. The family's way to answer a list is
@@ -305,10 +306,10 @@ three existing actions, their answer shape, or their caches.
   family declares. Whether the directory moves to a `Filter`, given that
   it holds repositories granted one at a time and public ones as well as
   an owner's, is the open question.
-  [origo#1](https://github.com/latere-ai/origo/issues/1). Spec 031
-  drafts the answer: the directory stays a page and the node seals the
-  cursor, because a filter over the name index lists by a label Origo
-  does not own and cannot carry the grants.
+  [origo#1](https://github.com/latere-ai/origo/issues/1). The owner
+  chose spec 031's answer: the directory stays a page and the node seals
+  the cursor, because a filter over the name index lists by a label
+  Origo does not own and cannot carry the grants.
 
 ## Outcome
 
@@ -350,10 +351,10 @@ Two divergences, both of naming and neither of behavior:
   `directory_unsupported` is in the table at 501 with its sentence, and
   `docs/api.md` carries the route and the code.
 
-One question under Open is still open and does not hold the spec:
-whether the directory moves to a `Filter` decision, which would make
-`next_cursor` the node's own. The other, the populated directory on the
-stack, closed on 2026-09-12 through spec 021's suite.
+Both questions under Open are answered: the populated directory on the
+stack closed on 2026-09-12 through spec 021's suite, and the cursor's
+opacity was decided on 2026-10-07 in favor of spec 031's sealed cursor,
+which builds it.
 
 A review on 2026-09-11 read the Design against `internal/auth`,
 `internal/api/collection.go`, the contract table, the stub, and the

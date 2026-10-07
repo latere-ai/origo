@@ -10,7 +10,7 @@ depends_on:
 affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -97,7 +97,7 @@ Content-Type: application/json
 | `repo` | `{id, owner, slug}` | `resource: {kind: "Repository", id, owner, slug}`; `repo.list` carries `{kind: "Repository"}` and no id |
 | `request` | absent | `id`, `ip`, `user_agent` |
 | figures | `ttl`, `replicas`, `quota_bytes`, `requests_per_minute` at the top level | `ttl` at the top level; the three figures under `limits` |
-| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged, and `next_cursor` stays the authorizer's value passed through, which the contract tells the endpoint every caller who can list sees: issue #1 stays open until `filter` over the node's own name index replaces the directory answer, which the family dates to the registry's move to the platform control plane |
+| `repo.list` answer | `{repos, next_cursor}`, `{allow: false}`, `{directory: false}` | unchanged, and `next_cursor` stays the authorizer's value passed through, which the contract tells the endpoint every caller who can list sees: spec 031 seals it on the node, so the caller sees only a cursor the node wrote (issue #1) |
 
 The five rules of spec 007 hold word for word. The probe id
 `00000000-0000-0000-0000-000000000001` is unchanged and is the
