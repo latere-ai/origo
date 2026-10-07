@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.14.0 - 2026-10-07
+
 ### Changed
 
 - A `PATCH /v1/repos/{id}` that changes the owner or the slug, and a
