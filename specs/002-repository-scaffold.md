@@ -219,6 +219,7 @@ node:
 | `ORIGO_KUBECONFIG` | the `deploy` job of `release.yml` (spec 017) | a repository secret holding the kubeconfig `kubectl` applies the release with, for the `origod-rollout` ServiceAccount of `deploy/bootstrap/rollout-identity.yaml`: one namespace, the kinds `deploy/prod` holds, and no Secrets |
 | `ORIGO_RELEASE_DEPLOY` | `release.yml` (spec 017) | a repository variable; unset skips the deploy and smoke step, so a tag on a fork publishes artifacts only |
 | `ORIGO_IMAGE_NAMESPACE` | `release.yml` and `tools/release/deploy-archive.sh` (spec 017) | a repository variable naming the registry namespace both images are published under; unset it is `ghcr.io/<the repository owner>`, so a fork's tag publishes to the fork's own packages. An image reference is lowercase and no workflow expression folds case, so an owner whose login carries capitals sets it; the `build` job refuses a namespace that is not a lowercase reference prefix before anything is pushed |
+| `ORIGO_REPOSITORY` | `tools/release/deploy-archive.sh` (spec 018), set by `release.yml` from `github.repository` | the `owner/name` of the repository a release is cut from: the install page packed in `deploy-<version>.tar.gz` links its relative paths to that repository at the tag, so a fork's archive links to the fork. Unset, it is `latere-ai/origo` |
 
 Variables another spec's table defines, listed here so the reference is
 one page:

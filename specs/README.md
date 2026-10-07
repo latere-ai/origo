@@ -1146,6 +1146,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_REPAIR_INTERVAL` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPAIR_UNHEARD` | [002](002-repository-scaffold.md) | 008 |
 | variable | `ORIGO_REPO` | [025](025-agent-client.md) | - |
+| variable | `ORIGO_REPOSITORY` | [002](002-repository-scaffold.md) | 018 |
 | variable | `ORIGO_REQUESTS_PER_MINUTE` | [002](002-repository-scaffold.md) | 007, 012, 020, 024, 025 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015 |
