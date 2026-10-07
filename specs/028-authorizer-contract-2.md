@@ -760,3 +760,125 @@ first.
 
 The routes moved in the release after the one that published the rows,
 as step 3 above says, and spec 007's action table moved with them.
+
+## State on 2026-10-07: a name is its own action
+
+The table gains one row, `repo.rename`, of kind `Repository`, after
+`repo.undelete`:
+
+| Action | Operation |
+|---|---|
+| `repo.rename` | `PATCH /v1/repos/{id}` that sets `owner` or `slug` to another label, and `POST /v1/repos/{id}/transfer` |
+
+`repo.admin` keeps creating a repository, a `PATCH` of
+`default_branch`, minting a repository-bound token, freeze, unfreeze,
+starting an import, verify, and `gc`.
+
+### Why an authorizer needs it
+
+The section of 2026-09-26 kept deleting apart from administering so an
+endpoint that keeps a registry of repositories beside Origo, and is the
+only writer of it, can hold a repository's existence to itself. A
+repository's name belongs to that registry as much as its existence
+does: the registry resolves a name to a repository, and Origo's name
+index answers the same question at the git host. While a rename asks
+`repo.admin`, so do a change of the default branch, a token, a freeze
+and a transfer, and the endpoint cannot refuse one without refusing the
+rest. The choice is between leaving a change of name open to every
+administrator, so the name at the git host and the name in the registry
+can part, and taking away the administrators' default branch, token
+minting and freeze. With `repo.rename` the endpoint refuses a change of
+name to everyone but the registry's writer, which renames at Origo
+inside the change that renames its row, and the administrators keep the
+rest.
+
+The resource carries the repository id alone, as on every route that
+names the id (spec 007), and not the name the request asks for. An
+endpoint decides who may change a repository's name, which is all an
+endpoint holding names to one writer needs; which names a writer may
+choose is that writer's own rule.
+
+### What it reverses
+
+The section of 2026-09-26 says, under its "Why an authorizer needs
+them", that the repository's administrators keep renaming it, minting
+its tokens and freezing it under `repo.admin`, and spec 007 and the
+`authorizer` package said the same. That described the table of that
+day, and the dated section stays as written. From this section a name
+is held as existence is: the administrators keep the default branch,
+the tokens and the freeze, and a change of name is `repo.rename`.
+
+### Which questions a PATCH asks
+
+`PATCH /v1/repos/{id}` changes the labels, the default branch, or both,
+and asks for what its body names:
+
+| Body names | Before the lookup | After the lookup |
+|---|---|---|
+| `owner` or `slug`, and no `default_branch` | `repo.rename` | nothing |
+| `default_branch`, and no `owner` or `slug` | `repo.admin` | nothing |
+| `default_branch` and `owner` or `slug` | `repo.admin` | `repo.rename`, when `owner` or `slug` differs from the repository's |
+| none of the three | `repo.admin` | nothing |
+
+Spec 007 asks the authorizer before the repository is read, so the
+first question is decided by what the body names, and a caller it
+refuses learns nothing about the repository. Only the lookup tells a new
+label from the current one, so the second question waits for it: a body
+that repeats the repository's `owner` and `slug` beside a new
+`default_branch`, which is what a client that sends the whole
+representation does, is no change of name and asks `repo.admin` alone.
+The second question goes only to a caller the first allowed, to whom
+spec 007 already answers 404 for a repository that does not exist, so
+it discloses nothing the first did not. Nothing is written until every
+question asked is allowed, and a refusal is the 403 `forbidden` of the
+action refused. A body whose `owner` and `slug` equal the repository's
+writes no name and emits no event, whichever question it asked.
+
+`POST /v1/repos/{id}/transfer` names a new owner by what it is, and asks
+`repo.rename` before the lookup, alone.
+
+### The order
+
+The row arrives before any route asks it, as on 2026-09-26 and for the
+same reason: an endpoint that validates the action against the
+vocabulary it was built with answers an action outside it with a 400,
+which Origo renders as 503 `authorizer_unavailable`.
+
+1. The release that carries this section publishes the row and asks it
+   nowhere. A rename and a transfer ask `repo.admin`.
+2. An endpoint built against this module reads the row from
+   `Vocabulary()` and decides it. One with no rule of its own for it
+   decides it as it decides `repo.admin`, which keeps every answer it
+   gave before.
+3. The next minor release moves `PATCH` and `transfer` as the table
+   above says, and spec 007's table with it.
+
+### What does not change
+
+- The owner policy decides `repo.rename` on an existing repository as it
+  decides `repo.admin`: the owner and an admin subject are allowed, so a
+  node with no endpoint renames as before. On an id that names nothing,
+  `repo.admin` is a create and `repo.rename` is refused like every other
+  action.
+- The stub authorizer of spec 013 decides `repo.rename` by the rule that
+  decides the same request as `repo.admin`, unless the rule that matches
+  it names `repo.rename` itself, so a rule table written for
+  administration keeps deciding a change of name.
+- A repository-bound token's scope allows neither action.
+- The envelope, the answer shape, the five rules, and the `renamed` and
+  `transferred` events.
+- A personal access token is narrowed by the qualified action (**State
+  on 2026-09-17: a personal access token carries what it may do**).
+  From the release that moves the two routes, a key granted
+  `origo:repo.admin` alone no longer covers a change of name; one that
+  renames or transfers carries `origo:repo.rename`.
+
+### Acceptance
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| The table carries `repo.rename` after `repo.undelete`, and `Actions`, `Kind` and `Known` read it | `authorizer`, `TestTheVocabularyIsSpec028sTable` | built |
+| The node's and the client's constants are the published strings | `authorizer`, `TestTheNodeAndTheClientReadTheSameStrings` | built |
+| The shared conformance suite drives the row against an endpoint told this table | `authorizer`, `TestConformanceAgainstTheStub` | built |
+| The owner policy and the stub authorizer answer `repo.rename` on an existing repository as they answer `repo.admin`, and the stub decides it alone for a rule that names it | `internal/auth`, `TestTheOwnerPolicyDecidesARenameAsAdministration`; `test/stubs/authorizer`, `TestARenameIsDecidedAsAdministration` | built |
+| A `PATCH` that changes `owner` or `slug` and a `transfer` ask `repo.rename`, a `PATCH` of `default_branch` asks `repo.admin`, one of both asks both, and a deny reaches the caller as a 403 naming the action in `details.action` with nothing changed | the next minor release | not built |

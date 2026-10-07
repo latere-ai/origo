@@ -1218,8 +1218,8 @@ name, or when a spec names something no spec defines.
 | event | `imported` | [019](019-repository-administration.md) | 014, 021 |
 | event | `ping` | [018](018-installation.md) | 008 |
 | event | `push` | [008](008-push-events.md) | 003, 004, 009, 019, 020, 024 |
-| event | `renamed` | [019](019-repository-administration.md) | - |
-| event | `transferred` | [019](019-repository-administration.md) | - |
+| event | `renamed` | [019](019-repository-administration.md) | 028 |
+| event | `transferred` | [019](019-repository-administration.md) | 028 |
 | event | `undeleted` | [019](019-repository-administration.md) | 008 |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
 | event | `verified` | [014](014-repository-migration.md) | 008 |
@@ -1245,7 +1245,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | 025 |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 025, 026, 027, 028, 030 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
-| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019 |
+| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 019, 028 |
 | endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025 |
@@ -1255,7 +1255,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029 |
 | endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
-| endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | 031 |
+| endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | 028, 031 |
 | endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 007, 019, 028 |
 | endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |

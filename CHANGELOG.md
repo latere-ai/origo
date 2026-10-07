@@ -10,6 +10,25 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- An action in the authorizer vocabulary, `repo.rename`, published by
+  `latere.ai/x/origo/authorizer` beside the six it had. This is a change
+  to the contract an authorization endpoint answers. No operation asks
+  it in this release: a rename and a transfer still ask `repo.admin`.
+  The next minor release asks `repo.rename` instead for a `PATCH` that
+  changes the owner or the slug and for a transfer, so an endpoint that
+  keeps a registry of repositories can hold a repository's name to the
+  registry's writer while the repository's administrators still change
+  its default branch, mint its tokens and freeze it. An authorization
+  endpoint of your own that answers an unknown action with an error, as
+  one built on `latere.ai/x/pkg/authz/server` does, should decide
+  `repo.rename` before the nodes move to that release; deciding it as
+  it decides `repo.admin` keeps every answer it gives today, and
+  `docs/authorizer.md` says how. With no endpoint configured, the owner
+  policy decides `repo.rename` as it decides `repo.admin`, and nothing
+  changes.
+
 ### Changed
 
 - `docs/authorizer.md` states that Origo hands an authorizer's

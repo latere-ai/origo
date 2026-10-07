@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -161,7 +161,7 @@ The envelope is contract 2, the one the three open cores share (spec
 028), so one endpoint can answer for Origo and its siblings behind one
 bearer. Whoever writes it in Go imports the vocabulary rather than
 copying the strings out of this page: `latere.ai/x/origo/authorizer`
-declares the four actions, the resource kind `Repository`, and the
+declares the actions, the resource kind `Repository`, and the
 table itself as `latere.ai/x/pkg/authz`'s `Vocabulary`, which
 `latere.ai/x/pkg/authz/server` validates a request against and
 `latere.ai/x/pkg/authz/conformance` drives a case per row of.
@@ -189,7 +189,7 @@ Content-Type: application/json
 | `subject` | the issuer URL with its trailing slash removed, a pipe, and the token's `sub`. It is empty for an anonymous request (spec 027) and for the probe below |
 | `issuer`, `sub` | the same two halves apart, so an endpoint keyed by issuer does not split the string again |
 | `claims` | every verified claim of the token, verbatim. Origo reads none of them; a plan, a team, or a role is read here |
-| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, or `repo.undelete` |
+| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, `repo.undelete`, or `repo.rename` |
 | `resource.kind` | `Repository` on every call, the one kind Origo names |
 | `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list`, which names no repository |
 | `resource.owner`, `resource.slug` | set on the name form and on a creation, empty on the id form |
@@ -214,6 +214,7 @@ The action Origo sends per operation:
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories may this subject see (spec 026) |
 | `repo.delete` | `DELETE /v1/repos/{id}`, which starts spec 019's hold |
 | `repo.undelete` | `POST /v1/repos/{id}/undelete`, which ends it inside the hold |
+| `repo.rename` | none yet: the row is published a release before a route asks it, and the next minor release moves a `PATCH` that changes `owner` or `slug`, and transfer, to it from `repo.admin` (spec 028, State on 2026-10-07) |
 
 `repo.list` is the one action whose answer is not a decision. Its
 resource carries the kind alone, and the endpoint answers a page of
@@ -233,8 +234,11 @@ they cloned. Deleting and undeleting are apart from `repo.admin` so an
 endpoint can decide whether a repository may stop existing separately
 from who administers it: one that keeps its own registry of
 repositories and deletes at Origo itself refuses both to everyone else
-and still lets the administrators rename, freeze and mint (spec 028,
-State on 2026-09-26). On `POST /v1/repos` the resource carries the id, owner,
+and still lets the administrators change the default branch, freeze and
+mint (spec 028, State on 2026-09-26). A change of name is kept apart in
+`repo.rename` for the same reason, so such an endpoint holds a
+repository's name to its registry's writer as it holds its existence
+(spec 028, State on 2026-10-07). On `POST /v1/repos` the resource carries the id, owner,
 and slug the body names, so the endpoint decides a creation from the
 name the caller chose.
 

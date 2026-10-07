@@ -14,7 +14,7 @@ import (
 // repository, and repo.list names the kind with no id.
 const KindRepository = "Repository"
 
-// The six actions of Origo spec 028's table, which are also the value
+// The seven actions of Origo spec 028's table, which are also the value
 // of details.action on a 403 forbidden. These strings are declared here
 // and nowhere else in the module: internal/contract reads them from
 // here, and so does every consumer outside it.
@@ -25,9 +25,10 @@ const (
 	// ActionWrite is a push, an LFS upload, and the server-side git
 	// operations of spec 020.
 	ActionWrite = "repo.write"
-	// ActionAdmin is creating a repository, changing it, transferring,
+	// ActionAdmin is creating a repository, changing its default branch,
 	// freezing, importing, verifying, collecting garbage, and minting a
-	// repository-bound token.
+	// repository-bound token. A change of the repository's name is
+	// ActionRename.
 	ActionAdmin = "repo.admin"
 	// ActionList is the directory of spec 026: which repositories may
 	// this subject see. It names no repository, so its resource carries
@@ -38,13 +39,22 @@ const (
 	// hold. It is its own action and not a use of repo.admin so that an
 	// endpoint keeping a registry of repositories beside Origo can hold
 	// the end of a repository to the writer of that registry, and still
-	// let the repository's administrators rename it, mint its tokens and
-	// freeze it (spec 028, State on 2026-09-26).
+	// let the repository's administrators change its default branch,
+	// mint its tokens and freeze it (spec 028, State on 2026-09-26).
 	ActionDelete = "repo.delete"
 	// ActionUndelete is bringing a deleted repository back inside the
 	// hold. It returns a repository to existence as ActionDelete ends
 	// it, so it is kept apart from repo.admin for the same reason.
 	ActionUndelete = "repo.undelete"
+	// ActionRename is a change of a repository's name: a PATCH that sets
+	// its owner or its slug to another label, and a transfer. It is kept
+	// apart from repo.admin so that an endpoint keeping a registry of
+	// repositories beside Origo can hold a repository's name to the
+	// writer of that registry, as ActionDelete holds its existence,
+	// while the repository's administrators still change its default
+	// branch, mint its tokens and freeze it (spec 028, State on
+	// 2026-10-07).
+	ActionRename = "repo.rename"
 )
 
 // vocabulary is spec 028's table as data, in the spec's order: every
@@ -58,6 +68,7 @@ var vocabulary = must(authz.NewVocabulary("origo",
 	authz.Action{Name: ActionList, Kind: KindRepository},
 	authz.Action{Name: ActionDelete, Kind: KindRepository},
 	authz.Action{Name: ActionUndelete, Kind: KindRepository},
+	authz.Action{Name: ActionRename, Kind: KindRepository},
 ))
 
 // must is the constructor's error, which is a mistake in the table above
@@ -102,7 +113,7 @@ func Actions() []string {
 func PageActions() []string { return []string{ActionList} }
 
 // Kind is the resource kind an action acts on: Repository for each of
-// the six, and "" for a string outside the vocabulary.
+// the seven, and "" for a string outside the vocabulary.
 func Kind(action string) string {
 	kind, _ := vocabulary.Kind(action)
 	return kind

@@ -19,7 +19,11 @@ import (
 // metadata. A subject may create a repository, and may read, write, and
 // administer one it created; a subject in ORIGO_ADMIN_SUBJECTS may do
 // everything on every repository; the probe id and the anonymous subject
-// are denied; repo.list returns the subject's own.
+// are denied; repo.list returns the subject's own. The policy reads the
+// action only to admit a create, so repo.delete, repo.undelete and
+// repo.rename, which the vocabulary keeps apart from repo.admin for an
+// endpoint that holds a registry, are decided on an existing repository
+// exactly as repo.admin is.
 //
 // The policy reads no claim of its own. What it needs of a repository,
 // whether it exists and the rendered subject that created it, it asks

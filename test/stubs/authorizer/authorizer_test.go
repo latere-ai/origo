@@ -6,6 +6,7 @@ package authorizer_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -87,6 +88,60 @@ func TestOwnerSlugRuleAndFigures(t *testing.T) {
 	reqs := s.Requests()
 	if len(reqs) == 0 || reqs[len(reqs)-1].Subject != "carol" || reqs[len(reqs)-1].Resource.String("owner") != "acme" {
 		t.Fatalf("recorded request: %+v", reqs)
+	}
+}
+
+// TestARenameIsDecidedAsAdministration: the stub answers repo.rename as
+// its table answers repo.admin, the allow's figures included, so rules
+// written for administration go on deciding a change of name (Origo
+// spec 028, State on 2026-10-07). A rule that names repo.rename decides
+// it alone and leaves repo.admin as it was, and the probe is denied.
+func TestARenameIsDecidedAsAdministration(t *testing.T) {
+	s := authorizer.New(t, authorizer.WithAllow("alice"))
+	s.SetRules(
+		authorizer.Rule{Subject: "bob", Action: "repo.admin", Allow: false, Reason: "not an administrator"},
+		authorizer.Rule{Subject: "carol", Action: "repo.admin", Allow: true, TTL: 7, Limits: map[string]any{"replicas": 2}},
+		authorizer.Rule{Subject: "carol", Action: "repo.read", Allow: false, Reason: "carol does not read"},
+	)
+	same := func(subject string) map[string]any {
+		t.Helper()
+		_, admin := call(t, s, s.Token(), envelope(subject, "repo.admin"))
+		status, rename := call(t, s, s.Token(), envelope(subject, "repo.rename"))
+		if status != 200 || fmt.Sprint(rename) != fmt.Sprint(admin) {
+			t.Errorf("%s: repo.rename answered %d %v, repo.admin %v", subject, status, rename, admin)
+		}
+		return rename
+	}
+	if out := same("alice"); out["allow"] != true {
+		t.Errorf("the default allow: %v", out)
+	}
+	if out := same("bob"); out["allow"] != false || out["reason"] != "not an administrator" {
+		t.Errorf("a deny of repo.admin: %v", out)
+	}
+	if out := same("carol"); out["allow"] != true || out["ttl"] != 7.0 {
+		t.Errorf("an allow of repo.admin with figures: %v", out)
+	}
+	if out := same("dave"); out["allow"] != false {
+		t.Errorf("the default deny: %v", out)
+	}
+	// A rule for repo.rename alone holds names apart from the rest of
+	// administration.
+	s.Deny(authorizer.Rule{Subject: "alice", Action: "repo.rename"}, "names belong to the registry")
+	if _, out := call(t, s, s.Token(), envelope("alice", "repo.rename")); out["allow"] != false || out["reason"] != "names belong to the registry" {
+		t.Errorf("a deny of repo.rename: %v", out)
+	}
+	if _, out := call(t, s, s.Token(), envelope("alice", "repo.admin")); out["allow"] != true {
+		t.Errorf("repo.admin after a deny of repo.rename: %v", out)
+	}
+	// The probe is denied whatever the rules, and every rename is
+	// recorded under its own action.
+	s.Allow(authorizer.Rule{Action: "repo.rename"})
+	probeRename := `{"subject":"alice","action":"repo.rename","resource":{"kind":"Repository","id":"` + authorizer.ProbeID + `"}}`
+	if _, out := call(t, s, s.Token(), probeRename); out["allow"] != false {
+		t.Errorf("the probe under repo.rename: %v", out)
+	}
+	if reqs := s.Requests(); reqs[len(reqs)-1].Action != "repo.rename" {
+		t.Errorf("recorded %+v", reqs[len(reqs)-1])
 	}
 }
 

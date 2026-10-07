@@ -26,7 +26,7 @@ import (
 // and one well-formed request per subject and action answered with a
 // body of the contract's shape. PageActions names repo.list, so that
 // answer is read as a page of Origo's own shape (spec 026) and the other
-// five as decisions.
+// six as decisions.
 func TestConformanceAgainstTheStub(t *testing.T) {
 	s := stub.New(t, stub.WithVocabulary(authorizer.Vocabulary()))
 	conformance.Run(t, s.URL(), s.Token(),

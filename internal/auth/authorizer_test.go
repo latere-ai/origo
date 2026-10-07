@@ -467,16 +467,16 @@ func TestCacheKeyComponents(t *testing.T) {
 // The directory is the complement: a page is asked through the shared
 // client's Ask, which does not validate, and repo.list still travels.
 func TestAnUnknownActionCostsNoRoundTrip(t *testing.T) {
-	const rename = "repo.rename"
+	const freeze = "repo.freeze"
 	stub := authorizer.New(t)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, newClock(), nil)
 	ctx := context.Background()
 
 	var unknown *authz.UnknownAction
-	if _, err := c.Authorize(ctx, request("alice", repoA, rename)); !errors.As(err, &unknown) {
-		t.Fatalf("Authorize(%s) = %v, want an *authz.UnknownAction", rename, err)
+	if _, err := c.Authorize(ctx, request("alice", repoA, freeze)); !errors.As(err, &unknown) {
+		t.Fatalf("Authorize(%s) = %v, want an *authz.UnknownAction", freeze, err)
 	}
-	if unknown.Core != "origo" || unknown.Action != rename {
+	if unknown.Core != "origo" || unknown.Action != freeze {
 		t.Errorf("the refusal names %s's %q", unknown.Core, unknown.Action)
 	}
 	if Retryable(unknown) {

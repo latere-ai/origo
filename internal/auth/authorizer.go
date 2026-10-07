@@ -39,6 +39,10 @@ const (
 	// administration (spec 028).
 	ActionDelete   Action = authorizer.ActionDelete
 	ActionUndelete Action = authorizer.ActionUndelete
+	// ActionRename is changing a repository's owner or slug, apart from
+	// ActionAdmin so an endpoint can hold a repository's name to the
+	// writer of its own registry of repositories (spec 028).
+	ActionRename Action = authorizer.ActionRename
 )
 
 // ResourceKind is the kind every repository envelope names.

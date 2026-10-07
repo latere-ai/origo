@@ -91,9 +91,17 @@ sends `{"allow": true}` alone is complete:
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories this subject may see |
 | `repo.delete` | delete |
 | `repo.undelete` | undelete, inside the seven-day hold |
+| `repo.rename` | nothing in this release. From the next minor release, a rename and a transfer, which ask `repo.admin` until then |
 
 On a creation the resource carries the id, owner, and slug the caller
 sent, so the endpoint decides from the name the caller chose.
+
+A request made with a repository-bound token never reaches the
+endpoint: the token's scope decides it. The one exception is a write
+under such a token, for which Origo asks for `repo.write` under the
+minter's subject only to read `quota_bytes`. A deny, or an allow with
+no figure, falls back to the 50 GiB default; an endpoint that does not
+answer refuses the write, as it would any other.
 
 ### Deleting apart from administering
 
@@ -103,8 +111,8 @@ an endpoint decide whether a repository may stop existing separately
 from who administers it: an endpoint that keeps its own registry of
 repositories, and deletes at Origo itself when it removes a row, refuses
 a deletion by anyone else while the repository's administrators keep
-renaming it and minting its tokens. An endpoint with no rule of its own
-for them decides them as it decides `repo.admin`.
+changing its default branch and minting its tokens. An endpoint with no
+rule of its own for them decides them as it decides `repo.admin`.
 
 An endpoint that answers an action it does not know with an error, as
 one built on `latere.ai/x/pkg/authz/server` does, has to know both
@@ -112,12 +120,26 @@ before its nodes run a release that asks them, or every delete and
 undelete answers 503 `authorizer_unavailable`. They are in the
 vocabulary from the release before the one that first asks them.
 
-A request made with a repository-bound token never reaches the
-endpoint: the token's scope decides it. The one exception is a write
-under such a token, for which Origo asks for `repo.write` under the
-minter's subject only to read `quota_bytes`. A deny, or an allow with
-no figure, falls back to the 50 GiB default; an endpoint that does not
-answer refuses the write, as it would any other.
+### Renaming apart from administering
+
+The vocabulary also names `repo.rename`, and no operation asks it in
+this release. From the next minor release, a `PATCH` that changes
+`owner` or `slug`, and a transfer, ask `repo.rename` in place of
+`repo.admin`, with the repository id alone in the resource. A `PATCH`
+of `default_branch` stays `repo.admin`, and one that changes both asks
+both. It lets an endpoint decide who may change a repository's name
+separately from who administers it: an endpoint that keeps its own
+registry of repositories, and renames at Origo itself when it renames a
+row, can refuse a change of name by anyone else, as it refuses a
+deletion, while the repository's administrators keep changing its
+default branch and minting its tokens.
+
+An endpoint that answers an action it does not know with an error, as
+one built on `latere.ai/x/pkg/authz/server` does, has to decide
+`repo.rename` before its nodes move to that release, or every rename
+and transfer answers 503 `authorizer_unavailable`. An endpoint with no
+rule of its own for it decides it as it decides `repo.admin`, which
+keeps every answer it gives today.
 
 ## The directory
 

@@ -13,7 +13,7 @@ depends_on:
 affects: [internal/api/, internal/httpgit/, internal/wal/, internal/repo/, internal/events/, test/e2e/, docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -585,3 +585,16 @@ hourly limit, the tombstone purge, and the sweep on Sunday at 03:00 on
 the first name of the sorted live set with the one-day orphan age and
 the seven-day hold; every named test is present. The Current state
 still described the tree before the build; it reads as built.
+
+## State on 2026-10-07: a change of name asks `rename`
+
+Spec 028's section of the same date adds `repo.rename` to the
+authorizer's table, so an endpoint that keeps a registry of
+repositories can hold a repository's name to the registry's writer as
+it holds its existence. Two rows of this spec move to it in the next
+minor release, the one after the release that publishes the action:
+`POST /v1/repos/{id}/transfer` in the table above, and the `PATCH` of
+spec 003 whose `renamed` event this spec adds, when its `owner` or
+`slug` differs from the repository's. A `PATCH` of `default_branch`
+stays `admin`, and a `PATCH` that changes both asks both. Until that
+release both rows ask `admin`, as the Design says.

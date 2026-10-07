@@ -38,12 +38,14 @@
 // WithPageActions. Every other action answers an allow or a deny with
 // the optional limits object.
 //
-// repo.delete and repo.undelete are apart from repo.admin so that an
-// endpoint can decide the existence of a repository separately from its
-// administration. An endpoint that keeps a registry of repositories and
-// is the only writer of it refuses both to everyone but itself, and a
-// repository's administrators keep renaming it, minting its tokens and
-// freezing it under repo.admin.
+// repo.delete, repo.undelete and repo.rename are apart from repo.admin
+// so that an endpoint can decide the existence and the name of a
+// repository separately from its administration. An endpoint that keeps
+// a registry of repositories and is the only writer of it refuses the
+// three to everyone but itself, and a repository's administrators keep
+// changing its default branch, minting its tokens and freezing it under
+// repo.admin. An endpoint that holds no registry decides the three as it
+// decides repo.admin.
 //
 // The promise, as for every package at this module's root: additive
 // within a module major, and the same on every build. An action string

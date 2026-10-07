@@ -5,9 +5,10 @@
 // stub (latere.ai/x/pkg/authz/stub) with Origo's rule table (Origo spec
 // 028). The shared stub carries the envelope, the rule table, the record
 // of every request, and the outage modes; this package adds Origo's
-// action vocabulary (repo.read, repo.write, repo.admin, repo.list), its
-// resource shape (a rule names a repository by id or owner/slug), and
-// spec 026's directory, which the shared stub does not know.
+// resource shape (a rule names a repository by id or owner/slug), spec
+// 026's directory, which the shared stub does not know, and the one
+// action it decides by another's rules: repo.rename is answered as
+// repo.admin unless a rule names repo.rename itself.
 //
 // A test drives it through the embedded shared server (SetRules, Allow,
 // Deny, Fail, Hang, Resume, Requests) and, for the directory, through
@@ -43,7 +44,9 @@ const DefaultToken = stub.DefaultToken
 // Rule is one row of the table, the shared stub's row: Subject, Action,
 // and Resource are `*` or a value, Resource an id or the owner/slug this
 // package renders, and Limits the figures object spec 007 names. Action
-// is the contract-2 vocabulary, repo.read and its siblings.
+// is the contract-2 vocabulary, repo.read and its siblings. A rule whose
+// Action is repo.admin also decides repo.rename, unless a rule naming
+// repo.rename matches the request.
 type Rule = stub.Rule
 
 // Option configures the stub. WithToken and WithAllow are the shared
@@ -103,6 +106,7 @@ func NewHandler(opts ...Option) *Server {
 	opts = append(opts,
 		stub.WithResourceName(resourceName),
 		stub.WithAction(listAction, s.answerDirectory),
+		stub.WithAction(renameAction, s.answerRename),
 	)
 	s.Server = stub.NewHandler(opts...)
 	s.mux = http.NewServeMux()
@@ -118,8 +122,10 @@ func (s *Server) Handler() http.Handler { return s.mux }
 // The contract-2 action vocabulary the stub answers, kept as plain
 // strings so the stub depends on no product package.
 const (
-	listAction = "repo.list"
-	readAction = "repo.read"
+	listAction   = "repo.list"
+	readAction   = "repo.read"
+	adminAction  = "repo.admin"
+	renameAction = "repo.rename"
 )
 
 // URL is the endpoint, the value of ORIGO_AUTHORIZER_URL. It is the
@@ -187,6 +193,45 @@ func (s *Server) answerDirectory(req authz.Request) any {
 		entries = append(entries, e)
 	}
 	return map[string]any{"repos": entries}
+}
+
+// answerRename decides repo.rename the way an endpoint that kept its
+// rules for administration does once it learns the action (Origo spec
+// 028, State on 2026-10-07): by the rule that decides the request as
+// repo.admin, unless the rule that matches the rename names repo.rename
+// itself. A table written before the action existed therefore answers a
+// rename as it answers administration, and a test that holds names apart
+// writes a rule for repo.rename alone. The shared stub has already
+// recorded the request and applied its outage modes and the probe's
+// deny when this runs.
+func (s *Server) answerRename(req authz.Request) any {
+	rule := s.Decide(req)
+	if rule.Action != renameAction {
+		admin := req
+		admin.Action = adminAction
+		rule = s.Decide(admin)
+	}
+	return verdict(rule)
+}
+
+// verdict is a rule as the contract's decision: a deny with its reason,
+// or an allow with the ttl, the limits and the filter the rule sets, the
+// same body the shared stub writes for an action it decides itself.
+func verdict(rule Rule) map[string]any {
+	if !rule.Allow {
+		return map[string]any{"allow": false, "reason": rule.Reason}
+	}
+	out := map[string]any{"allow": true}
+	if rule.TTL != 0 {
+		out["ttl"] = rule.TTL
+	}
+	if len(rule.Limits) != 0 {
+		out["limits"] = rule.Limits
+	}
+	if rule.Filter != nil {
+		out["filter"] = rule.Filter
+	}
+	return out
 }
 
 // resourceKind is the kind every repository envelope names.

@@ -87,8 +87,9 @@ const (
 // reading of them: a handler and the agent client of spec 025 branch on
 // the same value and neither declares it. ActionList is spec 026's
 // fourth action, which names no repository; ActionDelete and
-// ActionUndelete are deleting a repository and bringing it back, apart
-// from ActionAdmin (spec 028).
+// ActionUndelete are deleting a repository and bringing it back, and
+// ActionRename is changing its name, each apart from ActionAdmin (spec
+// 028).
 const (
 	ActionRead     = authorizer.ActionRead
 	ActionWrite    = authorizer.ActionWrite
@@ -96,6 +97,7 @@ const (
 	ActionList     = authorizer.ActionList
 	ActionDelete   = authorizer.ActionDelete
 	ActionUndelete = authorizer.ActionUndelete
+	ActionRename   = authorizer.ActionRename
 )
 
 // sentences is the code table: one user sentence per code, the text of

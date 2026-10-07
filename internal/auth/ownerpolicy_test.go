@@ -123,3 +123,50 @@ func TestOwnerPolicy(t *testing.T) {
 		t.Fatal("a storage failure in the directory did not fail closed")
 	}
 }
+
+// TestTheOwnerPolicyDecidesARenameAsAdministration is the owner policy's
+// row of spec 028's section of 2026-10-07: on a repository that exists,
+// repo.rename is answered exactly as repo.admin is, for the owner, for
+// another subject, for an admin subject, for the anonymous subject, and
+// on the probe id, so a node with no endpoint renames as it did before
+// the action was kept apart. The one place the two differ is an id that
+// names nothing: repo.admin there is a create, and a rename of nothing
+// is refused like every other action on it.
+func TestTheOwnerPolicyDecidesARenameAsAdministration(t *testing.T) {
+	const (
+		alice = "https://iss|alice"
+		bob   = "https://iss|bob"
+		admin = "https://iss|root"
+		mine  = "0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+		fresh = "2b3c4d5e-6f70-4a8b-9c0d-1e2f3a4b5c6d"
+	)
+	p := NewOwnerPolicy([]string{admin}, fakeObjects{owners: map[string]string{mine: alice}})
+	ctx := context.Background()
+	allowed := 0
+	for _, subject := range []string{alice, bob, admin, ""} {
+		for _, id := range []string{mine, authz.ProbeID} {
+			byAdmin, err := p.Authorize(ctx, ownerReq(subject, string(ActionAdmin), id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			byRename, err := p.Authorize(ctx, ownerReq(subject, string(ActionRename), id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if byRename != byAdmin {
+				t.Errorf("%q on %s: repo.rename is %+v and repo.admin is %+v", subject, id, byRename, byAdmin)
+			}
+			if byRename.Allow {
+				allowed++
+			}
+		}
+	}
+	// The owner and the admin subject on the repository, and nobody on
+	// the probe: both answers occur, so the equality is not two denies.
+	if allowed != 2 {
+		t.Errorf("%d allows, want the owner's and the admin subject's", allowed)
+	}
+	if d, err := p.Authorize(ctx, ownerReq(alice, string(ActionRename), fresh)); err != nil || d.Allow || d.Reason != authz.ReasonNotOwner {
+		t.Errorf("a rename of an id that names nothing: %+v, %v", d, err)
+	}
+}
