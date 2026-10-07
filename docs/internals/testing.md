@@ -91,7 +91,8 @@ round trips, event repair after a kill, and the autoscaler.
 real git binary and `net/http` against any base URL, one subtest per
 rule, and deletes every repository it created by id at the end. Groups
 that need something the target does not offer (an issuer, a
-controllable authorizer, a git source, a fault injector) skip by name.
+controllable authorizer, a git source the run can hold, a fault
+injector) skip by name.
 
 | Variable | Target |
 |---|---|
@@ -180,7 +181,7 @@ test drives over HTTP; the `origo` stub is a Go package only.
 | `authorizer` | the authorization endpoint, allowing every subject unless a rule says otherwise, with deny, fail, and hang switches |
 | `sshkeys` | the SSH key endpoint, a table from fingerprint to subject |
 | `sink` | an event sink that verifies each signature and records every delivery |
-| `source` | a git host over TLS behind a bearer, for import and verify |
+| `source` | a git host over TLS behind a bearer, for import and verify, that holds its answers on request so a test can act while an import runs |
 | `slowproxy` | a slow bucket, holding each connection's first bytes for a set delay |
 | `origo` | the node's own git and API handlers in-process over an in-memory bucket, for a consumer's integration tests |
 

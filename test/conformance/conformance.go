@@ -14,11 +14,11 @@
 // Six groups of cases skip on their own when the field of Target they
 // need is empty, each reported by name: the delegation group (Issuer),
 // the deny-flipping group and the quota row (Authorizer), the source
-// group (Source and SourceToken), and the two rows that need a Fault,
-// storage_unavailable and repository_unavailable. Two codes no target
-// can produce inside a run, gone and operation_timeout, are checked from
-// the code table alone by TestEveryCodeHasOneSentence in
-// internal/contract.
+// group (Source, SourceToken, and SourceControl), and the two rows that
+// need a Fault, storage_unavailable and repository_unavailable. Two
+// codes no target can produce inside a run, gone and operation_timeout,
+// are checked from the code table alone by TestEveryCodeHasOneSentence
+// in internal/contract.
 package conformance
 
 import (
@@ -65,6 +65,13 @@ type Target struct {
 	// on the stub run.
 	Source      string
 	SourceToken string
+	// SourceControl is the control URL of the source stub serving
+	// Source, as the run reaches it, to hold the source's answers while
+	// the import case pushes; SourceCA is the PEM certificate of the CA
+	// that signed its serving certificate, empty when the system's roots
+	// verify it. Empty on a live target and on the stub run.
+	SourceControl string
+	SourceCA      []byte
 	// Fault cuts the bucket and deletes an object; nil on a live target.
 	Fault Fault
 	// Skip names subtests to skip, as <spec>/<row>; each is reported.
@@ -216,7 +223,7 @@ func (s *session) has(group string) bool {
 	case GroupDeny, GroupQuota:
 		return s.target.Authorizer != ""
 	case GroupSource:
-		return s.target.Source != "" && s.target.SourceToken != ""
+		return s.target.Source != "" && s.target.SourceToken != "" && s.target.SourceControl != ""
 	case GroupStorage, GroupRepository:
 		return s.target.Fault != nil
 	}
@@ -231,7 +238,7 @@ func groupField(group string) string {
 	case GroupDeny, GroupQuota:
 		return "Authorizer"
 	case GroupSource:
-		return "Source and SourceToken"
+		return "Source, SourceToken, and SourceControl"
 	}
 	return "Fault"
 }
@@ -290,10 +297,12 @@ func (r response) details() map[string]any {
 	return d
 }
 
-// request is one call of the surface.
+// request is one call of the surface, or of a stub's control URL
+// through a client of its own when client is set.
 type request struct {
 	method, path, body, token string
 	header                    map[string]string
+	client                    *http.Client
 }
 
 // call sends a request with the target's token unless another is
@@ -326,7 +335,11 @@ func (s *session) do(t testing.TB, r request) response {
 	for k, v := range r.header {
 		req.Header.Set(k, v)
 	}
-	resp, err := s.client.Do(req)
+	client := s.client
+	if r.client != nil {
+		client = r.client
+	}
+	resp, err := client.Do(req)
 	failIf(t, err != nil, "%s %s: %v", r.method, r.path, err)
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)

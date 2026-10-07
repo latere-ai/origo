@@ -183,26 +183,26 @@ func case019RepoNotEmpty(t *testing.T, s *session) {
 }
 
 // case019Import imports the source: 202 at once, running in the state
-// endpoint, pushes and a second import refused with repo_importing
-// meanwhile, then done with the reference count and the bytes, the
-// imported event, and a clone of the history.
+// endpoint, a push and a second import refused with repo_importing
+// naming the import's start meanwhile, then done with the reference
+// count and the bytes, the imported event, and a clone of the history.
+// The source holds every request until the two refusals are asserted,
+// so the import is running when they are made on any target, however
+// fast it imports.
 func case019Import(t *testing.T, s *session) {
 	id := s.create(t, "import")
 	body := fmt.Sprintf(`{"source":%q,"token":%q}`, s.target.Source, s.target.SourceToken)
+	release := s.holdSource(t)
 	r := s.call(t, "POST", "/v1/repos/"+id+"/import", body)
 	expectStatus(t, r, http.StatusAccepted)
-	failIf(t, r.json["state"] != api.ImportRunning, "import: %s", r.body)
-	if st := s.call(t, "GET", "/v1/repos/"+id+"/import", ""); st.status != http.StatusOK || (st.json["state"] != api.ImportRunning && st.json["state"] != api.ImportDone) {
-		t.Fatalf("state: %d %s", st.status, st.body)
-	}
-	// While it runs, a push and a second import are refused; an import
-	// of a small source may finish first, in which case the refusal is
-	// repo_not_empty instead.
-	if push := s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-receive-pack", ""); push.status == http.StatusConflict {
-		expectError(t, push, http.StatusConflict, contract.CodeRepoImporting)
-		expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/import", body), http.StatusConflict, contract.CodeRepoImporting)
-	}
-	var st response
+	failIf(t, r.json["state"] != api.ImportRunning || r.json["started_at"] == nil, "import: %s", r.body)
+	st := s.call(t, "GET", "/v1/repos/"+id+"/import", "")
+	failIf(t, st.status != http.StatusOK || st.json["state"] != api.ImportRunning, "state while the source is held: %d %s", st.status, st.body)
+	refused := expectError(t, s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-receive-pack", ""), http.StatusConflict, contract.CodeRepoImporting)
+	failIf(t, refused["started_at"] != r.json["started_at"], "push during the import: %v, the import started at %v", refused, r.json["started_at"])
+	refused = expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/import", body), http.StatusConflict, contract.CodeRepoImporting)
+	failIf(t, refused["started_at"] != r.json["started_at"], "second import: %v, the first started at %v", refused, r.json["started_at"])
+	release()
 	waitFor(t, 15*time.Minute, "the import", func() bool {
 		st = s.call(t, "GET", "/v1/repos/"+id+"/import", "")
 		return st.status == http.StatusOK && st.json["state"] != api.ImportRunning

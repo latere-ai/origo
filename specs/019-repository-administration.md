@@ -313,7 +313,7 @@ documentation.
 
 | Criterion | Test |
 |---|---|
-| each operation's success path, its 403, and its state conflict | `internal/api`, `TestAdministrationOperations` (transfer, freeze twice, unfreeze, `stats`, `gc`); `TestPurgedRepositoryIsGone` (410 `gone` after the purge); `TestImportRefusals` (404 `import_not_found`, the egress refusal, the 403); `TestExportRoundTrip` (409 `repo_not_empty`); `TestImportLeaseExpires` (409 `repo_importing`); `internal/httpgit`, `TestFrozenRepositoryRefusesAtInfoRefs` (a push during an import). Spec 021's `cases019` carries the success paths and three of the conflicts (freeze twice, `repo_not_empty`, `import_not_found`); the 403 on a caller without `admin` is in none of them, the `repo_importing` push is asserted only when the import is still running, and 410 `gone` is proved by the code table, which the decision row of `specs/README.md` fixed |
+| each operation's success path, its 403, and its state conflict | `internal/api`, `TestAdministrationOperations` (transfer, freeze twice, unfreeze, `stats`, `gc`); `TestPurgedRepositoryIsGone` (410 `gone` after the purge); `TestImportRefusals` (404 `import_not_found`, the egress refusal, the 403); `TestExportRoundTrip` (409 `repo_not_empty`); `TestImportLeaseExpires` (409 `repo_importing`); `internal/httpgit`, `TestFrozenRepositoryRefusesAtInfoRefs` (a push during an import). Spec 021's `cases019` carries the success paths, four of the conflicts (freeze twice, `repo_not_empty`, `import_not_found`, and `repo_importing` on a push and on a second import, asserted on every run under a source held open), and the 403 of every operation as `019/forbidden`; 410 `gone` is proved by the code table, which the decision row of `specs/README.md` fixed |
 | a push to a frozen repository is refused at `info/refs` with the `ERR repo_frozen` pkt-line before any pack is sent, the hook's verdict refuses one sent without the advertisement, the push path reads `meta` once, and a clone succeeds throughout | `internal/httpgit`, `TestFrozenRepositoryRefusesAtInfoRefs`, with a store that counts `meta` reads |
 | an export held past the deadline is cut and the client refuses the result | `internal/api`, `TestExportDeadline`; `TestExportServesTheWholeRepository` for the whole file |
 | with three nodes the weekly sweep runs on the name that sorts first and on the next once it leaves, the others report the gauges from `origo/sweep/latest`, and an object under a prefix the sweep does not understand is reported by key and counted | `internal/api`, `TestOrphanSweepRunsOnOneNode`, `TestSweepLoopRunsInItsHour`, `TestSweepReportFailuresAreLogged`, `TestSweepLeavesARepositoryItCannotRead` |
@@ -407,11 +407,21 @@ Items this spec closes for others:
 
 Deferred: the conformance half of the first criterion is spec 021's
 `TestContract`, which owns the code table and the stub. `cases019` is
-in the tree and registered, so what is deferred is now the part of it
-that is missing rather than the whole: the `repo_importing` push
-asserted whatever the import's state, which `cases019.go` reads inside
-an `if` today, filed as
-[origo#4](https://github.com/latere-ai/origo/issues/4). The 403 for each operation of the row table landed on
+in the tree and registered, so what was deferred was the part of it
+that was missing rather than the whole: the `repo_importing` push
+asserted whatever the import's state, which `cases019.go` read inside
+an `if`, so a target that imported the fixture before the push
+produced the row without the refusal ever being asserted, filed as
+[origo#4](https://github.com/latere-ai/origo/issues/4). It landed on
+2026-10-07: `019/import` holds the source stub (spec 013's `/hold`)
+before it starts the import and releases it only after the import's
+state reads `running` and a push's advertisement and a second import
+are both refused with `repo_importing` naming the import's
+`started_at`, so the refusal is asserted on every run however fast the
+target imports. `TestHoldKeepsGitRequestsUntilRelease` in
+`test/stubs/source` and `TestHoldSourceHoldsUntilReleased` in
+`test/conformance` hold the mechanism in the unit suite; the case's
+first run against the stack is the next `e2e` job of `verify.yml`. The 403 for each operation of the row table landed on
 2026-09-12 as `019/forbidden` in the deny-flipping group: the nine
 operations under a repository-wide deny, each 403 `forbidden` with the
 authorizer's reason, the create run under a one-second allow so the
@@ -438,7 +448,8 @@ review:
   and the caller as `pusher`, and `TestAdministrationEvents` asserts
   `pusher` on `frozen`, `unfrozen`, `deleted`, and `undeleted`.
 - Spec 021's builder, who owns `test/conformance`: the two `cases019`
-  gaps above.
+  gaps above. Both are closed, the 403 on 2026-09-12 and the
+  `repo_importing` push on 2026-10-07.
 
 Items for `latere.ai/x/pkg`: none. `pkg/cache` is the push path's
 `meta` cache, `pkg/wait` the sweep's ticker, and `pkg/hostmatch` the

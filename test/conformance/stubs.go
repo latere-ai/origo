@@ -4,9 +4,12 @@
 package conformance
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,6 +66,34 @@ func (s *session) failAuthorizer(t testing.TB, status int) {
 	}
 	set(status)
 	t.Cleanup(func() { set(0) })
+}
+
+// holdSource makes the source stub hold every git request until the
+// returned function or the end of the test releases them, so an import
+// started in between is still running when the case pushes, whatever
+// the target's speed. The hold has to end inside a minute: a node's
+// egress proxy fails an import whose source sends no response header
+// for 60 seconds.
+func (s *session) holdSource(t testing.TB) (release func()) {
+	t.Helper()
+	transport := &http.Transport{}
+	if len(s.target.SourceCA) > 0 {
+		pool := x509.NewCertPool()
+		failIf(t, !pool.AppendCertsFromPEM(s.target.SourceCA), "%v", "SourceCA holds no PEM certificate")
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+	client := &http.Client{Transport: transport, Timeout: time.Minute}
+	post := func(path string) {
+		t.Helper()
+		if r := s.do(t, request{method: "POST", path: s.target.SourceControl + path, client: client}); r.status != http.StatusNoContent {
+			t.Fatalf("%s at %s: %d %s", path, s.target.SourceControl, r.status, r.body)
+		}
+	}
+	post("/hold")
+	var once sync.Once
+	release = func() { once.Do(func() { post("/release") }) }
+	t.Cleanup(release)
+	return release
 }
 
 // deliveries reads the stub sink's deliveries of a kind for the

@@ -15,7 +15,7 @@ depends_on:
 affects: [test/conformance/, test/stubs/origo/, internal/contract/, internal/config/, internal/repo/, .github/workflows/]
 effort: large
 created: 2026-09-07
-updated: 2026-10-02
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -57,6 +57,8 @@ conformance.Run(t, conformance.Target{
     EventsSink: "<the stub sink's control URL, to read deliveries>",
     Source:     "<a git source URL for the import and verify cases; empty on a live target>",
     SourceToken: "<the bearer that source requires>",
+    SourceControl: "<the control URL of the source stub serving Source, as the run reaches it>",
+    SourceCA:   <the PEM CA that signed that URL's certificate; nil when the system's roots verify it>,
     Fault:      <a Fault, to cut the bucket and delete an object; nil on a live target>,
     Skip:       []string{"<a subtest name>"},
 })
@@ -104,14 +106,23 @@ the quota row (`over_quota`, which needs `Authorizer` to set
 because no target's default quota is small enough to fill in a test),
 and the source group (the `import` of spec 019 and
 `repo_not_empty`, with `repo_importing` and the `imported` event
-asserted inside the `import` case, which need `Source` and
-`SourceToken`: on the stack the source
-stub of spec 013 at `https://origo-stubs.origo.svc:8443/fixture.git`
-with `stub-source-token`, the address the nodes reach through
-`ORIGO_EGRESS_ALLOW`; the stub run leaves them empty and reports the
-group skipped, because a loopback source needs the `AllowLoopback`
-seam spec 016 restricts to `_test.go` files, and specs 019 and 014
-prove `import` and `verify` in-process in their own tests). Two rows
+asserted inside the `import` case, which need `Source`,
+`SourceToken`, and `SourceControl`: on the stack the
+source stub of spec 013 at
+`https://origo-stubs.origo.svc:8443/fixture.git` with
+`stub-source-token`, the address the nodes reach through
+`ORIGO_EGRESS_ALLOW`, and the same stub's control paths at its host
+port, `https://localhost:30084`, verified by `SourceCA`, the
+`test/e2e/testdata/stub-ca.pem` that `up.sh` writes. The `import` case
+holds the source through the stub's `/hold` while it pushes and imports
+a second time, so `repo_importing` is asserted on every run and not
+only when the import happens to outlast the push; a hold has to end
+inside a minute, because a node's egress proxy gives up on a source
+that sends no response header for 60 seconds. The stub run leaves the
+three empty and reports the group skipped, because a loopback source
+needs the `AllowLoopback` seam spec 016 restricts to `_test.go` files,
+and specs 019 and 014 prove `import` and `verify` in-process in their
+own tests). Two rows
 need a fault in the bucket that a caller outside the installation
 cannot cause: `storage_unavailable` (spec 003) needs the
 bucket unreachable, and `repository_unavailable` (spec 015) needs a
@@ -142,7 +153,7 @@ report with fewer or more skipped names is a failure of the run.
 | the delegation group: a service token carrying `act` is refused with `delegation`, a plain one is served and mints a bound token | needs `Issuer` to mint the tokens |
 | the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable`, the 403 of each of spec 019's operations, spec 026's populated directory and the 501 of an authorizer without one | needs `Authorizer` to flip an answer, or to hold a directory the run seeds through the stub's `/directory` endpoint |
 | the quota row: `over_quota` | needs `Authorizer` to lower `quota_bytes` |
-| the source group: `import` and `repo_not_empty`, with `repo_importing` and the `imported` event asserted inside `import` | needs `Source` and `SourceToken` |
+| the source group: `import` and `repo_not_empty`, with `repo_importing` and the `imported` event asserted inside `import` | needs `Source`, `SourceToken`, and `SourceControl` |
 | the `storage_unavailable` row of spec 003 | needs `Fault` to cut the bucket |
 | the `repository_unavailable` row of spec 015 | needs `Fault` to delete a pack object |
 
@@ -898,3 +909,28 @@ deny. `TestCleanupReadsEachRepositoryBackUntilGone` holds the waits and
 drives the session's cleanup against a node whose cache still refuses
 the read after the delete; without the read it fails.
 
+## State on 2026-10-07: the import case holds its source
+
+`019/import` asserted `repo_importing` inside an `if`: it read a push's
+advertisement after starting the import and checked the refusal only
+when the answer was 409, so a target that imported the fixture first
+answered 200 and the case passed without asserting the row
+([origo#4](https://github.com/latere-ai/origo/issues/4)). The case now
+holds the source before it starts the import, through the source stub's
+`/hold` (spec 013), asserts the import's state `running`, the push's
+409 `repo_importing`, and the second import's, both naming the import's
+`started_at`, and only then releases the hold and waits for `done`.
+Reaching the stub's control paths takes a URL the run can reach, which
+`Source` is not on the stack, so `Target` gains `SourceControl` and
+`SourceCA`, the stack run sets them to the source's host port and the
+CA `up.sh` writes, and the source group needs `SourceControl` beside
+`Source` and `SourceToken`. A target that names a source but no control
+URL now reports the group skipped rather than run the import case
+without its hold. `TestHoldSourceHoldsUntilReleased` holds the helper
+against an in-process source stub, and
+`TestHoldKeepsGitRequestsUntilRelease` in `test/stubs/source` the stub's
+hold.
+
+The case has not run against the stack in this form yet; the next `e2e`
+job of `verify.yml` and the release's `conformance` job are its first
+runs.

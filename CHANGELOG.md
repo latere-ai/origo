@@ -16,6 +16,17 @@ committed: the commit log already holds that.
   until a `POST /release`, so a test can act while an import from it
   is running.
 
+### Changed
+
+- The conformance suite's source group needs `SourceControl` on
+  `Target` beside `Source` and `SourceToken`: the control URL of the
+  stub source that serves `Source`, with `SourceCA` when a system root
+  does not sign its certificate. `019/import` holds the source there
+  while it pushes and imports again, so the `repo_importing` refusal is
+  asserted on every run instead of only when the import happened to
+  outlast the push. A target that names a source and no control URL
+  reports the group skipped.
+
 ## v0.15.0 - 2026-10-07
 
 ### Changed

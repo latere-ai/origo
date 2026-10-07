@@ -32,10 +32,15 @@ const (
 	portIssuer     = 30081
 	portAuthorizer = 30082
 	portSink       = 30083
+	portSource     = 30084
 	portMinIO      = 30900
 	// clusterSource is the source stub inside the cluster, the address
 	// the nodes reach through ORIGO_EGRESS_ALLOW.
 	clusterSource = "https://origo-stubs.origo.svc:8443/fixture.git"
+	// stubCA is the CA that signed the source stub's certificate, which
+	// up.sh writes for the cluster it brings up; go test runs in the
+	// package's directory, so the path is relative to it.
+	stubCA = "../e2e/testdata/stub-ca.pem"
 )
 
 // stackURL is ORIGO_TEST_URL, the balanced host port by default.
@@ -80,10 +85,11 @@ func mintAt(t *testing.T, issuer, sub string) string {
 }
 
 // stackTarget is the stack run's target: ORIGO_TEST_URL and
-// ORIGO_TEST_ADMIN_TOKEN with the ports table's defaults, the three
-// stub control endpoints at their host ports, the in-cluster source,
-// and the Fault over kubectl and the MinIO host port when the job
-// exported the bucket family and kubectl is on PATH.
+// ORIGO_TEST_ADMIN_TOKEN with the ports table's defaults, the four
+// stub control endpoints at their host ports, the in-cluster source
+// with the CA its host port is verified by, and the Fault over kubectl
+// and the MinIO host port when the job exported the bucket family and
+// kubectl is on PATH.
 func stackTarget(t *testing.T) conformance.Target {
 	t.Helper()
 	url := stackURL()
@@ -94,12 +100,17 @@ func stackTarget(t *testing.T) conformance.Target {
 	if token == "" {
 		token = mintAt(t, fmt.Sprintf("http://localhost:%d", portIssuer), "conformance-"+strings.ToLower(t.Name()))
 	}
+	ca, err := os.ReadFile(stubCA)
+	if err != nil {
+		t.Fatalf("no stub-ca.pem for this stack, which up.sh writes: %v", err)
+	}
 	target := conformance.Target{
 		URL: url, Token: token,
 		Issuer:     fmt.Sprintf("http://localhost:%d", portIssuer),
 		Authorizer: fmt.Sprintf("http://localhost:%d", portAuthorizer),
 		EventsSink: fmt.Sprintf("http://localhost:%d", portSink),
 		Source:     clusterSource, SourceToken: source.DefaultToken,
+		SourceControl: fmt.Sprintf("https://localhost:%d", portSource), SourceCA: ca,
 	}
 	if f := newStackFault(t, url); f != nil {
 		target.Fault = f
