@@ -25,6 +25,17 @@ done
 # The page and the manifests sit beside each other, so the relative
 # default the page names resolves in an unpacked archive.
 grep -q 'deploy/base' "$work/unpacked/install.md" || { echo "FAIL the packed page does not name the manifests beside it"; exit 1; }
+# The page is read with no checkout beside it, so no link of it is
+# relative: each names its file, or the stub's directory, at the tag.
+if grep -o '\]([^)]*)' "$work/unpacked/install.md" | grep -v -e '](https://' -e '](http://' -e '](#'; then
+  echo "FAIL the packed page keeps a relative link"; exit 1
+fi
+grep -q '](https://github.com/latere-ai/origo/blob/v9.9.9/docs/configuration.md)' "$work/unpacked/install.md" ||
+  { echo "FAIL the packed page does not link configuration.md at the tag"; exit 1; }
+grep -q '](https://github.com/latere-ai/origo/blob/v9.9.9/docs/operations.md#backup)' "$work/unpacked/install.md" ||
+  { echo "FAIL the packed page drops a link's fragment"; exit 1; }
+grep -q '](https://github.com/latere-ai/origo/tree/v9.9.9/test/stubs/sshkeys)' "$work/unpacked/install.md" ||
+  { echo "FAIL the packed page does not link the key resolution stub at the tag"; exit 1; }
 grep -q 'image: ghcr.io/latere-ai/origod:v9.9.9' "$work/unpacked/deploy/base/deployment.yaml" || { echo "FAIL the base does not pin origod"; exit 1; }
 grep -q 'newTag: v9.9.9' "$work/unpacked/deploy/examples/kind/kustomization.yaml" || { echo "FAIL the kind overlay does not pin origod"; exit 1; }
 grep -q 'image: ghcr.io/latere-ai/origo-stubs:v9.9.9' "$work/unpacked/deploy/examples/kind/origo-stubs.yaml" || { echo "FAIL the kind overlay does not pin origo-stubs"; exit 1; }
@@ -58,7 +69,7 @@ fi
 # base's name, and no Origo image in the archive names the namespace the
 # tree carries. The MinIO dependency pins stay.
 fork="ghcr.io/example-fork"
-ORIGO_IMAGE_NAMESPACE="$fork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/deploy-fork.tar.gz"
+ORIGO_IMAGE_NAMESPACE="$fork" ORIGO_REPOSITORY=example-fork/origo "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/deploy-fork.tar.gz"
 mkdir -p "$work/fork"
 tar -xzf "$work/deploy-fork.tar.gz" -C "$work/fork"
 grep -q "image: $fork/origod:v9.9.9" "$work/fork/deploy/base/deployment.yaml" || { echo "FAIL the fork base does not pin the fork image"; exit 1; }
@@ -69,6 +80,16 @@ if grep -rn --include='*.yaml' -e 'ghcr.io/latere-ai/origod' -e 'ghcr.io/latere-
 fi
 grep -q 'image: ghcr.io/latere-ai/minio:RELEASE' "$work/fork/deploy/examples/kind/minio.yaml" ||
   { echo "FAIL a fork's archive does not keep the MinIO pin"; exit 1; }
+grep -q '](https://github.com/example-fork/origo/blob/v9.9.9/docs/configuration.md)' "$work/fork/install.md" ||
+  { echo "FAIL a fork's page does not link the fork"; exit 1; }
+if grep -Eq 'github\.com/latere-ai/origo/(blob|tree)/' "$work/fork/install.md"; then
+  echo "FAIL a fork's page links this repository's tree"; exit 1
+fi
+
+# A repository that is not owner/name is refused.
+if ORIGO_REPOSITORY="example-fork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/bad-repo.tar.gz" 2>/dev/null; then
+  echo "FAIL a repository without an owner was packed"; exit 1
+fi
 
 # A namespace an image reference cannot carry is refused.
 if ORIGO_IMAGE_NAMESPACE="ghcr.io/ExampleFork" "$bash" "$dir/deploy-archive.sh" v9.9.9 "$work/bad.tar.gz" 2>/dev/null; then

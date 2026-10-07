@@ -62,13 +62,17 @@ curl -fLO "https://github.com/latere-ai/origo/releases/download/$VERSION/deploy-
 tar xzf "deploy-$VERSION.tar.gz"
 ```
 
-That writes `deploy/`, whose two directories the next section names.
-Ignore `up.sh` and `down.sh` inside the `kind` example: they build the
-project's own test stack, which runs things no installation wants. You
-never edit what you unpacked: you copy an example overlay out of it,
-and your copy names `../deploy/base` or wherever you keep it. What a
-version number promises and how to move between two of them is in
-[`upgrades/`](upgrades/README.md).
+That writes `deploy/`, whose two directories the next section names,
+and this page as it stands for that release. Ignore `up.sh` and
+`down.sh` inside the `kind` example: they build the project's own test
+stack, which runs things no installation wants. You never edit what you
+unpacked: you copy an example overlay out of it, and your copy names
+`../deploy/base` or wherever you keep it. What a version number
+promises and how to move between two of them is in
+[`upgrades/`](upgrades/README.md), and its section
+[Verifying what you install](upgrades/README.md#verifying-what-you-install)
+checks the archive against the checksums and the signature the release
+published, before anything from it reaches a cluster.
 
 ## Where things go
 
@@ -93,7 +97,9 @@ Skip this if you are installing on a cluster you already run. Otherwise
 `deploy/examples/kind/kind.yaml` describes the one-node cluster the
 example overlay expects, and every default address on this page is one
 of the host ports it maps. It needs [kind](https://kind.sigs.k8s.io),
-[Helm](https://helm.sh), and a container engine:
+[Helm](https://helm.sh), and a container engine. kind uses Docker, or
+Podman when there is no Docker; with both installed,
+`KIND_EXPERIMENTAL_PROVIDER=podman` in the environment picks Podman:
 
 ```
 export KUBECONFIG="$PWD/origo-kubeconfig"
@@ -272,13 +278,13 @@ same everywhere, and every optional figure may be left out for Origo's
 defaults. That is a few dozen lines behind the same bearer, and for a
 team hosting its own repositories it is the whole of step 2.
 
-**Where to start reading.** `test/stubs/authorizer` in this repository
-is a working endpoint of about that size, and it is what the example
-stack runs. Read it as a reference and do not run it in front of
-anything you care about: it allows every subject unless a rule says
-otherwise, it holds its rules in memory and forgets them when it
-restarts, and it carries a control API that a test drives, with no
-authentication on it.
+**Where to start reading.** [`test/stubs/authorizer`](../test/stubs/authorizer)
+in the Origo repository is a working endpoint of about that size, and
+it is what the example stack runs. Read it as a reference and do not
+run it in front of anything you care about: it allows every subject
+unless a rule says otherwise, it holds its rules in memory and forgets
+them when it restarts, and it carries a control API that a test
+drives, with no authentication on it.
 
 Everything else is yours: your own permission model, your own answer
 caching through `ttl`. The full request, the action Origo sends per
@@ -323,13 +329,14 @@ Adding, naming, listing, and removing keys is your product surface;
 Origo has no opinion about it, and the call itself is how your store
 learns when a key was last used.
 
-**Where to start reading.** `test/stubs/sshkeys` in this repository is a
-working endpoint of about thirty lines of logic, and it is what the
-example stack runs. Read it as a reference and do not run it in front of
-anything you care about: it holds its table in memory, expires nothing,
-and has an unauthenticated control API a test drives. For a single team,
-a file of fingerprints served behind the bearer is the whole
-requirement; `authorized_keys` is already that table.
+**Where to start reading.** [`test/stubs/sshkeys`](../test/stubs/sshkeys)
+in the Origo repository is a working endpoint of about thirty lines of
+logic, and it is what the example stack runs. Read it as a reference
+and do not run it in front of anything you care about: it holds its
+table in memory, expires nothing, and has an unauthenticated control
+API a test drives. For a single team, a file of fingerprints served
+behind the bearer is the whole requirement; `authorized_keys` is
+already that table.
 
 If you are trying Origo out, the example overlay runs a stub issuer, a
 stub authorizer, and a stub key resolver for you and you can skip this
@@ -418,8 +425,10 @@ Apply them with `kubectl -n "$NAMESPACE" apply -f`, or add a
 There is a third Secret, `origod-token-key`, and it is not printed here
 because its value has to be generated. The next step is that. On the
 throwaway cluster there is nothing to do in this step at all: the
-example overlay carries both of these Secrets with the values its own
-bucket, issuer, and authorizer use.
+example overlay creates neither Secret and sets the same variables
+directly on its pods, with the values its own bucket, issuer, and
+authorizer use, so `kubectl -n "$NAMESPACE" get secrets` there lists
+only the two the next steps generate.
 
 Every variable, its default, and what it does is in
 [`configuration.md`](configuration.md).
@@ -468,9 +477,11 @@ kubectl -n "$NAMESPACE" create secret generic origod-token-key \
 rm -f "$KEY"
 ```
 
-Keep a copy somewhere you keep secrets. Replacing this key invalidates
-every token Origo has minted; losing it costs you nothing else, because
-no repository data is encrypted with it.
+The block removes the file it wrote, so the Secret is now the only
+copy. Keep one somewhere you keep secrets: `kubectl -n "$NAMESPACE" get
+secret origod-token-key -o yaml` prints it. Replacing this key
+invalidates every token Origo has minted; losing it costs you nothing
+else, because no repository data is encrypted with it.
 
 Do this before the next step. Every pod reads `origod-token-key` by
 name, so a rollout that starts without it waits instead of serving.
@@ -481,7 +492,11 @@ Origo speaks git over HTTPS out of the box. SSH is a second transport in
 front of the same repositories and the same durability: people clone
 with `git@your-host:owner/slug.git` and carry a key pair instead of a
 token. It is off until you turn it on, and an installation that never
-sets `ORIGO_SSH_ADDR` runs exactly as it does without this step.
+sets `ORIGO_SSH_ADDR` runs exactly as it does without this step. The
+throwaway cluster is the exception: the example overlay turns SSH on
+and mounts the host key Secret below on every pod, so there the host
+key block is not optional, and a pod waits in `ContainerCreating` until
+it has run.
 
 What SSH carries is clone, fetch, and push, and nothing else. The JSON
 API and Git LFS are HTTPS. So is a read that must not be stale: over
@@ -505,12 +520,16 @@ kubectl -n "$NAMESPACE" create secret generic origod-ssh-host-key \
 	--from-file=ssh_host_ecdsa_key="$SSHKEYS/ssh_host_ecdsa_key" \
 	--dry-run=client -o yaml | kubectl apply -f -
 ssh-keygen -lf "$SSHKEYS/ssh_host_ed25519_key.pub"
+rm -rf "$SSHKEYS"
 ```
 
 Publish that fingerprint where your users will look. It is what they
 check the first time they connect, and it is what you publish again
 before you replace a key; the four-step rotation is in
-[`operations.md`](operations.md).
+[`operations.md`](operations.md). As in step 4, the block removes the
+files it wrote and the Secret is the only copy: `kubectl -n
+"$NAMESPACE" get secret origod-ssh-host-key -o yaml` prints it for
+wherever you keep secrets.
 
 Then four variables on the pods, in your overlay beside the rest:
 
@@ -528,16 +547,20 @@ Then four variables on the pods, in your overlay beside the rest:
       key: ORIGO_SSH_KEYS_TOKEN
 ```
 
-with the Secret mounted at `/etc/origo/ssh`. All four go together: a
-node with `ORIGO_SSH_ADDR` set and any of the other three missing
-refuses to start and says which. The example overlay carries all of it
-from the release that introduced SSH, so on a throwaway cluster there
-is nothing to add. Check before you rely on that: if
-`deploy/examples/kind/kind.yaml` in the archive you unpacked maps no
-host port 30022 and no 30086, the release you are installing is older
-than this step. Nothing on this page works around that. Install a
-newer release, or read this page at the release you install rather
-than the newest one.
+with the host key Secret mounted at `/etc/origo/ssh`;
+`deploy/examples/kind/origod.yaml` carries that volume and its mount in
+the form an overlay writes them. `ORIGO_SSH_KEYS_TOKEN` is the bearer
+of your key resolution endpoint and lives in a Secret of its own,
+`origod-ssh-keys`, which you create the way step 3 creates the other
+two. All four go together: a node with `ORIGO_SSH_ADDR` set and any of
+the other three missing refuses to start and says which. The example
+overlay carries all of it from the release that introduced SSH, so on a
+throwaway cluster there is nothing to add beyond the host keys above.
+Check before you rely on that: if `deploy/examples/kind/kind.yaml` in
+the archive you unpacked maps no host port 30022 and no 30086, the
+release you are installing is older than this step. Nothing on this
+page works around that. Install a newer release, or read this page at
+the release you install rather than the newest one.
 
 Last, the address people clone from. The container listens on 2222 and
 never on 22, because the pod runs as an unprivileged user with every
@@ -775,24 +798,36 @@ echo "the installation serves a clone and a push"
 That push is durable: it was written to object storage and acknowledged
 only then. You can delete every node and the repository is unchanged.
 
-**And over SSH.** If you did step 5, the same repository clones with a
-key pair and no token. Three things have to line up: the person's public
-key is registered at your key resolution endpoint under a subject your
-authorization endpoint allows, their client trusts the host key you
-published, and the address is the one your Service publishes.
+**And over SSH.** If you did step 5, the same repository clones and
+takes a push with a key pair and no token. Three things have to line
+up: the person's public key is registered at your key resolution
+endpoint under a subject your authorization endpoint allows, their
+client trusts the host key you published, and the address is the one
+your Service publishes.
 
 Register the key wherever your key store lives. The block below
 registers at the example stack's stub, which is not an endpoint any real
 installation has; on your own installation this is a call into your own
 product and Origo never sees it.
 
+The subject is the one the token above carries, `<issuer>|<sub>`, as
+step 2 asks of a key endpoint, so the block reads the example issuer's
+name from its discovery document. Registered under `install-doc` alone,
+the key would be a second subject for the same person: the example's
+authorizer allows every subject, so the blocks below would still pass
+while Origo recorded the two pushes under two names, and the built-in
+owner policy would refuse the push over SSH.
+
 ```sh
 CLIENTKEY=$(mktemp -d)/id_ed25519
 ssh-keygen -q -t ed25519 -N "" -C "" -f "$CLIENTKEY"
 FINGERPRINT=$(ssh-keygen -lf "$CLIENTKEY.pub" | awk '{print $2}')
+ISSUER=$(curl -sf "${ORIGO_EXAMPLE_ISSUER:-http://localhost:30081}/.well-known/openid-configuration" |
+	sed -n 's/.*"issuer":"\([^"]*\)".*/\1/p')
+test -n "$ISSUER"
 curl -sf -X PUT "${ORIGO_EXAMPLE_SSHKEYS:-http://localhost:30086}/keys" \
-	-d "{\"keys\":[{\"fingerprint\":\"$FINGERPRINT\",\"subject\":\"install-doc\"}]}"
-echo "registered $FINGERPRINT"
+	-d "{\"keys\":[{\"fingerprint\":\"$FINGERPRINT\",\"subject\":\"$ISSUER|install-doc\"}]}"
+echo "registered $FINGERPRINT for $ISSUER|install-doc"
 ```
 
 Then trust the host key and clone. `ORIGO_SSH_URL` is the address your
@@ -815,20 +850,43 @@ until ssh-keyscan -T 10 -p "$SSH_PORT" "$SSH_HOST" >"$KNOWN" 2>/dev/null && test
 	[ "$n" -lt 30 ] || { echo "no SSH listener at $SSH_HOST:$SSH_PORT" >&2; exit 1; }
 	sleep 2
 done
-GIT_SSH_COMMAND="ssh -i $CLIENTKEY -o IdentitiesOnly=yes \
+ssh-keygen -lf "$KNOWN"
+SSH_COMMAND="ssh -i $CLIENTKEY -o IdentitiesOnly=yes \
 	-o UserKnownHostsFile=$KNOWN -o GlobalKnownHostsFile=/dev/null \
-	-o StrictHostKeyChecking=yes -o BatchMode=yes" \
-	git clone -q "$SSH_URL/r/$ID.git" "$CLIENTKEY.clone"
+	-o StrictHostKeyChecking=yes -o BatchMode=yes"
+GIT_SSH_COMMAND="$SSH_COMMAND" git clone -q "$SSH_URL/r/$ID.git" "$CLIENTKEY.clone"
 test "$(cat "$CLIENTKEY.clone/README.md")" = hello
 echo "the installation serves a clone over SSH"
 ```
 
-`ssh-keyscan` here reads the key the installation presents, which is
-what a person does once before their first clone; compare what it prints
-against the fingerprint you published in step 5 rather than trusting it
-blind. The loop is for the same reason the one at the top of this
-section is: a rollout reports ready a moment before the Service in front
-of it routes to the new pods.
+`ssh-keyscan` here reads the keys the installation presents, which is
+what a person does once before their first clone, and `ssh-keygen -lf`
+prints their fingerprints: compare the `ED25519` line against the
+fingerprint step 5 printed rather than trusting it blind. The loop is
+for the same reason the one at the top of this section is: a rollout
+reports ready a moment before the Service in front of it routes to the
+new pods.
+
+Last, push over SSH and read the commit back over HTTPS, which shows one
+repository behind both transports. The block ends by removing the
+throwaway key pair and both clones; a person keeps their key in
+`~/.ssh` and registers its public half once.
+
+```sh
+cd "$CLIENTKEY.clone"
+echo "pushed over ssh" >> README.md
+git -c user.email=install@example.com -c user.name=install commit -qam "second commit"
+GIT_SSH_COMMAND="$SSH_COMMAND" git push -q origin main
+cd - >/dev/null
+git -c http.extraHeader="Authorization: Bearer $TOKEN" clone -q "$REMOTE" "$CLIENTKEY.https"
+test "$(git -C "$CLIENTKEY.https" log -1 --format=%s)" = "second commit"
+rm -rf "$(dirname "$CLIENTKEY")"
+echo "the installation serves a push over SSH, and HTTPS reads it back"
+```
+
+Origo's log names both pushes, the one over HTTPS and the one over SSH,
+under the same subject, which is what registering the key under the
+token's subject buys.
 
 ## Pointing your platform at Origo
 
@@ -858,9 +916,9 @@ a signed webhook, so a build starts from a push rather than a poll.
 
 | What you see | What it means | What to do |
 |---|---|---|
-| the pod stays in `Init:0/1` | `origod check` is failing | `kubectl logs <pod> -c check`; the failing line names the requirement |
+| the pod stays in `Init:0/1` | `origod check` is failing | `kubectl -n "$NAMESPACE" logs <pod> -c check`; the failing line names the requirement |
 | the pod stays in `Init:Error`, and the failing line is a dependency you have not brought up yet | the init container gates the node on every requirement, so an installation whose issuer or authorization endpoint is not serving yet has no ready node at all, even though a running node would start and answer `/readyz` without them | the init container retries with backoff and the pods go ready by themselves the moment the dependency answers; nothing is redeployed. Bring the dependency up rather than removing the gate |
-| the pod stays in `ContainerCreating` or `CreateContainerConfigError` | a Secret the pod reads is missing | `kubectl describe pod <pod>` names it: `origod-s3` and `origod-auth` come from step 3, `origod-token-key` from step 4 |
+| the pod stays in `ContainerCreating` or `CreateContainerConfigError` | a Secret the pod reads is missing | `kubectl -n "$NAMESPACE" describe pod <pod>` names it: `origod-s3` and `origod-auth` come from step 3, `origod-token-key` from step 4, and `origod-ssh-host-key` and `origod-ssh-keys` from step 5. On the throwaway cluster it is the host key Secret when step 5 was skipped |
 | `configuration: missing …` in the log | a variable is unset or malformed | the message names every problem at once; fix them all and roll again |
 | `fail bucket` | the endpoint, region, credentials, or bucket name is wrong, or the network refuses the connection | check the four values in the `origod-s3` Secret, then reach the endpoint from a pod in the namespace |
 | `fail conditional-create` | the store accepted a second create of a key that exists | this store cannot host Origo safely. Ask your provider about `If-None-Match: *` on `PUT`, or move the bucket |

@@ -49,8 +49,8 @@ type Answer struct {
 	// now. A revoked, expired, or unknown key is false, and nothing says
 	// which: the client reads Permission denied (publickey) either way.
 	Found bool
-	// Subject is the effective subject, the same string the operator's
-	// OIDC issuer puts in sub for the same person, so one identity
+	// Subject is the effective subject, the same <issuer>|<sub> string
+	// a request over HTTPS carries for the same person, so one identity
 	// crosses both transports.
 	Subject string
 	// KeyID is the store's own id for the key. Origo logs it and sends

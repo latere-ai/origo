@@ -10,6 +10,26 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- The install page was walked over SSH from the `v0.14.0` release
+  alone, to a key registered, a clone and a push over SSH, and the push
+  read back. Its SSH walkthrough now pushes as well as clones, and
+  registers the example key under the subject the HTTPS token carries,
+  `<issuer>|<sub>`, so a push over either transport is recorded under
+  one subject; before, the key's bare `sub` was a second subject that
+  the built-in owner policy would refuse. It prints the fingerprints of
+  the host keys it read, so the comparison it asks for can be made.
+- The install page inside `deploy-<version>.tar.gz` links the other
+  pages and the reference stubs at that release's tag in the
+  repository. Its relative links led nowhere in an unpacked archive.
+- The host key step removes the private keys it generated, as the
+  signing key step does, and both say the Secret is then the only copy
+  and how to take one. The page says the throwaway cluster needs the
+  host key Secret before its pods start, names the `origod-ssh-keys`
+  Secret a real overlay creates, and points at verifying the archive
+  before applying it.
+
 ### Added
 
 - The conformance suite verifies: `014/verify`, in the source group,

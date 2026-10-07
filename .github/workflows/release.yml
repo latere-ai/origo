@@ -112,11 +112,13 @@ jobs:
 
       # ORIGO_IMAGE_NAMESPACE reaches the script from the workflow env, so
       # the manifests in the archive name the same namespace the images
-      # were pushed to.
+      # were pushed to, and ORIGO_REPOSITORY is the repository the page's
+      # links name at the tag, so a fork's page links to the fork.
       - name: Pack the deploy archive
         env:
           TAG: ${{ github.ref_name }}
           ORIGO_IMAGE_NAMESPACE: ${{ env.IMAGE_NAMESPACE }}
+          ORIGO_REPOSITORY: ${{ github.repository }}
         run: tools/release/deploy-archive.sh "$TAG" "out/release/deploy-${TAG}.tar.gz"
 
       # The runtime stage installs its packages for the target platform,

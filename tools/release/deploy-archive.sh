@@ -49,6 +49,37 @@ pin "$tmp/deploy/examples/kind/kustomization.yaml" "newTag: candidate" "newTag: 
 pin "$tmp/deploy/examples/kind/origod.yaml" "$default_ns/origod:candidate" "$ns/origod:$version"
 pin "$tmp/deploy/examples/kind/origo-stubs.yaml" "$default_ns/origo-stubs:candidate" "$ns/origo-stubs:$version"
 
+# The page links to other pages and to the stubs of the repository,
+# which the archive does not carry, so an unpacked archive read with no
+# checkout beside it would hold a dead link for each. Every relative
+# link is rewritten to its file at the tag the archive is packed for,
+# in ORIGO_REPOSITORY, which the release workflow sets from the
+# repository that runs it, so a fork's page links to the fork.
+repo="${ORIGO_REPOSITORY:-latere-ai/origo}"
+case "$repo" in
+  */*/*|/*|*/|*' '*) echo "deploy-archive: ORIGO_REPOSITORY '$repo' is not owner/name" >&2; exit 1 ;;
+  */*) ;;
+  *) echo "deploy-archive: ORIGO_REPOSITORY '$repo' is not owner/name" >&2; exit 1 ;;
+esac
+relative_links() {
+  { grep -o '\]([^)]*)' "$1" || true; } | sed 's/^](//; s/)$//' | { grep -v -e '://' -e '^#' || true; } | sort -u
+}
+for target in $(relative_links "$tmp/install.md"); do
+  file="${target%%#*}"
+  fragment="${target#"$file"}"
+  [ -e "$root/docs/$file" ] || { echo "deploy-archive: install.md links to $target, which is not in the tree" >&2; exit 1; }
+  abs="$(cd "$root/docs/$(dirname "$file")" && pwd)/$(basename "$file")"
+  kind=blob
+  [ -d "$abs" ] && kind=tree
+  url="https://github.com/$repo/$kind/$version/${abs#"$root"/}$fragment"
+  pattern=$(printf '%s' "$target" | sed 's/[]$*.^[]/\\&/g')
+  sed -i.bak "s|]($pattern)|]($url)|g" "$tmp/install.md" && rm -f "$tmp/install.md.bak"
+done
+if [ -n "$(relative_links "$tmp/install.md")" ]; then
+  echo "deploy-archive: install.md keeps a relative link: $(relative_links "$tmp/install.md" | tr '\n' ' ')" >&2
+  exit 1
+fi
+
 # The kind overlay's images field selects the base's image by name, so
 # the selector moves with the name it selects or kustomize rewrites
 # nothing.

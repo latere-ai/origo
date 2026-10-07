@@ -3,9 +3,9 @@
 # the sink, in the namespace origo with Pod Security admission at
 # restricted. Every row of the spec's overlay table is a file here. The
 # source stub is the component test-source/, which up.sh includes and
-# spec 018's install jobs omit. The one Secret the overlay does not
-# carry is origod-token-key, which up.sh and the install document
-# generate.
+# spec 018's install jobs omit. The two Secrets the overlay does not
+# carry are origod-token-key and origod-ssh-host-key, which up.sh and
+# the install document generate.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
