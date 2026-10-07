@@ -916,8 +916,9 @@ as spec 017's Open says.
 Work the deck names and no spec owns yet. Each becomes a spec when a
 consumer needs it.
 
-Each is filed as a feature request on this repository, so the list
-here and the tracker say the same thing.
+Each was filed as a feature request on this repository and closed as
+not planned on 2026-10-07, because no consumer needs it yet. The issue
+linked from each item is reopened when one does.
 
 - Batching concurrent pushes to one repository into one commit, for a
   repository busier than the ten pushes per second one commit per push
