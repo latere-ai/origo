@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/events/, cmd/origod/, test/e2e/, docs/migration.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -427,3 +427,15 @@ present with the six shell blocks of the runbook. Two sentences were
 behind the tree, the Current state in unbuilt tense and a divergence
 bullet saying `check` was an unknown subcommand until spec 018 landed;
 both read as the tree stands.
+
+On 2026-10-07 spec 021's suite gained `014/verify`
+([origo#12](https://github.com/latere-ai/origo/issues/12)), the
+conformance case this spec reached `complete` without: it imports the
+stub source, verifies the copy and expects `equal` with
+`verified_equal: true` and `verified_at` on the repository and the
+`verified` event, then pushes one commit to the copy and expects the
+next verify to answer `equal: false` naming `refs/heads/main` with both
+hashes, and the repository to record it. It sits in the source group
+of `test/conformance/cases014.go`, so the stack run carries it and a
+live run skips it by name; its first stack run is the next `e2e` job of
+`verify.yml`. No criterion of this spec waited on it.

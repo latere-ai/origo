@@ -106,8 +106,8 @@ the quota row (`over_quota`, which needs `Authorizer` to set
 because no target's default quota is small enough to fill in a test),
 and the source group (the `import` of spec 019 and
 `repo_not_empty`, with `repo_importing` and the `imported` event
-asserted inside the `import` case, which need `Source`,
-`SourceToken`, and `SourceControl`: on the stack the
+asserted inside the `import` case, and the `verify` of spec 014, which
+need `Source`, `SourceToken`, and `SourceControl`: on the stack the
 source stub of spec 013 at
 `https://origo-stubs.origo.svc:8443/fixture.git` with
 `stub-source-token`, the address the nodes reach through
@@ -153,7 +153,7 @@ report with fewer or more skipped names is a failure of the run.
 | the delegation group: a service token carrying `act` is refused with `delegation`, a plain one is served and mints a bound token | needs `Issuer` to mint the tokens |
 | the deny-flipping group: 403 before lookup, the authorizer outage, `authorizer_unavailable`, the 403 of each of spec 019's operations, spec 026's populated directory and the 501 of an authorizer without one | needs `Authorizer` to flip an answer, or to hold a directory the run seeds through the stub's `/directory` endpoint |
 | the quota row: `over_quota` | needs `Authorizer` to lower `quota_bytes` |
-| the source group: `import` and `repo_not_empty`, with `repo_importing` and the `imported` event asserted inside `import` | needs `Source`, `SourceToken`, and `SourceControl` |
+| the source group: `import` and `repo_not_empty` of spec 019, with `repo_importing` and the `imported` event asserted inside `import`, and `verify` of spec 014 | needs `Source`, `SourceToken`, and `SourceControl` |
 | the `storage_unavailable` row of spec 003 | needs `Fault` to cut the bucket |
 | the `repository_unavailable` row of spec 015 | needs `Fault` to delete a pack object |
 
@@ -498,14 +498,17 @@ a repository `019/forbidden` denied is still denied in the node's
 five-second decision cache when a fast tail of cases ends the run, so
 `deleteUntilGone` asks again after a 403 for up to its budget, the way
 it already waited out a 429, and `TestCleanupWaitsOutADenyStillCached`
-holds both waits without spending the seconds.
+holds both waits without spending the seconds. One more joined on
+2026-10-07, in the source group, `014/verify`, which the State section
+of that date below describes; 62 cases, and eleven skipped names on a
+live run.
 
 | Criterion | Test |
 |---|---|
 | `TestContract` against the kind stack with nothing skipped, and against `ORIGO_LIVE_URL` with exactly the six groups skipped and each reported by name | `test/conformance`, `TestContract`, in the `e2e` job for the stack, which asserts an empty skip list when the `Fault` is wired; the live run is the `live` job of `release.yml`, which asserts the six groups and runs at the next release |
 | `storage_unavailable` under the cut and `repository_unavailable` with `details.key` naming the deleted object, through `Fault`; skipped and reported without one | `test/conformance`, `TestContract/003/storage_unavailable` and `TestContract/015/repository_unavailable`; on the stub through `TestStubConforms`, on the stack in the `e2e` job, skipped and reported in `TestContract`'s live run |
 | removing one capability fails `conformance.Run` on its subtests alone, an unknown value refuses start-up, five runs inside 20 minutes | `test/e2e`, `TestMutation` (about 30 seconds a run against MinIO) and `TestMutationsCoverTheSet`; `verify.yml`, the `mutation` job over the five names; `internal/config`, `TestDropCapabilityIsOneOfTheSet`; `internal/repo`, `TestDropCapabilityTurnsItsKeyOff` |
-| the contract stub passes with an empty `Skip` list, the LFS rows included | `test/stubs/origo`, `TestStubConforms`: 59 cases pass, and the source group's two alone skip themselves |
+| the contract stub passes with an empty `Skip` list, the LFS rows included | `test/stubs/origo`, `TestStubConforms`: 59 cases pass, and the source group's three alone skip themselves |
 | a consumer's tests written against the stub pass unchanged against a live node | `test/conformance`, `TestSameAnswersOnStubAndStack`, in the `e2e` job |
 | the code table walk and the negative fixture | `internal/contract`, `TestEveryCodeHasOneSentence`, `TestTableWalkFailsOnTheNegativeFixture` (findings at `bad.go.txt:16` and `:17` and no third), `TestTableWalkReportsEveryRule` |
 | `remote: <code>: <sentence>` for `non_fast_forward` and `storage_unavailable`, the reference and hashes on the `info` line | `internal/httpgit`, `TestRejectLinesAreTheTableSentences` |
@@ -730,7 +733,10 @@ Deferred, each named on its criterion:
   registers and what every skipped run reports. A `verify` case is
   worth adding and is 014's to add. It is not a condition on this
   spec: the criterion counts the six groups, and the group is reported
-  by name whether it carries two cases or three.
+  by name whether it carries two cases or three. Written on 2026-10-07
+  as `014/verify` in `cases014.go`
+  ([origo#12](https://github.com/latere-ai/origo/issues/12)), the State
+  section of that date below.
 
 Open, for the deck:
 
@@ -840,7 +846,8 @@ exactly the six groups: `003/storage_unavailable` for storage,
 repository, `019/repo_not_empty` and `019/import` for source, and
 `012/over_quota` for quota; since 2026-09-12 `019/forbidden` and
 `026/directory` join the deny-flipping names, ten over the same six
-groups. Eight case names over six groups on that run, each
+groups, and since 2026-10-07 `014/verify` joins the source names,
+eleven. Eight case names over six groups on that run, each
 reported by name and no seventh group, which is the first criterion in
 full.
 
@@ -909,7 +916,10 @@ deny. `TestCleanupReadsEachRepositoryBackUntilGone` holds the waits and
 drives the session's cleanup against a node whose cache still refuses
 the read after the delete; without the read it fails.
 
-## State on 2026-10-07: the import case holds its source
+## State on 2026-10-07: the source group holds its source and verifies
+
+Two items left open on the source group are now in the tree, both
+filed on this repository.
 
 `019/import` asserted `repo_importing` inside an `if`: it read a push's
 advertisement after starting the import and checked the refusal only
@@ -931,6 +941,17 @@ against an in-process source stub, and
 `TestHoldKeepsGitRequestsUntilRelease` in `test/stubs/source` the stub's
 hold.
 
-The case has not run against the stack in this form yet; the next `e2e`
-job of `verify.yml` and the release's `conformance` job are its first
-runs.
+`014/verify`, in `cases014.go`, is the verify case this spec's Deferred
+list left to spec 014
+([origo#12](https://github.com/latere-ai/origo/issues/12)): it imports
+the stub source, verifies the copy against the same source and expects
+`equal` with the reference counts equal and none differing, the copy's
+object count, `verified_equal: true` and `verified_at` on the
+repository, and the `verified` event; then it pushes one commit to the
+copy, verifies again, and expects `equal: false` naming `refs/heads/main`
+with the source's hash and the copy's, and `verified_equal: false` on
+the repository. It joins the source group, so a live run reports it
+skipped by name and the six groups are unchanged.
+
+Neither case has run against the stack yet; the next `e2e` job of
+`verify.yml` and the release's `conformance` job are their first runs.

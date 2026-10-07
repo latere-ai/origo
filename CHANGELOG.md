@@ -12,6 +12,11 @@ committed: the commit log already holds that.
 
 ### Added
 
+- The conformance suite verifies: `014/verify`, in the source group,
+  imports the source, expects `POST /v1/repos/{id}/verify` to answer
+  equal and the repository to carry `verified_equal: true` and
+  `verified_at`, then pushes one commit to the copy and expects the
+  next verify to answer not equal, naming the branch.
 - The stub git source holds every git request after a `POST /hold`
   until a `POST /release`, so a test can act while an import from it
   is running.

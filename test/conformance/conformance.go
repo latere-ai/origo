@@ -61,8 +61,8 @@ type Target struct {
 	// and report the delivery unverified.
 	EventsSink string
 	// Source and SourceToken are a git source for the import cases of
-	// spec 019 and the bearer it requires; empty on a live target and
-	// on the stub run.
+	// spec 019 and the verify case of spec 014 and the bearer it
+	// requires; empty on a live target and on the stub run.
 	Source      string
 	SourceToken string
 	// SourceControl is the control URL of the source stub serving
@@ -143,6 +143,7 @@ func specs() []spec {
 		{"008", cases008()},
 		{"009", cases009()},
 		{"010", cases010()},
+		{"014", cases014()},
 		{"015", cases015()},
 		{"019", cases019()},
 		{"020", cases020()},
