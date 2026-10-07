@@ -215,6 +215,7 @@ its LFS files need a credential to download.`,
 		{"ORIGO_KUBECONFIG", "no", "unset", "the kubeconfig the release pipeline applies a release with: one for the `origod-rollout` ServiceAccount of `deploy/bootstrap/rollout-identity.yaml`, which reaches one namespace and no Secret."},
 		{"ORIGO_RELEASE_DEPLOY", "no", "unset", "unset, a tag publishes artifacts and deploys nothing."},
 		{"ORIGO_IMAGE_NAMESPACE", "no", "`ghcr.io/` and the repository owner", "the registry namespace a tag publishes both images under, so a fork publishes its own. An image reference is lowercase, so an owner whose login carries capitals sets it."},
+		{"ORIGO_REPOSITORY", "no", "`latere-ai/origo`", "the `owner/name` a release is cut from, which the release workflow sets: the install page packed in the deploy archive links to that repository at the tag, so a fork's archive links to the fork."},
 	},
 }}
 
