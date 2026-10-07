@@ -99,7 +99,7 @@ Defined by [019 repository administration](../../specs/019-repository-administra
 
 | Method | Path | Behavior |
 |---|---|---|
-| POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap |
+| POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap; action `rename` (spec 028) |
 | POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defense for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository size rule of spec 012 (`quota_bytes` over packs and LFS bytes) as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
@@ -316,11 +316,11 @@ The action Origo sends per operation:
 |---|---|
 | `repo.read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
 | `repo.write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
-| `repo.admin` | `POST /v1/repos`, `PATCH`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+| `repo.admin` | `POST /v1/repos`, a `PATCH` of `default_branch`, minting a repository-bound token, and the rest of spec 019: freeze, unfreeze, starting an import, and `gc` |
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories may this subject see (spec 026) |
 | `repo.delete` | `DELETE /v1/repos/{id}`, which starts spec 019's hold |
 | `repo.undelete` | `POST /v1/repos/{id}/undelete`, which ends it inside the hold |
-| `repo.rename` | none yet: the row is published a release before a route asks it, and the next minor release moves a `PATCH` that changes `owner` or `slug`, and transfer, to it from `repo.admin` (spec 028, State on 2026-10-07) |
+| `repo.rename` | a `PATCH /v1/repos/{id}` that changes `owner` or `slug`, and `POST /v1/repos/{id}/transfer`; a `PATCH` that also names `default_branch` asks `repo.admin` first and `repo.rename` after the lookup (spec 028, State on 2026-10-07) |
 
 `repo.list` is the one action whose answer is not a decision. Its
 resource carries the kind alone, and the endpoint answers a page of

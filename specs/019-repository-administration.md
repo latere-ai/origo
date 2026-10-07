@@ -51,7 +51,10 @@ The three operations spec 003 owns gain events and one answer:
 `PATCH /v1/repos/{id}` changes the clone URL at once and the old URL
 answers 404, never a redirect, because a redirect would let a stale URL
 keep working past a transfer between owners; it emits `renamed`
-whichever labels it changed, `owner` included. `DELETE /v1/repos/{id}`
+whichever labels it changed, `owner` included. A `PATCH` that changes
+`owner` or `slug` asks `rename` rather than `admin`, one of
+`default_branch` asks `admin`, and one of both asks both (spec 028,
+State on 2026-10-07). `DELETE /v1/repos/{id}`
 emits `deleted`. `POST /v1/repos/{id}/undelete` restores within the
 hold and emits `undeleted`, the one event of an undelete: the `push`
 entry it commits (spec 004) produces no `push` event, by the payload
@@ -59,7 +62,7 @@ rules of spec 008; after the purge it answers 410 `gone`.
 
 | Method | Path | Behavior |
 |---|---|---|
-| POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap |
+| POST | `/v1/repos/{id}/transfer` | `{"owner": "<new>"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap; action `rename` (spec 028) |
 | POST | `/v1/repos/{id}/freeze` | sets `frozen_at`; writes refuse with `repo_frozen` while reads continue: a push is refused at `info/refs?service=git-receive-pack`, before the client uploads a pack, with the same shape spec 015 uses for an open write breaker (HTTP 200, the advertisement content type, and one `ERR repo_frozen: <the sentence below>` pkt-line, so git prints it as `remote error`), and again by the hook's verdict `reject repo_frozen: <sentence>` as defense for a client that sends `git-receive-pack` without the advertisement; the JSON API's write operations of spec 020 answer 403 `repo_frozen`; `GET /v1/repos/{id}` reports `frozen_at`; a second freeze is 409 `repo_frozen`; emits `frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | clears `frozen_at`; 200 whether or not it was frozen; emits `unfrozen` when it was |
 | POST | `/v1/repos/{id}/import` | `{"source": "<https URL>", "token": "<optional bearer for the source>"}`; 202 at once, the import running in the background on the receiving node under a 30 minute budget and the repository size rule of spec 012 (`quota_bytes` over packs and LFS bytes) as the cap; the procedure is below; only `https` sources on the egress allow-list of spec 016 (`ORIGO_EGRESS_ALLOW`, else 400 `invalid_request` with `details.reason: "egress"`), fetched with `transfer.fsckObjects` on and no credential helper; pushes answer 409 `repo_importing` while `importing_since` is set; 409 `repo_not_empty` when the newest index names any entry; a second `POST` while one runs is 409 `repo_importing`; emits `imported` when done |
@@ -591,10 +594,19 @@ still described the tree before the build; it reads as built.
 Spec 028's section of the same date adds `repo.rename` to the
 authorizer's table, so an endpoint that keeps a registry of
 repositories can hold a repository's name to the registry's writer as
-it holds its existence. Two rows of this spec move to it in the next
-minor release, the one after the release that publishes the action:
+it holds its existence. Two rows of this spec move to it, in the
+release after the one that publishes the action:
 `POST /v1/repos/{id}/transfer` in the table above, and the `PATCH` of
 spec 003 whose `renamed` event this spec adds, when its `owner` or
 `slug` differs from the repository's. A `PATCH` of `default_branch`
-stays `admin`, and a `PATCH` that changes both asks both. Until that
-release both rows ask `admin`, as the Design says.
+stays `admin`, and a `PATCH` that changes both asks both. The Design
+says so in place.
+
+`internal/api`, `TestAChangeOfNameAsksRepoRename`, holds the actions
+each body asks, and a caller allowed `admin` and refused `rename` is
+refused the rename, the transfer and a `PATCH` of both with nothing
+written, while its `PATCH` of `default_branch`, its token and its
+freeze go through. `test/conformance`, `007/forbidden`, denies
+`repo.rename` on a repository of its own. `019/transfer`, `019/forbidden`
+and `019/lifecycle-events` pass unchanged against the stub authorizer,
+which decides `repo.rename` by the rules it has for `repo.admin`.

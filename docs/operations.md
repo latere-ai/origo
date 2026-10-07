@@ -118,8 +118,8 @@ unless the list says otherwise, and each sends an event to
 
 | Operation | What it does |
 |---|---|
-| `PATCH /v1/repos/{id}` | changes the owner or the slug. The clone URL changes at once and the old one answers 404, never a redirect, so a stale URL cannot keep working past a change of owner. The id never changes, so tokens, events, and `/r/<id>.git` clones keep working |
-| `POST /v1/repos/{id}/transfer` | the same move recorded as `transferred`, so a consumer acts on a change of owner without inspecting a rename |
+| `PATCH /v1/repos/{id}` | changes the owner or the slug, action `rename`. The clone URL changes at once and the old one answers 404, never a redirect, so a stale URL cannot keep working past a change of owner. The id never changes, so tokens, events, and `/r/<id>.git` clones keep working. A change of `default_branch` asks `admin`, and one that changes both asks both |
+| `POST /v1/repos/{id}/transfer` | the same move recorded as `transferred`, so a consumer acts on a change of owner without inspecting a rename. Action `rename` |
 | `POST /v1/repos/{id}/freeze` | stops the repository accepting pushes. A push is refused at `info/refs`, before the client uploads anything, and git prints `remote error: repo_frozen: ...`; clones and fetches go on. A second freeze is 409 |
 | `POST /v1/repos/{id}/unfreeze` | lets pushes through again. 200 whether or not it was frozen |
 | `POST /v1/repos/{id}/import` | brings an existing repository in from an `https` source with its history. 202 at once; the run has 30 minutes and the repository's quota. Poll `GET /v1/repos/{id}/import` for `running`, `done`, or `failed` |

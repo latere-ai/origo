@@ -759,7 +759,7 @@ first.
 | `DELETE` asks `repo.delete` and `undelete` asks `repo.undelete`, and a deny of either reaches the caller as a 403 naming it in `details.action` while the same caller still renames and mints | `internal/api`, `TestDeleteAndUndeleteAskTheirOwnActions`; `test/conformance`, `007/forbidden`, which denies the two on a repository of its own | built |
 
 The routes moved in the release after the one that published the rows,
-as step 3 above says, and spec 007's action table moved with them.
+as step 3 above says, and spec 007's action table moves with them.
 
 ## State on 2026-10-07: a name is its own action
 
@@ -881,4 +881,7 @@ which Origo renders as 503 `authorizer_unavailable`.
 | The node's and the client's constants are the published strings | `authorizer`, `TestTheNodeAndTheClientReadTheSameStrings` | built |
 | The shared conformance suite drives the row against an endpoint told this table | `authorizer`, `TestConformanceAgainstTheStub` | built |
 | The owner policy and the stub authorizer answer `repo.rename` on an existing repository as they answer `repo.admin`, and the stub decides it alone for a rule that names it | `internal/auth`, `TestTheOwnerPolicyDecidesARenameAsAdministration`; `test/stubs/authorizer`, `TestARenameIsDecidedAsAdministration` | built |
-| A `PATCH` that changes `owner` or `slug` and a `transfer` ask `repo.rename`, a `PATCH` of `default_branch` asks `repo.admin`, one of both asks both, and a deny reaches the caller as a 403 naming the action in `details.action` with nothing changed | the next minor release | not built |
+| A `PATCH` that changes `owner` or `slug` and a `transfer` ask `repo.rename`, a `PATCH` of `default_branch` asks `repo.admin`, one of both asks both, and a deny reaches the caller as a 403 naming the action in `details.action` with nothing changed | `internal/api`, `TestAChangeOfNameAsksRepoRename`; `test/conformance`, `007/forbidden`, which denies `repo.rename` on a repository of its own | built |
+
+The routes move in the release after the one that publishes the row, as
+step 3 above says, and spec 007's action table moves with them.

@@ -402,23 +402,46 @@ type patchRequest struct {
 	DefaultBranch *string `json:"default_branch"`
 }
 
+// patch changes the labels, the default branch, or both, and asks the
+// authorizer for what its body names (spec 028, State on 2026-10-07):
+// repo.rename for a new owner or slug, so an endpoint can hold a
+// repository's name to the writer of its registry, and repo.admin for
+// the default branch. The first question is asked before the lookup, as
+// on every route (spec 007), so what the body names decides it:
+// repo.rename for a label and no branch, repo.admin otherwise. A body
+// that names a branch and a label asks repo.rename after the lookup, and
+// only when a label differs from the repository's, because only the
+// lookup tells a new name from the current one a client sent back
+// beside the branch. Nothing is written until every question asked is
+// allowed.
 func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 	var req patchRequest
 	if err := decode(r, &req); err != nil {
 		invalid(w, "body: "+err.Error(), "")
 		return
 	}
-	m, ix, ok := h.load(w, r, auth.ActionAdmin, false)
+	first := auth.ActionAdmin
+	if (req.Owner != nil || req.Slug != nil) && req.DefaultBranch == nil {
+		first = auth.ActionRename
+	}
+	m, ix, ok := h.load(w, r, first, false)
 	if !ok {
 		return
 	}
-	if req.Owner != nil || req.Slug != nil {
-		owner, slug := m.Owner, m.Slug
-		if req.Owner != nil {
-			owner = *req.Owner
-		}
-		if req.Slug != nil {
-			slug = *req.Slug
+	owner, slug := m.Owner, m.Slug
+	if req.Owner != nil {
+		owner = *req.Owner
+	}
+	if req.Slug != nil {
+		slug = *req.Slug
+	}
+	// Labels equal to the repository's are no change of name, so they
+	// ask nothing more and write nothing.
+	if owner != m.Owner || slug != m.Slug {
+		if first != auth.ActionRename {
+			if _, ok := h.admit(w, r, m.ID, auth.ActionRename); !ok {
+				return
+			}
 		}
 		renamed, ok := h.rename(w, r, m, owner, slug, KindRenamed)
 		if !ok {

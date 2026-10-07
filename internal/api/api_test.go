@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -862,4 +863,122 @@ func TestDeleteAndUndeleteAskTheirOwnActions(t *testing.T) {
 	if status, out := h.do("GET", "/v1/repos/"+repoA, ""); status != 404 || code(out) != contract.CodeRepoNotFound {
 		t.Fatalf("the refused undelete brought it back: %d %v", status, out)
 	}
+}
+
+// TestAChangeOfNameAsksRepoRename is spec 028's section of 2026-10-07 at
+// the routes. A PATCH asks for what its body names: repo.rename for a
+// new owner or slug, repo.admin for the default branch, both for both,
+// and repo.admin alone for a body that sends the current labels back
+// beside a new branch; a transfer asks repo.rename. An authorizer that
+// allows a caller repo.admin and refuses repo.rename refuses exactly the
+// change of name, naming the action in details.action and writing
+// nothing, while the same caller changes the default branch, mints and
+// freezes; one that allows repo.rename and refuses repo.admin refuses a
+// PATCH of both and lets the rename alone through.
+func TestAChangeOfNameAsksRepoRename(t *testing.T) {
+	h := newHarness(t)
+	h.create(repoA, "acme", "app")
+	// A fresh subject per request keeps the client's cache out of what
+	// the authorizer is asked.
+	n := 0
+	asks := func(method, path, body string, want ...string) {
+		t.Helper()
+		n++
+		h.as(auth.Principal{Subject: fmt.Sprintf("alice-%d", n)})
+		h.authz.ClearRequests()
+		if status, out := h.do(method, path, body); status != 200 {
+			t.Fatalf("%s %s: %d %v", method, body, status, out)
+		}
+		var got []string
+		for _, r := range h.authz.Requests() {
+			got = append(got, r.Action)
+			if r.Resource.ID != repoA || r.Resource.String("owner") != "" || r.Resource.String("slug") != "" {
+				t.Errorf("%s %s: the resource is %+v, want the id alone", method, body, r.Resource)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s %s asked %v, want %v", method, body, got, want)
+		}
+	}
+	asks("PATCH", "/v1/repos/"+repoA, `{"slug":"app2"}`, "repo.rename")
+	asks("PATCH", "/v1/repos/"+repoA, `{"default_branch":"dev"}`, "repo.admin")
+	asks("PATCH", "/v1/repos/"+repoA, `{"owner":"acme2","default_branch":"main"}`, "repo.admin", "repo.rename")
+	asks("PATCH", "/v1/repos/"+repoA, `{"owner":"acme2","slug":"app2","default_branch":"dev"}`, "repo.admin")
+	asks("PATCH", "/v1/repos/"+repoA, `{"slug":"app2"}`, "repo.rename")
+	asks("POST", "/v1/repos/"+repoA+"/transfer", `{"owner":"acme"}`, "repo.rename")
+
+	// The repository is acme/app2 on dev. carol administers it and may
+	// not rename it; dave may rename it and not administer it.
+	h.authz.SetRules(
+		authorizer.Rule{Allow: true},
+		authorizer.Rule{Subject: "carol", Action: "repo.rename", Allow: false, Reason: "registry_only"},
+		authorizer.Rule{Subject: "dave", Action: "repo.admin", Allow: false, Reason: "not an administrator"},
+		authorizer.Rule{Subject: "dave", Action: "repo.rename", Allow: true},
+	)
+	unchanged := func(what, owner, slug, branch string, seq uint64) {
+		t.Helper()
+		h.as(auth.Principal{Subject: "alice"})
+		status, out := h.do("GET", "/v1/repos/"+repoA, "")
+		if status != 200 || out["owner"] != owner || out["slug"] != slug || out["default_branch"] != branch {
+			t.Fatalf("%s: the repository is %d %v, want %s/%s on %s", what, status, out, owner, slug, branch)
+		}
+		if id, err := h.log.Resolve(context.Background(), owner, slug); err != nil || id != repoA {
+			t.Fatalf("%s: %s/%s resolves to %q, %v", what, owner, slug, id, err)
+		}
+		if ix, _, err := h.log.Newest(context.Background(), repoA, 0, false); err != nil || ix.Seq != seq {
+			t.Fatalf("%s: the log is at %+v, %v, want sequence %d", what, ix, err, seq)
+		}
+	}
+	ix, _, err := h.log.Newest(context.Background(), repoA, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq := ix.Seq
+	unchanged("before", "acme", "app2", "dev", seq)
+
+	refused := func(who, method, path, body, action, reason string) {
+		t.Helper()
+		h.as(auth.Principal{Subject: who})
+		status, out := h.do(method, path, body)
+		if status != 403 || code(out) != contract.CodeForbidden || details(out)["action"] != action || details(out)["reason"] != reason {
+			t.Fatalf("%s %s %s: %d %v, want 403 naming %s", who, method, body, status, out, action)
+		}
+	}
+	refused("carol", "PATCH", "/v1/repos/"+repoA, `{"slug":"carols"}`, "repo.rename", "registry_only")
+	unchanged("a refused rename", "acme", "app2", "dev", seq)
+	refused("carol", "PATCH", "/v1/repos/"+repoA, `{"owner":"carol-org"}`, "repo.rename", "registry_only")
+	refused("carol", "POST", "/v1/repos/"+repoA+"/transfer", `{"owner":"carol-org"}`, "repo.rename", "registry_only")
+	unchanged("a refused transfer", "acme", "app2", "dev", seq)
+	refused("carol", "PATCH", "/v1/repos/"+repoA, `{"owner":"carol-org","default_branch":"trunk"}`, "repo.rename", "registry_only")
+	unchanged("a refused PATCH of both", "acme", "app2", "dev", seq)
+
+	// The rest of administration stays carol's.
+	h.as(auth.Principal{Subject: "carol"})
+	if status, out := h.do("PATCH", "/v1/repos/"+repoA, `{"default_branch":"trunk"}`); status != 200 || out["default_branch"] != "trunk" {
+		t.Fatalf("carol's PATCH of default_branch: %d %v", status, out)
+	}
+	if status, out := h.do("PATCH", "/v1/repos/"+repoA, `{"owner":"acme","slug":"app2","default_branch":"main"}`); status != 200 || out["default_branch"] != "main" || out["slug"] != "app2" {
+		t.Fatalf("carol's PATCH of the whole representation: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 201 {
+		t.Fatalf("carol's token: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/freeze", ""); status != 200 {
+		t.Fatalf("carol's freeze: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/unfreeze", ""); status != 200 {
+		t.Fatalf("carol's unfreeze: %d %v", status, out)
+	}
+	seq += 2
+	unchanged("carol's administration", "acme", "app2", "main", seq)
+
+	// dave: a PATCH of both needs both, and the rename alone goes
+	// through.
+	refused("dave", "PATCH", "/v1/repos/"+repoA, `{"slug":"daves","default_branch":"dev"}`, "repo.admin", "not an administrator")
+	unchanged("a PATCH of both refused its branch", "acme", "app2", "main", seq)
+	h.as(auth.Principal{Subject: "dave"})
+	if status, out := h.do("PATCH", "/v1/repos/"+repoA, `{"slug":"daves"}`); status != 200 || out["slug"] != "daves" {
+		t.Fatalf("dave's rename: %d %v", status, out)
+	}
+	unchanged("dave's rename", "acme", "daves", "main", seq)
 }

@@ -220,7 +220,7 @@ Content-Type: application/json
 
 The subject is `<issuer>|<sub>`: two issuers that agree on a `sub` are
 two subjects. The action is one of `repo.read`, `repo.write`,
-`repo.admin`, `repo.list`, `repo.delete`, and `repo.undelete`. The optional figures ride under
+`repo.admin`, `repo.list`, `repo.delete`, `repo.undelete`, and `repo.rename`. The optional figures ride under
 `limits`, and `repo.list` is answered with a page of repositories
 rather than a verdict; [`authorizer.md`](authorizer.md) has the whole
 contract.

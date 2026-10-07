@@ -65,7 +65,8 @@ func case007Tokens(t *testing.T, s *session) {
 }
 
 // case007Forbidden flips the authorizer to deny: 403 with the reason,
-// and 403 before lookup for an id that does not exist.
+// and 403 before lookup for an id that does not exist; then the actions
+// kept apart from repo.admin, each denied on a repository of its own.
 func case007Forbidden(t *testing.T, s *session) {
 	id := s.create(t, "deny")
 	unknown := newID(t)
@@ -95,6 +96,20 @@ func case007Forbidden(t *testing.T, s *session) {
 	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.undelete", "undelete deny details: %v", d)
 	expectStatus(t, s.call(t, "GET", "/v1/repos/"+kept, ""), http.StatusOK)
 	expectStatus(t, s.call(t, "POST", "/v1/repos/"+kept+"/tokens", `{"scope":"read","ttl":60}`), http.StatusCreated)
+	// A change of name is an action of its own too (spec 028, State on
+	// 2026-10-07): a deny of repo.rename refuses a PATCH of the slug and a
+	// transfer, each naming the action, and changes nothing, while a
+	// PATCH of the default branch is administration and goes through.
+	named := s.create(t, "deny-rename")
+	slug := SlugPrefix + "deny-rename-" + named[:8]
+	s.setRules(t, authorizer.Rule{Resource: named, Action: "repo.rename", Allow: false, Reason: "not welcome"})
+	d = expectError(t, s.call(t, "PATCH", "/v1/repos/"+named, `{"slug":"`+slug+`-renamed"}`), http.StatusForbidden, contract.CodeForbidden)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.rename", "rename deny details: %v", d)
+	d = expectError(t, s.call(t, "POST", "/v1/repos/"+named+"/transfer", `{"owner":"`+Owner+`-b"}`), http.StatusForbidden, contract.CodeForbidden)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.rename", "transfer deny details: %v", d)
+	r := s.call(t, "PATCH", "/v1/repos/"+named, `{"default_branch":"trunk"}`)
+	expectStatus(t, r, http.StatusOK)
+	failIf(t, r.json["owner"] != Owner || r.json["slug"] != slug || r.json["default_branch"] != "trunk", "after the refused change of name: %s", r.body)
 }
 
 func case007AuthorizerUnavailable(t *testing.T, s *session) {

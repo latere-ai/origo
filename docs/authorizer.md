@@ -50,7 +50,7 @@ Content-Type: application/json
 | `subject` | the issuer URL with any trailing slash removed, a pipe, and the token's `sub`. Empty for an anonymous request and for the probe described below. Over SSH it is the subject your key endpoint returned |
 | `issuer`, `sub` | the two halves apart, so an endpoint keyed by issuer does not split the string. Empty over SSH |
 | `claims` | every verified claim of the token, verbatim. Origo reads none of them, so a plan, a team, or a role is read here |
-| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, or `repo.undelete` |
+| `action` | `repo.read`, `repo.write`, `repo.admin`, `repo.list`, `repo.delete`, `repo.undelete`, or `repo.rename` |
 | `resource.kind` | `Repository`, always |
 | `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list` |
 | `resource.owner`, `resource.slug` | set when the request named the repository by owner and slug, and on a creation; empty when it named the id |
@@ -87,11 +87,11 @@ sends `{"allow": true}` alone is complete:
 |---|---|
 | `repo.read` | clone and fetch, the LFS download, `GET /v1/repos/{id}`, a name lookup, every read route, the import state, `export.bundle`, and `stats` |
 | `repo.write` | push, the LFS upload and verify, and the four server-side operations (commits, merge, cherry-pick, revert) |
-| `repo.admin` | create, rename, minting a repository-bound token, transfer, freeze, unfreeze, import, verify, and `gc` |
+| `repo.admin` | create, a change of the default branch, minting a repository-bound token, freeze, unfreeze, import, verify, and `gc` |
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories this subject may see |
 | `repo.delete` | delete |
 | `repo.undelete` | undelete, inside the seven-day hold |
-| `repo.rename` | nothing in this release. From the next minor release, a rename and a transfer, which ask `repo.admin` until then |
+| `repo.rename` | a rename, which is a `PATCH` that changes the owner or the slug, and a transfer |
 
 On a creation the resource carries the id, owner, and slug the caller
 sent, so the endpoint decides from the name the caller chose.
@@ -122,24 +122,30 @@ vocabulary from the release before the one that first asks them.
 
 ### Renaming apart from administering
 
-The vocabulary also names `repo.rename`, and no operation asks it in
-this release. From the next minor release, a `PATCH` that changes
-`owner` or `slug`, and a transfer, ask `repo.rename` in place of
-`repo.admin`, with the repository id alone in the resource. A `PATCH`
-of `default_branch` stays `repo.admin`, and one that changes both asks
-both. It lets an endpoint decide who may change a repository's name
-separately from who administers it: an endpoint that keeps its own
+A `PATCH` that changes `owner` or `slug`, and a transfer, ask
+`repo.rename` rather than `repo.admin`, with the repository id alone in
+the resource. It lets an endpoint decide who may change a repository's
+name separately from who administers it: an endpoint that keeps its own
 registry of repositories, and renames at Origo itself when it renames a
-row, can refuse a change of name by anyone else, as it refuses a
-deletion, while the repository's administrators keep changing its
-default branch and minting its tokens.
+row, refuses a change of name by anyone else, as it refuses a deletion,
+while the repository's administrators keep changing its default branch
+and minting its tokens. An endpoint with no rule of its own for it
+decides it as it decides `repo.admin`.
+
+A `PATCH` asks before Origo reads the repository, so the body decides
+the first question: `repo.rename` when it names `owner` or `slug` and
+not `default_branch`, `repo.admin` otherwise. A body that names
+`default_branch` beside a label that differs from the repository's asks
+`repo.rename` as well, once the repository is read, and nothing changes
+unless both are allowed. A body that sends the current `owner` and
+`slug` back beside a new `default_branch` is no change of name and asks
+`repo.admin` alone.
 
 An endpoint that answers an action it does not know with an error, as
-one built on `latere.ai/x/pkg/authz/server` does, has to decide
-`repo.rename` before its nodes move to that release, or every rename
-and transfer answers 503 `authorizer_unavailable`. An endpoint with no
-rule of its own for it decides it as it decides `repo.admin`, which
-keeps every answer it gives today.
+one built on `latere.ai/x/pkg/authz/server` does, has to know
+`repo.rename` before its nodes run a release that asks it, or every
+rename and transfer answers 503 `authorizer_unavailable`. It is in the
+vocabulary from the release before the one that first asks it.
 
 ## The directory
 

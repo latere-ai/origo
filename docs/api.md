@@ -159,7 +159,7 @@ None of these needs a token.
 | POST | `/v1/repos` | `repo.admin` | create a repository with the id, owner, slug, and optional `default_branch` (`main` if absent) you send. 201 with the repository; 409 `repo_exists` when the id or the name is taken |
 | GET | `/v1/repos` | `repo.list` | with `?cursor=&limit=`, the repositories the caller may see, a page at a time; with `?owner=&slug=`, the one repository of that name (action `repo.read`) |
 | GET | `/v1/repos/{id}` | `repo.read` | the repository: `id`, `owner`, `slug`, `default_branch`, `size_bytes`, `head`, `updated_at`, `pushed_at`, `frozen_at`, `verified_at`, `verified_equal` |
-| PATCH | `/v1/repos/{id}` | `repo.admin` | change any of `owner`, `slug`, `default_branch` |
+| PATCH | `/v1/repos/{id}` | `repo.rename` to change `owner` or `slug`, `repo.admin` to change `default_branch`, both to change both | change any of `owner`, `slug`, `default_branch`. The current `owner` and `slug` sent back beside a new `default_branch` are no change of name, and ask `repo.admin` alone |
 | DELETE | `/v1/repos/{id}` | `repo.delete` | delete it. 202 with `purge_after`, seven days on. Every route answers 404 from then on, and 410 `gone` once the objects are purged |
 | POST | `/v1/repos/{id}/undelete` | `repo.undelete` | bring a deleted repository back whole, inside the seven days |
 
@@ -258,7 +258,7 @@ push event whose `operation` names the route.
 
 | Method | Path | Action | What it does |
 |---|---|---|---|
-| POST | `/v1/repos/{id}/transfer` | `repo.admin` | change the owner, recorded as a transfer rather than a rename |
+| POST | `/v1/repos/{id}/transfer` | `repo.rename` | change the owner, recorded as a transfer rather than a rename |
 | POST | `/v1/repos/{id}/freeze` | `repo.admin` | refuse every push and write while reads continue. A second freeze is 409 `repo_frozen` |
 | POST | `/v1/repos/{id}/unfreeze` | `repo.admin` | accept writes again |
 | GET | `/v1/repos/{id}/stats` | `repo.read` | `size_bytes`, `lfs_bytes`, `packs`, `entries_since_compaction`, `refs`, `pushed_at`, `compacted_at` |

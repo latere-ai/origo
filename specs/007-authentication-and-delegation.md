@@ -210,11 +210,11 @@ The action Origo sends per operation:
 |---|---|
 | `repo.read` | `info/refs?service=git-upload-pack`, `git-upload-pack`, LFS download, `GET /v1/repos/{id}`, the read API and archive of spec 009, and the three reads of spec 019: import state, `export.bundle`, and `stats` |
 | `repo.write` | `info/refs?service=git-receive-pack`, `git-receive-pack`, LFS upload, and the server-side git operations of spec 020 |
-| `repo.admin` | `POST /v1/repos`, `PATCH`, minting a repository-bound token, and the rest of spec 019: transfer, freeze, unfreeze, starting an import, and `gc` |
+| `repo.admin` | `POST /v1/repos`, a `PATCH` of `default_branch`, minting a repository-bound token, and the rest of spec 019: freeze, unfreeze, starting an import, and `gc` |
 | `repo.list` | the directory form of `GET /v1/repos`: which repositories may this subject see (spec 026) |
 | `repo.delete` | `DELETE /v1/repos/{id}`, which starts spec 019's hold |
 | `repo.undelete` | `POST /v1/repos/{id}/undelete`, which ends it inside the hold |
-| `repo.rename` | none yet: the row is published a release before a route asks it, and the next minor release moves a `PATCH` that changes `owner` or `slug`, and transfer, to it from `repo.admin` (spec 028, State on 2026-10-07) |
+| `repo.rename` | a `PATCH /v1/repos/{id}` that changes `owner` or `slug`, and `POST /v1/repos/{id}/transfer`; a `PATCH` that also names `default_branch` asks `repo.admin` first and `repo.rename` after the lookup (spec 028, State on 2026-10-07) |
 
 `repo.list` is the one action whose answer is not a decision. Its
 resource carries the kind alone, and the endpoint answers a page of

@@ -17,9 +17,9 @@ import (
 )
 
 // The administration operations of spec 019 beyond the three spec 003
-// owns. Each asks the authorizer for admin before it reads meta, writes
-// its state, and emits its event through spec 008's dispatcher after
-// the write and before the response.
+// owns. Each asks the authorizer before it reads meta, for admin, or for
+// rename on a transfer (spec 028), writes its state, and emits its event
+// through spec 008's dispatcher after the write and before the response.
 
 // The event kinds this file emits.
 const (
@@ -125,14 +125,15 @@ type transferRequest struct {
 
 // transfer moves the repository to another owner. The id never changes,
 // which is what makes it cheap: no object moves and every token, event,
-// and clone by id keeps working.
+// and clone by id keeps working. It changes the repository's name, so it
+// asks repo.rename, as a PATCH of the owner does (spec 028).
 func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
 	var req transferRequest
 	if err := decode(r, &req); err != nil {
 		invalid(w, "body: "+err.Error(), "")
 		return
 	}
-	m, ix, ok := h.load(w, r, auth.ActionAdmin, false)
+	m, ix, ok := h.load(w, r, auth.ActionRename, false)
 	if !ok {
 		return
 	}

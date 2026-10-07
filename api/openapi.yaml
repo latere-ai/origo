@@ -784,7 +784,7 @@ paths:
     post:
       operationId: postV1ReposByIdTransfer
       summary: Transfer repository
-      description: "`{\"owner\": \"<new>\"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap"
+      description: "`{\"owner\": \"<new>\"}`: the same operation as `PATCH` with `owner` alone, recorded as `transferred` instead of `renamed` so a consumer can act on a change of owner without inspecting a rename; the id never changes, which is what makes transfer cheap; action `rename` (spec 028)"
       tags:
       - administration
       parameters:

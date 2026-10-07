@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A `PATCH /v1/repos/{id}` that changes the owner or the slug, and a
+  transfer, ask the authorization endpoint `repo.rename` instead of
+  `repo.admin`. A `PATCH` of the default branch alone still asks
+  `repo.admin`, and one that changes both asks both and changes nothing
+  unless both are allowed. An endpoint must decide `repo.rename` before
+  the nodes move to this release, or every rename and transfer answers
+  503; v0.13.0 published the action and `docs/authorizer.md` says how to
+  decide it. A personal token granted `repo.admin` alone no longer
+  covers a rename or a transfer.
+
 ## v0.13.0 - 2026-10-07
 
 ### Added
@@ -32,6 +44,23 @@ committed: the commit log already holds that.
   changes.
 
 ### Changed
+
+- A rename and a transfer ask the authorizer for `repo.rename`, where
+  they asked `repo.admin`, so an authorization endpoint can hold a
+  repository's name to the writer of its own registry and still let the
+  repository's administrators change its default branch, mint its
+  tokens and freeze it. A `PATCH` that changes `owner` or `slug` asks
+  `repo.rename`, one that changes `default_branch` asks `repo.admin`,
+  and one that changes both needs both; one that sends the current
+  `owner` and `slug` back beside a new `default_branch` is no rename. An
+  endpoint of your own that answers an unknown action with an error must
+  decide `repo.rename` before the nodes move to this release, or every
+  rename and transfer answers 503 `authorizer_unavailable`; one that
+  decides it as `repo.admin` keeps today's behavior. The owner policy
+  allows an owner both, so a node with no endpoint changes nothing. A
+  personal access token granted `origo:repo.admin` alone no longer
+  covers a rename or a transfer; one that should carries
+  `origo:repo.rename`.
 
 - `docs/authorizer.md` states that Origo hands an authorizer's
   `next_cursor` to the caller exactly as sent, so an endpoint puts nothing
