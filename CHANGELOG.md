@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.0 - 2026-10-07
+
 ### Fixed
 
 - The install page was walked over SSH from the `v0.14.0` release
