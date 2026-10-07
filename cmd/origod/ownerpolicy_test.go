@@ -5,6 +5,9 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"log/slog"
 	"testing"
 
@@ -99,6 +102,15 @@ func TestOwnerPolicyNodeMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := auth.NewGuard(p, slog.New(slog.DiscardHandler))
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := auth.NewCursors(key, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.SetCursors(cursors)
 	// The creator reads and writes; a stranger is refused.
 	if err := g.Authorize(ctx, auth.Principal{Subject: alice}, auth.RepoRef{ID: id}, auth.ActionWrite); err != nil {
 		t.Fatalf("the creator was refused a write: %v", err)

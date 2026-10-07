@@ -160,20 +160,18 @@ sent them. Answer one of three shapes:
 ```
 
 The first is a page of the repositories the subject may see, with
-`next_cursor` null on the last page. Origo hands `next_cursor` to the
-caller exactly as you sent it and sends it back as `cursor` for the next
-page, so every caller who can list sees it: put nothing in it that caller
-may not see. The id of the last repository on the page, which the caller
-already holds, keeps that rule, and the stub authorizer pages that way. The second refuses the question.
-The third says this installation lists no repositories, and callers get
-501 `directory_unsupported`. A page is never cached, and Origo drops any
-id from it that it no longer holds.
-
-Origo reads a `cursor` that begins `v1.` as one it encrypted itself and
-never sends it to you as it arrived, so do not begin a `next_cursor`
-with `v1.`. From the next minor release, Origo encrypts every
-`next_cursor` before a caller sees it, and a `next_cursor` longer than
-512 bytes is no answer.
+`next_cursor` null on the last page. Origo encrypts `next_cursor` before
+any caller sees it, and sends it back to you as `cursor`, exactly as you
+wrote it, only to the endpoint that wrote it and only on a request from
+the subject it was written for. So it may carry whatever you need to
+resume, up to 512 bytes; a longer `next_cursor` is no answer, and the
+caller sees 503 `authorizer_unavailable`. It is not an authorization:
+decide each page from the request, as you decide every other answer.
+The id of the last repository on the page is enough, and the stub
+authorizer pages that way. The second refuses the question. The third
+says this installation lists no repositories, and callers get 501
+`directory_unsupported`. A page is never cached, and Origo drops any id
+from it that it no longer holds.
 
 ## The five rules
 

@@ -64,7 +64,11 @@ func TestAuthorizerEnvelope(t *testing.T) {
 			t.Fatalf("%s: %v", action, err)
 		}
 	}
-	if _, err := g.Directory(ctx, p, "cur", 10); err != nil {
+	// The caller sends a cursor the node sealed, and the authorizer
+	// receives the one it wrote (spec 031).
+	cursors := newCursors(t, newKey(t), stub.URL())
+	g.SetCursors(cursors)
+	if _, err := g.Directory(ctx, p, seal(t, cursors, p.Subject, "cur"), 10); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	reqs := stub.Requests()

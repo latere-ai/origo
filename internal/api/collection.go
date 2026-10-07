@@ -23,7 +23,8 @@ import (
 // <owner>/<slug> into the representation the id route serves.
 
 // collectionPage is the directory mode's body. NextCursor is the
-// authorizer's, passed through unread, and null on the last page.
+// authorizer's sealed by the guard, so the caller reads none of it, and
+// null on the last page.
 type collectionPage struct {
 	Repos      []Repository `json:"repos"`
 	NextCursor *string      `json:"next_cursor"`
@@ -93,9 +94,9 @@ func (h *Handler) byName(w http.ResponseWriter, r *http.Request, owner, slug str
 //
 // An id the authorizer named and the log no longer holds is dropped
 // rather than refused: the two stores drift, and a page shorter than the
-// authorizer's is the honest answer. next_cursor is the authorizer's for
-// the same reason, never the count served, so paging stays exact even
-// when a page empties.
+// authorizer's is the honest answer. next_cursor seals the authorizer's
+// for the same reason, never the count served, so paging stays exact
+// even when a page empties.
 func (h *Handler) directory(w http.ResponseWriter, r *http.Request, cursor, rawLimit string) {
 	limit := auth.DefaultListLimit
 	if rawLimit != "" {

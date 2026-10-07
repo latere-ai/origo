@@ -91,7 +91,7 @@ for the dependents themselves.
 | [028](028-authorizer-contract-2.md) | Authorizer contract 2: the envelope the three open cores share, issuer-qualified subjects, the owner policy | medium | complete | 003, 007, 026, 027 |
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at the shared origin beside the git host | small | complete | 007, 026, 027, 028 |
 | [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
-| [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | in-progress | 007, 026, 028, 029, 030 |
+| [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | testing | 007, 026, 028, 029, 030 |
 
 ## Dependency graph
 

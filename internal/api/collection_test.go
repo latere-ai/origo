@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/base64"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -32,7 +33,8 @@ func entries(out map[string]any) []any {
 
 // TestDirectoryServesWhatSurvives is spec 026's directory mode: one
 // authorizer call, the representation of every id that still exists, the
-// authorizer's own next_cursor, and no entry for an id the log dropped.
+// authorizer's next_cursor sealed by the node (spec 031), and no entry for
+// an id the log dropped.
 func TestDirectoryServesWhatSurvives(t *testing.T) {
 	h := newHarness(t)
 	makeRepo(t, h, repoA, "acme", "app")
@@ -74,13 +76,16 @@ func TestDirectoryServesWhatSurvives(t *testing.T) {
 		t.Fatalf("the page cost %d authorizer calls: %+v", len(seen), seen)
 	}
 
-	// The cursor the authorizer sends is what the response carries.
+	// The response carries the authorizer's cursor sealed, never as the
+	// authorizer wrote it.
 	h.authz.SetDirectory(true,
 		authorizer.DirectoryEntry{ID: repoA, Owner: "acme", Slug: "app"},
 		authorizer.DirectoryEntry{ID: unknown, Owner: "acme", Slug: "gone"},
 	)
+	h.authz.ClearRequests()
 	status, out = h.do(http.MethodGet, "/v1/repos?limit=1", "")
-	if status != http.StatusOK || out["next_cursor"] != repoA {
+	next, _ := out["next_cursor"].(string)
+	if status != http.StatusOK || !strings.HasPrefix(next, "v1.") || strings.Contains(next, repoA) {
 		t.Fatalf("the paged answer is %d %v", status, out)
 	}
 	if len(entries(out)) != 1 {
@@ -89,9 +94,14 @@ func TestDirectoryServesWhatSurvives(t *testing.T) {
 	// The second page's only id no longer exists, so the page is empty
 	// and the cursor still ended: a page may be shorter than the
 	// authorizer's without paging losing its place.
-	status, out = h.do(http.MethodGet, "/v1/repos?cursor="+repoA, "")
-	if status != http.StatusOK || len(entries(out)) != 0 {
+	status, out = h.do(http.MethodGet, "/v1/repos?cursor="+next, "")
+	if status != http.StatusOK || len(entries(out)) != 0 || out["next_cursor"] != nil {
 		t.Fatalf("the second page is %d %v", status, out)
+	}
+	// One authorizer call a page, and the second carried the authorizer's
+	// cursor as it wrote it.
+	if seen = h.authz.Requests(); len(seen) != 2 || seen[1].Resource.String("cursor") != repoA {
+		t.Fatalf("the two pages cost %+v", seen)
 	}
 }
 
@@ -223,13 +233,17 @@ func TestCollectionQueryIsValidated(t *testing.T) {
 		{"?limit=0", "limit", "limit"},
 		{"?limit=201", "limit", "limit"},
 		{"?limit=many", "limit", "limit"},
-		// A sealed cursor that is not base64url, one shorter than a nonce
-		// and a tag, one with a byte flipped, and one longer than the
-		// longest cursor this installation writes.
+		// A cursor without the sealed prefix, one that is not base64url,
+		// one shorter than a nonce and a tag, one with a byte flipped, one
+		// longer than the longest cursor this installation writes, and a
+		// bare repository id, which is what an authorizer pages by.
+		{"?cursor=" + strings.TrimPrefix(sealed, "v1."), "cursor", "cursor"},
 		{"?cursor=v1.not*base64url", "cursor", "cursor"},
 		{"?cursor=v1." + base64.RawURLEncoding.EncodeToString(make([]byte, 27)), "cursor", "cursor"},
 		{"?cursor=v1." + base64.RawURLEncoding.EncodeToString(flipped), "cursor", "cursor"},
 		{"?cursor=v1." + strings.Repeat("A", 721), "cursor", "cursor"},
+		{"?cursor=" + strings.Repeat("A", 724), "cursor", "cursor"},
+		{"?cursor=" + repoA, "cursor", "cursor"},
 	} {
 		h.authz.ClearRequests()
 		status, out := h.do(http.MethodGet, "/v1/repos"+row.query, "")
@@ -268,48 +282,6 @@ func sealedFor(t *testing.T, c *auth.Cursors, subject, cursor string) string {
 	return out
 }
 
-// TestTheDirectoryOpensASealedCursorBeforeItSeals is the first of spec
-// 031's two releases: a v1. cursor is opened before the authorizer sees
-// it, any other cursor passes through as the authorizer's, and the
-// next_cursor served is still the authorizer's. A walk that reaches a
-// node of this release with a cursor a node of the next one sealed is
-// therefore not cut short.
-func TestTheDirectoryOpensASealedCursorBeforeItSeals(t *testing.T) {
-	h := newHarness(t)
-	makeRepo(t, h, repoA, "acme", "app")
-	makeRepo(t, h, repoB, "acme", "lib")
-	h.authz.SetDirectory(true,
-		authorizer.DirectoryEntry{ID: repoA, Owner: "acme", Slug: "app"},
-		authorizer.DirectoryEntry{ID: repoB, Owner: "acme", Slug: "lib"},
-	)
-
-	// next_cursor is the authorizer's, as it wrote it.
-	status, out := h.do(http.MethodGet, "/v1/repos?limit=1", "")
-	if status != http.StatusOK || len(entries(out)) != 1 || out["next_cursor"] != repoA {
-		t.Fatalf("the first page is %d %v", status, out)
-	}
-
-	for name, cursor := range map[string]string{
-		"sealed": sealedFor(t, h.cursors, "alice", repoA),
-		"raw":    repoA,
-	} {
-		h.authz.ClearRequests()
-		status, out := h.do(http.MethodGet, "/v1/repos?limit=1&cursor="+cursor, "")
-		if status != http.StatusOK || len(entries(out)) != 1 || out["next_cursor"] != nil {
-			t.Fatalf("%s: the second page is %d %v", name, status, out)
-		}
-		if row, _ := entries(out)[0].(map[string]any); row["id"] != repoB {
-			t.Fatalf("%s: the second page holds %v", name, row)
-		}
-		// The authorizer receives its own cursor byte for byte, whether
-		// the caller sent it sealed or as the authorizer wrote it.
-		seen := h.authz.Requests()
-		if len(seen) != 1 || seen[0].Resource.String("cursor") != repoA {
-			t.Fatalf("%s: the authorizer saw %+v", name, seen)
-		}
-	}
-}
-
 // TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone: a sealed
 // cursor opens only on a request from the subject it was sealed for, and
 // only on a node asking the authorizer it was sealed under. Anything else
@@ -331,7 +303,14 @@ func TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forBob := sealedFor(t, h.cursors, "bob", repoA)
+	// The cursor the node handed bob.
+	h.as(auth.Principal{Subject: "bob"})
+	status, out := h.do(http.MethodGet, "/v1/repos?limit=1", "")
+	forBob, _ := out["next_cursor"].(string)
+	if status != http.StatusOK || forBob == "" {
+		t.Fatalf("bob's first page: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "alice"})
 	refused := func(h *harness, name, cursor string) {
 		t.Helper()
 		h.authz.ClearRequests()
@@ -365,4 +344,54 @@ func TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone(t *testing.T) {
 	}
 	bare.authz.SetDirectory(true)
 	refused(bare, "a node holding none", sealedFor(t, stubs, "alice", repoA))
+}
+
+// TestTheDirectoryCursorCarriesNoLimit: a caller may change limit between
+// pages, as the agent client does, so the cursor carries a position and
+// nothing else. A walk at 1, then 2, then 1 returns each repository once
+// and ends with a null cursor.
+func TestTheDirectoryCursorCarriesNoLimit(t *testing.T) {
+	const (
+		repoC = "2b3c4d5e-6f70-4a8b-9c0d-1e2f3a4b5c6d"
+		repoD = "3c4d5e6f-7081-4a9b-8c0d-1e2f3a4b5c6d"
+	)
+	h := newHarness(t)
+	var directory []authorizer.DirectoryEntry
+	for i, id := range []string{repoA, repoB, repoC, repoD} {
+		slug := "repo-" + string(rune('a'+i))
+		makeRepo(t, h, id, "acme", slug)
+		directory = append(directory, authorizer.DirectoryEntry{ID: id, Owner: "acme", Slug: slug})
+	}
+	h.authz.SetDirectory(true, directory...)
+
+	seen := map[string]int{}
+	cursor := ""
+	for i, limit := range []int{1, 2, 1} {
+		query := "/v1/repos?limit=" + strconv.Itoa(limit)
+		if cursor != "" {
+			query += "&cursor=" + cursor
+		}
+		status, out := h.do(http.MethodGet, query, "")
+		if status != http.StatusOK || len(entries(out)) != limit {
+			t.Fatalf("page %d at limit %d: %d %v", i+1, limit, status, out)
+		}
+		for _, e := range entries(out) {
+			row, _ := e.(map[string]any)
+			id, _ := row["id"].(string)
+			seen[id]++
+		}
+		next, _ := out["next_cursor"].(string)
+		if i < 2 && !strings.HasPrefix(next, "v1.") {
+			t.Fatalf("page %d: next_cursor %v is not one the node sealed", i+1, out["next_cursor"])
+		}
+		if i == 2 && out["next_cursor"] != nil {
+			t.Fatalf("the last page carries next_cursor %v", out["next_cursor"])
+		}
+		cursor = next
+	}
+	for _, e := range directory {
+		if seen[e.ID] != 1 {
+			t.Errorf("%s was listed %d times: %v", e.ID, seen[e.ID], seen)
+		}
+	}
 }

@@ -145,7 +145,3 @@ func (c *Cursors) Open(subject, sealed string) (string, error) {
 	}
 	return string(plain), nil
 }
-
-// isSealed reports whether a caller's cursor claims to be one this
-// installation wrote.
-func isSealed(cursor string) bool { return strings.HasPrefix(cursor, cursorPrefix) }

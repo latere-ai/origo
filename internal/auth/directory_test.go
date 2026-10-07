@@ -101,6 +101,7 @@ func TestListRequestCarriesNoRepo(t *testing.T) {
 	// the guard fills it before the envelope is built (Origo spec 028).
 	c3, a3 := newAnswering(t, http.StatusOK, `{"repos":[]}`)
 	g := NewGuard(c3, nil)
+	g.SetCursors(newCursors(t, newKey(t), "http://authorizer.invalid/"))
 	if _, err := g.Directory(ctx, Principal{Subject: "alice"}, "", 0); err != nil {
 		t.Fatal(err)
 	}

@@ -14,8 +14,10 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"log/slog"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -167,11 +169,14 @@ func TestACursorOpensUnderItsBindingAlone(t *testing.T) {
 	}
 }
 
-// TestTheGuardOpensASealedCursor is the guard's half of the first of
-// spec 031's two releases: a v1. cursor is opened before the lister sees
-// it, one that does not open is ErrCursor with no call, and any other
-// cursor passes through as the authorizer's.
-func TestTheGuardOpensASealedCursor(t *testing.T) {
+// TestTheDirectoryCursorIsSealed: every next_cursor a caller sees is one
+// the node wrote, holding nothing of the authorizer's cursor even once
+// decoded, and the next request carrying it reaches the authorizer with
+// that cursor byte for byte. The stub pages by the last id served, which
+// makes the authorizer's cursor recognizable. A cursor the node did not
+// write never reaches the lister, and a guard with no cursor key answers
+// no page rather than one with the authorizer's cursor in it.
+func TestTheDirectoryCursorIsSealed(t *testing.T) {
 	stub := authorizer.New(t)
 	stub.SetDirectory(true,
 		authorizer.DirectoryEntry{ID: repoA, Owner: "acme", Slug: "app"},
@@ -179,37 +184,90 @@ func TestTheGuardOpensASealedCursor(t *testing.T) {
 	)
 	c := newClient(t, stub.URL(), stub.Token(), &http.Transport{}, newClock(), pkgmetrics.NewRegistry())
 	g := NewGuard(c, nil)
-	cursors := newCursors(t, newKey(t), stub.URL())
-	g.SetCursors(cursors)
+	g.SetCursors(newCursors(t, newKey(t), stub.URL()))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	alice := Principal{Subject: "alice"}
 
 	first, err := g.Directory(ctx, alice, "", 1)
-	if err != nil || first.NextCursor != repoA {
+	next := first.NextCursor
+	if err != nil || len(first.Repos) != 1 || !strings.HasPrefix(next, "v1.") || strings.Contains(next, repoA) {
 		t.Fatalf("the first page is %+v, %v", first, err)
 	}
-	for _, cursor := range []string{seal(t, cursors, "alice", repoA), repoA} {
-		stub.ClearRequests()
-		got, err := g.Directory(ctx, alice, cursor, 1)
-		if err != nil || len(got.Repos) != 1 || got.Repos[0].ID != repoB {
-			t.Fatalf("%s: the second page is %+v, %v", cursor, got, err)
-		}
-		if seen := stub.Requests(); len(seen) != 1 || seen[0].Resource.String("cursor") != repoA {
-			t.Fatalf("%s: the authorizer saw %+v", cursor, seen)
-		}
+	if raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(next, "v1.")); err != nil || bytes.Contains(raw, []byte(repoA)) {
+		t.Fatalf("the cursor decodes to the authorizer's: %v", err)
 	}
 
 	stub.ClearRequests()
-	if _, err := g.Directory(ctx, Principal{Subject: "bob"}, seal(t, cursors, "alice", repoA), 1); !errors.Is(err, ErrCursor) {
-		t.Fatalf("another subject's cursor gave %v", err)
+	second, err := g.Directory(ctx, alice, next, 1)
+	if err != nil || len(second.Repos) != 1 || second.Repos[0].ID != repoB || second.NextCursor != "" {
+		t.Fatalf("the second page is %+v, %v", second, err)
 	}
-	// A guard with no cursor key opens nothing.
-	bare := NewGuard(c, nil)
-	if _, err := bare.Directory(ctx, alice, seal(t, cursors, "alice", repoA), 1); !errors.Is(err, ErrCursor) {
-		t.Fatalf("a guard with no cursor key gave %v", err)
+	if seen := stub.Requests(); len(seen) != 1 || seen[0].Resource.String("cursor") != repoA {
+		t.Fatalf("the authorizer saw %+v", seen)
+	}
+
+	// The authorizer's own cursor, and a sealed one another subject sends,
+	// are not this installation's for this caller.
+	stub.ClearRequests()
+	for name, row := range map[string]struct {
+		p      Principal
+		cursor string
+	}{
+		"the authorizer's own": {alice, repoA},
+		"another subject's":    {Principal{Subject: "bob"}, next},
+	} {
+		if _, err := g.Directory(ctx, row.p, row.cursor, 1); !errors.Is(err, ErrCursor) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if dir, err := NewGuard(c, nil).Directory(ctx, alice, "", 1); err == nil {
+		t.Fatalf("a guard with no cursor key answered %+v", dir)
 	}
 	if n := len(stub.Requests()); n != 0 {
-		t.Fatalf("a refused cursor reached the authorizer %d times", n)
+		t.Fatalf("a refused directory reached the authorizer %d times", n)
+	}
+}
+
+// TestTheAuthorizerCursorIsBounded: an authorizer's next_cursor of 512
+// bytes is sealed and served, and one of 513 is no answer, the 503
+// authorizer_unavailable a caller sees for an outage, logged with its
+// length.
+func TestTheAuthorizerCursorIsBounded(t *testing.T) {
+	ctx := context.Background()
+	alice := Principal{Subject: "alice"}
+	page := func(cursor string) string {
+		return `{"repos":[{"id":"` + repoA + `","owner":"acme","slug":"app"}],"next_cursor":"` + cursor + `"}`
+	}
+
+	at := strings.Repeat("c", 512)
+	c, _ := newAnswering(t, http.StatusOK, page(at))
+	cursors := newCursors(t, newKey(t), "http://authorizer.invalid/")
+	g := NewGuard(c, nil)
+	g.SetCursors(cursors)
+	dir, err := g.Directory(ctx, alice, "", 1)
+	if err != nil || len(dir.NextCursor) != 723 {
+		t.Fatalf("a 512-byte cursor gave %d characters, %v", len(dir.NextCursor), err)
+	}
+	if opened, err := cursors.Open("alice", dir.NextCursor); err != nil || opened != at {
+		t.Fatalf("the 512-byte cursor opened as %d bytes, %v", len(opened), err)
+	}
+
+	over, _ := newAnswering(t, http.StatusOK, page(strings.Repeat("c", 513)))
+	g = NewGuard(over, nil)
+	g.SetCursors(cursors)
+	_, err = g.Directory(ctx, alice, "", 1)
+	if !isUnavailable(err) {
+		t.Fatalf("a 513-byte cursor gave %v, want an *Unavailable", err)
+	}
+	var logs bytes.Buffer
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(WithPrincipal(ctx, alice), http.MethodGet, "/v1/repos", nil)
+	WriteRefusal(rec, req, err, slog.New(slog.NewTextHandler(&logs, nil)))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"authorizer_unavailable"`) {
+		t.Fatalf("a 513-byte cursor rendered %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(logs.String(), "513 bytes") {
+		t.Fatalf("the log does not carry the length: %s", logs.String())
 	}
 }

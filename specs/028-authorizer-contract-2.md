@@ -885,3 +885,53 @@ which Origo renders as 503 `authorizer_unavailable`.
 
 The routes move in the release after the one that publishes the row, as
 step 3 above says, and spec 007's action table moves with them.
+
+## State on 2026-10-07: the directory cursor is bounded
+
+Spec 031 keeps `repo.list` a page and makes its cursor the node's. A
+node encrypts the endpoint's `next_cursor` before the caller sees it,
+under a key derived from `ORIGO_TOKEN_KEY` and bound to the action, the
+authorizer URL and the subject, and sends the endpoint back only a
+cursor the endpoint wrote, on a request from the subject it wrote it
+for. The envelope table's `repo.list` row already named spec 031 as the
+answer to issue #1; this section records what it changes in contract 2.
+
+### The bound
+
+One answer gains a bound, and nothing else changes:
+
+| Answer | Before | After |
+|---|---|---|
+| a `repo.list` page | `next_cursor` any string, passed to the caller as written | `next_cursor` at most 512 bytes, encrypted before the caller sees it; a longer one is no answer, an `*Unavailable` the caller sees as 503 `authorizer_unavailable`, logged with its length |
+
+The cursor travels in a query string, through ingresses and proxies that
+cap a request line at a few KiB. The stub, the owner policy and the
+hosted installation's authorizer page by a 36-byte id, far inside it.
+
+### The page stays the answer
+
+"Not in this spec" leaves a `filter`-based `repo.list` waiting for the
+registry to sit beside the node's name index. The registry has moved to
+the platform control plane, and the move is still not taken, for the two
+reasons spec 031 gives: Origo records an owner label, not an owner, so a
+filter of labels can list a repository to members of a label the
+registry does not place it under, and the directory carries grants made
+one repository at a time, with no bound that a filter's ids could fit
+inside. The page stays the answer to `repo.list`, and
+`authorizer.PageActions()` keeps naming it. Nothing in
+`latere.ai/x/pkg/authz` changes.
+
+### The order
+
+No question gains a field, so no endpoint rolls before the nodes. The
+nodes change in two releases (spec 031, Rollout): the first opens a
+sealed cursor and passes any other through, the second seals every
+`next_cursor` and applies the bound. An endpoint whose `next_cursor` is
+longer than 512 bytes shortens it before the nodes move to the second.
+
+### Acceptance
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| A `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | built |
+| `docs/authorizer.md` states the sealed cursor, its binding to the endpoint and the subject, and the bound | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | built |

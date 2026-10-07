@@ -172,7 +172,7 @@ action"`, without a call to the authorizer.
 
 | Method | Path | Behavior |
 |---|---|---|
-| GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; a `cursor` that begins `v1.` is one a node sealed and is opened before the authorizer sees it, and one this installation did not write, or wrote for another subject or another authorizer, is 400 `invalid_request` with `details.reason: "cursor"` and `details.field: "cursor"`, the authorizer not called (spec 031); any other `cursor` is the authorizer's and reaches it as sent; 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
+| GET | `/v1/repos` | two modes, chosen by the query. **Directory:** `?cursor=&limit=` asks the authorizer the `list` question and answers `{"repos": [<the representation of GET /v1/repos/{id}>], "next_cursor": <the node's, sealing the authorizer's, or null>}`, dropping every id the log no longer holds; `limit` default 50, at most 200, and a value outside it is 400 `invalid_request` with `details.reason: "limit"`; a `cursor` is opened before the authorizer sees it and reaches it as the authorizer wrote it, and one this installation did not write, or wrote for another subject or another authorizer, is 400 `invalid_request` with `details.reason: "cursor"` and `details.field: "cursor"`, the authorizer not called (spec 031); 403 `forbidden` when the authorizer denied; 501 `directory_unsupported` when it answered `{"directory": false}`. **Name:** `?owner=&slug=` resolves the name through `origo/names/<owner>/<slug>`, the index the git label form already reads, then answers exactly as `GET /v1/repos/{id}` does for the id it resolved to: the authorizer is asked `read` on that id first and a deny is 403 whether or not the name resolved, so a refused caller learns nothing (spec 007, authorization before lookup); an allowed caller gets 404 `repo_not_found` when it did not resolve. One of `owner` and `slug` without the other is 400 `invalid_request` naming the missing field, and either together with `cursor` or `limit` is 400 `invalid_request` with `details.reason: "modes"` |
 
 `Origo-Prefer` follows spec 005's rule as the git label form applies it:
 absent on the directory mode, which names no one repository, and on the
@@ -295,11 +295,13 @@ three existing actions, their answer shape, or their caches.
   name, and takes the directory away for the 501. It sits in the
   deny-flipping group, so the stack and the stub run it and a live run
   skips it by name. The overlay is unchanged and still seeds nothing.
-- **Whether `next_cursor` should be opaque.** Decided on 2026-10-07,
-  built by spec 031. Until it is built, it is whatever the authorizer
-  sent, passed through unread, and
-  `docs/authorizer.md` tells the endpoint that every caller who can list
-  sees it, so it puts nothing there the caller may not see. That rule is
+- **Whether `next_cursor` should be opaque.** Decided on 2026-10-07 and
+  built by spec 031: the node seals the authorizer's `next_cursor` before
+  the caller sees it and opens the caller's `cursor` before the
+  authorizer does, so the caller sees only a cursor the node wrote. Until
+  then it was whatever the authorizer sent, passed through unread, and
+  `docs/authorizer.md` told the endpoint that every caller who can list
+  sees it, so it put nothing there the caller may not see. That rule was
   documentation, not construction. The family's way to answer a list is
   a decision with a `Filter` over the core's own index, which would make
   the cursor the node's own; `repo.list` is the one page answer the

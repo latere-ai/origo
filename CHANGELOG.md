@@ -31,6 +31,24 @@ committed: the commit log already holds that.
   asserted on every run instead of only when the import happened to
   outlast the push. A target that names a source and no control URL
   reports the group skipped.
+- `GET /v1/repos` encrypts every `next_cursor` before the caller sees
+  it, so a caller reads nothing of the cursor the authorization
+  endpoint wrote and cannot make one up. The endpoint receives back
+  only a cursor it wrote, exactly as it wrote it, on a request from the
+  subject it was written for. Any `cursor` the installation did not
+  write, an endpoint's raw cursor included, is 400 `invalid_request`
+  with `details.reason: "cursor"`, and the caller starts again from the
+  first page. While the nodes roll from the previous release to this
+  one, a listing that carries a cursor from an old node to a new one
+  gets that 400 once and starts again; a cursor a new node wrote opens
+  on an old one, so no listing ends short.
+- A change to the contract an authorization endpoint answers: a
+  `next_cursor` longer than 512 bytes is no answer, and the caller sees
+  503 `authorizer_unavailable`. An endpoint that pages by repository id
+  is far inside the bound; one of your own that writes longer cursors
+  must shorten them before the nodes move to this release.
+- Replacing `ORIGO_TOKEN_KEY` now also ends every repository listing in
+  progress, since its cursors are encrypted under a key derived from it.
 
 ## v0.15.0 - 2026-10-07
 

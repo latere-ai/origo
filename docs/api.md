@@ -170,10 +170,13 @@ walks through the order.
 
 The directory form answers 501 `directory_unsupported` when the
 installation does not list repositories, which is the endpoint's
-choice. `limit` is 1 to 200, 50 by default. Send `next_cursor` back
-unchanged as `cursor` for the next page. A cursor this installation
-did not hand to you is 400 `invalid_request` with
-`details.reason: "cursor"`; start again from the first page.
+choice. `limit` is 1 to 200, 50 by default, and may change from page
+to page. Send `next_cursor` back unchanged as `cursor` for the next
+page; it is opaque, and it works only for the caller it was handed to.
+A cursor this installation did not hand to you is 400
+`invalid_request` with `details.reason: "cursor"`, and so is one handed
+out before the installation's token key was replaced; start again from
+the first page.
 
 ### Tokens
 

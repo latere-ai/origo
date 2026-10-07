@@ -87,7 +87,7 @@ func NewGuard(a Authorizer, logger *slog.Logger) *Guard {
 // SetCursors gives the guard the directory cursor key (Origo spec 031).
 // The node derives it from ORIGO_TOKEN_KEY and the authorizer it
 // configured, and sets it before the guard serves a request. A guard
-// with none opens no sealed cursor.
+// with none answers no directory page.
 func (g *Guard) SetCursors(c *Cursors) { g.cursors = c }
 
 // Authorize decides one request for the principal. It returns nil on an
@@ -143,13 +143,14 @@ func (g *Guard) Decide(ctx context.Context, p Principal, repo RepoRef, action Ac
 // is the same answer as {"directory": false}: the caller renders it as
 // the one 501 and stops asking.
 //
-// A cursor with the sealed prefix is opened under the subject and the
-// authorizer before the lister sees it, and one that does not open is
-// ErrCursor with no call made (spec 031). Any other cursor is the
-// authorizer's and passes through, and next_cursor is the authorizer's
-// as written: this is the first of the spec's two releases, which opens
-// what the second seals so that a walk crossing from a node of the
-// second onto a node of this one is not cut short while the two roll.
+// Every cursor a caller sees is one this node sealed, and every cursor a
+// lister receives is one it wrote (spec 031). A caller's cursor is
+// opened under the subject and the authorizer before the lister sees
+// it, and one that does not open is ErrCursor with no call made. The
+// lister's next_cursor is sealed under the same binding; one over the
+// bound is no answer, an *Unavailable that says how long it was. Both
+// listers, the endpoint's client and the owner policy, go through here,
+// so there is no second path that hands a caller a cursor unsealed.
 func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit int) (Directory, error) {
 	if p.Bound != nil {
 		return Directory{}, &Denied{Subject: p.Subject, Action: ActionList, Reason: ReasonScope}
@@ -158,7 +159,13 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 	if !ok {
 		return Directory{}, nil
 	}
-	if isSealed(cursor) {
+	// A guard with no cursor key would hand the lister's bytes to the
+	// caller, which is the one thing this path exists to prevent, so it
+	// answers no directory page at all.
+	if g.cursors == nil {
+		return Directory{}, errNoCursorKey
+	}
+	if cursor != "" {
 		opened, err := g.cursors.Open(p.Subject, cursor)
 		if err != nil {
 			return Directory{}, err
@@ -168,8 +175,21 @@ func (g *Guard) Directory(ctx context.Context, p Principal, cursor string, limit
 	if limit <= 0 {
 		limit = DefaultListLimit
 	}
-	return lister.List(ctx, listEnvelope(ctx, p, cursor, limit))
+	dir, err := lister.List(ctx, listEnvelope(ctx, p, cursor, limit))
+	if err != nil || dir.NextCursor == "" {
+		return dir, err
+	}
+	next, err := g.cursors.Seal(p.Subject, dir.NextCursor)
+	if err != nil {
+		return Directory{}, &Unavailable{URL: g.cursors.authorizer, Status: http.StatusOK, Err: err}
+	}
+	dir.NextCursor = next
+	return dir, nil
 }
+
+// errNoCursorKey is a guard asked for a directory page before the node
+// gave it the cursor key: a defect of the wiring, never of the request.
+var errNoCursorKey = errors.New("auth: no directory cursor key")
 
 // quota is spec 012's rule for a repository-bound token's writes: the
 // token carries no quota claim, so the figure is the minting subject's,

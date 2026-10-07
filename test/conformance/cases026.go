@@ -5,6 +5,8 @@ package conformance
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
 	"latere.ai/x/origo/internal/contract"
@@ -42,13 +44,36 @@ func case026Directory(t *testing.T, s *session) {
 		return out
 	}
 	// The directory lists both, each as the representation of the id
-	// route, with the authorizer's cursor passed through.
+	// route.
 	r := s.call(t, "GET", "/v1/repos?limit=50", "")
 	got := ids(r)
 	failIf(t, !got[seen] || !got[hidden], "directory %v lacks %s or %s", got, seen, hidden)
 	repos, _ := r.json["repos"].([]any)
 	first, _ := repos[0].(map[string]any)
 	failIf(t, first["owner"] != Owner || first["default_branch"] == nil, "directory entry is not the representation: %v", first)
+
+	// A walk at limit=1 goes through cursors the node sealed, which carry
+	// nothing of the authorizer's, and finds each repository once.
+	walked := map[string]int{}
+	cursor := ""
+	for page := 1; ; page++ {
+		failIf(t, page > 2, "the walk of two did not end: %v", walked)
+		path := "/v1/repos?limit=1"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+		r := s.call(t, "GET", path, "")
+		for id := range ids(r) {
+			walked[id]++
+		}
+		if r.json["next_cursor"] == nil {
+			break
+		}
+		cursor, _ = r.json["next_cursor"].(string)
+		failIf(t, !strings.HasPrefix(cursor, "v1.") || strings.Contains(cursor, seen) || strings.Contains(cursor, hidden),
+			"next_cursor %q is not one the node sealed", cursor)
+	}
+	failIf(t, len(walked) != 2 || walked[seen] != 1 || walked[hidden] != 1, "the walk at limit=1 found %v", walked)
 
 	// A read the authorizer denies on one repository hides it from the
 	// page: the directory is the authorizer's answer, filtered by the

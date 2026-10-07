@@ -1,6 +1,6 @@
 ---
 title: "Directory cursor: the node seals the authorizer's cursor, and the directory stays a page"
-status: in-progress
+status: testing
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -54,6 +54,12 @@ carry the grants made one repository at a time, while a sealed cursor
 keeps the directory exactly the authorizer's read set at any size.
 
 ## Current state
+
+Built on 2026-10-07 in the two steps the Rollout names, two commits not
+yet released: `api: the directory opens a sealed cursor` and `api: the
+directory seals every cursor`. The Outcome records what each carries.
+The rest of this section is the tree before them, which the Design
+starts from.
 
 The directory is spec 026's, built and shipped in `v0.2.0`:
 
@@ -532,20 +538,20 @@ release passing raw cursors through. Caching a directory answer.
 
 | Criterion | Test that proves it | State |
 |---|---|---|
-| A directory page's `next_cursor` starts with `v1.`, neither it nor its base64url decoding contains the authorizer's cursor, and the next request carrying it reaches the authorizer with the authorizer's cursor byte for byte in `resource.cursor` | `internal/auth`, `TestTheDirectoryCursorIsSealed`, against the stub with a recognizable cursor | proposed |
+| A directory page's `next_cursor` starts with `v1.`, neither it nor its base64url decoding contains the authorizer's cursor, and the next request carrying it reaches the authorizer with the authorizer's cursor byte for byte in `resource.cursor` | `internal/auth`, `TestTheDirectoryCursorIsSealed`, against the stub with a recognizable cursor | built |
 | A cursor sealed for one subject and presented by another, and one sealed under one authorizer URL and presented to a node holding another or none, are each 400 `invalid_request` with `details.reason` and `details.field` both `cursor`, never 503, and the authorizer is not called | `internal/api`, `TestADirectoryCursorOpensForItsSubjectAndAuthorizerAlone`, the stub's `Requests()` unchanged | built |
-| A cursor without the `v1.` prefix, one that is not base64url, one shorter than a nonce and a tag, one with a byte flipped, one longer than 723 characters, and a bare repository id are each that 400, with no authorizer call | `internal/api`, `TestCollectionQueryIsValidated`, gaining the cursor rows | proposed |
-| A walk that changes `limit` between pages, 1 then 2 then 1, returns each repository once and ends with a null cursor | `internal/api`, `TestTheDirectoryCursorCarriesNoLimit` | proposed |
-| An authorizer `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | proposed |
+| A cursor without the `v1.` prefix, one that is not base64url, one shorter than a nonce and a tag, one with a byte flipped, one longer than 723 characters, and a bare repository id are each that 400, with no authorizer call | `internal/api`, `TestCollectionQueryIsValidated`, gaining the cursor rows | built |
+| A walk that changes `limit` between pages, 1 then 2 then 1, returns each repository once and ends with a null cursor | `internal/api`, `TestTheDirectoryCursorCarriesNoLimit` | built |
+| An authorizer `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | built |
 | The key derives from the fixed-width scalar: a key whose scalar has a leading zero byte derives the same cursor key on every node | `internal/auth`, `TestTheCursorKeyReadsTheFixedWidthScalar` | built |
-| Two nodes holding one `ORIGO_TOKEN_KEY` open each other's cursors, and a node holding another key refuses them with the 400 | `cmd/origod`, `TestNodesSharingTheTokenKeyShareCursors` | proposed |
-| With no authorizer configured, the owner policy's directory is sealed by the same path, and a walk of three repositories at `limit=1` returns each once and ends with a null cursor | `cmd/origod`, `TestTheOwnerPolicyDirectoryWalks` | proposed |
-| `GET /v1/repos` serves the representation of each id that survives, with a sealed `next_cursor`, one authorizer call, and null on the last page | `internal/api`, `TestDirectoryServesWhatSurvives`, updated | proposed |
-| In the first release a `v1.` cursor is opened, any other passes through, and `next_cursor` is the authorizer's; the second release rewrites this test into the rows above | `internal/api`, `TestTheDirectoryOpensASealedCursorBeforeItSeals` | built |
-| Against the stack, `026/directory` walks the seeded directory at `limit=1` through sealed cursors and finds each repository once | `test/conformance`, `026/directory` | proposed |
-| Spec 026's route row names the `cursor` refusal and says `next_cursor` is the node's, and the generated `api/openapi.yaml` and `docs/internals/contract.md` carry both | `tools/apidoc`, `TestOpenAPIDocumentIsCurrent` and `TestAPIDocIsCurrent` | proposed |
-| The `ORIGO_TOKEN_KEY` row says that replacing the key ends every directory walk in flight, and `docs/configuration.md` carries it | `internal/config`, `TestConfigurationDocIsCurrent` | proposed |
-| `docs/authorizer.md` states the sealed cursor, the binding to the endpoint and the subject, and the 512-byte bound, and no longer asks an endpoint to keep the cursor free of what the caller may not see | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | proposed |
+| Two nodes holding one `ORIGO_TOKEN_KEY` open each other's cursors, and a node holding another key refuses them with the 400 | `cmd/origod`, `TestNodesSharingTheTokenKeyShareCursors` | built |
+| With no authorizer configured, the owner policy's directory is sealed by the same path, and a walk of three repositories at `limit=1` returns each once and ends with a null cursor | `cmd/origod`, `TestTheOwnerPolicyDirectoryWalks` | built |
+| `GET /v1/repos` serves the representation of each id that survives, with a sealed `next_cursor`, one authorizer call, and null on the last page | `internal/api`, `TestDirectoryServesWhatSurvives`, updated | built |
+| In the first release a `v1.` cursor is opened, any other passes through, and `next_cursor` is the authorizer's; the second release rewrites this test into the rows above | `internal/api`, `TestTheDirectoryOpensASealedCursorBeforeItSeals` | built in the first commit, and rewritten into the rows above by the second |
+| Against the stack, `026/directory` walks the seeded directory at `limit=1` through sealed cursors and finds each repository once | `test/conformance`, `026/directory` | built; green against the contract stub, the stack run waits for a dispatched run |
+| Spec 026's route row names the `cursor` refusal and says `next_cursor` is the node's, and the generated `api/openapi.yaml` and `docs/internals/contract.md` carry both | `tools/apidoc`, `TestOpenAPIDocumentIsCurrent` and `TestAPIDocIsCurrent` | built |
+| The `ORIGO_TOKEN_KEY` row says that replacing the key ends every directory walk in flight, and `docs/configuration.md` carries it | `internal/config`, `TestConfigurationDocIsCurrent` | built |
+| `docs/authorizer.md` states the sealed cursor, the binding to the endpoint and the subject, and the 512-byte bound, and no longer asks an endpoint to keep the cursor free of what the caller may not see | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | built |
 
 ## Open
 
@@ -553,3 +559,70 @@ release passing raw cursors through. Caching a directory answer.
   cursor. Options (a) and (c) would have changed the family's shared
   contract, `latere.ai/x/pkg/authz.Filter` and its conformance suite, and
   are not taken.
+
+## Outcome
+
+Built on 2026-10-07 in two commits, each a gated tree and each meant to
+ship as its own release, the first rolled out before the second, as the
+Rollout says.
+
+- **The first, `api: the directory opens a sealed cursor`.**
+  `internal/auth/cursor.go` holds `Cursors`, `NewCursors`, `Seal`,
+  `Open` and `ErrCursor`; the guard opens a `v1.` cursor before the
+  lister sees it and passes any other through, and `next_cursor` stays
+  the authorizer's. `directory` in `collection.go` answers
+  `ErrCursor` as 400 `invalid_request` with `reason` and `field`
+  `cursor` before `WriteRefusal`. `cmd/origod` and the contract stub
+  derive the key and hand it to the guard.
+- **The second, `api: the directory seals every cursor`.** The guard
+  opens every cursor and seals every `next_cursor`, and a `next_cursor`
+  over 512 bytes is an `*Unavailable`. The stage-one test
+  `TestTheDirectoryOpensASealedCursorBeforeItSeals` is gone, rewritten
+  into the rows above, as its criterion says.
+
+Every criterion but the first release's has its named test in the
+tree; that one lived in the first commit and the second rewrote it, as
+its row says. Each failed on the tree before the commit that made it
+pass, by assertion and not by compilation, except
+`TestTheCursorKeyReadsTheFixedWidthScalar`, whose function did not
+exist before the first commit. `026/directory` is green
+against the contract stub in `TestStubConforms`; its stack half needs a
+dispatched `verify` run or a tag run, which is why this spec is at
+`testing`.
+
+Divergences, none of them of the construction:
+
+- **How the guard holds the key.** `NewGuard` keeps its signature and
+  `Guard.SetCursors` gives it the key, which `cmd/origod` sets right
+  after building the guard. A guard with no key answers no directory
+  page, an error rendered 503, rather than a page whose `next_cursor`
+  is the authorizer's. `TestNodesSharingTheTokenKeyShareCursors` proves
+  the node sets it.
+- **Where the bound is checked.** In `Cursors.Seal`, which the guard
+  calls for both listers, not in the client's parser of the answer, so
+  the owner policy's page is held to it by the same path.
+- **The encoding is strict.** Unpadded base64url with
+  `base64.RawURLEncoding.Strict()`, so one sealed cursor has one
+  spelling and a changed final character is never read as the same
+  bytes.
+- **The nonce.** `cipher.NewGCMWithRandomNonce` draws the 12-byte nonce
+  and prepends it, which is the Design's wire form. Its documentation
+  bounds one key at 2^32 seals; the key lives until `ORIGO_TOKEN_KEY` is
+  replaced, which at ten directory pages a second is past ten years.
+- **"A node holding none."** In `internal/api` it is a harness whose
+  cursor key is bound to no authorizer; the same refusal on a whole node
+  in owner-policy mode holding the shared key is in
+  `TestNodesSharingTheTokenKeyShareCursors`.
+- **The first release's prefix.** It reads every `cursor` that begins
+  `v1.` as its own, so an endpoint whose cursors began that way would
+  have lost its second page under it. The authorizer guide and the
+  changelog of the first commit said so; the second opens every cursor
+  and the note is gone.
+- **Tests beyond the table.** `TestACursorOpensUnderItsBindingAlone` in
+  `internal/auth` drives `Open` through every refusal, and
+  `TestAuthorizerEnvelope` now sends a sealed cursor and checks the
+  authorizer receives the one it wrote.
+
+Spec 028 carries the dated section the Recommendation asks for, spec
+026's route row and its Open item say what was built, and the
+changelog names the bound for operators who run their own endpoint.
