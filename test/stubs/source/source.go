@@ -7,7 +7,9 @@
 // embeds and any repository a test adds, for the import of spec 019 and
 // the verify of spec 014. The certificate is signed by a CA generated at
 // start or given with WithCA, served at /ca.pem, so a client trusts the
-// stub through the file.
+// stub through the file. Hold keeps every git request waiting until
+// Release, so an import that reads from the stub is running for as long
+// as a test needs it to be.
 package source
 
 import (
@@ -110,6 +112,8 @@ type Server struct {
 	tlsCfg   *tls.Config
 	requests []Request
 	late     int
+	held     chan struct{}
+	closed   chan struct{}
 	mux      *http.ServeMux
 	backend  http.Handler
 	srv      *httptest.Server
@@ -134,7 +138,7 @@ func New(t testing.TB, opts ...Option) *Server {
 // root, for a binary that serves Handler under TLSConfig itself. The
 // fixture is unpacked into root at once, under ctx.
 func NewHandler(ctx context.Context, root string, opts ...Option) (*Server, error) {
-	s := &Server{root: root, token: DefaultToken, git: "git", sans: slices.Clone(SANs), mux: http.NewServeMux()}
+	s := &Server{root: root, token: DefaultToken, git: "git", sans: slices.Clone(SANs), closed: make(chan struct{}), mux: http.NewServeMux()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -164,6 +168,8 @@ func NewHandler(ctx context.Context, root string, opts ...Option) (*Server, erro
 	s.mux.HandleFunc("POST /repos", s.postRepos)
 	s.mux.HandleFunc("GET /requests", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, s.Requests()) })
 	s.mux.HandleFunc("DELETE /requests", func(w http.ResponseWriter, _ *http.Request) { s.ClearRequests(); w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("POST /hold", func(w http.ResponseWriter, _ *http.Request) { s.Hold(); w.WriteHeader(http.StatusNoContent) })
+	s.mux.HandleFunc("POST /release", func(w http.ResponseWriter, _ *http.Request) { s.Release(); w.WriteHeader(http.StatusNoContent) })
 	s.mux.HandleFunc("/", s.serveGit)
 	return s, nil
 }
@@ -175,10 +181,44 @@ func (s *Server) Handler() http.Handler { return s.mux }
 // signed, for a listener of one's own.
 func (s *Server) TLSConfig() *tls.Config { return s.tlsCfg.Clone() }
 
-// Close stops the listener.
+// Close releases every held request and stops the listener. The
+// release comes first because the listener's Close waits for every
+// request in flight, and a held one would never finish.
 func (s *Server) Close() {
+	s.mu.Lock()
+	select {
+	case <-s.closed:
+	default:
+		close(s.closed)
+	}
+	s.mu.Unlock()
 	if s.srv != nil {
 		s.srv.Close()
+	}
+}
+
+// Hold makes every git request wait, after its bearer is checked and it
+// is recorded, until Release or Close. Spec 021's import case holds the
+// source so the import is still running when it pushes. A node's egress
+// proxy gives up on a source that sends no response header for 60
+// seconds, so a hold that outlasts that fails the import instead of
+// prolonging it.
+func (s *Server) Hold() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held == nil {
+		s.held = make(chan struct{})
+	}
+}
+
+// Release lets every held request through and ends the hold; without a
+// hold it does nothing.
+func (s *Server) Release() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held != nil {
+		close(s.held)
+		s.held = nil
 	}
 }
 
@@ -329,7 +369,8 @@ func gitEnv(home string) []string {
 var gitPath = regexp.MustCompile(`^/([A-Za-z0-9][A-Za-z0-9._-]*)\.git(/.*)?$`)
 
 // serveGit is every path under /<name>.git/: the bearer is required,
-// the request is recorded, and git http-backend answers.
+// the request is recorded, a hold in force keeps it waiting, and git
+// http-backend answers.
 func (s *Server) serveGit(w http.ResponseWriter, r *http.Request) {
 	m := gitPath.FindStringSubmatch(r.URL.Path)
 	if m == nil {
@@ -340,11 +381,22 @@ func (s *Server) serveGit(w http.ResponseWriter, r *http.Request) {
 	bearer := subtle.ConstantTimeCompare([]byte(strings.TrimSpace(raw)), []byte(s.token)) == 1
 	s.mu.Lock()
 	s.requests = append(s.requests, Request{Method: r.Method, Path: r.URL.Path, Bearer: bearer, At: time.Now()})
+	held := s.held
 	s.mu.Unlock()
 	if !bearer {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="origo-stubs"`)
 		http.Error(w, "bearer required", http.StatusUnauthorized)
 		return
+	}
+	if held != nil {
+		select {
+		case <-held:
+		case <-s.closed:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		case <-r.Context().Done():
+			return
+		}
 	}
 	if _, err := os.Stat(filepath.Join(s.root, m[1]+".git")); err != nil {
 		http.NotFound(w, r)

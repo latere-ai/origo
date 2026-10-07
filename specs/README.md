@@ -1097,7 +1097,7 @@ name, or when a spec names something no spec defines.
 | error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 019, 020, 021, 025 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
-| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 014, 020, 021 |
+| error code | `repo_importing` | [019](019-repository-administration.md) | 003, 013, 014, 020, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
 | error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
 | error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |

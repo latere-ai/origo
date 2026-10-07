@@ -213,6 +213,9 @@ func (s *stubs) close() {
 	if s.sshkeys != nil {
 		s.sshkeys.Close()
 	}
+	if s.source != nil {
+		s.source.Close()
+	}
 	if s.sourceRoot != "" {
 		_ = os.RemoveAll(s.sourceRoot)
 	}

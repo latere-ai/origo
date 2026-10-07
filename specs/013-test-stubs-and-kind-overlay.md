@@ -8,7 +8,7 @@ depends_on:
 affects: [test/stubs/sink/, test/stubs/origo/, test/stubs/source/, test/stubs/cmd/, Dockerfile.stubs, test/e2e/, test/e2e/cluster/, test/e2e/testdata/, deploy/examples/kind/, Makefile, .github/workflows/, .lateregate.yaml, internal/config/, tools/docs/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -108,7 +108,7 @@ run the stub authorizer from it.
 | `test/stubs/sink` | spec 008's sink: a POST to its root verifies `Origo-Signature` with `-secret`, records the headers and body, and answers the configured status (200 by default; a PUT to `/status` with `{"status": <int>, "body": <json>, "count": <int>}` changes it, answering `status` with `body` for the next `count` deliveries, every one when `count` is 0, then 200 again); a GET of `/deliveries` with `repo` and `kind` parameters lists deliveries in order, a DELETE of it clears them | `Deliveries(repo, kind)`, `Fail(n, status)`, `Wait(repo, kind, n, timeout)` |
 | `test/stubs/origo` | the contract stub a consumer's tests target: the real handlers of `internal/httpgit` and `internal/api`, and `internal/lfs` once spec 010 lands, wired through the S3 adapter `wal.NewS3` to an in-process `s3test.Server` of `latere.ai/x/pkg/s3/s3test` (one bucket behind an `httptest` listener that verifies every request and every presigned URL the way a provider does), a temporary cache directory, and an in-process issuer, authorizer, and sink from the packages above; the bucket is a real endpoint rather than `wal.MemStore` so the presigned transfers of spec 010 resolve and the LFS rows of spec 021 run against the stub with nothing skipped, and its `Fail` and the adapter's `Delete` are what spec 021's `Fault` uses on the stub; `New(t)` returns the base URL, a minting function, and the authorizer and sink handles; it speaks the whole contract because it is the node's own code, which spec 021 proves by running `TestContract` against it | `URL()`, `Token(sub, act)`, `Authorizer()`, `Sink()` |
 | `test/stubs/sshkeys` | spec 024's key resolution endpoint: a POST to its root with the bearer `-sshkeys-token` answers `{"found": true, "subject", "key_id", "ttl"}` or `{"found": false}`, always 200, from a map keyed by the SHA-256 fingerprint; a PUT to `/keys` with `{"keys": [{"fingerprint", "subject", "key_id", "ttl"}]}` replaces the map and a DELETE of `/keys/{fingerprint}` revokes one key, which is how a test makes an authenticating key stop authenticating; a GET of `/requests` lists every request seen in order and a DELETE of it clears the list; `/fail`, `/hang`, and `/resume` are the authorizer stub's three outage paths, so a stack run drives a key store outage through the host port. It is the reference implementation of the contract and is explicitly not for production: it holds its table in memory, expires nothing on its own, and authenticates only the bearer | `Register(key)`, `Revoke(fingerprint)`, `SetKeys(keys)`, `Requests()`, `Fail(status)`, `Hang()`, `Resume()` |
-| `test/stubs/source` | a git source for `import` (spec 019) and `verify` (spec 014): `git http-backend` behind a TLS listener that requires the bearer `-source-token`, serving the fixture repository `/fixture.git` unpacked at start from a bundle the package embeds (`testdata/fixture.bundle`, 5 000 commits, produced by `go generate` in the package from `internal/gittest` and checked in), and any repository a test adds; the certificate is signed by a CA the binary generates at start or reads from `-ca <pem>` and `-ca-key <pem>`, and a GET of `/ca.pem` serves it; a POST to `/commit` with `{"repo", "branch"}` adds one commit on that branch, which is the "late write" of spec 014's cut-over test; a POST to `/repos` with `{"name", "bundle"}` (base64) adds a repository; a GET of `/requests` lists every request seen with its path and whether it carried the bearer, never the bearer itself, and a DELETE of it clears the list | `URL()`, `CA() []byte`, `Commit(repo, branch)`, `AddRepo(name, bundle)`, `Requests()` |
+| `test/stubs/source` | a git source for `import` (spec 019) and `verify` (spec 014): `git http-backend` behind a TLS listener that requires the bearer `-source-token`, serving the fixture repository `/fixture.git` unpacked at start from a bundle the package embeds (`testdata/fixture.bundle`, 5 000 commits, produced by `go generate` in the package from `internal/gittest` and checked in), and any repository a test adds; the certificate is signed by a CA the binary generates at start or reads from `-ca <pem>` and `-ca-key <pem>`, and a GET of `/ca.pem` serves it; a POST to `/commit` with `{"repo", "branch"}` adds one commit on that branch, which is the "late write" of spec 014's cut-over test; a POST to `/repos` with `{"name", "bundle"}` (base64) adds a repository; a GET of `/requests` lists every request seen with its path and whether it carried the bearer, never the bearer itself, and a DELETE of it clears the list; a POST to `/hold` makes every git request wait, once its bearer is checked and it is recorded, until a POST to `/release` lets them through, so spec 021's import case pushes while an import is running whatever the target's speed, and `Close` answers a held request 503 so a listener with one in flight still stops | `URL()`, `CA() []byte`, `Commit(repo, branch)`, `AddRepo(name, bundle)`, `Requests()`, `Hold()`, `Release()` |
 
 A consumer imports `test/stubs/origo` to run its integration tests
 against Origo in-process. The slow proxy of spec 015
@@ -662,3 +662,15 @@ and upstream's repositories were archived. The three files now name
 `ghcr.io/latere-ai/minio` and `ghcr.io/latere-ai/mc`, the images of the
 maintained forks of the server and the client, by tag and index digest,
 and the test holds them to that registry.
+
+On 2026-10-07 the source stub gained `Hold` and `Release`, with a POST
+to `/hold` and to `/release` beside its other control paths, for spec
+021's import case, which had asserted the `repo_importing` refusal of a
+push only when the import happened to be still running
+([origo#4](https://github.com/latere-ai/origo/issues/4)). A held request
+is recorded before it waits, so `Requests` lists it, and it waits for
+the release, for its client to give up, or for `Close`, which answers it
+503 so the listener still stops; `TestHoldKeepsGitRequestsUntilRelease`
+holds the three. A hold has to end inside a minute: a node's egress
+proxy (spec 016) gives up on a source that sends no response header for
+60 seconds, so a longer hold fails the import rather than prolonging it.

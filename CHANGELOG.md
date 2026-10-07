@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- The stub git source holds every git request after a `POST /hold`
+  until a `POST /release`, so a test can act while an import from it
+  is running.
+
 ## v0.15.0 - 2026-10-07
 
 ### Changed

@@ -234,6 +234,99 @@ func TestControlAPIAddsRepositoriesAndCommits(t *testing.T) {
 	}
 }
 
+// infoRefs starts the first request of a fetch of the fixture in the
+// background, with the bearer and under ctx, and answers the channel
+// its status arrives on, or -1 when the request failed.
+func infoRefs(ctx context.Context, s *source.Server) <-chan int {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(s.CA())
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
+	done := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequestWithContext(ctx, "GET", s.URL()+"/fixture.git/info/refs?service=git-upload-pack", nil)
+		req.Header.Set("Authorization", "Bearer "+s.Token())
+		resp, err := client.Do(req)
+		if err != nil {
+			done <- -1
+			return
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		done <- resp.StatusCode
+	}()
+	return done
+}
+
+// waitRecorded waits until the stub has recorded n git requests, which
+// is how a test knows a request reached the hold.
+func waitRecorded(t *testing.T, s *source.Server, n int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for len(s.Requests()) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d requests recorded, want %d", len(s.Requests()), n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestHoldKeepsGitRequestsUntilRelease is the hold spec 021's import
+// case drives over the control API: after a POST of /hold a git request
+// is recorded and gets no answer until a POST of /release, which serves
+// it; a release without a hold does nothing; a client that gives up
+// while held ends its request; and Close answers a held request 503, so
+// a listener with one in flight still stops.
+func TestHoldKeepsGitRequestsUntilRelease(t *testing.T) {
+	s := source.New(t)
+	if status, _ := control(t, s, "POST", "/release", ""); status != http.StatusNoContent {
+		t.Fatalf("POST /release without a hold: %d", status)
+	}
+	if status, _ := control(t, s, "POST", "/hold", ""); status != http.StatusNoContent {
+		t.Fatalf("POST /hold: %d", status)
+	}
+	// A second hold keeps the first rather than stranding its requests.
+	s.Hold()
+	done := infoRefs(context.Background(), s)
+	waitRecorded(t, s, 1)
+	select {
+	case status := <-done:
+		t.Fatalf("a held request was answered %d", status)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if status, _ := control(t, s, "POST", "/release", ""); status != http.StatusNoContent {
+		t.Fatalf("POST /release: %d", status)
+	}
+	if status := <-done; status != http.StatusOK {
+		t.Fatalf("the released request: %d", status)
+	}
+	// Released, the next request is served at once.
+	if status := <-infoRefs(context.Background(), s); status != http.StatusOK {
+		t.Fatalf("a request after the release: %d", status)
+	}
+
+	s.Hold()
+	ctx, cancel := context.WithCancel(context.Background())
+	gaveUp := infoRefs(ctx, s)
+	waitRecorded(t, s, 3)
+	cancel()
+	if status := <-gaveUp; status != -1 {
+		t.Fatalf("a request whose client gave up: %d", status)
+	}
+
+	held := infoRefs(context.Background(), s)
+	waitRecorded(t, s, 4)
+	closed := make(chan struct{})
+	go func() { s.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close waited on a held request")
+	}
+	if status := <-held; status != http.StatusServiceUnavailable {
+		t.Fatalf("a request held at Close: %d", status)
+	}
+}
+
 // newCA generates a CA the way up.sh does with openssl: a self-signed
 // certificate and its key, the key in the SEC 1 form when pkcs8 is false
 // and in the PKCS #8 form otherwise.
