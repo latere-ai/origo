@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.15.0 - 2026-10-07
+
 ### Changed
 
 - `GET /v1/repos` reads a `cursor` that begins `v1.` as a directory

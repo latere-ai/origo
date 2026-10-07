@@ -57,7 +57,7 @@ it in an empty directory and stay in that directory for the rest of
 this page, because every path below is relative to it:
 
 ```
-VERSION=v0.14.0   # the release you picked
+VERSION=v0.15.0   # the release you picked
 curl -fLO "https://github.com/latere-ai/origo/releases/download/$VERSION/deploy-$VERSION.tar.gz"
 tar xzf "deploy-$VERSION.tar.gz"
 ```
