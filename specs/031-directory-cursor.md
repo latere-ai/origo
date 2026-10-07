@@ -1,6 +1,6 @@
 ---
 title: "Directory cursor: the node seals the authorizer's cursor, and the directory stays a page"
-status: testing
+status: complete
 track: infra
 depends_on:
   - specs/007-authentication-and-delegation.md
@@ -586,9 +586,15 @@ its row says. Each failed on the tree before the commit that made it
 pass, by assertion and not by compilation, except
 `TestTheCursorKeyReadsTheFixedWidthScalar`, whose function did not
 exist before the first commit. `026/directory` is green
-against the contract stub in `TestStubConforms`; its stack half needs a
-dispatched `verify` run or a tag run, which is why this spec is at
-`testing`.
+against the contract stub in `TestStubConforms`, and its stack half
+passed in the v0.16.0 tag run, inside `TestContract` against the published
+image and again against the live installation.
+
+Both releases are live: v0.15.0 opens a sealed cursor and v0.16.0 seals
+every `next_cursor`. Against the live installation after v0.16.0, a walk
+of one subject's directory at `limit=2` ended with every repository once
+behind cursors that begin `v1.`, and a cursor the installation did not
+write answered 400 with `details.reason: "cursor"`.
 
 Divergences, none of them of the construction:
 
