@@ -10,7 +10,7 @@ depends_on:
 affects: [.github/workflows/, Dockerfile, Dockerfile.ci, Dockerfile.stubs, Makefile, CHANGELOG.md, tools/release/, tools/smoke/, docs/upgrades/, internal/wal/, internal/repo/, internal/version/, cmd/origod/, test/conformance/]
 effort: small
 created: 2026-09-06
-updated: 2026-10-06
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -242,7 +242,7 @@ recorded in the release notes as done or as not applicable:
 |---|---|---|
 | a release publishes under the repository owner's namespace, so a fork's tag pushes to its own packages and not to this repository's | this spec | not a hand step since 2026-09-12: held by `TestReleasePublishesUnderTheRepositoryOwnersNamespace` and `deploy_archive_test.sh` on every push, the criterion below. Until then the row read "a tag on a fork with `ORIGO_RELEASE_DEPLOY` unset", a run a maintainer never made; the two states of the variable are proved on this repository's own tags, in the Outcome |
 | the create race, `HEAD` 404, and `GET` 304 rows of `tools/spike/condwrite` pass on DigitalOcean Spaces with the current build | 004 | done on 2026-09-11 against the production Spaces bucket in fra1 with the current build: the create race applied 20 of 20 rounds, 20 x 200 and 300 x 412 with no transport error, `HEAD` on an absent key answered 404 and on a present one 200 with the ETag `GET` agrees with, and `GET If-None-Match: <current>` answered 304 while a stale one answered 200. Recorded in [the spike](../docs/spikes/2026-09-06-conditional-writes.md) with the two absences it also confirms, `PUT If-Match` and the conditional `CopyObject` |
-| `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 | done on 2026-09-11 against `v0.1.1`, with `deploy-v0.1.1.tar.gz` and the two published images and no checkout on the path of any command. It reached a push and a clone that read it back, after eight prose defects the walk found and fixed; spec 018's Outcome holds the list. The SSH half of the page could not be walked, because the page on `main` is newer than the newest archive, which is the open row there |
+| `docs/install.md` walked on a fresh kind cluster from the release artifacts alone, reaching a push without another document | 018 | done on 2026-10-07 against `v0.14.0`, the whole page and the SSH half for the first time, with the verified `deploy-v0.14.0.tar.gz`, the page inside it, and no checkout on the path of any command: a key registered, a clone and a push over `ssh://git@127.0.0.1:30022`, and the push read back over SSH and HTTPS, after nine prose findings the walk fixed. The walk before it, on 2026-09-11 against `v0.1.1`, reached HTTPS alone after eight. Spec 018's Outcome holds both lists |
 
 ## Not in this spec
 

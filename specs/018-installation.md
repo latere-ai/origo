@@ -13,7 +13,7 @@ depends_on:
 affects: [deploy/, docs/install.md, docs/configuration.md, docs/api.md, docs/README.md, tools/apidoc/, tools/specindex/, cmd/origod/, internal/config/, tools/docs/, Makefile, .github/workflows/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-07
 author: changkun
 ---
 
@@ -323,7 +323,7 @@ table below names.
 | the document's blocks run with nothing set and with an operator's variables set, and the second path never reaches the example stack's issuer | walked by hand on 2026-09-10 against a local node with the stubs of spec 013, once with nothing set and once with the token, the repository id, the owner, and the slug set through the document's own variables, which are the page's and not the node's; the `install` job walks the first path on every push | passing by hand; the job is the standing proof of the first path |
 | every `sh` block of `docs/install.md` parses and every link and `deploy/` path it names exists | `tools/docs`, `TestInstallDocumentIsWellFormed` | passing |
 | `ORIGO_TOKEN_KEY` comes from the Secret `origod-token-key` and from nowhere else, in every workload that runs `origod` | `cmd/origod`, `TestSigningKeyHasOneSource` | passing |
-| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | walked on 2026-09-11 against `v0.1.1`. It reached a push and a clone that read it back over HTTPS, after the eight defects below were fixed and the page was walked a second time from a fresh cluster. The SSH half did not hold because the page and the archive did not travel together; the archive now carries the page, which closes it |
+| a maintainer reaches a successful push following `docs/install.md` on a fresh cluster without another document | spec 017's release checklist, done once per release by hand | walked on 2026-09-11 against `v0.1.1`. It reached a push and a clone that read it back over HTTPS, after the eight defects below were fixed and the page was walked a second time from a fresh cluster. The SSH half did not hold then because the page and the archive did not travel together. It was walked on 2026-10-07 against `v0.14.0`, the archive's own page with no checkout, to a clone and a push over `ssh://git@127.0.0.1:30022` that read back over SSH and HTTPS, after the nine findings of that walk were fixed and the page was walked again from a fresh cluster |
 
 Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 `internal/config` 98.9%, `tools/configdoc` 93.8%, `tools/apidoc` 94.6%,
@@ -402,8 +402,8 @@ Coverage of the packages this spec touched: `cmd/origod` 92.6%,
 | Pending | Closed by | State |
 |---|---|---|
 | `install-release`: `docs/install.md` walked against the published images and the published `deploy-<version>.tar.gz` on a bare cluster, ending in `TestContract` | the first `v*` tag | closed by the tag run 34461460766 of `v0.1.0` |
-| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | closed for the HTTPS path by the walk of 2026-09-11 against `v0.1.1`, recorded below. The next release's notes carry the checklist entry; `v0.1.1`'s were already published |
-| the same walk reaching an SSH clone | a release whose `deploy-<version>.tar.gz` carries the SSH overlay, or a change that ships the page and the manifests together | closed 2026-09-11 by the second: `tools/release/deploy-archive.sh` packs `docs/install.md` beside `deploy/`, and `deploy_archive_test.sh` fails without it, so the page a reader follows is the page of the release they hold |
+| a maintainer walking the prose to a successful push on a fresh cluster | spec 017's release checklist at the first release, recorded in the release notes | closed for the HTTPS path by the walk of 2026-09-11 against `v0.1.1`, and for SSH by the walk of 2026-10-07 against `v0.14.0`, both recorded below. The release after `v0.14.0` carries the second in its notes through the changelog's `Unreleased` section |
+| the same walk reaching an SSH clone | a release whose `deploy-<version>.tar.gz` carries the SSH overlay, or a change that ships the page and the manifests together | closed 2026-09-11 by the second: `tools/release/deploy-archive.sh` packs `docs/install.md` beside `deploy/`, and `deploy_archive_test.sh` fails without it, so the page a reader follows is the page of the release they hold. Walked on 2026-10-07 from `deploy-v0.14.0.tar.gz`, to a clone and a push over SSH |
 
 ### The walk of 2026-09-11
 
@@ -508,6 +508,115 @@ runs:
 
 So the criterion holds with one retry, which the page now names and
 tells the reader to make.
+
+### The walk of 2026-10-07
+
+The SSH half, walked against `v0.14.0`, the newest published release
+(`v0.15.0` was being cut and had no release yet).
+`deploy-v0.14.0.tar.gz` was checked the way `docs/upgrades/README.md`
+says, `cosign verify-blob` on `checksums.txt`, its line for the
+archive, `sha256sum -c`, and `cosign verify` on
+`ghcr.io/latere-ai/origod:v0.14.0`, then the page's own `curl` and
+`tar` ran in an empty directory, and the `install.md` inside the
+archive was followed with no checkout on the path of any command. The
+machine was macOS on arm64 with podman 6.0.2 (libkrun, rootful, 8 CPUs,
+3.7 GiB shared with other containers) and kind 0.33.0 at Kubernetes
+1.37.0. kind picked Podman by itself, because `docker` there is only a
+shell alias, so `KIND_EXPERIMENTAL_PROVIDER` was not needed. Cilium
+1.18.0 started under podman this time, where the walk of 2026-09-11
+fell back to kind's own plugin, so the overlay ran its three nodes
+behind Cilium as the install jobs do. The one change to a command:
+`kind create cluster` also got `--kubeconfig` naming the file the page
+exports, and Helm kept its repository list in the walk directory.
+
+Every block ran as written and the page reached its end: the seven
+`ok` lines of `origod check`, `{"version":"v0.14.0","commit":"6d50fa0",...}`,
+`created 6d90b8fb-770b-4386-9ddd-0823baf23b04`, `the installation
+serves a clone and a push`, and `the installation serves a clone over
+SSH`. The page stops there, so the walk went on by hand with the same
+key and `GIT_SSH_COMMAND`: a commit pushed over SSH (`9be7275..03d6ca8
+main -> main`) and read back by a second SSH clone and an HTTPS clone,
+both at `03d6ca8`. The ED25519 key `ssh-keyscan` read matched the
+fingerprint step 5 printed.
+
+Nine findings, each what the page said, what happened, and the change:
+
+1. **The SSH walkthrough never pushed.** It cloned and stopped, so the
+   page and both install jobs proved a push over HTTPS and only a read
+   over SSH. A new block pushes over SSH and reads the commit back over
+   HTTPS, so the jobs prove an SSH push on every push and every tag.
+2. **The example key was a second subject.** Step 2 tells a key
+   endpoint to return the `<issuer>|<sub>` an HTTPS request carries for
+   the same person; the walkthrough registered the key under a bare
+   `install-doc`. The node logged the HTTPS push under
+   `http://origo-stubs.origo.svc:8081|install-doc` and the SSH push
+   under `install-doc`. It passed only because the stub authorizer
+   allows every subject; the built-in owner policy would refuse it. The
+   block reads the example issuer's name from its discovery document
+   and registers `<issuer>|install-doc`, and the second walk logged
+   both pushes under the one subject. The comment on
+   `internal/sshd`'s `Answer.Subject` still described the bare `sub` of
+   the contract before spec 028 and now says the same.
+3. **A comparison the page could not make.** It said to compare what
+   `ssh-keyscan` prints against step 5's fingerprint, but the block
+   sends the keys to the known hosts file and the errors to
+   `/dev/null`, so it prints nothing, and the walk compared by hand.
+   The block now runs `ssh-keygen -lf` on what it read and the
+   paragraph names the `ED25519` line.
+4. **Dead links in the archive.** The packed page linked
+   `upgrades/README.md`, `operations.md`, `configuration.md`,
+   `authorizer.md`, `api.md`, and `migration.md` relative to itself and
+   named `test/stubs/authorizer` and `test/stubs/sshkeys` "in this
+   repository". None of the eight is in the archive. `deploy-archive.sh`
+   rewrites every relative link to its file at the tag in
+   `ORIGO_REPOSITORY`, which the release workflow sets, so a fork's page
+   links to the fork; it refuses a link with no target in the tree, and
+   `deploy_archive_test.sh` fails on a relative link left in the packed
+   page. The two stubs are links now. `TestInstallDocumentIsWellFormed`
+   cannot catch this class, because it resolves a link against the
+   checkout.
+5. **Private keys left behind, and a copy with no source.** Step 4
+   removes its key file and then says to keep a copy. Step 5 says to
+   keep a copy and left both private host keys in a `mktemp -d`
+   directory it never removed; the walk found them under
+   `/var/folders`. Both blocks now remove what they wrote, and both
+   paragraphs say the Secret is the only copy and name the `kubectl get
+   secret` that prints it.
+6. **Step 5 is not optional on the throwaway cluster.** The page said
+   an installation that never sets `ORIGO_SSH_ADDR` runs as it would
+   without the step, but the example overlay sets it and mounts
+   `origod-ssh-host-key` on every pod. With the Secret deleted, a pod
+   of the second walk sat in `ContainerCreating` on `MountVolume.SetUp
+   failed for volume "ssh-host-key" : secret "origod-ssh-host-key" not
+   found`. The step says so, and the failure row for a missing Secret
+   names it and `origod-ssh-keys`. Step 5 had also never said where
+   `origod-ssh-keys` comes from or what the host key volume looks like;
+   it names the Secret and points at `deploy/examples/kind/origod.yaml`
+   for the volume.
+7. **Step 3 described the example overlay wrongly.** It said the
+   overlay carries both of step 3's Secrets. It carries neither and
+   sets the variables on its pods, so `kubectl get secrets` on the walk's
+   cluster listed `origod-token-key` and `origod-ssh-host-key` alone.
+   The overlay's own comments still named `origod-token-key` as the one
+   Secret it does not carry, which SSH made two. All three now say what
+   is there.
+8. **No word on verifying the archive.** The page fetches the archive
+   with `curl` and applies it, and never says the release is signed;
+   the walk verified it from `docs/upgrades/README.md`. "Get the
+   manifests" links that section now.
+9. **Smaller.** The failure table's `kubectl logs` and `kubectl
+   describe` named no namespace, which the page sets nowhere else; and
+   the cluster section says which engine kind uses and how to choose
+   Podman when Docker is also installed.
+
+The edited page was then walked from a second fresh cluster with the
+`v0.14.0` manifests, through `tools/docs/run-blocks.sh` the way the
+install jobs run it: all fifteen `sh` blocks passed, ending in
+`registered SHA256:sMPu/9KQ... for
+http://origo-stubs.origo.svc:8081|install-doc`, the two host key
+fingerprints with the ED25519 one equal to step 5's, `the installation
+serves a clone over SSH`, and `the installation serves a push over SSH,
+and HTTPS reads it back`. Both clusters were deleted after their walks.
 
 ### What the software would have to do
 
