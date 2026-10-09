@@ -69,11 +69,11 @@ Host *
 }
 
 func splitAddr(addr string) (host, port string, err error) {
-	i := strings.LastIndex(addr, ":")
-	if i < 0 {
+	host, port, ok := strings.CutLast(addr, ":")
+	if !ok {
 		return "", "", fmt.Errorf("sshd: %q is not host:port", addr)
 	}
-	return addr[:i], addr[i+1:], nil
+	return host, port, nil
 }
 
 // git runs the client git against a working directory with the fixture's
