@@ -27,6 +27,12 @@ cover:
       runs the built binary as a subprocess and therefore attributes no
       coverage to it, and every decision behind them is covered in
       internal/origocli
+    test/stubs/origo: >-
+      the contract stub other repositories test against, which is test
+      code itself: the suite in test/conformance runs against it
+      (TestStubConforms), so what it stubs is proved there. Its uncovered
+      lines are t.Fatal after constructors that cannot fail with the
+      stub's own inputs, which no test can reach.
 
 spec:
   status:
