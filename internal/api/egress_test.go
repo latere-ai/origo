@@ -469,18 +469,20 @@ func TestEgressProxyFollowsRedirectsAndRefusesConnect(t *testing.T) {
 		t.Fatalf("redirect loop: %d", resp.StatusCode)
 	}
 	// CONNECT is refused and opens nothing; a request without the
-	// credential is 407; a relative request is 400.
-	raw, err := net.Dial("tcp", p.listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.Close() })
+	// credential is 407; a relative request is 400. Each request has a
+	// connection of its own: net/http closes a connection after a
+	// CONNECT, refused or not.
 	target := "127.0.0.1:" + refusedLn.port()
 	for _, req := range []string{
 		"CONNECT " + target + " HTTP/1.1\r\nHost: " + target + "\r\nProxy-Authorization: Basic " + basic(p.credential) + "\r\n\r\n",
 		"GET " + via(first.URL) + "/hop HTTP/1.1\r\nHost: " + first.Listener.Addr().String() + "\r\n\r\n",
 		"GET /hop HTTP/1.1\r\nHost: " + first.Listener.Addr().String() + "\r\nProxy-Authorization: Basic " + basic(p.credential) + "\r\n\r\n",
 	} {
+		raw, err := net.Dial("tcp", p.listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = raw.Close() })
 		if _, err := io.WriteString(raw, req); err != nil {
 			t.Fatal(err)
 		}
