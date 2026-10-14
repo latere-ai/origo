@@ -9,7 +9,7 @@ depends_on:
 affects: [internal/placement/, internal/repo/, internal/wal/, internal/config/, cmd/origod/, deploy/, deploy/examples/kind/, Makefile, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-02
+updated: 2026-10-14
 author: changkun
 ---
 
@@ -111,9 +111,11 @@ below `seq` schedules one background catch-up (an `Acquire` for writing
 that returns at once) so the next request finds the copy current, at
 most one catch-up per repository per second whatever the datagram rate,
 which bounds what a flood from a node that holds the secret can cost
-(spec 016). A datagram that fails to parse, carries another version, or
-names a repository the node does not hold is dropped and counted the
-same way. The MAC authenticates membership and nothing more: gossip
+(spec 016). A catch-up that finds the repository deleted evicts the
+copy and succeeds, since an evicted copy is what current means for a
+deleted repository. A datagram that fails to parse, carries another
+version, or names a repository the node does not hold is dropped and
+counted the same way. The MAC authenticates membership and nothing more: gossip
 grants no read and no write, the currency check still decides what is
 served, and a lost packet costs one `HEAD` that answers 200 instead of
 404 on the next read. `origo_gossip_packets_total{direction}` counts
@@ -571,3 +573,10 @@ carried the autoscaler at 2 to 32, while the overlay has carried 2 to
 8 since it moved into the hosted installation's cluster, for the reason its file
 gives; and the item for spec 006 still said the sweeper deleted index
 objects, which 006 removed the same day. Both read as the tree stands.
+
+Amended on 2026-10-14: a catch-up that finds the repository deleted
+succeeds. The cache evicted the copy, as `applyNewest` does for any
+delete, but `CacheHolder.CatchUp` returned `repo: deleted`, and every
+announcement of a delete logged "catch-up after an announcement failed"
+on each node holding a copy; production on `v0.16.0` logged it 11 times
+in a week. `TestCatchUpOfADeletedRepositorySucceeds` is the regression.

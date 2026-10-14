@@ -22,6 +22,10 @@ committed: the commit log already holds that.
   written is dropped on the next sweep. Before, the compaction node
   tried it every ten minutes for a day, failing each time with
   `repo: deleted` and counting a failed compaction.
+- Deleting a repository no longer logs a warning, "catch-up after an
+  announcement failed", on every other node that held a copy. Those
+  nodes drop their copy as before; the warning reported that as a
+  failure.
 
 ### Security
 

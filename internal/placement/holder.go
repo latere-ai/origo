@@ -5,6 +5,7 @@ package placement
 
 import (
 	"context"
+	"errors"
 
 	"latere.ai/x/origo/internal/repo"
 )
@@ -19,9 +20,14 @@ type CacheHolder struct {
 // Held reports the sequence the local copy holds.
 func (h CacheHolder) Held(id string) (uint64, bool) { return h.Cache.Held(id) }
 
-// CatchUp brings the copy current and releases it.
+// CatchUp brings the copy current and releases it. A repository the
+// newest index marks deleted is a catch-up that succeeded: the cache
+// evicted the copy, which is what current means for a deleted one.
 func (h CacheHolder) CatchUp(ctx context.Context, id string) error {
 	_, release, err := h.Cache.Acquire(ctx, id, true)
+	if errors.Is(err, repo.ErrDeleted) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

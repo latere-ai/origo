@@ -219,3 +219,26 @@ func metricsText(reg *pkgmetrics.Registry) string {
 	reg.WritePrometheus(&text)
 	return text.String()
 }
+
+// TestCatchUpOfADeletedRepositorySucceeds is the regression for the
+// warning a node logged after every announcement of a delete: the
+// catch-up evicts the copy, which is its result, not a failure.
+func TestCatchUpOfADeletedRepositorySucceeds(t *testing.T) {
+	ctx := context.Background()
+	h := newCacheHarness(t, 1)
+	id := h.ids[0]
+	h.acquire(id)
+	ix, _, err := h.log.Newest(ctx, id, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.log.Commit(ctx, id, ix, wal.Entry{Kind: wal.KindDelete, Deleted: true}, func(context.Context, *wal.Index) error { return errors.New("raced") }); err != nil {
+		t.Fatal(err)
+	}
+	if err := (CacheHolder{Cache: h.cache}).CatchUp(ctx, id); err != nil {
+		t.Fatalf("the catch-up of a deleted repository: %v", err)
+	}
+	if h.held(id) {
+		t.Fatal("the copy of a deleted repository is still held")
+	}
+}
