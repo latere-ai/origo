@@ -7,7 +7,7 @@ depends_on:
 affects: [internal/wal/, internal/repo/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: large
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-10-14
 author: changkun
 ---
 
@@ -130,8 +130,10 @@ once; a pack is read once for the hash and once per upload attempt.
 ### Index object
 
 `index/<n>` is the complete state after entry `n`, at most 64 MiB for the
-parser and under 1 MiB by design (compaction, spec 006, folds entries
-before the list grows past it):
+parser. Its entries and packs stay under 1 MiB by design (compaction,
+spec 006, folds entries before the list grows past it); the reference
+map grows with the repository's references, which no compaction
+shrinks:
 
 ```json
 {"v": 1, "seq": 1043, "entry": "wal/000000001043.9f3c1a7be2d40c55.entry",
@@ -316,9 +318,9 @@ An index object is never deleted because the currency check is `HEAD
 index/<n+1>` and a 404 means current: a warm node holding `index/<n>`
 below a truncation point would read the 404 left by a deleted
 `index/<n+1>` as proof its copy was current and serve stale references.
-One small object per push, bounded by 1 MiB, is the cheaper side of
-that trade. Spec 006 removed the rule from `internal/wal/sweep.go`
-with the `Indexes` count of `SweepReport`, and owns the criterion.
+One object per push, its entries and packs bounded by 1 MiB, is the
+cheaper side of that trade. Spec 006 removed the rule from
+`internal/wal/sweep.go` with the `Indexes` count of `SweepReport`, and owns the criterion.
 
 A reader that holds a swept sequence is below `compacted_through` and
 rebuilds from packs, which is step 2 of materialization.
@@ -339,7 +341,7 @@ transaction).
 |---|---|
 | single push | one entry, at most 2 GiB, the largest single `PUT` every provider accepts; enforced by spec 012 |
 | repository | 50 GiB by default, per the authorizer's `quota_bytes` (spec 007, 012) |
-| index object | 1 MiB by design; compaction (spec 006) runs before it can grow past this; 64 MiB parser limit |
+| index object | 1 MiB by design for the entries and packs; compaction (spec 006) runs before they grow past this; the reference map grows with the references and no compaction shrinks it; 64 MiB parser limit |
 | entry write | acknowledged after object storage returns 200; `Content-MD5` set |
 | commit | acknowledged after the create of `index/<n+1>` returns 200 |
 

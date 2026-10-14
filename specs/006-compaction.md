@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/compact/, internal/wal/, internal/httpgit/, cmd/origod/, test/e2e/]
 effort: medium
 created: 2026-09-06
-updated: 2026-09-11
+updated: 2026-10-14
 author: changkun
 ---
 
@@ -48,13 +48,18 @@ against the newest index the commit produced:
 |---|---|
 | entries since compaction | `len(entries) > 64` |
 | bytes of those entries | sum of `pack_bytes` over `entries` > 256 MiB |
-| size of the index object | > 512 KiB |
+| size of the index object without its reference map | > 512 KiB |
 
 The byte threshold reads `pack_bytes` off each row of the index
 object's `entries` list (spec 004, Index object), which is what the
 index carries for it: `size_bytes` is the listed packs plus that sum
 and cannot be split back into the two, and summing the entry headers
 instead would cost one `GET` per entry on every push.
+
+The size threshold leaves out the reference map, because a compaction
+copies it forward unchanged. Counted, a repository with about 5 000
+references, one branch per agent run for instance, crossed it on every
+push and every sweep, and no compaction could bring it back under.
 
 When any of them holds, the primary schedules the compaction in the
 background and returns; a node that is not the primary creates the
@@ -217,9 +222,9 @@ index/<n+1>` and a 404 means current. A warm node holding `index/<n>`
 below a truncation point would read the 404 left by a deleted
 `index/<n+1>` as proof that its copy is current and would serve stale
 references for as long as it held the copy. Keeping the objects is the
-cheaper side of the trade: an index object is one small object per
-push, bounded by 1 MiB (spec 004), against a check that would otherwise
-need a second round trip or a mutable marker. Spec 004's Sweeper table
+cheaper side of the trade: an index object is one object per push,
+its entries and packs bounded by 1 MiB (spec 004), against a check
+that would otherwise need a second round trip or a mutable marker. Spec 004's Sweeper table
 carries the same three rows; this spec's builder removed the index
 rule from `internal/wal/sweep.go`, which nothing had reached because
 `compacted_through` was 0 until this spec landed, and with it the
@@ -454,3 +459,17 @@ object and its sweep rules as written, the slot seam wired to the
 node's semaphore, and every named test present. Three sentences still
 spoke as if the spec were unbuilt, in the Current state, the Procedure,
 and the Truncation section; they read as the tree stands now.
+
+The size threshold is amended on 2026-10-14: it measures the index
+object without its reference map. As built, `Crossed` encoded the whole
+object, and `TestCrossedThresholds` asserted that 6 000 references
+crossed. A compaction copies the reference map forward unchanged, so a
+repository with about 5 000 references crossed after every push and on
+every sweep of its primary, and each run repacked and committed a
+`compact` entry that left the index as large as before. The threshold
+was meant to keep the entries and packs small, which is what a
+compaction can change. `TestCrossedLeavesOutTheReferenceMap` is the
+regression, and `TestCrossedThresholds` now crosses on a packs list
+above 512 KiB instead. Spec 004's Index object and Limits table said the
+whole object stays under 1 MiB by design; they now say the reference
+map is not bounded by compaction. The status does not move.

@@ -34,8 +34,9 @@ const (
 	// MaxEntryBytes is the sum of pack_bytes over those entries above
 	// which a compaction is scheduled.
 	MaxEntryBytes = 256 << 20
-	// MaxIndexBytes is the size of the index object above which a
-	// compaction is scheduled; spec 004 designs for 1 MiB.
+	// MaxIndexBytes is the size of the index object without its
+	// reference map above which a compaction is scheduled; spec 004
+	// designs for 1 MiB.
 	MaxIndexBytes = 512 << 10
 
 	// RunDeadline bounds one whole run, the repack included, in place of
@@ -226,14 +227,21 @@ func (m *Manager) isPrimary(id string) bool { return m.Primary(id) == m.node }
 
 // Crossed reports whether an index object crosses a threshold of spec
 // 006: too many entries, too many pack bytes in them, or an index object
-// too large.
+// too large without its reference map. The reference map is left out
+// because a compaction copies it forward unchanged: counted, a
+// repository with enough references would cross on every push and every
+// sweep, and no compaction could bring it back under.
 func Crossed(ix *wal.Index) bool {
 	if len(ix.Entries) > MaxEntries || ix.EntriesBytes() > MaxEntryBytes {
 		return true
 	}
 	// The encoder fills the empty collections, so it runs on a copy: the
-	// index this reads is the one a request holds.
-	body, err := wal.EncodeIndex(ix.Clone())
+	// index this reads is the one a request holds. The encoder only
+	// assigns the copy's fields, so a shallow copy is enough and the
+	// reference map is never cloned.
+	c := *ix
+	c.Refs = nil
+	body, err := wal.EncodeIndex(&c)
 	return err == nil && len(body) > MaxIndexBytes
 }
 

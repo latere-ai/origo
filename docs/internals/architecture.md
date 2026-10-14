@@ -214,9 +214,10 @@ copy idle for 24 hours goes regardless of pressure.
 
 A repository that takes many pushes accumulates many small entries.
 Its primary compacts when the entries since the last compaction pass
-64, their packs pass 256 MiB, or the index object passes 512 KiB. It
-repacks geometrically in its local copy, uploads the resulting packs
-under `packs/`, and commits a `compact` entry whose index lists them.
+64, their packs pass 256 MiB, or the index object without its
+reference map passes 512 KiB. It repacks geometrically in its local
+copy, uploads the resulting packs under `packs/`, and commits a
+`compact` entry whose index lists them.
 Every other node downloads those packs on its next catch-up instead of
 repacking. A node that is not the primary never compacts; `POST .../gc`
 on such a node writes `gc/<id>` and the primary's sweep, every 10

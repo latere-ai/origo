@@ -68,16 +68,40 @@ func TestCrossedThresholds(t *testing.T) {
 		t.Fatal("the byte threshold did not cross")
 	}
 	big := base.Clone()
-	big.Refs = map[string]string{}
-	for i := range 6000 {
-		big.Refs["refs/heads/branch-"+strings.Repeat("x", 40)+wal.SeqString(uint64(i))] = strings.Repeat("a", 40) //nolint:gosec // a test index
+	for i := range 8000 {
+		big.Packs = append(big.Packs, "packs/"+strings.Repeat("a", 52)+wal.SeqString(uint64(i))+".pack") //nolint:gosec // a test index
 	}
 	if !Crossed(big) {
-		t.Fatal("an index object above 512 KiB did not cross")
+		t.Fatal("an index object above 512 KiB without its references did not cross")
 	}
 	// The check never mutates the index a request holds.
 	if base.Entries != nil || base.Packs != nil {
 		t.Fatal("Crossed filled the index it read")
+	}
+}
+
+// TestCrossedLeavesOutTheReferenceMap is the regression for a
+// repository with one branch per agent run: 6 000 references make an
+// index object above 512 KiB that a compaction copies forward
+// unchanged, so counting them crossed on every push and every sweep.
+func TestCrossedLeavesOutTheReferenceMap(t *testing.T) {
+	ix := &wal.Index{V: wal.Version, Seq: 7, CompactedThrough: 6, Refs: map[string]string{}}
+	ix.Entries = []wal.IndexEntry{{Seq: 7, Kind: wal.KindCompact}}
+	for i := range 6000 {
+		ix.Refs["refs/heads/agent/run-"+strings.Repeat("x", 36)+wal.SeqString(uint64(i))] = strings.Repeat("a", 40) //nolint:gosec // a test index
+	}
+	body, err := wal.EncodeIndex(ix.Clone())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= MaxIndexBytes {
+		t.Fatalf("the fixture is %d bytes, not above the threshold", len(body))
+	}
+	if Crossed(ix) {
+		t.Fatal("an index of references alone crossed a threshold no compaction can bring it under")
+	}
+	if len(ix.Refs) != 6000 {
+		t.Fatalf("Crossed changed the reference map it read: %d references", len(ix.Refs))
 	}
 }
 

@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- A repository with about 5 000 references or more, such as one branch
+  per agent run, no longer starts a compaction after every push and on
+  every ten-minute sweep. The index size threshold now leaves out the
+  reference map, which a compaction copies forward unchanged and so
+  could never bring back under the threshold. Each of those runs
+  repacked the repository and wrote another log entry for nothing.
+
 ### Security
 
 - Built with Go 1.27.2 and golang.org/x/net v0.60.0, which fix GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
