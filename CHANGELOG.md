@@ -18,6 +18,10 @@ committed: the commit log already holds that.
   reference map, which a compaction copies forward unchanged and so
   could never bring back under the threshold. Each of those runs
   repacked the repository and wrote another log entry for nothing.
+- A compaction request for a repository deleted after the request was
+  written is dropped on the next sweep. Before, the compaction node
+  tried it every ten minutes for a day, failing each time with
+  `repo: deleted` and counting a failed compaction.
 
 ### Security
 

@@ -476,3 +476,27 @@ func TestUploadReportsAMissingPack(t *testing.T) {
 		t.Fatal("a pack that is not on disk was accepted")
 	}
 }
+
+// TestSweepDropsTheRequestOfADeletedRepository is the regression for a
+// repository deleted while its request waited: the log still holds it
+// for undelete, so the purge rule did not apply, and the primary's run
+// failed with repo.ErrDeleted once per sweep until RequestMaxAge.
+func TestSweepDropsTheRequestOfADeletedRepository(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	ix := h.pushes(2)
+	if _, err := h.log.Commit(ctx, repoA, ix, wal.Entry{Kind: wal.KindDelete, Deleted: true}, func(context.Context, *wal.Index) error { return errors.New("raced") }); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.request(ctx, repoA, ReasonThreshold); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := h.m.Sweep(ctx)
+	if err != nil || rep.Expired != 1 || rep.Requested != 0 {
+		t.Fatalf("the sweep over a deleted repository's request: %+v, %v", rep, err)
+	}
+	if _, err := h.m.ReadRequest(ctx, repoA); !errors.Is(err, wal.ErrNotFound) {
+		t.Fatalf("the request survived: %v", err)
+	}
+	h.wantMetrics(`origo_compactions_total{result="error"} 0`)
+}

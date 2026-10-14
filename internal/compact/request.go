@@ -137,10 +137,12 @@ func (m *Manager) Sweep(ctx context.Context) (SweepReport, error) {
 			rep.Expired++
 			continue
 		}
-		// A request for a repository the log no longer holds, left by a
-		// purge (spec 004), is dropped by any node: the run would only
-		// fail, once per sweep, for the whole day of RequestMaxAge.
-		if _, _, err := m.log.Newest(ctx, id, 0, false); errors.Is(err, wal.ErrNotFound) {
+		// A request for a deleted repository is dropped by any node,
+		// whether the log still holds it for undelete or a purge (spec
+		// 004) removed it: the run would only fail, once per sweep, for
+		// the whole day of RequestMaxAge. A push after an undelete writes
+		// a fresh one.
+		if ix, _, err := m.log.Newest(ctx, id, 0, false); errors.Is(err, wal.ErrNotFound) || (err == nil && ix.DeletedAt != nil) {
 			if err := m.log.Store().Delete(ctx, m.requestKey(id)); err != nil {
 				return rep, err
 			}

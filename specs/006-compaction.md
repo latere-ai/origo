@@ -109,10 +109,11 @@ listed id leaves it. A request is therefore acted on within 10 minutes
 while the primary is up; the compaction sweep on any node deletes a
 request object older than 24 hours, which only a primary that never
 ran leaves behind, and the next push through any node writes a fresh
-one. Any node's sweep also drops the request of a repository the log
-no longer holds: a purge (spec 004) removes the repository and leaves
-the request under `origo/gc/`, where it would otherwise fail one run
-per sweep for a whole day.
+one. Any node's sweep also drops the request of a deleted repository,
+whether the log still holds it for undelete or a purge (spec 004)
+removed it: the request stays under `origo/gc/`, where it would
+otherwise fail one run per sweep for a whole day. A push after an
+undelete writes a fresh one.
 
 ### Procedure
 
@@ -473,3 +474,12 @@ regression, and `TestCrossedThresholds` now crosses on a packs list
 above 512 KiB instead. Spec 004's Index object and Limits table said the
 whole object stays under 1 MiB by design; they now say the reference
 map is not bounded by compaction. The status does not move.
+
+The request rule is amended the same day: a sweep drops the request of
+a repository deleted and still held for undelete, not only of a purged
+one. The built sweep checked for a missing log alone, so a request that
+outlived a delete made the primary's run fail with `repo: deleted` once
+per sweep until the request expired. Production showed it on
+`v0.16.0`: two deleted repositories, 265 failed runs in a day, and no
+other compaction errors. `TestSweepDropsTheRequestOfADeletedRepository`
+is the regression.
