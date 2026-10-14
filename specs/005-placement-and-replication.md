@@ -576,7 +576,7 @@ objects, which 006 removed the same day. Both read as the tree stands.
 
 Amended on 2026-10-14: a catch-up that finds the repository deleted
 succeeds. The cache evicted the copy, as `applyNewest` does for any
-delete, but `CacheHolder.CatchUp` returned `repo: deleted`, and every
+delete, but `CacheHolder.CatchUp` returned `repo.ErrDeleted`, and every
 announcement of a delete logged "catch-up after an announcement failed"
 on each node holding a copy; production on `v0.16.0` logged it 11 times
 in a week. `TestCatchUpOfADeletedRepositorySucceeds` is the regression.

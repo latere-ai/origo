@@ -478,7 +478,7 @@ map is not bounded by compaction. The status does not move.
 The request rule is amended the same day: a sweep drops the request of
 a repository deleted and still held for undelete, not only of a purged
 one. The built sweep checked for a missing log alone, so a request that
-outlived a delete made the primary's run fail with `repo: deleted` once
+outlived a delete made the primary's run fail with `repo.ErrDeleted` once
 per sweep until the request expired. Production showed it on
 `v0.16.0`: two deleted repositories, 265 failed runs in a day, and no
 other compaction errors. `TestSweepDropsTheRequestOfADeletedRepository`
