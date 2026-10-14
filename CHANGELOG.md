@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.1 - 2026-10-14
+
 ### Fixed
 
 - A repository with about 5 000 references or more, such as one branch
