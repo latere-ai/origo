@@ -92,6 +92,7 @@ for the dependents themselves.
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at the shared origin beside the git host | small | complete | 007, 026, 027, 028 |
 | [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
 | [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | complete | 007, 026, 028, 029, 030 |
+| [032](032-forks.md) | Forks: a repository that starts from another's history without copying it | large | drafted | 001, 003, 004, 006, 007, 010, 012, 016, 017, 019, 028 |
 
 ## Dependency graph
 
@@ -1083,10 +1084,10 @@ name, or when a spec names something no spec defines.
 | error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
 | error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030 |
-| error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025 |
+| error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025, 032 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
 | error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026, 031 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026, 031, 032 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 003, 021 |
@@ -1099,9 +1100,9 @@ name, or when a spec names something no spec defines.
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
 | error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 013, 014, 020, 021 |
-| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026 |
-| error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025 |
+| error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021, 032 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026, 032 |
+| error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025, 032 |
 | error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
 | error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028, 029, 030 |
 | variable | `ORIGO_ADMIN_SUBJECTS` | [028](028-authorizer-contract-2.md) | - |
@@ -1162,8 +1163,8 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_SSH_KEYS_URL` | [024](024-ssh-access.md) | 002, 013, 028 |
 | variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 013, 015 |
 | variable | `ORIGO_STORAGE_TIMEOUT` | [002](002-repository-scaffold.md) | 012, 013, 015 |
-| variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004 |
-| variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006 |
+| variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004, 032 |
+| variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006, 032 |
 | variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 012, 013, 014, 021, 025 |
 | variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 013, 021 |
 | variable | `ORIGO_TEST_S3_BUCKET` | [002](002-repository-scaffold.md) | 013 |
@@ -1206,7 +1207,7 @@ name, or when a spec names something no spec defines.
 | metric | `origo_ssh_sessions_total` | [024](024-ssh-access.md) | - |
 | metric | `origo_stale_responses_total` | [011](011-observability.md) | 015 |
 | metric | `origo_storage_breaker_state` | [011](011-observability.md) | 015 |
-| metric | `origo_storage_bytes` | [011](011-observability.md) | 019 |
+| metric | `origo_storage_bytes` | [011](011-observability.md) | 019, 032 |
 | metric | `origo_storage_ops_total` | [011](011-observability.md) | 015 |
 | metric | `origo_storage_seconds` | [011](011-observability.md) | 015 |
 | metric | `origo_wal_commit_conflicts_total` | [011](011-observability.md) | 004 |
@@ -1248,7 +1249,7 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 025, 026, 027, 028, 030 |
 | endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
 | endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028 |
-| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026 |
+| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026, 032 |
 | endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025 |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
