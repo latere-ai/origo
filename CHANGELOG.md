@@ -18,6 +18,12 @@ committed: the commit log already holds that.
   on top of it and cleared the deletion, so the repository reappeared
   and was never purged. That write is now refused: git push reports
   `repo_not_found`, and the API answers 404.
+- A commit made by the commits, merge, cherry-pick, or revert endpoint
+  keeps the trailers its message ends with, such as `Signed-off-by:`.
+  Origo's `Origo-Subject:` trailer now joins that trailer block instead
+  of starting a paragraph of its own, which made git read the message's
+  own trailers as body text. A picked commit that already names the
+  same subject gets no second `Origo-Subject:` line.
 
 ## v0.16.1 - 2026-10-14
 

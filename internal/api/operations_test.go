@@ -1073,3 +1073,49 @@ func TestCreateBranchRefusesADirectoryFileConflict(t *testing.T) {
 		t.Fatal("refDirectoryConflict")
 	}
 }
+
+// TestMessageJoinsTheTrailerBlock covers where the subject's trailer
+// goes: into the message's own trailer block when it ends in one, so git
+// still parses that block, once per subject, and into a paragraph of its
+// own otherwise.
+func TestMessageJoinsTheTrailerBlock(t *testing.T) {
+	o := &operation{subject: "alice"}
+	for _, c := range []struct{ name, body, want string }{
+		{"title alone", "Fix it", "Fix it\n\nOrigo-Subject: alice\n"},
+		{"a title shaped like a trailer", "Signed-off-by: Ada", "Signed-off-by: Ada\n\nOrigo-Subject: alice\n"},
+		{"prose last", "Fix it\n\nBecause.\n", "Fix it\n\nBecause.\n\nOrigo-Subject: alice\n"},
+		{"a trailer block", "Fix it\n\nSigned-off-by: Ada <ada@example.com>", "Fix it\n\nSigned-off-by: Ada <ada@example.com>\nOrigo-Subject: alice\n"},
+		{"a continuation line", "Fix it\n\nNote: one\n  two", "Fix it\n\nNote: one\n  two\nOrigo-Subject: alice\n"},
+		{"the same subject", "Fix it\n\nOrigo-Subject: alice\n", "Fix it\n\nOrigo-Subject: alice\n"},
+		{"another subject", "Fix it\n\nOrigo-Subject: bob", "Fix it\n\nOrigo-Subject: bob\nOrigo-Subject: alice\n"},
+		{"prose in the last paragraph", "Fix it\n\nsee below\nKey: v", "Fix it\n\nsee below\nKey: v\n\nOrigo-Subject: alice\n"},
+	} {
+		if got := o.message(c.body); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestCommitsKeepsTheMessagesTrailers covers the same rule through git:
+// a message that ends in a trailer block of its own keeps it, and the
+// read API, which parses trailers with git, answers both in order.
+func TestCommitsKeepsTheMessagesTrailers(t *testing.T) {
+	h := newHarness(t)
+	o := seedOps(t, h, repoA)
+	body := `{"branch":"main","expected_head":"` + o.main + `",` + author +
+		`,"message":"Signed\n\nSigned-off-by: Ada <ada@example.com>","changes":[{"path":"s.txt","content":"` + b64("s\n") + `"}]}`
+	status, out := o.post("commits", body)
+	if status != 201 {
+		t.Fatalf("commits: %d %v", status, out)
+	}
+	trailers, _ := o.commit(out["commit"].(string))["trailers"].([]any)
+	var got []string
+	for _, tr := range trailers {
+		m := tr.(map[string]any)
+		got = append(got, fmt.Sprint(m["key"])+": "+fmt.Sprint(m["value"]))
+	}
+	want := "Signed-off-by: Ada <ada@example.com>|Origo-Subject: alice"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("trailers %q, want %s", got, want)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -281,12 +282,50 @@ func (o *operation) commitTree(tree, message string, parents ...string) (string,
 }
 
 // message is the commit message with the trailer that records who the
-// operation was made for.
+// operation was made for. When the message already ends in a trailer
+// block, the trailer joins that block, because git parses only the last
+// paragraph as trailers and a paragraph of its own would hide the
+// message's own (a Signed-off-by, or the trailer of a picked commit).
+// A block that already names the same subject is left as it is.
 func (o *operation) message(body string) string {
-	var b strings.Builder
-	b.WriteString(strings.TrimRight(body, "\n"))
-	b.WriteString("\n\nOrigo-Subject: " + o.subject + "\n")
-	return b.String()
+	body = strings.TrimRight(body, "\n")
+	trailer := "Origo-Subject: " + o.subject
+	if block := trailerBlock(body); block != nil {
+		if slices.Contains(block, trailer) {
+			return body + "\n"
+		}
+		return body + "\n" + trailer + "\n"
+	}
+	return body + "\n\n" + trailer + "\n"
+}
+
+// trailerLine is a line git reads as a trailer: a token of letters,
+// digits, and hyphens, then the separator.
+var trailerLine = regexp.MustCompile(`^[A-Za-z0-9-]+[ \t]*:`)
+
+// trailerBlock is the message's last paragraph when every line of it is
+// a trailer or a continuation of one, and nil otherwise. The first
+// paragraph is the title and is never a trailer block, as in git.
+func trailerBlock(body string) []string {
+	lines := strings.Split(body, "\n")
+	start := len(lines)
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
+		start--
+	}
+	title := slices.ContainsFunc(lines[:start], func(l string) bool { return strings.TrimSpace(l) != "" })
+	if start == len(lines) || !title {
+		return nil
+	}
+	block := lines[start:]
+	if !trailerLine.MatchString(block[0]) {
+		return nil
+	}
+	for _, l := range block[1:] {
+		if !trailerLine.MatchString(l) && !strings.HasPrefix(l, " ") && !strings.HasPrefix(l, "\t") {
+			return nil
+		}
+	}
+	return block
 }
 
 // commits builds one commit from the request's changes: the parent's
