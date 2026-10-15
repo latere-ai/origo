@@ -773,6 +773,10 @@ func (h *Handler) commit(ctx context.Context, id string, rp *repo.Repo, refs []w
 	})
 	if err != nil {
 		h.rejected.Inc(nil)
+		if errors.Is(err, wal.ErrDeleted) {
+			h.logger.InfoContext(ctx, "push refused", "repo", id, "code", contract.CodeRepoNotFound, "subject", auth.Subject(ctx))
+			return nil, "reject " + contract.Line(contract.CodeRepoNotFound)
+		}
 		if conflict, ok := errors.AsType[*wal.ConflictError](err); ok {
 			h.logger.InfoContext(ctx, "push refused", "repo", id, "code", contract.CodeNonFastForward, "ref", conflict.Ref, "expected", conflict.Expected, "actual", conflict.Actual, "subject", auth.Subject(ctx))
 			return nil, "reject " + contract.Line(contract.CodeNonFastForward)

@@ -731,6 +731,10 @@ func (o *operation) fail(err error) {
 		re.Write(o.w)
 		return
 	}
+	if errors.Is(err, wal.ErrDeleted) {
+		notFound(o.w, o.id)
+		return
+	}
 	if conflict, ok := errors.AsType[*wal.ConflictError](err); ok {
 		expected := conflict.Expected
 		nonFastForward(o.w, conflict.Ref, &expected, conflict.Actual)

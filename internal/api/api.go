@@ -460,6 +460,10 @@ func (h *Handler) patch(w http.ResponseWriter, r *http.Request) {
 			Ref: "HEAD", Old: ix.Refs["HEAD"], New: "ref: refs/heads/" + *req.DefaultBranch,
 		}}}
 		c, err := h.log.Commit(r.Context(), m.ID, ix, entry, noCatchUp)
+		if errors.Is(err, wal.ErrDeleted) {
+			notFound(w, m.ID)
+			return
+		}
 		if err != nil {
 			h.storageError(w, r, err)
 			return

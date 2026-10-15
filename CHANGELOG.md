@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- Deleting a repository while a push, a server-side operation, or a
+  default branch change was in flight could bring the repository back.
+  When the delete won the race to the log, the other write was applied
+  on top of it and cleared the deletion, so the repository reappeared
+  and was never purged. That write is now refused: git push reports
+  `repo_not_found`, and the API answers 404.
+
 ## v0.16.1 - 2026-10-14
 
 ### Fixed

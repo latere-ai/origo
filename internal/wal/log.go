@@ -398,6 +398,11 @@ func short(s string) string {
 // ErrContended is returned when a commit lost more rounds than allowed.
 var ErrContended = errors.New("wal: commit lost too many rounds to other writers")
 
+// ErrDeleted is returned when a push entry lost its round to a delete:
+// replaying it on top would clear deleted_at and bring the repository
+// back, which only an undelete may do.
+var ErrDeleted = errors.New("wal: repository deleted")
+
 // Committed is the outcome of a commit.
 type Committed struct {
 	Index *Index
@@ -475,6 +480,12 @@ func (l *Log) Commit(ctx context.Context, repo string, base *Index, e Entry, cat
 			case rerr == nil && stored.Entry == key:
 				won = true
 			case rerr == nil:
+				// A push entry clears deleted_at, so one written over a
+				// delete that won the round would undo it. An undelete
+				// starts from a deleted base and is not refused here.
+				if e.Kind == KindPush && base.DeletedAt == nil && stored.DeletedAt != nil {
+					return nil, ErrDeleted
+				}
 				if err := catchUp(ctx, stored); err != nil {
 					return nil, err
 				}

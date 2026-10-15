@@ -207,7 +207,7 @@ Exact values of `internal/wal.Log.Commit`:
 | Value | Setting |
 |---|---|
 | transaction check | before any write and again after every lost round: `old` of every reference must equal the held index's value, all zeros for an absent reference; a mismatch is `ConflictError{Ref, Expected, Actual}`, counted on `origo_wal_commit_conflicts_total` |
-| lost round | the writer reads `index/<n+1>` back after any failed create (412 or transport error); if `entry` names its own key it won; otherwise it applies the stored index through the caller's `catchUp`, counts `origo_wal_commit_retries_total`, and replays at `n+2` |
+| lost round | the writer reads `index/<n+1>` back after any failed create (412 or transport error); if `entry` names its own key it won; otherwise it applies the stored index through the caller's `catchUp`, counts `origo_wal_commit_retries_total`, and replays at `n+2`. A `push` entry whose base was not deleted and whose stored index sets `deleted_at` does not replay: it returns `wal.ErrDeleted`, because a `push` entry clears `deleted_at` and only an undelete may |
 | pause between rounds | `retry.Policy{Base: 1ms, Max: 16ms, Jitter: 1}` from `latere.ai/x/pkg/retry`: doubled per consecutive loss, capped at 16 ms, fully jittered, so losers of one round do not replay in step |
 | rounds | at most 4096 per commit, then `ErrContended`; every lost round is a sequence another writer committed, so a live repository never reaches it |
 | after the win | `origo_wal_commits_total` increments and `index/latest` is written; a failed hint write is a warning, not an error |
@@ -333,7 +333,10 @@ once, every other node evicts on its next currency check, and every node
 answers 404 from then on. The
 sweeper purges the prefix after the hold unless a later index object
 cleared `deleted_at` (`undelete` commits a `push` entry with an empty
-transaction).
+transaction). A push, a server-side operation, or a default branch
+change that loses its round to a delete is refused rather than replayed
+over it: git push reports `repo_not_found` for the push, and the route
+answers 404 `repo_not_found`.
 
 ### Sizes
 

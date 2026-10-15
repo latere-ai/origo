@@ -569,3 +569,38 @@ func TestHeadCheckIsLabeledAndCommitsAreAnnounced(t *testing.T) {
 		t.Fatalf("announced %s", got)
 	}
 }
+
+// TestAPushThatLostItsRoundToADeleteIsRefused covers a push whose round
+// a delete won, one push later than the index it started from: replaying
+// it over the delete would clear deleted_at, so it refuses with
+// ErrDeleted and the delete stays the newest index. An undelete starts
+// from the deleted index and still lands.
+func TestAPushThatLostItsRoundToADeleteIsRefused(t *testing.T) {
+	ctx := context.Background()
+	l := newTestLog(t, NewMemStore())
+	base := createRepo(t, l, repoA)
+	other, err := l.Commit(ctx, repoA, base, push("refs/heads/other", ZeroSHA, sha(1)), noCatchUp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	del, err := l.Commit(ctx, repoA, other.Index, Entry{Kind: KindDelete, Deleted: true}, noCatchUp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var caughtUp []uint64
+	_, err = l.Commit(ctx, repoA, base, push("refs/heads/main", ZeroSHA, sha(2)), func(_ context.Context, ix *Index) error {
+		caughtUp = append(caughtUp, ix.Seq)
+		return nil
+	})
+	if !errors.Is(err, ErrDeleted) || len(caughtUp) != 1 || caughtUp[0] != other.Index.Seq {
+		t.Fatalf("push over a delete: %v, caught up to %v", err, caughtUp)
+	}
+	newest, _, err := l.Newest(ctx, repoA, 0, false)
+	if err != nil || newest.Seq != del.Index.Seq || newest.DeletedAt == nil {
+		t.Fatalf("newest %+v, %v: the delete must stay the newest index", newest, err)
+	}
+	un, err := l.Commit(ctx, repoA, del.Index, Entry{Kind: KindPush}, noCatchUp)
+	if err != nil || un.Index.DeletedAt != nil {
+		t.Fatalf("undelete: %+v, %v", un, err)
+	}
+}
