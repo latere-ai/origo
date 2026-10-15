@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.2 - 2026-10-16
+
 ### Fixed
 
 - Deleting a repository while a push, a server-side operation, or a
