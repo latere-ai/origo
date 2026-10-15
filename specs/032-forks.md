@@ -14,10 +14,11 @@ depends_on:
   - specs/017-release-and-versioning.md
   - specs/019-repository-administration.md
   - specs/028-authorizer-contract-2.md
+  - specs/041-randomized-simulation.md
 affects: [internal/wal/, internal/repo/, internal/compact/, internal/api/, internal/lfs/, internal/limits/, api/openapi.yaml, docs/api.md, docs/internals/architecture.md, test/conformance/, CHANGELOG.md, specs/001-architecture.md, specs/003-protocol-contract.md, specs/004-write-ahead-log.md, specs/006-compaction.md, specs/016-security-and-threat-model.md, specs/017-release-and-versioning.md, specs/019-repository-administration.md, specs/README.md]
 effort: large
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-15
 author: changkun
 ---
 

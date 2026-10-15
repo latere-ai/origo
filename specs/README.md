@@ -92,7 +92,18 @@ for the dependents themselves.
 | [029](029-the-api-at-the-platform-origin.md) | The API at the platform origin: /v1/repos answers at the shared origin beside the git host | small | complete | 007, 026, 027, 028 |
 | [030](030-the-openapi-document.md) | The OpenAPI document: the surface as a machine-readable contract, generated from the specs | medium | complete | 003, 018, 029 |
 | [031](031-directory-cursor.md) | Directory cursor: the node seals the authorizer's cursor, and the directory stays a page | small | complete | 007, 026, 028, 029, 030 |
-| [032](032-forks.md) | Forks: a repository that starts from another's history without copying it | large | drafted | 001, 003, 004, 006, 007, 010, 012, 016, 017, 019, 028 |
+| [032](032-forks.md) | Forks: a repository that starts from another's history without copying it | large | drafted | 001, 003, 004, 006, 007, 010, 012, 016, 017, 019, 028, 041 |
+| [033](033-hidden-references.md) | Hidden references: namespaces a fetching client is not shown, while pushes and fetches by id keep working | small | drafted | 002, 003, 004, 009, 012, 019, 024 |
+| [034](034-batched-pushes.md) | Batched pushes: concurrent pushes to one repository share one log commit | large | drafted | 001, 003, 004, 005, 008, 011, 012, 015, 017, 024, 041 |
+| [035](035-commit-graph-and-bitmaps.md) | Commit-graph and bitmaps: compaction writes git's history indexes once and every node installs them | medium | drafted | 004, 005, 006, 009, 017, 019 |
+| [036](036-bundle-uris.md) | Bundle URIs: the bulk of a large clone comes from the bucket | large | drafted | 003, 006, 010, 012, 016, 019, 024 |
+| [037](037-compare-status-and-stat.md) | Compare status and stat: the merge base, ahead and behind, and per-file counts as JSON | medium | drafted | 003, 009, 012, 021, 025 |
+| [038](038-rebase-merges.md) | Rebase merges: the merge endpoint replays a branch's commits onto the target's tip | medium | drafted | 008, 012, 018, 020, 021, 025 |
+| [039](039-blame.md) | Blame: which commit last changed each line of a file, on the read API | medium | drafted | 009, 012, 035 |
+| [040](040-host-neutral-api-profile.md) | Host-neutral API profile: the read and write routes any git host can serve alike, marked and checkable | medium | drafted | 002, 003, 009, 017, 020, 021, 030 |
+| [041](041-randomized-simulation.md) | Randomized simulation: seeded runs of several nodes against a faulty bucket, with the log's invariants checked after every step | large | drafted | 001, 004, 005, 006, 013, 015, 019 |
+| [042](042-immutable-object-reads.md) | Immutable object reads: a read named by a full object id keeps its ETag and may be cached | small | drafted | 009, 019, 025 |
+| [043](043-partial-clones-in-the-agent-skill.md) | Partial clones in the agent skill: when to clone, with which filter, and how to fetch history in one request | small | drafted | 003, 007, 012, 025 |
 
 ## Dependency graph
 
@@ -919,22 +930,17 @@ consumer needs it.
 
 Each was filed as a feature request on this repository and closed as
 not planned on 2026-10-07, because no consumer needs it yet. The issue
-linked from each item is reopened when one does.
+linked from each item is reopened when one does. Two items have since
+become drafted specs: batching concurrent pushes into one commit
+([#5](https://github.com/latere-ai/origo/issues/5)) is spec 034, and
+the stat mode on compare
+([#8](https://github.com/latere-ai/origo/issues/8)) is part of spec 037.
 
-- Batching concurrent pushes to one repository into one commit, for a
-  repository busier than the ten pushes per second one commit per push
-  allows (spec 005 scopes it out;
-  [#5](https://github.com/latere-ai/origo/issues/5)).
 - Creating tags and other references from a request (spec 020 scopes
   it out; [#6](https://github.com/latere-ai/origo/issues/6)).
 - A shallow first import with a later deepen, for a repository larger
   than one import budget (spec 014 scopes it out;
   [#7](https://github.com/latere-ai/origo/issues/7)).
-- A stat mode on `GET /v1/repos/{id}/compare/{base}...{head}`, answering
-  the per-file added and deleted counts without the patch. Spec 025
-  parses them out of the diff on the client for now, which spends the
-  bytes on the wire that a stat mode would not send
-  ([#8](https://github.com/latere-ai/origo/issues/8)).
 - Commit search: an author filter on `GET /v1/repos/{id}/commits`, and
   a content search over a repository. Spec 009 scopes search out and
   spec 025 refuses to synthesize either on the client; its command
@@ -1081,30 +1087,30 @@ name, or when a spec names something no spec defines.
 | Kind | Name | Owner | Also named in |
 |---|---|---|---|
 | error code | `authorizer_unavailable` | [007](007-authentication-and-delegation.md) | 003, 010, 012, 016, 021, 025, 026, 028, 031 |
-| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025 |
+| error code | `blob_too_large` | [009](009-read-api-and-archive.md) | 003, 021, 025, 039, 040 |
 | error code | `directory_unsupported` | [026](026-repository-directory.md) | 003, 021, 025 |
-| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030 |
+| error code | `forbidden` | [003](003-protocol-contract.md) | 007, 010, 019, 020, 021, 024, 025, 026, 028, 030, 040 |
 | error code | `gone` | [019](019-repository-administration.md) | 003, 004, 021, 025, 032 |
 | error code | `import_not_found` | [019](019-repository-administration.md) | 003, 021 |
-| error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026, 031, 032 |
+| error code | `invalid_change` | [020](020-server-side-git-operations.md) | 003, 021, 025, 038, 040 |
+| error code | `invalid_request` | [003](003-protocol-contract.md) | 007, 009, 010, 012, 014, 016, 019, 020, 021, 022, 024, 025, 026, 031, 032, 037, 038, 039, 040 |
 | error code | `lfs_locks_unsupported` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_mismatch` | [010](010-lfs.md) | 003, 021 |
 | error code | `lfs_object_not_stored` | [010](010-lfs.md) | 003, 021 |
-| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021, 025 |
-| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 012, 020, 021, 025 |
-| error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021, 025 |
-| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021, 024, 025 |
-| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 015, 019, 020, 021, 024, 025, 030 |
-| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 019, 020, 021, 025 |
+| error code | `merge_conflict` | [020](020-server-side-git-operations.md) | 003, 021, 025, 038, 040 |
+| error code | `non_fast_forward` | [003](003-protocol-contract.md) | 012, 020, 021, 025, 034, 038, 040, 041 |
+| error code | `operation_timeout` | [009](009-read-api-and-archive.md) | 003, 012, 020, 021, 025, 037, 039, 040 |
+| error code | `over_quota` | [003](003-protocol-contract.md) | 010, 012, 020, 021, 024, 025, 034, 040, 041 |
+| error code | `rate_limited` | [003](003-protocol-contract.md) | 009, 010, 012, 015, 019, 020, 021, 024, 025, 030, 039, 040 |
+| error code | `ref_not_found` | [003](003-protocol-contract.md) | 009, 019, 020, 021, 025, 037, 038, 039, 040, 042 |
 | error code | `repo_exists` | [003](003-protocol-contract.md) | 019, 021 |
-| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025 |
+| error code | `repo_frozen` | [019](019-repository-administration.md) | 003, 012, 020, 021, 025, 040 |
 | error code | `repo_importing` | [019](019-repository-administration.md) | 003, 013, 014, 020, 021 |
 | error code | `repo_not_empty` | [019](019-repository-administration.md) | 003, 014, 021, 032 |
-| error code | `repo_not_found` | [003](003-protocol-contract.md) | 007, 010, 011, 021, 025, 026, 032 |
-| error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025, 032 |
-| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027 |
-| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028, 029, 030 |
+| error code | `repo_not_found` | [003](003-protocol-contract.md) | 004, 007, 010, 011, 021, 025, 026, 032, 034, 040, 041 |
+| error code | `repository_unavailable` | [015](015-degraded-storage.md) | 003, 005, 017, 021, 025, 032, 034, 041 |
+| error code | `storage_unavailable` | [003](003-protocol-contract.md) | 004, 005, 009, 010, 012, 013, 015, 017, 018, 020, 021, 024, 025, 027, 034, 040, 041 |
+| error code | `unauthenticated` | [003](003-protocol-contract.md) | 002, 007, 010, 021, 025, 027, 028, 029, 030, 040 |
 | variable | `ORIGO_ADMIN_SUBJECTS` | [028](028-authorizer-contract-2.md) | - |
 | variable | `ORIGO_ANONYMOUS_READ` | [027](027-anonymous-read.md) | 002, 007, 016, 029 |
 | variable | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | [027](027-anonymous-read.md) | 002, 029 |
@@ -1114,14 +1120,14 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_CACHE_BYTES` | [002](002-repository-scaffold.md) | 005, 018 |
 | variable | `ORIGO_CHECK_SELFTEST` | [002](002-repository-scaffold.md) | 018 |
 | variable | `ORIGO_CLUSTER_CIDRS` | [002](002-repository-scaffold.md) | 013, 016 |
-| variable | `ORIGO_DATA_DIR` | [002](002-repository-scaffold.md) | 004, 005, 016, 018 |
+| variable | `ORIGO_DATA_DIR` | [002](002-repository-scaffold.md) | 004, 005, 016, 018, 036 |
 | variable | `ORIGO_DEV_TOKEN` | [002](002-repository-scaffold.md) | 003, 007, 013 |
-| variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013 |
+| variable | `ORIGO_E2E_MEASURE` | [002](002-repository-scaffold.md) | 004, 005, 006, 009, 013, 034 |
 | variable | `ORIGO_EGRESS_ALLOW` | [002](002-repository-scaffold.md) | 013, 014, 016, 019, 021 |
 | variable | `ORIGO_EGRESS_CA_BUNDLE` | [002](002-repository-scaffold.md) | 013, 014, 016, 019 |
 | variable | `ORIGO_EVENTS_SECRET` | [002](002-repository-scaffold.md) | 008, 013, 016 |
 | variable | `ORIGO_EVENTS_URL` | [002](002-repository-scaffold.md) | 003, 008, 013, 018 |
-| variable | `ORIGO_FAILPOINT` | [002](002-repository-scaffold.md) | 008 |
+| variable | `ORIGO_FAILPOINT` | [002](002-repository-scaffold.md) | 008, 041 |
 | variable | `ORIGO_GOSSIP_ADDR` | [002](002-repository-scaffold.md) | 005 |
 | variable | `ORIGO_GOSSIP_PEERS` | [002](002-repository-scaffold.md) | 005, 008, 013 |
 | variable | `ORIGO_GOSSIP_SECRET` | [002](002-repository-scaffold.md) | 005, 008, 013, 016, 018, 024 |
@@ -1133,7 +1139,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_KUBECONFIG` | [002](002-repository-scaffold.md) | 017 |
 | variable | `ORIGO_LIVE_TOKEN` | [002](002-repository-scaffold.md) | 003, 017, 019, 020, 021 |
 | variable | `ORIGO_LIVE_URL` | [002](002-repository-scaffold.md) | 003, 017, 018, 019, 020, 021 |
-| variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012 |
+| variable | `ORIGO_MAX_GIT_PROCS` | [002](002-repository-scaffold.md) | 006, 009, 012, 036, 039 |
 | variable | `ORIGO_MIGRATE_PARALLEL` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_TOKEN_ENV` | [014](014-repository-migration.md) | 002 |
 | variable | `ORIGO_MIGRATE_URL` | [014](014-repository-migration.md) | 002 |
@@ -1151,20 +1157,20 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_REPOSITORY` | [002](002-repository-scaffold.md) | 018 |
 | variable | `ORIGO_REQUESTS_PER_MINUTE` | [002](002-repository-scaffold.md) | 007, 012, 020, 024, 025 |
 | variable | `ORIGO_S3_BUCKET` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015 |
+| variable | `ORIGO_S3_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 015, 036 |
 | variable | `ORIGO_S3_KEY` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | - |
-| variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 018 |
+| variable | `ORIGO_S3_PUBLIC_ENDPOINT` | [002](002-repository-scaffold.md) | 010, 013, 018, 036 |
 | variable | `ORIGO_S3_REGION` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_S3_SECRET` | [002](002-repository-scaffold.md) | - |
 | variable | `ORIGO_SSH_ADDR` | [024](024-ssh-access.md) | 001, 002, 013, 016, 018 |
 | variable | `ORIGO_SSH_HOST_KEYS` | [024](024-ssh-access.md) | 002, 013 |
 | variable | `ORIGO_SSH_KEYS_TOKEN` | [024](024-ssh-access.md) | 002, 013 |
 | variable | `ORIGO_SSH_KEYS_URL` | [024](024-ssh-access.md) | 002, 013, 028 |
-| variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 013, 015 |
+| variable | `ORIGO_STALE_MAX` | [002](002-repository-scaffold.md) | 013, 015, 041 |
 | variable | `ORIGO_STORAGE_TIMEOUT` | [002](002-repository-scaffold.md) | 012, 013, 015 |
 | variable | `ORIGO_SWEEP_INTERVAL` | [002](002-repository-scaffold.md) | 004, 032 |
-| variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006, 032 |
+| variable | `ORIGO_SWEEP_MIN_AGE` | [002](002-repository-scaffold.md) | 004, 006, 032, 035, 036, 041 |
 | variable | `ORIGO_TEST_ADMIN_TOKEN` | [002](002-repository-scaffold.md) | 012, 013, 014, 021, 025 |
 | variable | `ORIGO_TEST_DROP_CAPABILITY` | [002](002-repository-scaffold.md) | 013, 021 |
 | variable | `ORIGO_TEST_S3_BUCKET` | [002](002-repository-scaffold.md) | 013 |
@@ -1173,10 +1179,10 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_S3_PATH_STYLE` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_REGION` | [002](002-repository-scaffold.md) | 013 |
 | variable | `ORIGO_TEST_S3_SECRET` | [002](002-repository-scaffold.md) | 013 |
-| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025 |
-| variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | - |
+| variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025, 040 |
+| variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | 043 |
 | variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025, 028, 031 |
-| variable | `ORIGO_URL` | [025](025-agent-client.md) | - |
+| variable | `ORIGO_URL` | [025](025-agent-client.md) | 043 |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |
 | metric | `origo_authorizer_seconds` | [011](011-observability.md) | 007, 024 |
@@ -1187,13 +1193,13 @@ name, or when a spec names something no spec defines.
 | metric | `origo_events_dead_total` | [011](011-observability.md) | 008 |
 | metric | `origo_events_delivered_total` | [011](011-observability.md) | 008 |
 | metric | `origo_evictions_total` | [011](011-observability.md) | 005 |
-| metric | `origo_fetches_total` | [011](011-observability.md) | - |
+| metric | `origo_fetches_total` | [011](011-observability.md) | 036 |
 | metric | `origo_gossip_packets_total` | [011](011-observability.md) | 005, 016 |
-| metric | `origo_log_integrity_errors_total` | [011](011-observability.md) | 015 |
+| metric | `origo_log_integrity_errors_total` | [011](011-observability.md) | 015, 041 |
 | metric | `origo_orphan_objects` | [011](011-observability.md) | 006, 019 |
-| metric | `origo_push_duration_seconds` | [011](011-observability.md) | 004, 008 |
+| metric | `origo_push_duration_seconds` | [011](011-observability.md) | 004, 008, 034 |
 | metric | `origo_pushes_rejected_total` | [011](011-observability.md) | - |
-| metric | `origo_pushes_total` | [011](011-observability.md) | - |
+| metric | `origo_pushes_total` | [011](011-observability.md) | 034 |
 | metric | `origo_rate_limited_total` | [011](011-observability.md) | 012, 019, 020 |
 | metric | `origo_repo_entries_applied_total` | [011](011-observability.md) | 004, 005 |
 | metric | `origo_repo_materialize_seconds` | [011](011-observability.md) | 005 |
@@ -1207,26 +1213,26 @@ name, or when a spec names something no spec defines.
 | metric | `origo_ssh_sessions_total` | [024](024-ssh-access.md) | - |
 | metric | `origo_stale_responses_total` | [011](011-observability.md) | 015 |
 | metric | `origo_storage_breaker_state` | [011](011-observability.md) | 015 |
-| metric | `origo_storage_bytes` | [011](011-observability.md) | 019, 032 |
+| metric | `origo_storage_bytes` | [011](011-observability.md) | 019, 032, 036 |
 | metric | `origo_storage_ops_total` | [011](011-observability.md) | 015 |
 | metric | `origo_storage_seconds` | [011](011-observability.md) | 015 |
 | metric | `origo_wal_commit_conflicts_total` | [011](011-observability.md) | 004 |
 | metric | `origo_wal_commit_retries_total` | [011](011-observability.md) | 004 |
-| metric | `origo_wal_commits_total` | [011](011-observability.md) | 004 |
+| metric | `origo_wal_commits_total` | [011](011-observability.md) | 004, 034 |
 | metric | `origo_wal_entry_bytes_total` | [011](011-observability.md) | - |
 | metric | `origo_wal_head_check_seconds` | [011](011-observability.md) | 004, 005, 015 |
 | event | `compacted` | [019](019-repository-administration.md) | 006 |
-| event | `deleted` | [019](019-repository-administration.md) | - |
+| event | `deleted` | [019](019-repository-administration.md) | 041 |
 | event | `frozen` | [019](019-repository-administration.md) | - |
 | event | `imported` | [019](019-repository-administration.md) | 014, 021 |
 | event | `ping` | [018](018-installation.md) | 008 |
-| event | `push` | [008](008-push-events.md) | 003, 004, 009, 019, 020, 024 |
-| event | `renamed` | [019](019-repository-administration.md) | 028 |
+| event | `push` | [008](008-push-events.md) | 003, 004, 009, 019, 020, 024, 034, 038 |
+| event | `renamed` | [019](019-repository-administration.md) | 028, 037 |
 | event | `transferred` | [019](019-repository-administration.md) | 028 |
-| event | `undeleted` | [019](019-repository-administration.md) | 008 |
+| event | `undeleted` | [019](019-repository-administration.md) | 008, 041 |
 | event | `unfrozen` | [019](019-repository-administration.md) | - |
 | event | `verified` | [014](014-repository-migration.md) | 008, 021 |
-| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028 |
+| endpoint | `DELETE /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028, 041 |
 | endpoint | `GET /` | [022](022-landing-page.md) | 002 |
 | endpoint | `GET /.well-known/jwks.json` | [007](007-authentication-and-delegation.md) | 002, 005, 016, 022 |
 | endpoint | `GET /favicon.ico` | [022](022-landing-page.md) | 002 |
@@ -1235,49 +1241,49 @@ name, or when a spec names something no spec defines.
 | endpoint | `GET /openapi.yaml` | [030](030-the-openapi-document.md) | 022 |
 | endpoint | `GET /readyz` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 030 |
 | endpoint | `GET /v1/repos` | [026](026-repository-directory.md) | 007, 025, 027, 029, 031 |
-| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026 |
-| endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | - |
-| endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025 |
-| endpoint | `GET /v1/repos/{id}/commits` | [009](009-read-api-and-archive.md) | 025 |
-| endpoint | `GET /v1/repos/{id}/commits/{sha}` | [009](009-read-api-and-archive.md) | 025 |
-| endpoint | `GET /v1/repos/{id}/compare/{base}...{head}` | [009](009-read-api-and-archive.md) | 025 |
+| endpoint | `GET /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 009, 014, 019, 021, 022, 025, 026, 043 |
+| endpoint | `GET /v1/repos/{id}/archive/{sha}.tar.gz` | [009](009-read-api-and-archive.md) | 040, 042 |
+| endpoint | `GET /v1/repos/{id}/blob/{sha}` | [009](009-read-api-and-archive.md) | 025, 037, 039, 040, 042 |
+| endpoint | `GET /v1/repos/{id}/commits` | [009](009-read-api-and-archive.md) | 025, 035, 037, 040, 042 |
+| endpoint | `GET /v1/repos/{id}/commits/{sha}` | [009](009-read-api-and-archive.md) | 025, 037, 040, 042 |
+| endpoint | `GET /v1/repos/{id}/compare/{base}...{head}` | [009](009-read-api-and-archive.md) | 025, 037, 040, 042 |
 | endpoint | `GET /v1/repos/{id}/export.bundle` | [019](019-repository-administration.md) | - |
 | endpoint | `GET /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014, 027 |
-| endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | 025 |
+| endpoint | `GET /v1/repos/{id}/refs` | [009](009-read-api-and-archive.md) | 025, 033, 040, 041, 042 |
 | endpoint | `GET /v1/repos/{id}/stats` | [019](019-repository-administration.md) | 010, 027 |
-| endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | 025 |
+| endpoint | `GET /v1/repos/{id}/tree/{sha}` | [009](009-read-api-and-archive.md) | 025, 040, 042 |
 | endpoint | `GET /version` | [002](002-repository-scaffold.md) | 003, 007, 016, 017, 022, 025, 026, 027, 028, 030 |
-| endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022 |
-| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028 |
-| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026, 032 |
-| endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025 |
-| endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025 |
+| endpoint | `GET /{repo}/info/refs` | [003](003-protocol-contract.md) | 022, 036, 040, 041 |
+| endpoint | `PATCH /v1/repos/{id}` | [003](003-protocol-contract.md) | 004, 007, 019, 028, 033, 041 |
+| endpoint | `POST /v1/repos` | [003](003-protocol-contract.md) | 005, 007, 014, 018, 019, 026, 032, 040, 041 |
+| endpoint | `POST /v1/repos/{id}/cherry-pick` | [020](020-server-side-git-operations.md) | 025, 040 |
+| endpoint | `POST /v1/repos/{id}/commits` | [020](020-server-side-git-operations.md) | 025, 040 |
 | endpoint | `POST /v1/repos/{id}/freeze` | [019](019-repository-administration.md) | - |
-| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006, 030 |
+| endpoint | `POST /v1/repos/{id}/gc` | [019](019-repository-administration.md) | 006, 030, 035 |
 | endpoint | `POST /v1/repos/{id}/import` | [019](019-repository-administration.md) | 014 |
-| endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029 |
-| endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025 |
+| endpoint | `POST /v1/repos/{id}/merge` | [020](020-server-side-git-operations.md) | 025, 029, 038, 040 |
+| endpoint | `POST /v1/repos/{id}/revert` | [020](020-server-side-git-operations.md) | 025, 040 |
 | endpoint | `POST /v1/repos/{id}/tokens` | [007](007-authentication-and-delegation.md) | 002, 003, 024, 025 |
 | endpoint | `POST /v1/repos/{id}/transfer` | [019](019-repository-administration.md) | 007, 028, 031 |
-| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 007, 019, 028 |
+| endpoint | `POST /v1/repos/{id}/undelete` | [003](003-protocol-contract.md) | 007, 019, 028, 041 |
 | endpoint | `POST /v1/repos/{id}/unfreeze` | [019](019-repository-administration.md) | - |
 | endpoint | `POST /v1/repos/{id}/verify` | [014](014-repository-migration.md) | - |
-| endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | - |
-| endpoint | `POST /{repo}/git-upload-pack` | [003](003-protocol-contract.md) | - |
+| endpoint | `POST /{repo}/git-receive-pack` | [003](003-protocol-contract.md) | 040, 041 |
+| endpoint | `POST /{repo}/git-upload-pack` | [003](003-protocol-contract.md) | 036, 040 |
 | endpoint | `POST /{repo}/info/lfs/locks` | [010](010-lfs.md) | 030 |
 | endpoint | `POST /{repo}/info/lfs/objects/batch` | [010](010-lfs.md) | 012 |
 | endpoint | `POST /{repo}/info/lfs/verify` | [010](010-lfs.md) | - |
-| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 025 |
-| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022, 028, 030 |
+| header | `Origo-Commit` | [009](009-read-api-and-archive.md) | 003, 025, 039, 040, 042 |
+| header | `Origo-Contract` | [003](003-protocol-contract.md) | 007, 017, 022, 028, 030, 040, 042 |
 | header | `Origo-Delivery` | [008](008-push-events.md) | 018 |
 | header | `Origo-Event` | [008](008-push-events.md) | 018 |
-| header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024, 026 |
+| header | `Origo-Prefer` | [005](005-placement-and-replication.md) | 003, 006, 024, 026, 034, 040 |
 | header | `Origo-Signature` | [008](008-push-events.md) | 013, 018 |
-| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 024, 025 |
-| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 025 |
+| header | `Origo-Stale` | [015](015-degraded-storage.md) | 003, 011, 024, 025, 036, 039, 040, 041 |
+| header | `Origo-Truncated` | [009](009-read-api-and-archive.md) | 003, 025, 037, 040, 042 |
 | header | `RateLimit-Limit` | [012](012-limits-and-abuse.md) | 002, 003, 021, 024, 025, 027 |
 | header | `RateLimit-Remaining` | [012](012-limits-and-abuse.md) | 002, 003, 021, 027 |
-| header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021, 024, 025 |
-| failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004 |
+| header | `Retry-After` | [003](003-protocol-contract.md) | 012, 015, 019, 020, 021, 024, 025, 040 |
+| failpoint | `commit.before-index` | [002](002-repository-scaffold.md) | 004, 034 |
 | failpoint | `events.before-enqueue` | [002](002-repository-scaffold.md) | 008 |
 <!-- specindex:end -->
