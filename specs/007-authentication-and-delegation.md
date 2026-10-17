@@ -601,9 +601,11 @@ such principal reaches it.
 An issuer's token is accepted up to the 60 second skew past its `exp`,
 so a token presented inside that window mints a bound token whose `exp`
 is already past, refused `expired` on its first use: the bound token
-ends where its minter's did, not a skew later. A push or a clone is
-authenticated once, at its first request, so one already under way
-when the bound token expires runs to its end.
+ends where its minter's did, not a skew later. The token is verified
+once per request, at its start, so a request already streaming when the
+bound token expires, such as the pack of a long push, runs to its end;
+a git operation is several requests, the ref advertisement and then the
+pack, and each later one needs a token that is still valid.
 `TestABoundTokenNeverOutlivesTheTokenThatMintedIt` covers the cap, the
 `ttl` that is shorter than the minter's life, the minter inside the
 skew and the principal with no expiry;

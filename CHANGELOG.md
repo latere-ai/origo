@@ -17,9 +17,10 @@ committed: the commit log already holds that.
   now plus `ttl` and the expiry of the token the caller presented, and
   answers that moment in `expires_at`. A token that lives fifteen minutes
   mints bound tokens that end within those fifteen minutes, whatever
-  `ttl` asks for. A push or a clone already under way when the bound
-  token expires runs to its end; read `expires_at` to know when to mint
-  again.
+  `ttl` asks for. A request already streaming when the bound token
+  expires, such as the pack of a long push, runs to its end, and the
+  next request needs a token that is still valid: read `expires_at` to
+  know when to mint again.
 
 ## v0.16.3 - 2026-10-17
 
