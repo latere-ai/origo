@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- Minting a repository-bound token also needs the access the token
+  carries: `read` for a read token, and `read` and `write` for a write
+  token, beside `admin` on the repository. A caller allowed `admin` and
+  not `write` is answered 403 `forbidden` naming `repo.write`. A caller
+  whose authorizer lets an administrator read and push sees no change.
+
 ## v0.16.2 - 2026-10-16
 
 ### Fixed

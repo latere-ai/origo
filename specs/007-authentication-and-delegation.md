@@ -8,7 +8,7 @@ depends_on:
 affects: [internal/auth/, internal/config/, internal/httpgit/, internal/api/, cmd/origod/, deploy/, Makefile, test/e2e/, test/stubs/issuer/, test/stubs/authorizer/]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-07
+updated: 2026-10-17
 author: changkun
 ---
 
@@ -560,3 +560,19 @@ The minted token is unchanged. A repository-bound token carries
 (`cmd/origod/node.go`, `TestSignerMintsAndServesItsKey`), so it is still
 verified against the local key with no fetch and accepted by the node
 that minted it and by nobody else. Rule R4 stands as written.
+
+## State on 2026-10-17: minting asks the scope's actions too
+
+A repository-bound token is decided by its scope alone, so a mint that
+asked `admin` and nothing else let a caller hand out more than it holds:
+a credential whose grants name `repo.admin` and not `repo.write` minted
+a `write` token and pushed with it. The `POST /v1/repos/{id}/tokens` row
+of the table above is amended in its action cell: after `admin`, and
+after the repository is read, the mint asks `read`, and `write` as well
+for a `write` scope, each through the same guard and in that order, and a
+deny is the guard's 403 `forbidden` naming the action it refused. An
+authorizer whose `admin` implies `read` and `write`, as a role ladder's
+does, answers both, so nothing changes for a caller who administers a
+repository outright. `TestTokensEndpointMintsRepositoryBoundTokens`
+covers the write token refused without `write`, the read token minted
+beside it, and both refused without `read`.

@@ -96,6 +96,12 @@ sends `{"allow": true}` alone is complete:
 On a creation the resource carries the id, owner, and slug the caller
 sent, so the endpoint decides from the name the caller chose.
 
+Minting a repository-bound token asks `repo.admin` and then the actions
+the token will carry: `repo.read`, and `repo.write` for a write token. An
+endpoint whose admin implies read and write answers all three alike; one
+that narrows a credential to `repo.admin` alone refuses the second
+question, and no token is minted.
+
 A request made with a repository-bound token never reaches the
 endpoint: the token's scope decides it. The one exception is a write
 under such a token, for which Origo asks for `repo.write` under the

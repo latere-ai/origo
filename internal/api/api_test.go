@@ -713,10 +713,11 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 	if err != nil || p.Subject != "alice" || p.Bound == nil || p.Bound.Repo != repoA || p.Bound.Scope != auth.ScopeRead {
 		t.Fatalf("verified: %+v, %v", p, err)
 	}
-	// Minting is an admin action on the repository, and a bound token
-	// never mints.
-	if reqs := h.authz.Requests(); reqs[len(reqs)-1].Action != "repo.admin" || reqs[len(reqs)-1].Resource.ID != repoA {
-		t.Fatalf("authorizer: %+v", reqs[len(reqs)-1])
+	// Minting is an admin action on the repository and then the scope's
+	// own, and a bound token never mints.
+	if reqs := h.authz.Requests(); len(reqs) < 2 || reqs[len(reqs)-2].Action != "repo.admin" || reqs[len(reqs)-1].Action != "repo.read" ||
+		reqs[len(reqs)-2].Resource.ID != repoA || reqs[len(reqs)-1].Resource.ID != repoA {
+		t.Fatalf("authorizer: %+v", reqs)
 	}
 	h.as(p)
 	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 403 || details(out)["reason"] != auth.ReasonScope {
@@ -738,6 +739,26 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 	if status, _ := h.do("POST", "/v1/repos/"+unknown+"/tokens", `{"scope":"write","ttl":1}`); status != 404 {
 		t.Fatalf("unknown repository: %d", status)
 	}
+	// A caller allowed to administer and not to push mints a read token
+	// and no write token, and one allowed neither read nor write mints
+	// none: the token acts by its scope alone, so the minter must hold
+	// what the scope does.
+	h.as(auth.Principal{Subject: "admin-only"})
+	h.authz.Deny(authorizer.Rule{Subject: "admin-only", Action: "repo.write"}, "grant")
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"write","ttl":60}`); status != 403 || details(out)["action"] != "repo.write" || details(out)["reason"] != "grant" {
+		t.Fatalf("a write token without write: %d %v", status, out)
+	}
+	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 201 {
+		t.Fatalf("a read token with read: %d %v", status, out)
+	}
+	h.as(auth.Principal{Subject: "admin-alone"})
+	h.authz.Deny(authorizer.Rule{Subject: "admin-alone", Action: "repo.read"}, "grant")
+	for _, scope := range []string{"read", "write"} {
+		if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"`+scope+`","ttl":60}`); status != 403 || details(out)["action"] != "repo.read" {
+			t.Fatalf("a %s token without read: %d %v", scope, status, out)
+		}
+	}
+	h.as(auth.Principal{Subject: "alice"})
 	h.do("DELETE", "/v1/repos/"+repoA, "")
 	if status, _ := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"write","ttl":3600}`); status != 404 {
 		t.Fatalf("deleted repository: %d", status)

@@ -63,7 +63,10 @@ under, and what an event names as its `pusher`.
 
 **Repository-bound tokens.** A caller with `admin` on a repository can
 mint a short-lived token for that one repository and hand it to a
-build, a bot, or an agent instead of its own credential:
+build, a bot, or an agent instead of its own credential. The caller must
+also hold what the token will do: `read` for a read token, `read` and
+`write` for a write token, so a credential narrowed to administer a
+repository mints no token that pushes to it:
 
 ```
 POST /v1/repos/{id}/tokens
@@ -182,7 +185,7 @@ the first page.
 
 | Method | Path | Action | What it does |
 |---|---|---|---|
-| POST | `/v1/repos/{id}/tokens` | `repo.admin` | mint a repository-bound token, as above |
+| POST | `/v1/repos/{id}/tokens` | `repo.admin`, then `repo.read`, and `repo.write` for a write token | mint a repository-bound token, as above |
 
 ### Git
 

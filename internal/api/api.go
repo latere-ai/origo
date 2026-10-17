@@ -538,8 +538,14 @@ type tokenRequest struct {
 }
 
 // tokens mints a repository-bound token (spec 007): action admin, then
-// the repository must exist, then the signer's own checks on the scope
-// and the lifetime.
+// the repository must exist, then each action the scope grants, then the
+// signer's own checks on the scope and the lifetime.
+//
+// The bound token is decided by its scope alone once minted, so the
+// caller must hold what the scope grants as well as admin: a credential
+// narrowed to administer a repository and not to push to it would
+// otherwise mint a write token and push. A caller whose admin implies
+// read and write, as a role ladder's does, passes both.
 func (h *Handler) tokens(w http.ResponseWriter, r *http.Request) {
 	var req tokenRequest
 	if err := decode(r, &req); err != nil {
@@ -560,12 +566,27 @@ func (h *Handler) tokens(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	for _, action := range scopeActions(scope) {
+		if _, ok := h.guard.Admit(w, r, auth.RepoRef{ID: m.ID}, action); !ok {
+			return
+		}
+	}
 	token, expires, err := h.signer.Mint(auth.FromContext(r.Context()), m.ID, scope, ttl)
 	if err != nil {
 		invalid(w, err.Error(), "")
 		return
 	}
 	httpjson.Write(w, http.StatusCreated, map[string]any{"token": token, "expires_at": expires})
+}
+
+// scopeActions are the actions a bound token of the scope performs, by
+// the guard's own scope rule: a read token reads, and a write token reads
+// and writes.
+func scopeActions(scope auth.Scope) []auth.Action {
+	if scope == auth.ScopeWrite {
+		return []auth.Action{auth.ActionRead, auth.ActionWrite}
+	}
+	return []auth.Action{auth.ActionRead}
 }
 
 // storageError answers a failure of the log: 503 repository_unavailable
