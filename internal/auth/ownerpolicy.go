@@ -71,11 +71,15 @@ func NewOwnerPolicy(admins []string, objects Objects) *OwnerPolicy {
 // Authorize decides one request against the owner policy. A storage
 // failure while looking the object up is an *Unavailable, so the policy
 // fails closed exactly as a client does on an outage.
+//
+// The grants are asked before the object is looked up. Whether a grant
+// covers a request is a function of the claims and the request alone, so
+// a key refused outside its grants gets `grant` whether the repository
+// exists, is its holder's, or is someone else's. Asked after the policy,
+// as a narrowing of its allow alone, the refusal would read `grant` for
+// a repository the holder owns and `not_owner` for one that is not there,
+// and a key narrowed to one repository could tell which names exist.
 func (o *OwnerPolicy) Authorize(ctx context.Context, req authz.Request) (Decision, error) {
-	obj, err := o.objects.Object(ctx, RepoRef{ID: req.Resource.ID, Owner: req.Resource.String("owner"), Slug: req.Resource.String("slug")})
-	if err != nil {
-		return Decision{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
-	}
 	// The grants the caller's token carries, off the envelope the guard
 	// built from the verified claims. A claim nobody can parse is no
 	// verdict: it fails closed as an *Unavailable, the way a lookup that
@@ -85,7 +89,15 @@ func (o *OwnerPolicy) Authorize(ctx context.Context, req authz.Request) (Decisio
 	if err != nil {
 		return Decision{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
 	}
-	d := authz.Restrict(authorizer.Vocabulary().Core, o.policy.Decide(req, obj), req, grants)
+	core := authorizer.Vocabulary().Core
+	d := authz.Restrict(core, authz.Decision{Allow: true}, req, grants)
+	if d.Allow {
+		obj, err := o.objects.Object(ctx, RepoRef{ID: req.Resource.ID, Owner: req.Resource.String("owner"), Slug: req.Resource.String("slug")})
+		if err != nil {
+			return Decision{}, &Unavailable{Err: fmt.Errorf("owner policy: %w", err)}
+		}
+		d = o.policy.Decide(req, obj)
+	}
 	return Decision{
 		Allow:      d.Allow,
 		Reason:     d.Reason,

@@ -17,6 +17,11 @@ committed: the commit log already holds that.
   token, beside `admin` on the repository. A caller allowed `admin` and
   not `write` is answered 403 `forbidden` naming `repo.write`. A caller
   whose authorizer lets an administrator read and push sees no change.
+- With no authorization endpoint configured, the built-in owner policy
+  checks a key's grants before it looks the repository up. A request
+  outside the key's grants is refused with the reason `grant` whether the
+  repository exists or not, where a missing repository used to answer
+  `not_owner`.
 
 ## v0.16.2 - 2026-10-16
 

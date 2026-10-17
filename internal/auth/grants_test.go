@@ -222,6 +222,46 @@ func TestTheOwnerPolicyNarrowsAScopedToken(t *testing.T) {
 	}
 }
 
+// A key refused outside its grants is refused with one answer whether the
+// repository is its holder's, someone else's, or not there, and the
+// policy looks nothing up to give it: the grants are asked first.
+func TestTheOwnerPolicyAsksTheGrantsBeforeTheObject(t *testing.T) {
+	const (
+		alice   = "https://iss|alice"
+		also    = "2b3c4d5e-6f70-4a8b-9c0d-1e2f3a4b5c6d"
+		missing = "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f"
+	)
+	lookups := 0
+	p := NewOwnerPolicy(nil, countingObjects{fakeObjects{owners: map[string]string{repoA: alice, also: alice, repoB: "https://iss|bob"}}, &lookups})
+	readMine := grant("origo:repo.read", repoA)
+	for name, id := range map[string]string{"the holder's": also, "another's": repoB, "a missing one": missing, "an unresolved name": ""} {
+		d, err := p.Authorize(context.Background(), patReq(alice, "repo.read", id, readMine))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if d.Allow || d.Reason != authz.ReasonGrant {
+			t.Errorf("%s: allow=%v reason=%q", name, d.Allow, d.Reason)
+		}
+	}
+	if lookups != 0 {
+		t.Fatalf("the policy looked %d objects up for refusals the grants decide", lookups)
+	}
+	if d, err := p.Authorize(context.Background(), patReq(alice, "repo.read", repoA, readMine)); err != nil || !d.Allow || lookups != 1 {
+		t.Fatalf("inside the grants: %+v %v, %d lookups", d, err, lookups)
+	}
+}
+
+// countingObjects counts the lookups the policy makes.
+type countingObjects struct {
+	fakeObjects
+	n *int
+}
+
+func (c countingObjects) Object(ctx context.Context, ref RepoRef) (authz.Object, error) {
+	*c.n++
+	return c.fakeObjects.Object(ctx, ref)
+}
+
 // TestTheGrantRefusalReachesTheClient is id-13's refusal row over HTTPS.
 // A key narrowed to some repositories is refused elsewhere, and the
 // reason a decision point writes for that refusal, `grant`, reaches the
