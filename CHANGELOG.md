@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.4 - 2026-10-17
+
 ### Changed
 
 - A repository-bound token never outlives the token that minted it.
