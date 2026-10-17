@@ -10,6 +10,17 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- A repository-bound token never outlives the token that minted it.
+  `POST /v1/repos/{id}/tokens` sets the token's expiry to the earlier of
+  now plus `ttl` and the expiry of the token the caller presented, and
+  answers that moment in `expires_at`. A token that lives fifteen minutes
+  mints bound tokens that end within those fifteen minutes, whatever
+  `ttl` asks for. A push or a clone already under way when the bound
+  token expires runs to its end; read `expires_at` to know when to mint
+  again.
+
 ## v0.16.3 - 2026-10-17
 
 ### Changed

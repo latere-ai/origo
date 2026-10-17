@@ -36,7 +36,8 @@ echo "repository $ORIGO_REPO"
 ```
 
 ```sh
-# A token bound to that one repository, for an hour, that may write.
+# A token bound to that one repository that may write, for up to an hour
+# and never past the moment $ADMIN itself expires.
 ORIGO_TOKEN=$(curl -sf -X POST "$ORIGO_URL/v1/repos/$ORIGO_REPO/tokens" \
 	-H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
 	-d '{"scope":"write","ttl":3600}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
