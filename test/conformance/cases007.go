@@ -65,8 +65,9 @@ func case007Tokens(t *testing.T, s *session) {
 }
 
 // case007Forbidden flips the authorizer to deny: 403 with the reason,
-// and 403 before lookup for an id that does not exist; then the actions
-// kept apart from repo.admin, each denied on a repository of its own.
+// and 403 before lookup for an id that does not exist; a mint, which asks
+// the action its token carries beside admin; then the actions kept apart
+// from repo.admin, each denied on a repository of its own.
 func case007Forbidden(t *testing.T, s *session) {
 	id := s.create(t, "deny")
 	unknown := newID(t)
@@ -79,8 +80,12 @@ func case007Forbidden(t *testing.T, s *session) {
 	expectError(t, s.call(t, "GET", "/r/"+id+".git/info/refs?service=git-upload-pack", ""), http.StatusForbidden, contract.CodeForbidden)
 	// A deny answers before the repository is looked up.
 	expectError(t, s.call(t, "GET", "/v1/repos/"+unknown, ""), http.StatusForbidden, contract.CodeForbidden)
-	// Admin is still allowed on the denied repository.
-	expectStatus(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`), http.StatusCreated)
+	// Admin is still allowed on the denied repository, and a read token is
+	// not: a mint asks the action the token carries as well as admin
+	// (spec 007, State on 2026-10-17).
+	expectStatus(t, s.call(t, "PATCH", "/v1/repos/"+id, `{"default_branch":"trunk"}`), http.StatusOK)
+	d = expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":60}`), http.StatusForbidden, contract.CodeForbidden)
+	failIf(t, d["reason"] != "not welcome" || d["action"] != "repo.read", "mint deny details: %v", d)
 	// The two ends of a repository are actions of their own (spec 028):
 	// a deny of repo.delete and repo.undelete refuses the delete and the
 	// undelete, each naming its action, and leaves every other action,
