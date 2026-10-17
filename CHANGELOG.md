@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.3 - 2026-10-17
+
 ### Changed
 
 - Minting a repository-bound token also needs the access the token
