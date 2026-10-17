@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"latere.ai/x/origo/internal/contract"
 	"latere.ai/x/origo/test/stubs/authorizer"
@@ -62,6 +63,17 @@ func case007Tokens(t *testing.T, s *session) {
 	failIf(t, d["field"] != "scope", "bad scope: %v", d)
 	d = expectError(t, s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":0}`), http.StatusBadRequest, contract.CodeInvalid)
 	failIf(t, d["field"] != "ttl", "bad ttl: %v", d)
+	// A bound token ends no later than the token that minted it, whatever
+	// the ttl asks for, and expires_at says when.
+	minter, err := expiryOf(s.target.Token)
+	if err != nil {
+		t.Fatalf("the run's token carries no readable exp: %v", err)
+	}
+	r = s.call(t, "POST", "/v1/repos/"+id+"/tokens", `{"scope":"read","ttl":3600}`)
+	expectStatus(t, r, http.StatusCreated)
+	raw, _ := r.json["expires_at"].(string)
+	ends, err := time.Parse(time.RFC3339, raw)
+	failIf(t, err != nil || ends.After(minter), "a bound token expiring %q outlives the token that minted it, which expires %s", raw, minter.UTC().Format(time.RFC3339))
 }
 
 // case007Forbidden flips the authorizer to deny: 403 with the reason,
