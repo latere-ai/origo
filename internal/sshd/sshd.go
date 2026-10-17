@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"latere.ai/x/pkg/authz"
 	pkgmetrics "latere.ai/x/pkg/metrics"
 
 	"latere.ai/x/origo/internal/auth"
@@ -499,8 +500,14 @@ func (s *Server) run(ctx context.Context, ch ssh.Channel, subject, line string) 
 		return
 	}
 	// A public key signs nothing but the session, so the subject of every
-	// call and of every entry an SSH push commits is the key's owner.
+	// call and of every entry an SSH push commits is the key's owner. The
+	// envelope carries the rendered subject's two halves as an HTTP
+	// request's does, so a policy that reads the issuer and the sub decides
+	// an SSH session as it decides the same person's token.
 	principal := auth.Principal{Subject: subject}
+	if issuer, sub, ok := authz.SplitSubject(subject); ok {
+		principal.Issuer, principal.Sub = issuer, sub
+	}
 	ctx = auth.WithPrincipal(ctx, principal)
 
 	// The name form resolves to an id before the authorizer is asked and

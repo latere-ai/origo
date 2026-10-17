@@ -200,6 +200,28 @@ func TestSSHAuthorizerDecidesTheOperation(t *testing.T) {
 	}
 }
 
+// TestSSHCarriesTheSubjectsTwoHalves: a key resolves to a rendered
+// subject, and the authorizer reads its issuer and sub apart, as it does
+// for a token, so an SSH session is decided as the same person's HTTP
+// request is.
+func TestSSHCarriesTheSubjectsTwoHalves(t *testing.T) {
+	f := newFixture(t)
+	f.create(repoA, "acme", "app")
+	const subject = "https://auth.example|u_7f3c"
+	f.register(subject)
+	f.authz.SetRules(authorizer.Rule{Subject: subject, Action: "repo.read", Allow: true})
+	if status, _, errOut := f.exec(f.mustDial(), "git-upload-pack '/acme/app.git'", strings.NewReader("0000")); status != 0 {
+		t.Fatalf("upload-pack exited %d: %s", status, errOut)
+	}
+	requests := f.authz.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("the authorizer saw %d requests, want one", len(requests))
+	}
+	if r := requests[0]; r.Subject != subject || r.Issuer != "https://auth.example" || r.Sub != "u_7f3c" {
+		t.Errorf("the envelope carried subject %q, issuer %q, sub %q", r.Subject, r.Issuer, r.Sub)
+	}
+}
+
 // TestSSHDenyBeforeLookup is the other half of the fifth criterion: on
 // an unknown name and on an unknown id the authorizer is asked before
 // any read of the repository, so a denied caller cannot tell a

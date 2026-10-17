@@ -148,14 +148,14 @@ Content-Type: application/json
 **The answer, always 200:**
 
 ```json
-{"found": true, "subject": "u_7f3c", "key_id": "k_19", "ttl": 60}
+{"found": true, "subject": "https://issuer.example|u_7f3c", "key_id": "k_19", "ttl": 60}
 {"found": false}
 ```
 
 | Field | Meaning |
 |---|---|
 | `found` | whether this key names a subject that may authenticate now; a revoked, expired, or unknown key is `false` |
-| `subject` | the effective subject, the same string the operator's OIDC issuer puts in `sub` for the same person, so one identity crosses both transports and the authorizer needs no second table |
+| `subject` | the effective subject, rendered as a token's is, `<iss>\|<sub>` with the operator's OIDC issuer and the `sub` it puts in the same person's tokens, so one identity crosses both transports and the authorizer needs no second table; the authorizer is sent its issuer and its sub apart as well, as for a token |
 | `key_id` | optional, the store's own id for the key; Origo logs it and sends it nowhere |
 | `ttl` | optional, seconds this answer may be cached, default 60, capped at 600 |
 

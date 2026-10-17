@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- An SSH session's authorizer request carries the subject's issuer and
+  sub apart, as an HTTPS request's does, where it carried the rendered
+  subject alone. An authorizer that reads `issuer` and `sub`, as the
+  hosted platform's does, now decides an SSH clone or push of a private
+  repository as it decides the same person's token.
+
 ## v0.16.3 - 2026-10-17
 
 ### Changed
