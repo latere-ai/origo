@@ -12,6 +12,7 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"latere.ai/x/pkg/authz"
 )
@@ -58,6 +59,12 @@ type Principal struct {
 	// the authorizer (Origo spec 028); the node reads none of it. Nil for
 	// the anonymous principal.
 	Claims map[string]any
+	// Expires is the token's verified exp, the moment the credential this
+	// request presents stops being accepted. A repository-bound token
+	// minted for the principal expires no later (spec 007), so revoking or
+	// ending the minting credential ends what it minted too. Zero for the
+	// anonymous principal, which presents no token.
+	Expires time.Time
 	// Bound is set on a repository-bound token.
 	Bound *Bound
 }

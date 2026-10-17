@@ -719,6 +719,21 @@ func TestTokensEndpointMintsRepositoryBoundTokens(t *testing.T) {
 		reqs[len(reqs)-2].Resource.ID != repoA || reqs[len(reqs)-1].Resource.ID != repoA {
 		t.Fatalf("authorizer: %+v", reqs)
 	}
+	// The bound token ends no later than the token that minted it, and
+	// expires_at says when: a caller whose token has five minutes left
+	// asks for an hour and is answered its five minutes.
+	ends := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Second)
+	h.as(auth.Principal{Subject: "alice", Expires: ends})
+	status, out = h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":3600}`)
+	if status != 201 {
+		t.Fatalf("mint by a short-lived token: %d %v", status, out)
+	}
+	if capped, err := time.Parse(time.RFC3339, out["expires_at"].(string)); err != nil || !capped.Equal(ends) {
+		t.Fatalf("expires_at %v for a minter expiring %v: %v", out["expires_at"], ends, err)
+	}
+	if bound, err := v.Verify(context.Background(), out["token"].(string)); err != nil || !bound.Expires.Equal(ends) {
+		t.Fatalf("the capped token verifies to %+v, %v", bound, err)
+	}
 	h.as(p)
 	if status, out := h.do("POST", "/v1/repos/"+repoA+"/tokens", `{"scope":"read","ttl":60}`); status != 403 || details(out)["reason"] != auth.ReasonScope {
 		t.Fatalf("bound token minting: %d %v", status, out)

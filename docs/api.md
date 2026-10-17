@@ -76,7 +76,12 @@ POST /v1/repos/{id}/tokens
 ```
 
 `scope` is `read` or `write`, and `write` includes read. `ttl` is 1 to
-3600 seconds. The token is signed by the installation with
+3600 seconds. The token never outlives the token that minted it:
+`expires_at` is the earlier of now plus `ttl` and the moment the
+caller's own token expires, so what a token that lives fifteen minutes
+mints ends within those fifteen minutes, and nothing a token minted
+keeps working after that token has ended. Read `expires_at` from the
+answer rather than adding `ttl` to the clock. The token is signed by the installation with
 `ORIGO_TOKEN_KEY`, its issuer is `ORIGO_PUBLIC_URL`, and its key set is
 served at `/.well-known/jwks.json`. It is decided by its scope alone:
 the authorization endpoint is never asked, it never permits an `admin`

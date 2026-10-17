@@ -390,7 +390,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	if !local {
 		subject = authz.Subject(iss, verified.Sub)
 	}
-	p := Principal{Subject: subject, Issuer: iss, Sub: verified.Sub, Claims: claims}
+	p := Principal{Subject: subject, Issuer: iss, Sub: verified.Sub, Claims: claims, Expires: unix(c.Exp)}
 	if local {
 		p.Bound = &Bound{Repo: c.Repo, Scope: Scope(c.Scope)}
 	}

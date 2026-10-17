@@ -20,7 +20,8 @@ export ORIGO_AUTHOR="Your Name <you@example.com>"    # writes only
 ```
 
 `ORIGO_TOKEN` should be a **repository-bound token**: bound to one repository,
-scoped to what you may do, and valid for at most an hour. `origo` will not mint
+scoped to what you may do, and valid for at most an hour, never longer than the
+token that minted it. `origo` will not mint
 one, because a command running in a loop should hold no path that widens its
 own access. Mint it with one call, from a token that may administer the
 repository:
@@ -41,8 +42,10 @@ under it: the installation answers `forbidden` with `action=repo.list`, because
 there is no subject-wide question a credential for one repository can ask.
 That is expected. Work with `ORIGO_REPO` set, which every other command uses.
 
-If a command answers `unauthenticated: ... reason=expired`, the hour ran out.
-Mint another and set the variable again.
+If a command answers `unauthenticated: ... reason=expired`, the token's time ran
+out: the `ttl` you asked for, or less when `$ADMIN_TOKEN` expired first. The
+mint's answer names the moment in `expires_at`. Mint another, from a token that
+is still valid, and set the variable again.
 
 ## The four pipelines
 
