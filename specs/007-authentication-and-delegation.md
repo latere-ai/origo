@@ -320,7 +320,7 @@ from the request after its first.
 
 | Method | Path | Behavior |
 |---|---|---|
-| POST | `/v1/repos/{id}/tokens` | action `admin`; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
+| POST | `/v1/repos/{id}/tokens` | action `admin`, then `read`, and `write` for a `write` scope; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
 | GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; unauthenticated like `GET /readyz` and `GET /version` (spec 002), and the only unauthenticated path that is part of the contract |
 
 The token is an ES256 JWT signed with `ORIGO_TOKEN_KEY`, a PEM-encoded
