@@ -66,7 +66,7 @@ Defined by [007 authentication and delegation](../../specs/007-authentication-an
 
 | Method | Path | Behavior |
 |---|---|---|
-| POST | `/v1/repos/{id}/tokens` | action `admin`, then `read`, and `write` for a `write` scope; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
+| POST | `/v1/repos/{id}/tokens` | action `admin`, then `read`, and `write` for a `write` scope; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`, where `expires_at` is the earlier of now + `ttl` and the `exp` of the token that minted it; 400 `invalid_request` for another scope or ttl |
 | GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; unauthenticated like `GET /readyz` and `GET /version` (spec 002), and the only unauthenticated path that is part of the contract |
 
 Defined by [009 read api and archive](../../specs/009-read-api-and-archive.md).

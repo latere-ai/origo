@@ -758,7 +758,7 @@ paths:
     post:
       operationId: postV1ReposByIdTokens
       summary: Create repository token
-      description: "action `admin`, then `read`, and `write` for a `write` scope; body `{\"scope\": \"read\"|\"write\", \"ttl\": <seconds, 1 to 3600>}`; 201 `{\"token\": \"<jwt>\", \"expires_at\": \"<RFC 3339>\"}`; 400 `invalid_request` for another scope or ttl"
+      description: "action `admin`, then `read`, and `write` for a `write` scope; body `{\"scope\": \"read\"|\"write\", \"ttl\": <seconds, 1 to 3600>}`; 201 `{\"token\": \"<jwt>\", \"expires_at\": \"<RFC 3339>\"}`, where `expires_at` is the earlier of now + `ttl` and the `exp` of the token that minted it; 400 `invalid_request` for another scope or ttl"
       tags:
       - tokens
       parameters:

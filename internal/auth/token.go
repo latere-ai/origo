@@ -73,7 +73,8 @@ func (a *Audience) UnmarshalJSON(b []byte) error {
 // that paces the fetch, the three rows of spec 007's table the shared
 // verifier does not carry (`aud` in the table's place, `sub`, and the
 // `act` the raw claims below name), the `exp` the verified-token cache
-// is bounded by, and the two fields a repository-bound token binds.
+// and a minted token's lifetime are bounded by, and the two fields a
+// repository-bound token binds.
 // Every other row is the shared verifier's. Times are Unix seconds, and
 // an absent exp decodes to zero, which is the epoch and so expired.
 type Claims struct {

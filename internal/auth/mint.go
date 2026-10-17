@@ -20,7 +20,8 @@ import (
 	"time"
 )
 
-// Token lifetimes a mint request may ask for.
+// Token lifetimes a mint request may ask for. The token itself never
+// outlives the token that minted it (Signer.Mint).
 const (
 	MinTokenTTL = time.Second
 	MaxTokenTTL = time.Hour
@@ -151,6 +152,13 @@ func (s *Signer) Public() *ecdsa.PublicKey { return &s.key.PublicKey }
 // Mint signs a token bound to repo with the scope for ttl, for the
 // minter: sub is the minter's subject, and the token carries no other
 // party.
+//
+// The token expires at now + ttl or at the minter's own Expires,
+// whichever is earlier, and the returned time is that expiry. A token
+// minted from a credential therefore stops working when that credential
+// does, so what a short-lived credential mints is never longer-lived
+// than the credential itself. A minter with no Expires, which only a
+// caller that verified no token builds, is held to ttl alone.
 func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Duration) (string, time.Time, error) {
 	if scope != ScopeRead && scope != ScopeWrite {
 		return "", time.Time{}, fmt.Errorf("scope must be %s or %s", ScopeRead, ScopeWrite)
@@ -160,6 +168,12 @@ func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Durat
 	}
 	now := s.now().UTC().Truncate(time.Second)
 	exp := now.Add(ttl)
+	if !minter.Expires.IsZero() && minter.Expires.Before(exp) {
+		// An issuer's token is accepted up to ClockSkew past its exp, so
+		// this can be at or before now: the bound token then expires with
+		// the minter's, as stated, rather than outliving it by the skew.
+		exp = minter.Expires.UTC().Truncate(time.Second)
+	}
 	claims := map[string]any{
 		"iss": s.issuer, "aud": []string{s.audience}, "sub": minter.Subject,
 		"repo": repo, "scope": string(scope), "iat": now.Unix(), "exp": exp.Unix(), "jti": newUUID(),

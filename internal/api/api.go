@@ -546,6 +546,10 @@ type tokenRequest struct {
 // narrowed to administer a repository and not to push to it would
 // otherwise mint a write token and push. A caller whose admin implies
 // read and write, as a role ladder's does, passes both.
+//
+// The answer's expires_at is the signer's: the earlier of now + ttl and
+// the expiry of the token the caller presented, so a client reads when
+// the bound token ends from the answer and not from its own ttl.
 func (h *Handler) tokens(w http.ResponseWriter, r *http.Request) {
 	var req tokenRequest
 	if err := decode(r, &req); err != nil {

@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"latere.ai/x/pkg/authkit/jwt"
+
+	"latere.ai/x/origo/test/stubs/issuer"
 )
 
 func TestParseKeyReadsTheFormsOpensslWrites(t *testing.T) {
@@ -150,5 +152,83 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 	}
 	if s2 := NewSigner(key, localIssuer, "", nil); s2.now == nil {
 		t.Fatal("default clock")
+	}
+}
+
+// A repository-bound token ends no later than the token that minted it:
+// the verifier carries the minting token's exp on the principal, and the
+// signer caps the bound token at it, so a credential that is revoked or
+// runs out takes what it minted with it. A minter whose own token lives
+// longer than the ttl gets the ttl, and the expiry the signer returns is
+// the one the token carries.
+func TestABoundTokenNeverOutlivesTheTokenThatMintedIt(t *testing.T) {
+	ctx := context.Background()
+	clk := newClock()
+	iss := issuer.New(t, issuer.WithClock(clk.Now))
+	key := newKey(t)
+	v := newVerifier(t, clk, key, iss)
+	s := NewSigner(key, localIssuer, "", clk.Now)
+	now := clk.Now()
+
+	minter := func(exp time.Time) Principal {
+		t.Helper()
+		p, err := v.Verify(ctx, iss.Mint(issuer.Claims{Sub: "alice", Exp: exp.Unix()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !p.Expires.Equal(exp) {
+			t.Fatalf("the principal expires %v, its token %v", p.Expires, exp)
+		}
+		return p
+	}
+	carried := func(tok string) time.Time {
+		t.Helper()
+		var c Claims
+		if err := jwt.DecodePayload(tok, &c); err != nil {
+			t.Fatal(err)
+		}
+		return unix(c.Exp)
+	}
+
+	// A 15-minute token asking for an hour gets what remains of its own
+	// 15 minutes.
+	short := now.Add(15 * time.Minute)
+	tok, exp, err := s.Mint(minter(short), repoA, ScopeWrite, MaxTokenTTL)
+	if err != nil || !exp.Equal(short) || !carried(tok).Equal(short) {
+		t.Fatalf("a bound token of a 15-minute minter expires %v (carrying %v), want %v: %v", exp, carried(tok), short, err)
+	}
+	p, err := v.Verify(ctx, tok)
+	if err != nil || !p.Expires.Equal(short) {
+		t.Fatalf("the capped token verifies to %+v, %v", p, err)
+	}
+	// It ends with its minter: one second past the minter's exp it is
+	// refused, where the hour asked for would still have 45 minutes.
+	clk.Advance(15*time.Minute + time.Second)
+	if _, err := newVerifier(t, clk, key).Verify(ctx, tok); !reasonIs(err, ReasonExpired) {
+		t.Fatalf("a bound token outlived its minter: %v", err)
+	}
+
+	// A minter that outlives the ttl is held to the ttl.
+	now = clk.Now()
+	_, exp, err = s.Mint(minter(now.Add(2*time.Hour)), repoA, ScopeRead, 10*time.Minute)
+	if err != nil || !exp.Equal(now.Add(10*time.Minute)) {
+		t.Fatalf("a long-lived minter's token expires %v, want the ttl's %v: %v", exp, now.Add(10*time.Minute), err)
+	}
+
+	// A token accepted within the clock skew past its exp mints a token
+	// that ends where the minter's did, which is already over.
+	late := now.Add(-30 * time.Second)
+	tok, exp, err = s.Mint(minter(late), repoA, ScopeRead, time.Minute)
+	if err != nil || !exp.Equal(late) {
+		t.Fatalf("a minter inside the skew mints a token expiring %v, want %v: %v", exp, late, err)
+	}
+	if _, err := v.Verify(ctx, tok); !reasonIs(err, ReasonExpired) {
+		t.Fatalf("a token minted past its minter's exp verified: %v", err)
+	}
+
+	// A principal no token named carries no expiry and is held to the
+	// ttl alone.
+	if _, exp, err := s.Mint(Principal{Subject: "ci"}, repoA, ScopeRead, time.Minute); err != nil || !exp.Equal(now.Add(time.Minute)) {
+		t.Fatalf("a minter with no expiry: %v, %v", exp, err)
 	}
 }

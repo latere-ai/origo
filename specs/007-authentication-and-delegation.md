@@ -320,19 +320,21 @@ from the request after its first.
 
 | Method | Path | Behavior |
 |---|---|---|
-| POST | `/v1/repos/{id}/tokens` | action `admin`, then `read`, and `write` for a `write` scope; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`; 400 `invalid_request` for another scope or ttl |
+| POST | `/v1/repos/{id}/tokens` | action `admin`, then `read`, and `write` for a `write` scope; body `{"scope": "read"\|"write", "ttl": <seconds, 1 to 3600>}`; 201 `{"token": "<jwt>", "expires_at": "<RFC 3339>"}`, where `expires_at` is the earlier of now + `ttl` and the `exp` of the token that minted it; 400 `invalid_request` for another scope or ttl |
 | GET | `/.well-known/jwks.json` | the public key set Origo signs with, no token required; unauthenticated like `GET /readyz` and `GET /version` (spec 002), and the only unauthenticated path that is part of the contract |
 
 The token is an ES256 JWT signed with `ORIGO_TOKEN_KEY`, a PEM-encoded
 ECDSA P-256 private key; `kid` is the first 16 hex characters of the
 SHA-256 of the public key's DER encoding. Claims: `iss` =
 `ORIGO_PUBLIC_URL`, `aud: ["origo"]`, `sub` = the minter's subject,
-`repo: <id>`, `scope`, `iat`, `exp`, `jti` (a UUID). A repository-bound token skips
+`repo: <id>`, `scope`, `iat`, `exp`, `jti` (a UUID). `exp` is the earlier of
+`iat` + `ttl` and the minting token's own `exp`, so a bound token never
+outlives the credential that minted it. A repository-bound token skips
 the authorizer because the decision was made at minting: `read` allows
 `read` on that repository, `write` allows `read` and `write`, neither
 allows `admin`, and any other repository is 403 `forbidden` with
 `details.reason: "token bound to another repository"`. Rotating the key
-invalidates outstanding tokens; their `ttl` bounds the damage.
+invalidates outstanding tokens; their lifetime bounds the damage.
 
 ## Not in this spec
 
@@ -576,3 +578,34 @@ does, answers both, so nothing changes for a caller who administers a
 repository outright. `TestTokensEndpointMintsRepositoryBoundTokens`
 covers the write token refused without `write`, the read token minted
 beside it, and both refused without `read`.
+
+## State on 2026-10-17: a bound token ends with the token that minted it
+
+A repository-bound token skips the authorizer, so it is only as
+revocable as its lifetime. Until this date that lifetime was the `ttl`
+alone, up to an hour, whatever the minting token's own: a credential
+that lives fifteen minutes, or one that is revoked, could leave behind
+a bound token that kept working for the rest of the hour. The
+`POST /v1/repos/{id}/tokens` row and the claims paragraph above are
+amended: the bound token's `exp` is the earlier of now + `ttl` and the
+`exp` of the token the caller presented, and the answer's `expires_at`
+is that value. The rule reads only the standard `exp` the verifier
+already checked, so it holds for every issuer an installation trusts
+and needs nothing from the authorizer.
+
+The verifier carries the checked `exp` on the principal
+(`Principal.Expires`), and `Signer.Mint` caps the token at it. A
+principal that presents no token has no expiry and is held to the `ttl`
+alone; the mint route is not one of spec 027's anonymous routes, so no
+such principal reaches it.
+An issuer's token is accepted up to the 60 second skew past its `exp`,
+so a token presented inside that window mints a bound token whose `exp`
+is already past, refused `expired` on its first use: the bound token
+ends where its minter's did, not a skew later. A push or a clone is
+authenticated once, at its first request, so one already under way
+when the bound token expires runs to its end.
+`TestABoundTokenNeverOutlivesTheTokenThatMintedIt` covers the cap, the
+`ttl` that is shorter than the minter's life, the minter inside the
+skew and the principal with no expiry;
+`TestTokensEndpointMintsRepositoryBoundTokens` covers `expires_at`, and
+spec 021's `007/tokens` case holds any installation to the rule.
