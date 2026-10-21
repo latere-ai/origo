@@ -18,6 +18,11 @@ committed: the commit log already holds that.
   `go.processor.limit` and `go.schedule.duration`, through
   `latere.ai/x/pkg` v0.106.0.
 
+### Fixed
+
+- **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
+  standard library's certificate verification that this code can reach.
+
 ## v0.16.4 - 2026-10-17
 
 ### Changed
