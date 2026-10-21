@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.5 - 2026-10-21
+
 ### Added
 
 - With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the server also exports the Go
