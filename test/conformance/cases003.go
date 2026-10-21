@@ -220,7 +220,7 @@ func case003PartialClone(t *testing.T, s *session) {
 	missing := mustGit(t, dir, "rev-list", "--objects", "--all", "--missing=print")
 	failIf(t, !strings.Contains(missing, "?"+f.blobA), "the clone holds every blob; not partial:\n%s", missing)
 	// A read fetches the blob from the server.
-	if got := mustGit(t, dir, "cat-file", "-p", f.blobA); got != "one\ntwo" {
+	if got := mustGitStdout(t, dir, "cat-file", "-p", f.blobA); got != "one\ntwo" {
 		t.Fatalf("blob through the promisor: %q", got)
 	}
 }

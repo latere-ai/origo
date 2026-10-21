@@ -558,6 +558,24 @@ func mustGit(t testing.TB, dir string, args ...string) string {
 	return strings.TrimSpace(out)
 }
 
+// mustGitStdout runs git and answers its standard output alone, for a
+// command whose output is content and which may reach the server: git
+// 2.55 and later warn on stderr that they are "redirecting" after
+// answering a 401 with the credential, though no redirect was sent.
+func mustGitStdout(t testing.TB, dir string, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = gittest.Env(dir)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	failIf(t, err != nil, "git %s: %v\n%s", strings.Join(args, " "), err, redact(stderr.String()))
+	return strings.TrimSpace(stdout.String())
+}
+
 // redact hides a credential in a clone URL git echoes back.
 func redact(out string) string {
 	var b strings.Builder
