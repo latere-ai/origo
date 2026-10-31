@@ -80,8 +80,8 @@ jobs:
       # a metric no spec defines.
       - name: Install promtool
         env:
-          PROMTOOL_TARBALL: prometheus-3.5.0.linux-amd64.tar.gz
-          PROMTOOL_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+          PROMTOOL_TARBALL: prometheus-3.15.1.linux-amd64.tar.gz
+          PROMTOOL_SHA256: 6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84
         run: |
           cd "$RUNNER_TEMP"
           curl -sSLo "$PROMTOOL_TARBALL" "https://github.com/prometheus/prometheus/releases/download/v3.15.1/$PROMTOOL_TARBALL"
