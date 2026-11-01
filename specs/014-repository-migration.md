@@ -12,7 +12,7 @@ depends_on:
 affects: [internal/api/, internal/events/, cmd/origod/, test/e2e/, docs/migration.md]
 effort: medium
 created: 2026-09-06
-updated: 2026-10-07
+updated: 2026-11-01
 author: changkun
 ---
 
@@ -80,7 +80,7 @@ stateDiagram-v2
 | importing | `POST /v1/repos/{id}/import` from the prior host's clone URL with a bearer the prior host mints for Origo (spec 019: one entry, 30 minute budget, `transfer.fsckObjects`, the source host in `ORIGO_EGRESS_ALLOW`); pushes to Origo answer `repo_importing` | keeps serving reads and writes; a write during the import is caught by verification |
 | verifying | `verify` (below) compares the two sides and records the result in `meta` | none |
 | mirrored | serves reads; writes are allowed but the prior host has not yet sent any; Origo's copy is never frozen by this protocol | keeps serving both |
-| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; the 308 target carries a token the prior host mints as the URL's user info, `https://x:<token>@<origo>/r/<id>.git/…`, because git's HTTP client drops an `Authorization` header on a redirect that changes the host and every route of Origo is authenticated. The consequence is that the token is in the redirect URL and in anything that logs one, the prior host's own access log included, so the token is a short-lived repository-bound token (spec 007) for the repository being cut over and nothing wider, and the prior host stops minting it when the redirect comes down; spec 016's threats table carries the row. Its mounts clone from Origo |
+| cut_over | nothing to do: from now on Origo's is the only writable copy | `freeze` on its own copy, a final `verify`, then its clone URLs answer HTTP 308 to Origo's URL for `info/refs` and the two service endpoints, or proxy them, for 30 days; the 308 target is Origo's URL with no credential in it, `https://<origo>/r/<id>.git/…`, and the client authenticates to Origo with its own credential. Every route of Origo is authenticated, git's HTTP client drops an `Authorization` header on a redirect that changes the host, and git takes its base for the rest of the session from the URL libcurl reports after the redirect, which a libcurl with the fix for CVE-2026-94266 reports without user info, so a token in the target would reach at most the first request and never the service request. A prior host whose clients hold no Origo credential proxies the three paths instead, presenting a short-lived repository-bound token (spec 007) it mints in an `Authorization` header and never in a URL; spec 016's threats table carries the row. Its mounts clone from Origo |
 
 A repository whose verification finds a difference is imported again
 after the operator fixes the cause. The import refuses a non-empty
@@ -272,8 +272,9 @@ host's data model.
   `TestClusterMigrationCatchesALateWrite`, in the `e2e` job of spec
   013).
 - A 308 from a stub prior host to Origo makes `git clone` and `git push`
-  against the old URL succeed against Origo with no client change
-  (proposed: `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo`).
+  against the old URL succeed against Origo for a client that holds its
+  own Origo credential, with no other client change (proposed:
+  `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo`).
 - `verified` events are delivered with the documented payload
   (proposed: `internal/events`, `TestVerifiedEventPayload`).
 - The shell blocks of `docs/migration.md`, one repository and then one
@@ -297,7 +298,7 @@ shell blocks are its own test.
 | `origod migrate` over 20 fixture repositories with parallelism 4 reaches `mirrored`, writes the documented report line with `prior_id`, reports `skipped` on a second run without importing again, exits 1 on an unreachable source naming it in `error`, and refuses a manifest id that is not a UUID before it calls Origo | `cmd/origod`, `TestMigrateBatchIsResumableAndReportsFailures` |
 | The source bearer of `verify` and of spec 019's `import` is in no log line, no process argument, and no URL | `internal/api`, `TestSourceTokenIsNeverLogged` |
 | A write on the source between import and verification is caught, and a fresh id and a second import reach `mirrored` | `test/e2e`, `TestClusterMigrationCatchesALateWrite` |
-| A 308 from a stub prior host makes `git clone` and `git push` against the old URL succeed against Origo with no client change | `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo` |
+| A 308 from a stub prior host makes `git clone` and `git push` against the old URL succeed against Origo for a client that holds its own Origo credential, with no other client change | `test/e2e`, `TestE2EOldCloneURLRedirectsToOrigo` |
 | `verified` events are delivered with the documented payload | `internal/events`, `TestVerifiedEventPayload` |
 | The shell blocks of `docs/migration.md` run unchanged against the stack and end with every repository `mirrored` | `test/e2e`, `TestClusterMigrationDocCommandsRun` |
 
@@ -373,13 +374,22 @@ refreshed.
   is down, and the source is the caller's input, so the same code
   carries it with the step in the developer register. The endpoint row
   above states it.
-- The 308 of the cut-over carries the Origo token as the redirect
-  target's user info. Git's HTTP client drops an `Authorization` header
-  on a redirect that changes the host, and every route of Origo is
-  authenticated, so a client with no Origo credential of its own is
-  asked for one and the criterion's "no client change" fails. The prior
-  host already mints the import bearer, so it mints this one too. The
-  phase table, `docs/migration.md`, and the criterion's test state it.
+- The 308 of the cut-over carries no credential, and the criterion names
+  a client that holds its own Origo credential. As first built, the
+  prior host minted the Origo token into the redirect target's user
+  info, because git's HTTP client drops an `Authorization` header on a
+  redirect that changes the host and every route of Origo is
+  authenticated. libcurl's fix for CVE-2026-94266, in Ubuntu's curl
+  8.5.0-2ubuntu10.16 and in current upstream curl, stopped reporting
+  user info in the URL git reads after a redirect, and git takes its
+  base for the rest of the session from that URL, so the token reached
+  at most the first request and the service request went out with no
+  credential; the `integration and one-node e2e tiers` job failed on
+  that from runner image 20261026 on. A client authenticates to Origo
+  with its own credential, as clients reach Origo anyway, and a prior
+  host whose clients hold none proxies the three paths with the bearer
+  in a header. The phase table, `docs/migration.md`, spec 016's threats
+  table, and the criterion's test state it.
 - A manifest line the command refuses is a usage error, exit 2, with no
   request to Origo and no report file, rather than a `failed` report
   line: the criterion says the refusal comes before Origo is called,
