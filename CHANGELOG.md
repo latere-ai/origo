@@ -10,6 +10,18 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **The migration cut-over no longer puts a token in the redirect.**
+  `docs/migration.md` told a prior host to put an Origo token in the
+  308 target's user info. Current libcurl reports a redirect target to
+  git without its user info, so git sent the token on the first request
+  at most and a clone through the old URL failed on the next one. The
+  redirect now names Origo's URL with no credential, and developers
+  authenticate to Origo with their own credential; for developers who
+  hold none, the prior host proxies the three paths and presents its
+  token in an `Authorization` header.
+
 ## v0.16.5 - 2026-10-21
 
 ### Added

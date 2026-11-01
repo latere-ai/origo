@@ -64,6 +64,20 @@ func parseMetric(t *testing.T, text, name, labels string) float64 {
 
 // gossipPair starts two nodes of the harness with each other as peers
 // under one secret, the way spec 005's two-node tests run.
+// lsRemoteV1 runs ls-remote over protocol v1 in dir and returns its
+// stdout alone. A libcurl that leaves the user info out of the URL it
+// reports after a request, as current upstream curl does, makes git
+// take a remote URL with a token in it for a redirect and print a
+// warning on stderr, which is not part of the advertisement.
+func lsRemoteV1(t *testing.T, dir, url, ref string) string {
+	t.Helper()
+	out, err := gittest.Try(dir, nil, "-c", "protocol.version=1", "ls-remote", "-q", url, ref)
+	if err != nil {
+		t.Fatalf("git ls-remote %s: %v", ref, err)
+	}
+	return out
+}
+
 func gossipPair(t *testing.T, s *stack) (*node, *node) {
 	t.Helper()
 	secret := strings.Repeat("e2e-gossip-secret-", 2)
@@ -109,7 +123,7 @@ func TestE2EGossipShortensTheCatchUp(t *testing.T) {
 	// whose currency check answers 404, because the catch-up ran before
 	// the request.
 	miss, hit := b.metric("origo_wal_head_check_seconds_count", `result="404"`), b.metric("origo_wal_head_check_seconds_count", `result="200"`)
-	if out := mustGit(t, warm, "-c", "protocol.version=1", "ls-remote", "-q", b.url(id), "refs/heads/main"); !strings.HasPrefix(out, pushed) {
+	if out := lsRemoteV1(t, warm, b.url(id), "refs/heads/main"); !strings.HasPrefix(out, pushed) {
 		t.Fatalf("ls-remote on B: %q, want %s", out, pushed)
 	}
 	if got := b.metric("origo_wal_head_check_seconds_count", `result="404"`); got != miss+1 {
@@ -135,7 +149,7 @@ func TestE2EGossipShortensTheCatchUp(t *testing.T) {
 	mustGit(t, work, "remote", "set-url", "origin", c.url(id))
 	third := commitFile(t, work, "c.txt", "three", "third")
 	mustGit(t, work, "push", "-q", "origin", "HEAD:refs/heads/main")
-	if out := mustGit(t, cold, "-c", "protocol.version=1", "ls-remote", "-q", d.url(id), "refs/heads/main"); !strings.HasPrefix(out, third) {
+	if out := lsRemoteV1(t, cold, d.url(id), "refs/heads/main"); !strings.HasPrefix(out, third) {
 		t.Fatalf("ls-remote on D: %q, want %s", out, third)
 	}
 	if got := d.metric("origo_wal_head_check_seconds_count", `result="200"`); got != hit+1 {

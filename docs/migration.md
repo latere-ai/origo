@@ -185,23 +185,27 @@ is the prior host's step, in this order:
    `<old>/git-receive-pack` to the same paths under Origo's URL, or
    proxy them. Git follows the redirect and rewrites its base for the
    rest of the session, so a clone and a push against the old URL keep
-   working with no change on any developer's machine.
+   working with no change to any developer's remote.
 
-   Put a token for Origo in the redirect target as the URL's user
-   info, `https://x:<token>@<origo>/r/<id>.git/info/refs`: every route
-   of Origo is authenticated, and git's HTTP client drops an
-   `Authorization` header on a redirect that changes the host, so a
-   client that carries no Origo credential of its own would be asked
-   for one. Minting that token is the prior host's step, as minting
-   the import bearer was.
+   Redirect to Origo's URL with no credential in it,
+   `https://<origo>/r/<id>.git/info/refs`. Every route of Origo is
+   authenticated, so after the redirect git authenticates to Origo
+   with the developer's own Origo credential, from a credential helper
+   or whatever else gives their git one. A token in the redirect target
+   does not help: git's HTTP client drops an `Authorization` header on
+   a redirect that changes the host, and current libcurl reports the
+   redirect target to git without its user info, so git sends the
+   token on the first request at most and asks for a credential on the
+   next. It would also be read by anything that records the URL.
 
-   A token in a URL is read by anything that records the URL: the
-   prior host's own access log, any proxy between it and the client,
-   and the client's history. Mint a short-lived token bound to the one
-   repository being cut over, give it only the scopes that repository
-   needs, and stop minting it when you take the redirect down. Do not
-   put a token that reaches more than one repository in a redirect.
-4. Leave the redirect up for at least 30 days, then remove it.
+   If your developers hold no Origo credential, proxy the three paths
+   instead of redirecting them: the prior host forwards each request to
+   Origo with an `Authorization: Bearer` header carrying a short-lived
+   token it mints, bound to the one repository being cut over and
+   scoped to what that repository needs. The token stays in a header
+   and never appears in a URL.
+4. Leave the redirect or the proxy up for at least 30 days, then remove
+   it.
 5. Point anything that mounts or clones the repository at Origo.
 
 From step 3 on, Origo's copy is the only writable one. Nothing on
