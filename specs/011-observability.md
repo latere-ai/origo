@@ -203,14 +203,11 @@ Entries in the log itself are the audit record (spec 004).
 
 ### Alerts
 
-A PrometheusRule `origod` in `deploy/base`, validated in the
-`specindex` job of `verify.yml`, which installs `promtool` and runs it
-beside the cross-reference test (spec 013 owns the job's other steps).
-`promtool check rules` reads a Prometheus rules file and not a
-Kubernetes object, so it fails on `apiVersion`, `kind`, `metadata`, and
-`spec`: `tools/specindex -rules` prints the rules document out of the
-object and the job checks that. The same flag fails first when an alert
-names an Origo metric no spec defines; a metric another exporter
+A PrometheusRule `origod` in `deploy/base`, validated by the `rules`
+gate of lateregate, which lifts the rules out of the object and runs
+`promtool check rules` on them. The tests of `tools/specindex`, run by
+the `specindex` job, fail when an alert names an Origo metric no spec
+defines; a metric another exporter
 publishes, the autoscaler row below, does not carry the prefix and is
 not checked.
 
@@ -272,12 +269,10 @@ defaults.
   by the method alone (`cmd/origod`, `TestRequestsAreNamedByRoute`,
   with a manual meter reader and a span recorder installed before the
   handler is built).
-- `promtool check rules` passes on the rules document `tools/specindex
-  -rules` prints out of `deploy/base/prometheusrule.yaml`, in the
-  `specindex` job of `verify.yml`, which installs `promtool` and runs
-  it, and every alert's Origo metric is in the table (proposed:
-  `tools/specindex` reads the rule file; `verify.yml`, the `specindex`
-  job).
+- `promtool check rules` passes on the rules in
+  `deploy/base/prometheusrule.yaml`, in the `rules` gate of lateregate,
+  and every alert's Origo metric is in the table (`tools/specindex`
+  reads the rule file; `verify.yml`, the `specindex` job).
 
 ## Outcome
 
@@ -294,7 +289,7 @@ node code.
 | one push produces one trace with the five spans and the repository id as an attribute | `cmd/origod`, `TestPushTrace` against an in-memory OTLP receiver |
 | the request log line carries the listed fields and no credential | `cmd/origod`, `TestRequestLogRedactsCredentials` |
 | every request is recorded and its root span named under one route name, a request no route serves under none and `unmatched` | `cmd/origod`, `TestRequestsAreNamedByRoute` (2026-09-26, 2026-09-27) |
-| `promtool check rules` passes and every alert's metric is in the table | `tools/specindex`, `TestAlertRulesNameDefinedMetrics` and `TestRulesReportsAnUndefinedMetricAndAMalformedFile`; the `specindex` job of `verify.yml`, which installs `promtool` by pinned version and checksum |
+| `promtool check rules` passes and every alert's metric is in the table | `tools/specindex`, `TestAlertRulesNameDefinedMetrics` and `TestRulesReportsAnUndefinedMetricAndAMalformedFile`; the `specindex` job of `verify.yml` and the `rules` gate of lateregate, which runs `promtool` at a pinned version |
 
 The `Set` `internal/metrics` returns is the handles, one field per row,
 and a field whose row is missing or has another type panics at start-up
@@ -343,10 +338,9 @@ each as the rule, so a reader finds one answer:
   `otel.Handler`, not by `otel.Handler`, which logs nothing.
 - `promtool check rules` reads a Prometheus rules file, not a Kubernetes
   object: run on `deploy/base/prometheusrule.yaml` it fails on
-  `apiVersion`, `kind`, `metadata`, and `spec`. `tools/specindex -rules`
-  prints the rules document inside the object, and the job checks that.
-  The same flag fails first when an alert names an Origo metric no spec
-  defines; a metric another exporter publishes, which is the autoscaler
+  `apiVersion`, `kind`, `metadata`, and `spec`. The `rules` gate lifts
+  the rules document out of the object. `tools/specindex -rules` fails
+  first when an alert names an Origo metric no spec defines; a metric another exporter publishes, which is the autoscaler
   row, does not start with the prefix and is not checked.
 - `deploy/base/prometheusrule.yaml` is not a resource of the base's
   kustomization. A PrometheusRule needs the Prometheus operator's

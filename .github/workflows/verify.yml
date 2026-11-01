@@ -1,6 +1,7 @@
 # Every push to main and every pull request runs the gate (the shared
-# pipeline of latere-ai/ci), the spec cross-reference test, the render of
-# the example overlays, the integration tier of spec 013 against MinIO,
+# pipeline of latere-ai/ci, which also tidies the modules, lints the
+# workflows, renders the manifests and checks the alert rules), the spec
+# cross-reference test, the integration tier of spec 013 against MinIO,
 # the build of the two candidate images, and the install job of spec 018,
 # which walks docs/install.md against a bare cluster from that build. The
 # cluster tiers on the kind stack, the up-script check, and the mutation
@@ -65,7 +66,7 @@ jobs:
       runs_on: ubuntu-latest
       test_os: '["ubuntu-latest"]'
   specindex:
-    name: spec cross-reference table and alert rules
+    name: spec cross-reference table and generated documentation
     if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -74,26 +75,6 @@ jobs:
         with:
           go-version-file: go.mod
       - run: cd tools/specindex && go test -count=1 ./...
-      # The alerts of spec 011. promtool reads a Prometheus rules file,
-      # not a Kubernetes object, so specindex prints the rules document
-      # inside the PrometheusRule and fails first on an alert that names
-      # a metric no spec defines.
-      - name: Install promtool
-        env:
-          PROMTOOL_TARBALL: prometheus-3.15.1.linux-amd64.tar.gz
-          PROMTOOL_SHA256: 6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84
-        run: |
-          cd "$RUNNER_TEMP"
-          curl -sSLo "$PROMTOOL_TARBALL" "https://github.com/prometheus/prometheus/releases/download/v3.15.1/$PROMTOOL_TARBALL"
-          echo "$PROMTOOL_SHA256  $PROMTOOL_TARBALL" | sha256sum -c -
-          tar xzf "$PROMTOOL_TARBALL"
-          sudo install "${PROMTOOL_TARBALL%.tar.gz}/promtool" /usr/local/bin/promtool
-          promtool --version
-      - name: Check the alert rules
-        run: |
-          mkdir -p out
-          (cd tools/specindex && go run . -rules ../../deploy/base/prometheusrule.yaml) > out/rules.yaml
-          promtool check rules out/rules.yaml
       # The generated reference: docs/configuration.md from
       # internal/config, docs/internals/contract.md from the specs'
       # endpoint, header, and code tables, and api/openapi.yaml from the
@@ -104,31 +85,6 @@ jobs:
         run: |
           make docs
           git diff --exit-code docs/ api/
-      # Spec 001's seventh invariant names the module's direct
-      # dependencies; go.mod is where a reader checks the claim, so it
-      # has to agree with the imports. golang.org/x/crypto sat in the
-      # indirect block for two days after internal/sshd began importing
-      # it, and no gate noticed.
-      - name: go.mod and go.sum are tidy
-        run: go mod tidy -diff
-
-  # `kustomize build` over everything under deploy/. The two cloud
-  # overlays are never applied here, because this repository has no cloud
-  # account; what CI can prove about them is that they render.
-  overlays:
-    name: the manifests render
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Render every overlay
-        run: |
-          set -euo pipefail
-          for target in base prod examples/kind examples/digitalocean examples/aws; do
-            kubectl kustomize "deploy/$target" > /dev/null
-            echo "deploy/$target renders"
-          done
 
   # The integration tier and the e2e tier's one-node run, against a MinIO
   # beside the runner: every test that starts its own nodes and fits the

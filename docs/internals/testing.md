@@ -143,8 +143,9 @@ page cites a spec by number.
 `api/openapi.yaml` from the same tables. CI runs it and fails on any
 diff, so a change to a variable or a spec table ships with its
 documentation. `make specindex` checks the cross-reference table at the
-end of `specs/README.md`, and CI also renders every overlay with
-`kubectl kustomize` and checks the alert rules with `promtool`.
+end of `specs/README.md`. The `manifests` and `rules` gates of
+`go tool lateregate` render every kustomization and check the alert rules
+with promtool.
 
 ## Fuzz
 

@@ -3,8 +3,8 @@
 
 # The alerts of spec 011, one rule per row of that spec's table. Every
 # expression is over a metric spec 011 defines, which the specindex
-# module checks, and `promtool check rules` in the specindex job of
-# verify.yml parses the file on every push.
+# module checks, and the `rules` gate of lateregate parses the file with
+# promtool on every push.
 #
 # The last alert is the only one over a metric Origo does not export:
 # kube-state-metrics publishes the autoscaler's replica counts, and an
