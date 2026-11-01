@@ -44,7 +44,7 @@ jobs:
   # Step 1. Everything that is built from the tag's tree, signed, and
   # attested. Nothing here reaches a cluster.
   build:
-    uses: latere-ai/ci/.github/workflows/image-build.yml@c3fcc1bda62305ca978a5474dd29a898564baa42
+    uses: latere-ai/ci/.github/workflows/image-build.yml@v1
     # The stage reads the tagged commit's verify runs, pushes the images,
     # signs them with the job's OIDC token and attests them; a calling job
     # that grants less fails before it starts.
@@ -418,7 +418,7 @@ jobs:
   publish:
     needs: [build, conformance, deploy, live]
     if: ${{ always() && needs.build.result == 'success' && needs.conformance.result == 'success' && needs.deploy.result != 'failure' && needs.live.result == 'success' }}
-    uses: latere-ai/ci/.github/workflows/image-publish.yml@c3fcc1bda62305ca978a5474dd29a898564baa42
+    uses: latere-ai/ci/.github/workflows/image-publish.yml@v1
     permissions:
       contents: write
       packages: write
@@ -537,7 +537,7 @@ jobs:
     needs: publish
     # Explicit for the same reason as install-release above.
     if: ${{ always() && needs.publish.result == 'success' }}
-    uses: latere-ai/ci/.github/workflows/release-verify.yml@c3fcc1bda62305ca978a5474dd29a898564baa42
+    uses: latere-ai/ci/.github/workflows/release-verify.yml@v1
     permissions:
       contents: read
       packages: read
