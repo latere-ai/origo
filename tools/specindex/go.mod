@@ -1,3 +1,3 @@
 module latere.ai/x/origo/tools/specindex
 
-go 1.27.0
+go 1.27.3
