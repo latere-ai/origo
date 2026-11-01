@@ -1,8 +1,8 @@
 # The production target. Everything here is safe to re-apply, because the
 # release pipeline applies it on every release with `kubectl apply -k
-# deploy/prod/` and then sets the image to the tag it built. A resource that
-# cannot be re-applied belongs in deploy/bootstrap/, which the pipeline
-# never reads.
+# deploy/prod/`, the tag below swapped for the digest it built, and then
+# sets the image to that digest. A resource that cannot be re-applied
+# belongs in deploy/bootstrap/, which the pipeline never reads.
 #
 # The base is provider-neutral: the hostname, the ingress class, the
 # certificate issuer, and the controller's own settings are here, and so

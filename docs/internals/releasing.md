@@ -39,19 +39,28 @@ rather than shipping a stale version.
 
 ## What a tag runs
 
-`.github/workflows/release.yml` runs these jobs, in order, and publishes
-only when the ones before `publish` pass:
+`.github/workflows/release.yml` builds, signs and publishes through the
+shared image release stages of
+[latere-ai/ci](https://github.com/latere-ai/ci) (`image-build.yml`,
+`image-publish.yml`, `release-verify.yml`), with Origo's own jobs
+between and after them. It runs these jobs, in order, and publishes only
+when the ones before `publish` pass:
 
 | Job | What it does |
 |---|---|
-| `build` | builds `origod` and `origo` for linux and darwin on amd64 and arm64 into eight archives, the two multi-arch images (`origod`, `origo-stubs`), and the deploy archive. Signs both images keylessly with cosign, writes three SPDX bills of materials (one per image, one for the module graph), and attaches SBOM and build provenance attestations to each image |
-| `conformance` | brings up the kind stack from the published images and runs the conformance suite, the release fixture, and the previous release's fixture on this build, which is what proves the log format still reads, then packs this release's fixture |
-| `checksums` | writes `checksums.txt` over every archive the release publishes, the eight binary archives, the deploy archive and the fixture, and signs it keylessly with cosign |
-| `deploy` | only when the repository variable `ORIGO_RELEASE_DEPLOY` is set: applies `deploy/prod`, waits for the rollout, and runs `tools/smoke/release.sh`, which waits for the served version to reach the tag |
+| `build` | the build stage. Refuses a tag whose commit is not on `main` or whose `verify.yml` run on the branch push did not pass, waiting up to an hour for a run still going, and a tag without a changelog section. Builds `origod` and `origo` for linux and darwin on amd64 and arm64 into eight archives, then the two multi-arch images (`origod`, `origo-stubs`), each pushed by digest under no tag, checks `origod` reports the tag's version, signs both keylessly, writes an SPDX bill of materials for each, and attaches SBOM and build provenance attestations to each image. Last, the deploy archive |
+| `conformance` | pulls the pushed digests, checks git inside `origod`, brings up the kind stack from them and runs the conformance suite, the release fixture, and the previous release's fixture on this build, which is what proves the log format still reads, then packs this release's fixture |
+| `deploy` | only when the repository variable `ORIGO_RELEASE_DEPLOY` is set: applies `deploy/prod` with `origod` pinned to the pushed digest, waits for the rollout, and runs `tools/smoke/release.sh`, which waits for the served version to reach the tag |
 | `live` | the conformance suite against `ORIGO_LIVE_URL` |
-| `publish` | creates the GitHub release with the changelog section and the evidence of the jobs above, and uploads every artifact |
-| `install-release` | walks `docs/install.md` on a bare kind cluster against the published images and the published deploy archive, with nothing from this workflow's own build |
-| `release-verify` | on a clean runner, verifies the image signatures, the attestations, the `checksums.txt` bundle, every archive against it, that it names the deploy archive and the fixture, and that verification refuses a foreign identity |
+| `publish` | the publish stage. Tags both digests with the version, writes `checksums.txt` over every file the release attaches, the fixture included, signs it keylessly, and publishes the GitHub release with the changelog section and the evidence of the jobs above |
+| `install-release` | checks that `checksums.txt` names the deploy archive and the fixture and that the archive carries the base, the page and `origod` at the tag, then walks `docs/install.md` on a bare kind cluster against the published images and the published deploy archive, with nothing from this workflow's own build |
+| `release-verify` | the verify stage, on a clean runner with no checkout: the `checksums.txt` signature, refused for another repository, every asset against it, each image's tag resolving to a signed and attested digest, and the release body against the changelog section |
+
+Nothing has a tag before `publish`, so `conformance` and `deploy` name
+the images by the digests `build` outputs. The signatures name the
+stages in latere-ai/ci and are bound to this repository by the
+certificate's workflow repository; `docs/upgrades/README.md` gives the
+commands.
 
 The same tag also runs the tag-only jobs of `verify.yml`: the cluster
 tier, the kind up-script check, and the mutation job. See
@@ -62,10 +71,10 @@ tier, the kind up-script check, and the mutation job. See
 | Asset | Contents |
 |---|---|
 | `origod_<version>_<os>_<arch>.tar.gz`, `origo_<version>_<os>_<arch>.tar.gz` | the node and the agent client, statically linked |
-| `checksums.txt`, `checksums.txt.cosign.bundle` | SHA-256 of every archive, the deploy archive and the fixture included, and its keyless signature |
+| `checksums.txt`, `checksums.txt.sigstore.json` | SHA-256 of every other asset, the deploy archive, the fixture and the bills of materials included, and its keyless signature |
 | `deploy-<version>.tar.gz` | `deploy/base` and `deploy/examples` with both images pinned to the version, and the `docs/install.md` of that version |
 | `fixture-<version>.tar.gz` | a repository log written by this release, which the next release must read |
-| `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json`, `sbom-source.spdx.json` | the bills of materials |
+| `sbom-origod.spdx.json`, `sbom-origo-stubs.spdx.json` | the bills of materials, one per image |
 
 `deploy-archive.sh` refuses to pack while any manifest still names a
 placeholder tag (`unreleased`, `candidate`), so an archive cannot ship
@@ -73,9 +82,9 @@ an image nobody built.
 
 ## Publishing from a fork
 
-The workflow derives the image namespace from the repository that runs
-it, `ghcr.io/<owner>`, so a fork's tag publishes the fork's own images
-and its deploy archive names them. Set the repository variable
-`ORIGO_IMAGE_NAMESPACE` to publish elsewhere; an owner whose name has
-capital letters must set it, because an image reference is lower case.
-Leave `ORIGO_RELEASE_DEPLOY` unset and a tag deploys nothing.
+The build stage derives the image namespace from the repository that
+runs it, `ghcr.io/<owner>` with the owner lowered, so a fork's tag
+publishes the fork's own images and its deploy archive names them. Set
+the repository variable `RELEASE_IMAGE_NAMESPACE` to an owner path under
+`ghcr.io` to publish elsewhere. Leave `ORIGO_RELEASE_DEPLOY` unset and a
+tag deploys nothing.

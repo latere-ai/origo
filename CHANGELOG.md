@@ -10,6 +10,25 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **Releases are built, signed and published by the shared release stages
+  in latere-ai/ci.** The image signatures and the signed `checksums.txt`
+  now name those stages, run for this repository, and the checksum
+  signature is `checksums.txt.sigstore.json` in place of
+  `checksums.txt.cosign.bundle`. `docs/upgrades/README.md` gives the
+  commands that check a release, and the ones for releases up to v0.16.5;
+  the release workflow runs the checks against every release it
+  publishes. `checksums.txt` now covers the bills of materials as well as
+  the archives. A release carries one bill of materials per image; the
+  module graph's, `sbom-source.spdx.json`, is no longer attached. A tag
+  is released only when its commit is on `main` and its verify run
+  passed. A fork sets its image namespace with the repository variable
+  `RELEASE_IMAGE_NAMESPACE`, an owner path under `ghcr.io`, in place of
+  `ORIGO_IMAGE_NAMESPACE`, and an owner whose name has capitals no longer
+  has to set one. Images get the release tag only when the release is
+  published, so the deploy applies `origod` by its digest.
+
 ### Fixed
 
 - **The migration cut-over no longer puts a token in the redirect.**

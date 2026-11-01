@@ -79,10 +79,61 @@ the upgrade document the log line names.
 
 ## Verifying what you install
 
-Every release is signed keylessly by the release workflow's own
-identity, so no key held by anyone signs it, and carries a bill of
-materials. Set `VERSION` to the tag you are installing, then check the
-image, the archives, and the manifests:
+Every release after v0.16.5 is built, signed and published by the
+shared release stages in [latere-ai/ci](https://github.com/latere-ai/ci),
+run for this repository. The signatures are keyless, so no key held by
+anyone signs them: the images are signed by the build stage's identity,
+and `checksums.txt` by the publish stage's. Set `VERSION` to the tag you
+are installing, then check the image, the archives, and the manifests:
+
+```sh
+ISSUER=https://token.actions.githubusercontent.com
+
+cosign verify "ghcr.io/latere-ai/origod:$VERSION" \
+  --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity-regexp '^https://github\.com/latere-ai/ci/\.github/workflows/image-build\.yml@' \
+  --certificate-github-workflow-repository latere-ai/origo
+
+gh release download "$VERSION" --repo latere-ai/origo \
+  --pattern 'checksums.txt*' --pattern 'deploy-*.tar.gz' --pattern 'origo*_*.tar.gz'
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity-regexp '^https://github\.com/latere-ai/ci/\.github/workflows/image-publish\.yml@' \
+  --certificate-github-workflow-repository latere-ai/origo checksums.txt
+grep -q " deploy-$VERSION.tar.gz$" checksums.txt
+sha256sum -c --ignore-missing checksums.txt
+```
+
+The first command proves the image was built and signed by the build
+stage, run for this repository. Any repository can call a public
+workflow, so the identity names the stage and
+`--certificate-github-workflow-repository` is what ties the signature to
+Origo. The second pair proves the checksum file was signed by the
+publish stage run for this repository, and `sha256sum -c` then proves
+every archive you downloaded, the deploy manifests among them, matches
+it; the file also lists files you did not download, which
+`--ignore-missing` skips. `--ignore-missing` would skip the deploy
+archive the same way if the file did not list it, so the `grep` before
+it stops on a release whose sums leave the manifests out.
+
+The bill of materials is a release asset, one per image:
+`sbom-origod.spdx.json` and `sbom-origo-stubs.spdx.json`.
+
+Each image also carries an SBOM attestation and a build provenance
+attestation in the registry, which name the build stage, the repository
+and the commit the image was built from:
+
+```sh
+gh attestation verify "oci://ghcr.io/latere-ai/origod:$VERSION" --repo latere-ai/origo \
+  --signer-workflow latere-ai/ci/.github/workflows/image-build.yml
+```
+
+### Releases up to v0.16.5
+
+Releases up to v0.16.5 were signed by this repository's own release
+workflow, and their checksum signature is `checksums.txt.cosign.bundle`.
+Check one of those with the identity naming that workflow and no
+`--signer-workflow`:
 
 ```sh
 IDENTITY='^https://github.com/latere-ai/origo/\.github/workflows/release\.yml@refs/tags/'
@@ -97,28 +148,11 @@ cosign verify-blob --bundle checksums.txt.cosign.bundle \
   --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" checksums.txt
 grep -q " deploy-$VERSION.tar.gz$" checksums.txt
 sha256sum -c --ignore-missing checksums.txt
-```
 
-The first command proves the image was built and signed by this
-repository's release workflow for a tag. The second pair proves the
-checksum file was, and `sha256sum -c` then proves every archive you
-downloaded, the deploy manifests among them, matches it; the file also
-lists archives you did not download, which `--ignore-missing` skips.
-`--ignore-missing` would skip the deploy archive the same way if the
-file did not list it, so the `grep` before it stops on a release whose
-sums leave the manifests out.
-
-The bill of materials is a release asset: `sbom-origod.spdx.json`,
-`sbom-origo-stubs.spdx.json`, and `sbom-source.spdx.json`, one per
-image and one for the module graph.
-
-Each image also carries an SBOM attestation and a build provenance
-attestation in the registry, which name the workflow and the commit the
-image was built from:
-
-```sh
 gh attestation verify "oci://ghcr.io/latere-ai/origod:$VERSION" --repo latere-ai/origo
 ```
 
-v0.1.0 predates the attestations and carries neither. Its signature,
-checksums, and bills of materials are unaffected.
+Those releases carry a third bill of materials, `sbom-source.spdx.json`,
+for the module graph. v0.1.0 predates the attestations and carries
+neither. Its signature, checksums, and bills of materials are
+unaffected.

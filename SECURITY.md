@@ -24,9 +24,13 @@ pod runs as a non-root user on a read-only root file system with every
 capability dropped.
 
 Dependencies are checked for known vulnerabilities on every push. A
-release carries three SPDX bills of materials, one per image and one for
-the module graph, and cosign signatures over the images and the
-checksums. Each image also carries an SBOM attestation and a build
-provenance attestation, so `gh attestation verify` answers for the image
-you are about to run. [`docs/upgrades/README.md`](docs/upgrades/README.md)
-says what to verify and with which command.
+release is built, signed and published by the shared release stages in
+[latere-ai/ci](https://github.com/latere-ai/ci), run for this
+repository. It carries an SPDX bill of materials for each image, and
+cosign signatures over the images and the checksums that name those
+stages and this repository. Each image also carries an SBOM attestation
+and a build provenance attestation, so `gh attestation verify` answers
+for the image you are about to run.
+[`docs/upgrades/README.md`](docs/upgrades/README.md) says what to verify
+and with which command, for a current release and for the releases
+signed before the stages.

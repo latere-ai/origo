@@ -157,7 +157,7 @@ func readWorkflow(t *testing.T, name string) string {
 // published and nothing verified it.
 func TestReleaseSurvivesASkippedDeploy(t *testing.T) {
 	jobs := parseJobs(readWorkflow(t, "release.yml"))
-	for _, name := range []string{"build", "conformance", "checksums", "deploy", "live", "publish", "install-release", "release-verify"} {
+	for _, name := range []string{"build", "conformance", "deploy", "live", "publish", "install-release", "release-verify"} {
 		if _, ok := jobs[name]; !ok {
 			t.Fatalf("release.yml has no job %q; the parser or the workflow changed shape", name)
 		}
@@ -200,39 +200,99 @@ jobs:
 	}
 }
 
+// The shared image release stages of latere-ai/ci the workflow calls, as
+// the start of a `uses:` reference; the pin after the @ is the
+// workflow's own.
+const (
+	stageBuild   = "uses: latere-ai/ci/.github/workflows/image-build.yml@"
+	stagePublish = "uses: latere-ai/ci/.github/workflows/image-publish.yml@"
+	stageVerify  = "uses: latere-ai/ci/.github/workflows/release-verify.yml@"
+)
+
+// stageJobs answers the jobs of a workflow that call the stage, sorted.
+func stageJobs(text string, jobs map[string]workflowJob, stage string) []string {
+	var out []string
+	for name := range jobs {
+		if strings.Contains(jobText(text, name), stage) {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // TestChecksumsCoverEveryArchiveTheReleasePublishes holds spec 017's rule
 // that checksums.txt sums every archive an operator downloads, the deploy
 // archive and the fixture with the binaries, and that the published release
-// is checked against it. conformance packs the fixture, so the one job that
-// signs the sums needs it as well as build. When build signed sums over the
+// is checked against it. The publish stage sums and signs every file the
+// build stage left in dist/ and every run artifact its `artifacts` input
+// names, so the rule holds when build writes the binary archives and the
+// deploy archive into dist/, publish names the fixture conformance uploads
+// and needs both jobs, and a job after publish checks that the sums name
+// the deploy archive and the fixture. When build signed sums over the
 // binaries alone, an operator who ran `sha256sum -c --ignore-missing` over a
 // downloaded deploy archive, as docs/upgrades/README.md says to, checked
 // nothing.
 func TestChecksumsCoverEveryArchiveTheReleasePublishes(t *testing.T) {
 	text := readWorkflow(t, "release.yml")
 	jobs := parseJobs(text)
-	var signers []string
-	for name := range jobs {
-		if strings.Contains(jobText(text, name), "cosign sign-blob") {
-			signers = append(signers, name)
+	for stage, want := range map[string]string{stageBuild: "build", stagePublish: "publish", stageVerify: "release-verify"} {
+		if got := stageJobs(text, jobs, stage); !slices.Equal(got, []string{want}) {
+			t.Fatalf("jobs with %q = %v, want [%s]", stage, got, want)
 		}
 	}
-	if len(signers) != 1 {
-		t.Fatalf("jobs signing checksums.txt = %v, want exactly one", signers)
+	build := jobText(text, "build")
+	for _, want := range []string{"cp out/release/*.tar.gz dist/", `"dist/deploy-${TAG}.tar.gz"`} {
+		if !strings.Contains(build, want) {
+			t.Errorf("build does not leave an archive in dist/ for the sums: %s is missing", want)
+		}
 	}
-	signer := signers[0]
+	// conformance uploads the fixture with if-no-files-found: error, and
+	// publish runs only when conformance succeeded, so a release that
+	// reaches publish has the fixture for the stage to download and sum.
+	if !strings.Contains(jobText(text, "conformance"), "name: release-fixture") {
+		t.Error("conformance does not upload the fixture as release-fixture")
+	}
+	if !strings.Contains(jobText(text, "publish"), "artifacts: release-fixture") {
+		t.Error("publish does not attach release-fixture, so checksums.txt leaves the fixture out")
+	}
 	for _, packer := range []string{"build", "conformance"} {
-		if signer != packer && !dependsOn(jobs, signer, packer) {
-			t.Errorf("%s signs checksums.txt without needing %s, which packs an archive the sums cover", signer, packer)
+		if !dependsOn(jobs, "publish", packer) {
+			t.Errorf("publish does not need %s, which packs an archive the sums cover", packer)
 		}
 	}
-	if !dependsOn(jobs, "publish", signer) {
-		t.Errorf("publish does not need %s, so it can publish sums nobody signed", signer)
-	}
-	verify := jobText(text, "release-verify")
+	// release-verify checks every attached file against the sums; that the
+	// deploy archive and the fixture are among them is Origo's own claim.
+	install := jobText(text, "install-release")
 	for _, archive := range []string{"deploy-${TAG}.tar.gz", "fixture-${TAG}.tar.gz"} {
-		if !strings.Contains(verify, `grep -q " `+archive+`$" checksums.txt`) {
-			t.Errorf("release-verify does not check that checksums.txt names %s", archive)
+		if !strings.Contains(install, `grep -q " `+archive+`$" checksums.txt`) {
+			t.Errorf("install-release does not check that checksums.txt names %s", archive)
+		}
+	}
+	for _, checker := range []string{"install-release", "release-verify"} {
+		if !dependsOn(jobs, checker, "publish") {
+			t.Errorf("%s does not need publish, so it can check a release before it exists", checker)
+		}
+	}
+}
+
+// TestReleaseSignsOnlyThroughTheStages holds the shared stages' rule that
+// the signatures, the bills of materials, the attestations and the image
+// tags of a release are made by latere-ai/ci's stages alone, so every
+// Latere image is verified with one command shape and the tools' pins live
+// in ci. A step here that signed or attested an image itself would sign as
+// this repository's workflow, which docs/upgrades/README.md does not tell an
+// operator to accept for a current release.
+func TestReleaseSignsOnlyThroughTheStages(t *testing.T) {
+	for i, line := range strings.Split(readWorkflow(t, "release.yml"), "\n") {
+		code := strings.TrimSpace(line)
+		if strings.HasPrefix(code, "#") {
+			continue
+		}
+		for _, tool := range []string{"cosign", "sigstore/", "anchore/sbom-action", "actions/attest-", "docker buildx imagetools"} {
+			if strings.Contains(code, tool) {
+				t.Errorf("release.yml:%d calls %s directly: %s", i+1, tool, code)
+			}
 		}
 	}
 }
@@ -288,26 +348,32 @@ func TestPipeIntoGrepQIsFound(t *testing.T) {
 
 // TestReleasePublishesUnderTheRepositoryOwnersNamespace is spec 017's
 // fork row as far as a test can hold it: the workflow fixes no image
-// namespace of its own. Both image names come from
-// ORIGO_IMAGE_NAMESPACE or, unset, from the owner of the repository the
-// tag was pushed to, so a fork's tag pushes, signs, attests, and
-// verifies its own packages. The default namespace may still be written
-// where the workflow rewrites it into the manifests, which is a source
-// of a substitution and not a name anything is published under; every
-// other mention is a name a fork cannot write.
+// namespace of its own. The build stage derives it from the repository
+// variable RELEASE_IMAGE_NAMESPACE or, unset, from the owner of the
+// repository the tag was pushed to, lowered, so no stage is handed one
+// here. Every job after the build reads both image names from the build
+// stage's outputs, and the deploy archive takes its namespace from the
+// reference the build pushed, so a fork's tag pushes, signs, attests,
+// deploys, and verifies its own packages. The default namespace may
+// still be written where the workflow rewrites it into the manifests,
+// which is a source of a substitution and not a name anything is
+// published under; every other mention is a name a fork cannot write.
 func TestReleasePublishesUnderTheRepositoryOwnersNamespace(t *testing.T) {
 	text := readWorkflow(t, "release.yml")
-	const derived = "${{ vars.ORIGO_IMAGE_NAMESPACE || format('ghcr.io/{0}', github.repository_owner) }}"
 	for _, want := range []string{
-		"  IMAGE_NAMESPACE: " + derived,
-		"  ORIGOD_IMAGE: " + derived + "/origod",
-		"  STUBS_IMAGE: " + derived + "/origo-stubs",
+		"ORIGOD_IMAGE: ${{ needs.build.outputs.ref_1 }}",
+		"STUBS_IMAGE: ${{ needs.build.outputs.ref_2 }}",
+		`ORIGO_IMAGE_NAMESPACE="${IMAGE_1%/*}"`,
 	} {
 		if !strings.Contains(text, want) {
-			t.Errorf("release.yml does not derive the image namespace: %s is missing", want)
+			t.Errorf("release.yml does not take the image names from the build stage: %s is missing", want)
 		}
 	}
 	for i, line := range strings.Split(text, "\n") {
+		code := strings.TrimSpace(line)
+		if strings.HasPrefix(code, "namespace:") {
+			t.Errorf("release.yml:%d hands a stage a namespace of its own: %s", i+1, code)
+		}
 		if !strings.Contains(line, "ghcr.io/latere-ai") {
 			continue
 		}
@@ -316,6 +382,6 @@ func TestReleasePublishesUnderTheRepositoryOwnersNamespace(t *testing.T) {
 		if strings.Contains(line, "ORIGOD_IMAGE") || strings.Contains(line, "IMAGE_NAMESPACE") {
 			continue
 		}
-		t.Errorf("release.yml:%d fixes an image namespace a fork cannot write: %s", i+1, strings.TrimSpace(line))
+		t.Errorf("release.yml:%d fixes an image namespace a fork cannot write: %s", i+1, code)
 	}
 }
