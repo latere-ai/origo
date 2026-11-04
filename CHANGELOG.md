@@ -10,6 +10,14 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The production autoscaler waits five minutes before it adds a
+  replica, not 30 seconds.** Each replica's ten-minute housekeeping runs
+  above its CPU request for about a minute, which the shorter window read
+  as load, so the installation held a third replica it did not need. Load
+  that lasts five minutes still scales.
+
 ## v0.16.6 - 2026-11-04
 
 ### Changed

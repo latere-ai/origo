@@ -3,6 +3,13 @@
 # cluster has room for. The autoscaler scales on CPU alone; raise
 # maxReplicas when the pods sit at their CPU request under normal
 # traffic.
+#
+# Scale-up waits five minutes instead of the base's 30 seconds. Every
+# replica runs the orphan sweep, the event repair and the compaction check
+# every ten minutes, each a burst of about a minute well above the request
+# resources.yaml sets, and a 30-second window reads each burst as load and
+# holds a replica the traffic never asked for. Load that lasts five minutes
+# still scales.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -10,3 +17,6 @@ metadata:
 spec:
   minReplicas: 2
   maxReplicas: 8
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 300
