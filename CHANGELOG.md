@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.7 - 2026-11-04
+
 ### Changed
 
 - **The production autoscaler waits five minutes before it adds a
