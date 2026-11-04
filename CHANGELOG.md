@@ -12,6 +12,10 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- **The production overlay requests 50m CPU per replica, not 250m.** Use
+  is a few millicores and bursts run above the request, so the lower figure
+  frees the reservation and the autoscaler scales out at a lower average.
+  The init container requests 50m instead of 100m. The base is unchanged.
 - **Releases are built, signed and published by the shared release stages
   in latere-ai/ci.** The image signatures and the signed `checksums.txt`
   now name those stages, run for this repository, and the checksum

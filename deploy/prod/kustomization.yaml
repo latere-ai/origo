@@ -41,6 +41,8 @@ patches:
   - path: authorizer.yaml
   - path: pull-secret.yaml
   - path: replicas.yaml
+  # CPU requests sized to measured use.
+  - path: resources.yaml
   - path: ssh.yaml
   # Public repositories clone without a token (spec 027).
   - path: anonymous-read.yaml
