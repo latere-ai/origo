@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.6 - 2026-11-04
+
 ### Changed
 
 - **The production overlay requests 50m CPU per replica, not 250m.** Use
