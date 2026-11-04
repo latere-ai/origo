@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **The production overlay requests 160 MiB of memory per replica, not
+  256 MiB.** A replica uses about 120 MiB at its peak; the 2 GiB limit is
+  unchanged. The base is unchanged.
+
 ## v0.16.7 - 2026-11-04
 
 ### Changed

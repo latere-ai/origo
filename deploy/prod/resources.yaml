@@ -1,11 +1,12 @@
-# CPU requests for the installation as it stands. Measured use is a few
-# millicores per replica, and git operations burst well above that because
-# no CPU limit caps them, so the request only needs to cover the idle
-# load. The autoscaler scales on utilization of the request, so the lower
+# CPU and memory requests for the installation as it stands. Measured CPU
+# use is a few millicores per replica, and git operations burst well above
+# that because no CPU limit caps them, so the request only needs to cover
+# the idle load. The autoscaler scales on utilization of the request, so the lower
 # figure makes it add replicas at a lower average. The init container is
 # set too: a pod reserves the larger of its biggest init container and the
 # sum of its containers, so the init container's request would otherwise
-# keep the pod at 100m. Memory is left as the base has it.
+# keep the pod at 100m. Memory asks for what origod uses, about 120 MiB a
+# pod; the 2Gi limit holds the peak.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,3 +24,4 @@ spec:
           resources:
             requests:
               cpu: 50m
+              memory: 160Mi
