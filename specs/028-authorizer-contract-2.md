@@ -965,8 +965,9 @@ range. An entry that is not an address ends the walk, and so does
 running out of entries; both keep the peer, so `request.ip` is always an
 address a trusted hop saw and never a string from the header.
 
-Nothing else reads the header. SSH has no proxy header, and its
-`request.ip` stays the TCP peer. The rate limits of spec 012 count per
+Nothing else reads the header. SSH has no proxy header, and the SSH
+server sets no request block, so an SSH request's `request` fields stay
+empty as before. The rate limits of spec 012 count per
 subject and per node, not per address, and are unchanged. An
 installation that leaves the variable unset sends the envelope it sent
 before, byte for byte.
