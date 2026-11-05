@@ -127,7 +127,7 @@ jobs:
           password: ${{ github.token }}
 
       # The candidate images of spec 013, in the shape the `build` job of
-      # verify.yml saves them, so up.sh loads them the way the e2e job
+      # tiers.yml saves them, so up.sh loads them the way the e2e job
       # does: the kind overlay names each image by its :candidate tag. The
       # bytes are the pushed digests, so the stack runs the image the
       # release publishes and not a second build of it.

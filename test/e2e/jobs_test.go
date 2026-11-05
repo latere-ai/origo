@@ -171,9 +171,9 @@ func TestE2EJobsSelectByPrefix(t *testing.T) {
 	}
 }
 
-// TestE2EPushSuitesAreDeclared holds the two e2e suites a push runs, which
-// used to be the integration and install jobs of verify.yml and are now
-// entries of .lateregate.yaml: the one-node tier selects the TestE2E
+// TestE2EPushSuitesAreDeclared holds the suites a push runs, the
+// wal-integration, one-node-e2e and install entries of .lateregate.yaml:
+// the one-node tier selects the TestE2E
 // prefix and the wal integration tests against MinIO with the race
 // detector, both export the six bucket values the tests read, and the
 // install walk runs the script that builds the candidate images and walks

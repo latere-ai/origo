@@ -235,12 +235,11 @@ func TestRunWritesAndReportsFindings(t *testing.T) {
 	}
 }
 
-// TestWriteReproducesTheCommittedFiles is the check `make docs` followed
-// by `git diff --exit-code docs/ api/` used to be in CI: the generator
-// runs with -write into a directory of its own and the two files it
-// writes must equal the committed ones byte for byte, so a spec table
-// changed without regenerating fails the suite on the push that changed
-// it. The committed files are never touched.
+// TestWriteReproducesTheCommittedFiles runs the generator with -write into
+// a directory of its own, and the two files it writes must equal the
+// committed docs/internals/contract.md and api/openapi.yaml byte for byte,
+// so a spec table changed without `make docs` fails the suite on the push
+// that changed it. The committed files are never touched.
 func TestWriteReproducesTheCommittedFiles(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "contract.md")

@@ -29,11 +29,10 @@ func TestRunPrintsWritesAndReportsAFailure(t *testing.T) {
 	}
 }
 
-// TestWriteReproducesTheCommittedPage is the check `make docs` followed
-// by `git diff --exit-code docs/` used to be in CI: the generator writes
-// into a directory of its own and the page must equal the committed
+// TestWriteReproducesTheCommittedPage has the generator write into a
+// temp directory, and the page must equal the committed
 // docs/configuration.md byte for byte, so a variable changed without
-// regenerating the page fails the suite on the push that changed it.
+// `make docs` fails the suite on the push that changed it.
 func TestWriteReproducesTheCommittedPage(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "configuration.md")
 	var stdout, stderr bytes.Buffer
