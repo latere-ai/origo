@@ -410,9 +410,9 @@ func prose(n specs.Name, desc []string) string {
 // from the response puts the response last, and a table with one column
 // states both in it.
 func answerColumn(desc []string) string {
-	for i := len(desc) - 1; i >= 0; i-- {
-		if strings.TrimSpace(desc[i]) != "" {
-			return desc[i]
+	for _, cell := range slices.Backward(desc) {
+		if strings.TrimSpace(cell) != "" {
+			return cell
 		}
 	}
 	return ""
@@ -595,7 +595,7 @@ func operationID(method, path string) string {
 	var b strings.Builder
 	b.WriteString(strings.ToLower(method))
 	segments := 0
-	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+	for seg := range strings.SplitSeq(strings.Trim(path, "/"), "/") {
 		if seg == "" {
 			continue
 		}

@@ -27,8 +27,8 @@ func document(t *testing.T) *Document {
 
 // TestOpenAPIDocumentIsCurrent is spec 030's first criterion: the
 // committed document is what `make docs` renders from the deck, so a
-// spec table changed without regenerating fails here and in the
-// specindex job's diff.
+// spec table changed without regenerating fails here and in
+// TestWriteReproducesTheCommittedFiles.
 func TestOpenAPIDocumentIsCurrent(t *testing.T) {
 	want, err := document(t).YAML()
 	if err != nil {

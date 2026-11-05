@@ -234,3 +234,36 @@ func TestRunWritesAndReportsFindings(t *testing.T) {
 		t.Fatalf("unwritable document: %d", code)
 	}
 }
+
+// TestWriteReproducesTheCommittedFiles is the check `make docs` followed
+// by `git diff --exit-code docs/ api/` used to be in CI: the generator
+// runs with -write into a directory of its own and the two files it
+// writes must equal the committed ones byte for byte, so a spec table
+// changed without regenerating fails the suite on the push that changed
+// it. The committed files are never touched.
+func TestWriteReproducesTheCommittedFiles(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "contract.md")
+	document := filepath.Join(dir, "openapi.yaml")
+	var stdout, stderr bytes.Buffer
+	args := []string{"-specs", filepath.Join(root(t), "specs"), "-out", out, "-openapi", document, "-write"}
+	if code := run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("write: %d %q", code, stderr.String())
+	}
+	for written, committed := range map[string]string{
+		out:      filepath.Join(root(t), "docs", "internals", "contract.md"),
+		document: filepath.Join(root(t), "api", "openapi.yaml"),
+	} {
+		got, err := os.ReadFile(written)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile(committed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from what the generator writes; run make docs", committed)
+		}
+	}
+}

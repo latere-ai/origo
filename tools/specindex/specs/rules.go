@@ -101,7 +101,7 @@ func (idx *Index) CheckRules(rules []Rule) []string {
 		for _, tok := range metricTok.FindAllString(r.Expr, -1) {
 			name := tok
 			for _, s := range suffixes {
-				if base := strings.TrimSuffix(name, s); base != name {
+				if base, ok := strings.CutSuffix(name, s); ok {
 					name = base
 					break
 				}

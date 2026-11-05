@@ -274,7 +274,7 @@ func scan(num, body string) ([]definition, []mention) {
 	}
 
 	lines := strings.Split(body, "\n")
-	for i := 0; i < len(lines); i++ {
+	for i := range len(lines) {
 		if !isTableRow(lines[i]) || i+1 >= len(lines) || !isSeparator(lines[i+1]) {
 			continue
 		}

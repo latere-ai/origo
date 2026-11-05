@@ -47,43 +47,43 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	idx, err := specs.Build(*dir)
 	if err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
 	for _, f := range idx.Findings {
-		fmt.Fprintln(stderr, "apidoc:", f)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", f)
 	}
 	if len(idx.Findings) > 0 {
 		return 1
 	}
 	page, err := Page(idx)
 	if err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
 	if !*write {
-		fmt.Fprint(stdout, page)
+		_, _ = fmt.Fprint(stdout, page)
 		return 0
 	}
 	if err := os.WriteFile(*out, []byte(page), 0o644); err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "apidoc: wrote %s\n", *out)
+	_, _ = fmt.Fprintf(stdout, "apidoc: wrote %s\n", *out)
 	doc, err := Build(idx)
 	if err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
 	body, err := doc.YAML()
 	if err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
 	if err := os.WriteFile(*document, body, 0o644); err != nil {
-		fmt.Fprintln(stderr, "apidoc:", err)
+		_, _ = fmt.Fprintln(stderr, "apidoc:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "apidoc: wrote %s\n", *document)
+	_, _ = fmt.Fprintf(stdout, "apidoc: wrote %s\n", *document)
 	return 0
 }

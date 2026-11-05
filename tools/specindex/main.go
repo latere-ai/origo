@@ -57,26 +57,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	idx, err := specs.Build(*dir)
 	if err != nil {
-		fmt.Fprintln(stderr, "specindex:", err)
+		_, _ = fmt.Fprintln(stderr, "specindex:", err)
 		return 1
 	}
 	for _, f := range idx.Findings {
-		fmt.Fprintln(stderr, "specindex:", f)
+		_, _ = fmt.Fprintln(stderr, "specindex:", f)
 	}
 	if *rules != "" {
 		document, alerts, err := specs.Rules(*rules)
 		if err != nil {
-			fmt.Fprintln(stderr, "specindex:", err)
+			_, _ = fmt.Fprintln(stderr, "specindex:", err)
 			return 1
 		}
 		found := idx.CheckRules(alerts)
 		for _, f := range found {
-			fmt.Fprintln(stderr, "specindex:", f)
+			_, _ = fmt.Fprintln(stderr, "specindex:", f)
 		}
 		if len(found) > 0 || len(idx.Findings) > 0 {
 			return 1
 		}
-		fmt.Fprint(stdout, document)
+		_, _ = fmt.Fprint(stdout, document)
 		return 0
 	}
 	readme := filepath.Join(*dir, "README.md")
@@ -84,23 +84,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch {
 	case *write:
 		if err := specs.Splice(readme, table); err != nil {
-			fmt.Fprintln(stderr, "specindex:", err)
+			_, _ = fmt.Fprintln(stderr, "specindex:", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "specindex: %d names written to %s\n", len(idx.Names), readme)
+		_, _ = fmt.Fprintf(stdout, "specindex: %d names written to %s\n", len(idx.Names), readme)
 	case *check:
 		current, err := specs.Current(readme)
 		if err != nil {
-			fmt.Fprintln(stderr, "specindex:", err)
+			_, _ = fmt.Fprintln(stderr, "specindex:", err)
 			return 1
 		}
 		if current != table {
-			fmt.Fprintln(stderr, "specindex: README.md table differs from the specs; run go run ./tools/specindex -write")
+			_, _ = fmt.Fprintln(stderr, "specindex: README.md table differs from the specs; run go run ./tools/specindex -write")
 			return 1
 		}
-		fmt.Fprintf(stdout, "specindex: %d names, README.md current\n", len(idx.Names))
+		_, _ = fmt.Fprintf(stdout, "specindex: %d names, README.md current\n", len(idx.Names))
 	default:
-		fmt.Fprint(stdout, table)
+		_, _ = fmt.Fprint(stdout, table)
 	}
 	if len(idx.Findings) > 0 && (*check || *write) {
 		return 1
