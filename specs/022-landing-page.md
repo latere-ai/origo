@@ -51,19 +51,19 @@ as unauthenticated now.
 The public listener has two levels of mux, and the page goes on the
 outer one, in `publicHandler`, beside the probes:
 
-```
-public listener
-└── outer mux (cmd/origod, publicHandler)
-    ├── GET /{$}                 landing page      unauthenticated
-    ├── GET /favicon.ico         204               unauthenticated
-    ├── GET /readyz              probe             unauthenticated
-    ├── GET /version             probe             unauthenticated
-    ├── GET /.well-known/jwks.json  key set        unauthenticated
-    └── /                        verifier → limits → application mux
-                                 ├── /r/{id}/...             git
-                                 ├── /{owner}/{slug}/{service...}  git, by name
-                                 ├── /v1/...                 API
-                                 └── /{repo}/info/lfs/...    LFS
+```mermaid
+flowchart TD
+  listener["public listener"] --> outer["outer mux (cmd/origod, publicHandler)"]
+  outer --> landing["GET /{$}: landing page, unauthenticated"]
+  outer --> favicon["GET /favicon.ico: 204, unauthenticated"]
+  outer --> readyz["GET /readyz: probe, unauthenticated"]
+  outer --> version["GET /version: probe, unauthenticated"]
+  outer --> jwks["GET /.well-known/jwks.json: key set, unauthenticated"]
+  outer --> app["/ : verifier, then limits, then the application mux"]
+  app --> git["/r/{id}/...: git"]
+  app --> named["/{owner}/{slug}/{service...}: git, by name"]
+  app --> api["/v1/...: API"]
+  app --> lfs["/{repo}/info/lfs/...: LFS"]
 ```
 
 Nothing of the git or API surface can be shadowed, for two reasons and

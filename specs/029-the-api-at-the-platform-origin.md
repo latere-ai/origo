@@ -51,19 +51,27 @@ origin, and the boundary between cores is the authorizer's.
 
 ### The two hosts
 
-```
-git.example.com                         api.example.com
- TLS on origod's own object              TLS on arcad's object
- /{owner}/{slug}/info/refs               /v1/repos            ─┐ origod,
- /{owner}/{slug}/git-upload-pack         /v1/repos/{id}        │ no rewrite,
- /{owner}/{slug}/git-receive-pack        /v1/repos/{id}/refs   │ no base path
- /{owner}/{slug}/info/lfs/…              …every route the mux ─┘
- git over SSH, TCP 22                     already registers
- /v1/…  unchanged until the git          /v1/storage/…  arcad
-        host's API paths retire          /v1/environments/…, /v1/models/… as
- /readyz, /version                        each core arrives
- /.well-known/jwks.json
- /  origo-web
+```mermaid
+flowchart LR
+  subgraph githost["git.example.com, TLS on origod's own object"]
+    gitpaths["/{owner}/{slug}/info/refs, git-upload-pack, git-receive-pack, info/lfs/..."]
+    ssh["git over SSH, TCP 22"]
+    oldapi["/v1/... unchanged until the git host's API paths retire"]
+    probes["/readyz, /version, /.well-known/jwks.json"]
+    root["/"]
+  end
+  subgraph apihost["api.example.com, TLS on arcad's object"]
+    repos["/v1/repos, /v1/repos/{id}, /v1/repos/{id}/refs, every route the mux already registers"]
+    storage["/v1/storage/..."]
+    later["/v1/environments/..., /v1/models/..., as each core arrives"]
+  end
+  gitpaths --> origod
+  ssh --> origod
+  oldapi --> origod
+  probes --> origod
+  repos -->|"no rewrite, no base path"| origod
+  root --> web["origo-web"]
+  storage --> arcad
 ```
 
 Transport stays on the git host: clone, LFS and SSH URLs name that host

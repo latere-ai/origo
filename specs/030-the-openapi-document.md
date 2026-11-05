@@ -109,21 +109,12 @@ builds, and rendered to JSON by the standard library, then to YAML by
 the tool's own module (`tools/apidoc/go.mod`), which is not the node's.
 `make docs` writes both pages and the document in one run:
 
-```
-specs/*.md  ──►  tools/specindex/specs.Build  ──►  Index
-                                                    │
-                          ┌─────────────────────────┴───────────────┐
-                          ▼                                         ▼
-                    Page(idx)                               Document(idx)
-                          │                                         │
-                          ▼                                  JSON ──► YAML
-                   docs/api.md                                       │
-                                                                     ▼
-                                                            api/openapi.yaml
-                                                                     │
-                                                              //go:embed
-                                                                     ▼
-                                                     GET /openapi.yaml at the node
+```mermaid
+flowchart TD
+  specs["specs/*.md"] --> build["tools/specindex/specs.Build"] --> index["Index"]
+  index --> page["Page(idx)"] --> apimd["docs/api.md"]
+  index --> document["Document(idx)"] -->|"JSON to YAML"| yaml["api/openapi.yaml"]
+  yaml -->|"//go:embed"| served["GET /openapi.yaml at the node"]
 ```
 
 The document is OpenAPI `3.1.0`. `info.title` is Origo, `info.version` is the
