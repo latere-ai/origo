@@ -366,6 +366,15 @@ change at the top of its `kustomization.yaml`. In yours you set:
   clone of a large repository is one long response. The names differ per
   controller; `deploy/examples/kind/patches/ingress-nginx.yaml` is the
   ingress-nginx form and `deploy/examples/aws/ingress.yaml` the ALB form.
+- **the proxies in front of the node**, in `ORIGO_TRUSTED_PROXIES`, if
+  your authorization endpoint audits or rate-limits by the caller's IP.
+  Behind the ingress every request reaches the node from the controller,
+  so without it the endpoint sees the controller's address for every
+  caller. Set it to the CIDR range the controller connects from, its pod
+  network in most clusters, and Origo reads the client's address from
+  the `X-Forwarded-For` header the controller adds. A request from any
+  other address keeps its own, so a client that reaches the node
+  directly cannot claim another.
 - **the replica bounds**, in the autoscaler. It scales on CPU alone and
   needs `metrics-server` in the cluster.
 - **the release**, in a kustomize `images:` entry naming

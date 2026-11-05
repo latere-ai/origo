@@ -1182,6 +1182,7 @@ name, or when a spec names something no spec defines.
 | variable | `ORIGO_TEST_URL` | [002](002-repository-scaffold.md) | 003, 010, 013, 014, 019, 020, 021, 025, 040 |
 | variable | `ORIGO_TOKEN` | [025](025-agent-client.md) | 043 |
 | variable | `ORIGO_TOKEN_KEY` | [002](002-repository-scaffold.md) | 007, 013, 016, 018, 024, 025, 028, 031 |
+| variable | `ORIGO_TRUSTED_PROXIES` | [028](028-authorizer-contract-2.md) | 002 |
 | variable | `ORIGO_URL` | [025](025-agent-client.md) | 043 |
 | variable | `OTEL_*` | [002](002-repository-scaffold.md) | - |
 | variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | [002](002-repository-scaffold.md) | 011 |

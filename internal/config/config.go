@@ -183,6 +183,14 @@ type Config struct {
 	ClusterCIDRs []netip.Prefix
 	EgressCA     *x509.CertPool
 
+	// TrustedProxies is ORIGO_TRUSTED_PROXIES (Origo spec 028): the
+	// ranges of the proxies in front of the public listener, such as an
+	// ingress controller. A request whose peer is inside one of them
+	// names its caller to the authorizer by X-Forwarded-For, the
+	// rightmost entry outside the ranges. Empty, the caller is the peer
+	// and the header is never read.
+	TrustedProxies []netip.Prefix
+
 	// SSH (spec 024). SSHAddr is ORIGO_SSH_ADDR, the address the SSH
 	// listener binds; empty turns SSH off and the node runs as it does
 	// without it. The other three are required with it: SSHHostKeys is
@@ -364,14 +372,8 @@ func Load(getenv Getenv) (*Config, error) {
 	}
 	sshConfig(getenv, cfg, &problems)
 	cfg.EgressAllow, cfg.EgressPinned = egressAllow(getenv("ORIGO_EGRESS_ALLOW"), &problems)
-	for _, raw := range list(getenv("ORIGO_CLUSTER_CIDRS")) {
-		p, err := netip.ParsePrefix(raw)
-		if err != nil {
-			problems = append(problems, fmt.Sprintf("ORIGO_CLUSTER_CIDRS: %s is not a CIDR range", raw))
-			continue
-		}
-		cfg.ClusterCIDRs = append(cfg.ClusterCIDRs, p.Masked())
-	}
+	cfg.ClusterCIDRs = cidrs(getenv, "ORIGO_CLUSTER_CIDRS", &problems)
+	cfg.TrustedProxies = cidrs(getenv, "ORIGO_TRUSTED_PROXIES", &problems)
 	if path := getenv("ORIGO_EGRESS_CA_BUNDLE"); path != "" {
 		pool, err := caBundle(path)
 		if err != nil {
@@ -430,6 +432,21 @@ func list(raw string) []string {
 		if s = strings.TrimRight(strings.TrimSpace(s), "/"); s != "" {
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// cidrs parses a comma separated variable of CIDR ranges, each masked
+// to its network, and names every entry that is not one.
+func cidrs(getenv Getenv, key string, problems *[]string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, raw := range list(getenv(key)) {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			*problems = append(*problems, fmt.Sprintf("%s: %s is not a CIDR range", key, raw))
+			continue
+		}
+		out = append(out, p.Masked())
 	}
 	return out
 }

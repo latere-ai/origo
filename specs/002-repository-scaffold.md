@@ -7,7 +7,7 @@ depends_on:
 affects: [cmd/origod/, internal/config/, internal/version/, Makefile, .lateregate.yaml, Dockerfile, Dockerfile.ci, docker-compose.yml, deploy/, .github/workflows/, tools/smoke/]
 effort: small
 created: 2026-09-06
-updated: 2026-09-26
+updated: 2026-11-05
 author: changkun
 ---
 
@@ -239,6 +239,7 @@ one page:
 | spec 024 | `ORIGO_SSH_KEYS_TOKEN` | the bearer Origo sends that endpoint |
 | spec 027 | `ORIGO_ANONYMOUS_READ` | `1` admits a request with no credential on the read routes spec 027 lists, with an empty subject the authorizer decides on; unset admits none and is the default |
 | spec 027 | `ORIGO_ANONYMOUS_REQUESTS_PER_MINUTE` | the refill of the one bucket every anonymous caller of a node shares, `60` by default; read only when the switch is on |
+| spec 028 | `ORIGO_TRUSTED_PROXIES` | the CIDR ranges of the proxies in front of the public listener; from a peer inside one of them the authorizer's `request.ip` is the rightmost `X-Forwarded-For` entry outside them; unset names the peer and is the default |
 
 ### Failpoints
 

@@ -335,8 +335,9 @@ func newNode(cfg *config.Config, logger *slog.Logger) (*node, error) {
 	})
 	// The rate limit of spec 012 sits behind the verifier, so it counts
 	// against the effective subject the token named, and in front of
-	// every route of the application surface.
-	n.public = n.verifier.Middleware(n.limits.Middleware(capture(app)))
+	// every route of the application surface. The verifier reads the
+	// caller's address through the trusted proxies (Origo spec 028).
+	n.public = n.verifier.MiddlewareBehind(cfg.TrustedProxies, n.limits.Middleware(capture(app)))
 	n.app = app
 	// SSH (spec 024), when the operator turned it on: a third listener
 	// over the same guard, the same cache, and the same git handler, so

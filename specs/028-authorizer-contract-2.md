@@ -7,10 +7,10 @@ depends_on:
   - specs/007-authentication-and-delegation.md
   - specs/026-repository-directory.md
   - specs/027-anonymous-read.md
-affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
+affects: [authorizer/, internal/auth/, internal/contract/, internal/httpgit/, internal/api/, internal/sshd/, internal/config/, cmd/origod/, test/stubs/authorizer/, test/conformance/, docs/api.md, docs/install.md, docs/authorizer.md, docs/configuration.md, specs/003-protocol-contract.md, specs/007-authentication-and-delegation.md]
 effort: medium
 created: 2026-09-13
-updated: 2026-10-07
+updated: 2026-11-05
 author: changkun
 ---
 
@@ -935,3 +935,49 @@ longer than 512 bytes shortens it before the nodes move to the second.
 |---|---|---|
 | A `next_cursor` of 512 bytes is sealed and served, and one of 513 bytes is 503 `authorizer_unavailable` | `internal/auth`, `TestTheAuthorizerCursorIsBounded` | built |
 | `docs/authorizer.md` states the sealed cursor, its binding to the endpoint and the subject, and the bound | `tools/docs`, `TestTheAuthorizerPageStatesTheCursorRule` | built |
+
+## State on 2026-11-05: the caller's address behind a proxy
+
+The envelope's `request.ip` is the caller's address, for an endpoint
+that audits or rate-limits by caller. The node took it from the TCP
+peer. Behind the ingress `docs/install.md` sets up for HTTPS, the peer
+of every request is the ingress controller, so every envelope named the
+same address and the field told the endpoint nothing.
+
+### The setting
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ORIGO_TRUSTED_PROXIES` | unset | comma separated CIDR ranges of the proxies in front of the public listener, such as the ingress controller's pod network; a request whose peer is inside one of them carries the rightmost `X-Forwarded-For` entry outside them as `request.ip`; unset, `request.ip` is the peer and the header is never read; an entry that is not a range, a bare address included, is a problem in the one start-up message |
+
+### The rule
+
+A peer outside every range is the caller, and its `X-Forwarded-For` is
+never read, so a client that reaches the node directly cannot name its
+own address. A peer inside a range is a proxy. Each proxy appends the
+address it heard from, so the node walks the header from the right,
+every `X-Forwarded-For` line in order and every comma separated entry of
+each, skips the entries inside the ranges, and takes the first entry
+outside them. Everything left of that entry was written by the hop it
+names, which no trusted proxy vouches for. An entry may carry a port,
+bracketed for IPv6, and an IPv4 address mapped into IPv6 meets its IPv4
+range. An entry that is not an address ends the walk, and so does
+running out of entries; both keep the peer, so `request.ip` is always an
+address a trusted hop saw and never a string from the header.
+
+Nothing else reads the header. SSH has no proxy header, and its
+`request.ip` stays the TCP peer. The rate limits of spec 012 count per
+subject and per node, not per address, and are unchanged. An
+installation that leaves the variable unset sends the envelope it sent
+before, byte for byte.
+
+### Acceptance
+
+| Criterion | Test that proves it | State |
+|---|---|---|
+| A caller that reaches the node directly with a forged `X-Forwarded-For` is named by its own address | `internal/auth`, `TestASpoofedForwardedForFromAnUntrustedPeerIsIgnored` | built |
+| A request through two trusted proxies names the client, in one header line or one per proxy, with ports and over IPv6, and an entry the client wrote left of its own address is never read | `internal/auth`, `TestAChainThroughTwoTrustedProxiesNamesTheClient` | built |
+| With no trusted proxies the request block names the peer and the header is never read | `internal/auth`, `TestNoTrustedProxiesKeepsThePeerAddress` | built |
+| From a trusted peer, no header, an all-proxy chain, an entry that is no address, and a peer that is no address keep the peer | `internal/auth`, `TestTheForwardedWalkKeepsThePeerWhenNoEntryIsUsable` | built |
+| `ORIGO_TRUSTED_PROXIES` reads masked IPv4 and IPv6 ranges, and a bare address or a name is a start-up problem | `internal/config`, `TestTrustedProxiesAreCIDRRanges` | built |
+| A running node sends the authorizer the forwarded client behind a trusted ingress, and the peer without the variable | `cmd/origod`, `TestTheAuthorizerHearsTheCallerBehindTheIngress` | built |

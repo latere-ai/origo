@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -649,5 +650,41 @@ func TestEgressAllowsExplicitSingleLabelHosts(t *testing.T) {
 	m["ORIGO_EGRESS_ALLOW"] = "*.localhost"
 	if _, err := Load(env(m)); err == nil {
 		t.Fatal("single-label wildcard accepted")
+	}
+}
+
+// TestTrustedProxiesAreCIDRRanges reads ORIGO_TRUSTED_PROXIES (Origo
+// spec 028): comma separated ranges, each masked to its network, IPv4
+// and IPv6 alike; unset trusts no proxy; an entry that is not a range,
+// a bare address included, is a problem of the one start-up message.
+func TestTrustedProxiesAreCIDRRanges(t *testing.T) {
+	m := complete(t)
+	m["ORIGO_TRUSTED_PROXIES"] = " 10.244.7.1/16, fd00:10::/64"
+	cfg, err := Load(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []netip.Prefix{netip.MustParsePrefix("10.244.0.0/16"), netip.MustParsePrefix("fd00:10::/64")}; !slices.Equal(cfg.TrustedProxies, want) {
+		t.Fatalf("TrustedProxies = %v, want %v", cfg.TrustedProxies, want)
+	}
+
+	cfg, err = Load(env(complete(t)))
+	if err != nil || len(cfg.TrustedProxies) != 0 {
+		t.Fatalf("unset: %v %v", cfg, err)
+	}
+
+	m = complete(t)
+	m["ORIGO_TRUSTED_PROXIES"] = "10.244.0.0/16,10.244.0.5,ingress"
+	_, err = Load(env(m))
+	if err == nil {
+		t.Fatal("malformed ranges accepted")
+	}
+	for _, want := range []string{
+		"ORIGO_TRUSTED_PROXIES: 10.244.0.5 is not a CIDR range",
+		"ORIGO_TRUSTED_PROXIES: ingress is not a CIDR range",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message lacks %q:\n%s", want, err)
+		}
 	}
 }

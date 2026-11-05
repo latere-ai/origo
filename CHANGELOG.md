@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Added
+
+- **An authorization endpoint behind an ingress can see each caller's
+  IP.** Set `ORIGO_TRUSTED_PROXIES` to the ranges of the proxies in front
+  of the node, and `request.ip` is the client's address from
+  `X-Forwarded-For` rather than the ingress controller's. The header is
+  read only from a peer in those ranges, so a client that reaches the
+  node directly cannot name another address. Unset, nothing changes.
+
 ## v0.16.9 - 2026-11-05
 
 ### Fixed

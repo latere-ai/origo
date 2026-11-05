@@ -54,7 +54,7 @@ Content-Type: application/json
 | `resource.kind` | `Repository`, always |
 | `resource.id` | the repository id, a lower-case UUID. Empty for a name Origo could not resolve, and absent on `repo.list` |
 | `resource.owner`, `resource.slug` | set when the request named the repository by owner and slug, and on a creation; empty when it named the id |
-| `request` | the request id Origo logs the call under, the caller's IP, and its user agent, for an endpoint that audits or rate-limits |
+| `request` | the request id Origo logs the call under, the caller's IP, and its user agent, for an endpoint that audits or rate-limits. Behind a proxy the IP is the proxy's unless the node sets `ORIGO_TRUSTED_PROXIES` to the proxy's range; then it is the client's address from `X-Forwarded-For` |
 
 Check the bearer first. It is how the endpoint tells Origo from
 anything else that reaches it.
