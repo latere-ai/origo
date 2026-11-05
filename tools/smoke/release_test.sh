@@ -32,6 +32,14 @@ esac
 grep -q 'Served version: `v1.2.3`' "$evidence" || { echo "FAIL the evidence does not record the served version"; cat "$evidence"; exit 1; }
 rm -f "$evidence" 2>/dev/null || :
 
+# 1b. LANDING=1 against a root that names the version passes and says so.
+out=$(BASE_URL="$STUB_URL" TAG=v1.2.3 LANDING=1 "$bash" "$dir/release.sh" 0<&- 2>&1) \
+  || { echo "FAIL release.sh failed with LANDING=1 against a landing page:"; echo "$out"; exit 1; }
+case "$out" in
+  *"the landing page names the served version"*) ;;
+  *) echo "FAIL the landing check is not reported:"; echo "$out"; exit 1 ;;
+esac
+
 # 2. Another tag fails, naming both versions, once the wait for the
 #    rollout to reach the ingress is over.
 if out=$(BASE_URL="$STUB_URL" TAG=v9.9.9 VERSION_WAIT=1 "$bash" "$dir/release.sh" 0<&- 2>&1); then
@@ -52,8 +60,9 @@ case "$out" in
 esac
 
 # 4. A root that is not Origo's fails while the landing check is on, so
-#    case 5 proves LANDING=0 skipped it rather than passing anyway.
-if out=$(BASE_URL="$SHARED_STUB_URL" "$bash" "$dir/release.sh" 0<&- 2>&1); then
+#    case 5 proves leaving LANDING unset skipped it rather than passing
+#    anyway.
+if out=$(BASE_URL="$SHARED_STUB_URL" LANDING=1 "$bash" "$dir/release.sh" 0<&- 2>&1); then
   echo "FAIL release.sh passed with a root that does not name the version:"
   echo "$out"
   exit 1
@@ -63,14 +72,14 @@ case "$out" in
   *) echo "FAIL the landing failure is not named:"; echo "$out"; exit 1 ;;
 esac
 
-# 5. LANDING=0 is the installation that shares its hostname with the
-#    browsing interface: the probes are still Origo's, / is not checked,
-#    and the evidence says so.
-out=$(BASE_URL="$SHARED_STUB_URL" LANDING=0 OUTPUT_MD="$evidence" "$bash" "$dir/release.sh" 0<&- 2>&1) \
-  || { echo "FAIL release.sh failed with LANDING=0:"; echo "$out"; exit 1; }
+# 5. LANDING unset is the installation that shares its hostname with the
+#    browsing interface, which is the release pipeline's: the probes are
+#    still Origo's, / is not checked, and the evidence says so.
+out=$(env -u LANDING BASE_URL="$SHARED_STUB_URL" OUTPUT_MD="$evidence" "$bash" "$dir/release.sh" 0<&- 2>&1) \
+  || { echo "FAIL release.sh failed with LANDING unset:"; echo "$out"; exit 1; }
 case "$out" in
-  *"/ is served by the browsing interface on this hostname (LANDING=0)"*) ;;
-  *) echo "FAIL LANDING=0 is not reported:"; echo "$out"; exit 1 ;;
+  *"/ is served by the browsing interface on this hostname (LANDING unset)"*) ;;
+  *) echo "FAIL the skipped landing check is not reported:"; echo "$out"; exit 1 ;;
 esac
 grep -q 'was not checked: the browsing interface serves it' "$evidence" \
   || { echo "FAIL the evidence does not record the skipped landing check"; cat "$evidence"; exit 1; }

@@ -1,6 +1,7 @@
 # A vX.Y.Z tag is a release. The build, the signatures and the publish
-# run through latere-ai/ci's shared image release stages; the steps only
-# Origo has run as its own jobs between and after them, and read the
+# run through latere-ai/ci's shared image release stages, and so does the
+# deploy; the steps only Origo has run as its own jobs between and after
+# them, and read the
 # images the build stage pushed from its outputs. Nothing has a tag until
 # the publish stage, so every job before it names an image by digest.
 #
@@ -14,9 +15,10 @@
 #   conformance     the kind stack of spec 013 from the pushed digests:
 #                   the release fixture, spec 021's TestContract, and the
 #                   fixture the previous release attached
-#   deploy          only with the repository variable ORIGO_RELEASE_DEPLOY:
-#                   deploy/prod applied at the origod digest, the rollout
-#                   waited for, the smoke
+#   deploy          image-deploy.yml, only with the repository variable
+#                   ORIGO_RELEASE_DEPLOY: deploy/prod applied at the origod
+#                   digest, the rollout waited for, the smoke repeated until
+#                   the live service serves the tag
 #   live            spec 021's run against ORIGO_LIVE_URL
 #   publish         image-publish.yml: the digests tagged, checksums.txt
 #                   over every file the release attaches, the fixture
@@ -235,91 +237,38 @@ jobs:
           path: release-evidence/conformance.md
           if-no-files-found: error
 
-  # Step 3. Latere's own installation. The repository variable and the
-  # kubeconfig secret are set on this repository and on no fork, so a
-  # tag on a fork publishes every artifact and skips this step.
+  # Step 3. Latere's own installation, deployed by the shared image-deploy
+  # stage of latere-ai/ci. The repository variable and the kubeconfig secret
+  # are set on this repository and on no fork, so a tag on a fork publishes
+  # every artifact and skips this step. The stage runs under the production
+  # environment, so the rollout is a GitHub deployment with a URL.
+  #
+  # Only the origod image is passed. The build also pushes origo-stubs,
+  # which deploy/prod does not run, and the stage refuses an image the
+  # overlay does not name. The image is given as the overlay's own name for
+  # it, so a fork, whose packages have another ref, is still rewritten in
+  # deploy/prod and in both containers of the Deployment, the node and the
+  # check that runs in front of it. deploy/bootstrap is never read.
+  #
+  # The smoke leaves the landing check off: code.latere.ai shares its
+  # hostname with the browsing interface (latere-ai/origo-web), which serves
+  # / in place of the landing page of spec 022. Everything the smoke reaches
+  # under a path is still Origo's.
   deploy:
     name: deploy and smoke
     needs: [build, conformance]
     if: ${{ vars.ORIGO_RELEASE_DEPLOY != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: production
+    # Called at a commit of latere-ai/ci. It moves to @v1, with the other
+    # stages, once ci v1.31.0 is cut.
+    uses: latere-ai/ci/.github/workflows/image-deploy.yml@12fc0c8ce53940211c521a3dc27561c75b3b78f1
+    permissions:
+      contents: read
+    with:
+      images: ghcr.io/latere-ai/origod=${{ needs.build.outputs.ref_1 }}@${{ needs.build.outputs.digest_1 }}
+      deployments: origod
       url: https://code.latere.ai
-    outputs:
-      evidence: ${{ steps.smoke.outputs.evidence }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Write the kubeconfig
-        env:
-          KUBECONFIG_CONTENT: ${{ secrets.ORIGO_KUBECONFIG }}
-        run: |
-          set -euo pipefail
-          install -m 700 -d "$RUNNER_TEMP/kube"
-          printf '%s' "$KUBECONFIG_CONTENT" > "$RUNNER_TEMP/kube/config"
-          chmod 600 "$RUNNER_TEMP/kube/config"
-          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
-      # deploy/prod holds only re-appliable manifests; deploy/bootstrap
-      # is never read here.
-      - name: Apply deploy/prod and roll the new image
-        env:
-          ORIGOD_IMAGE: ${{ needs.build.outputs.ref_1 }}
-          ORIGOD_DIGEST: ${{ needs.build.outputs.digest_1 }}
-        run: |
-          set -euo pipefail
-          # The namespace is the overlay's, not a name repeated here: an
-          # installation chooses where it runs, and this job deploys
-          # whatever deploy/prod declares.
-          NS=$(kubectl kustomize deploy/prod | awk '/^  namespace: /{print $2; exit}')
-          test -n "$NS"
-          # deploy/prod is Latere's overlay and its images field selects
-          # the base by the namespace the tree carries. A repository
-          # publishing elsewhere applies the same manifests against its
-          # own packages, so the name moves with the images before the
-          # apply rather than only on the set image below.
-          if [ "$ORIGOD_IMAGE" != "ghcr.io/latere-ai/origod" ]; then
-            sed -i "s|ghcr.io/latere-ai/origod|${ORIGOD_IMAGE}|g" deploy/prod/kustomization.yaml deploy/base/deployment.yaml
-          fi
-          # The overlay pins the release's tag, which the publish stage
-          # gives the digest only after this job. The pin moves to the
-          # digest before the apply, so no ReplicaSet names a tag that
-          # does not resolve yet. The overlay has one images entry; a
-          # second would take origod's digest here, so it is refused.
-          test "$(grep -c '^    newTag: ' deploy/prod/kustomization.yaml)" = 1
-          sed -i "s|^    newTag: .*|    digest: ${ORIGOD_DIGEST}|" deploy/prod/kustomization.yaml
-          kubectl apply -k deploy/prod/
-          # Every container of the workload, which is the node and the
-          # check that runs in front of it; both are this one image.
-          kubectl -n "$NS" set image deployment/origod "*=${ORIGOD_IMAGE}@${ORIGOD_DIGEST}"
-          kubectl -n "$NS" rollout status deployment/origod --timeout=600s
-      - name: Smoke the live service
-        id: smoke
-        env:
-          BASE_URL: https://code.latere.ai
-          # code.latere.ai is shared with the browsing interface
-          # (latere-ai/origo-web), which serves / in place of the landing
-          # page of spec 022. Everything the smoke reaches under a path is
-          # still Origo's.
-          LANDING: "0"
-          TAG: ${{ github.ref_name }}
-          COMMIT: ${{ github.sha }}
-          DEPLOY_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          mkdir -p release-evidence
-          OUTPUT_MD=release-evidence/smoke.md tools/smoke/release.sh
-          cat release-evidence/smoke.md >> "$GITHUB_STEP_SUMMARY"
-          {
-            echo 'evidence<<CI_EOF'
-            cat release-evidence/smoke.md
-            echo CI_EOF
-          } >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: smoke-evidence
-          path: release-evidence/smoke.md
-          if-no-files-found: error
+    secrets:
+      DEPLOY_KUBECONFIG: ${{ secrets.ORIGO_KUBECONFIG }}
 
   # Step 4. The live run of spec 021: TestContract against the
   # installation ORIGO_LIVE_URL names, with that spec's six-entry skip

@@ -27,8 +27,8 @@ import (
 //
 // A second stub answers the two probes the same way and serves a root
 // that is not Origo's, which is what an installation sharing its
-// hostname with the browsing interface looks like. It proves LANDING=0
-// skips the landing check and LANDING unset still enforces it.
+// hostname with the browsing interface looks like. It proves LANDING unset
+// skips the landing check and LANDING=1 enforces it.
 //
 // A third stub serves the previous version for its first two answers to
 // GET /version, which is what the ingress does for a moment after the

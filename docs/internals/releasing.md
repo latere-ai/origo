@@ -42,15 +42,15 @@ rather than shipping a stale version.
 `.github/workflows/release.yml` builds, signs and publishes through the
 shared image release stages of
 [latere-ai/ci](https://github.com/latere-ai/ci) (`image-build.yml`,
-`image-publish.yml`, `release-verify.yml`), with Origo's own jobs
-between and after them. It runs these jobs, in order, and publishes only
+`image-deploy.yml`, `image-publish.yml`, `release-verify.yml`), with
+Origo's own jobs between and after them. It runs these jobs, in order, and publishes only
 when the ones before `publish` pass:
 
 | Job | What it does |
 |---|---|
 | `build` | the build stage. Refuses a tag whose commit is not on `main` or whose `verify.yml` run on the branch push did not pass, waiting up to an hour for a run still going, and a tag without a changelog section. Builds `origod` and `origo` for linux and darwin on amd64 and arm64 into eight archives, then the two multi-arch images (`origod`, `origo-stubs`), each pushed by digest under no tag, checks `origod` reports the tag's version, signs both keylessly, writes an SPDX bill of materials for each, and attaches SBOM and build provenance attestations to each image. Last, the deploy archive |
 | `conformance` | pulls the pushed digests, checks git inside `origod`, brings up the kind stack from them and runs the conformance suite, the release fixture, and the previous release's fixture on this build, which is what proves the log format still reads, then packs this release's fixture |
-| `deploy` | only when the repository variable `ORIGO_RELEASE_DEPLOY` is set: applies `deploy/prod` with `origod` pinned to the pushed digest, waits for the rollout, and runs `tools/smoke/release.sh`, which waits for the served version to reach the tag |
+| `deploy` | the deploy stage, only when the repository variable `ORIGO_RELEASE_DEPLOY` is set: sets `origod` in `deploy/prod` to the pushed digest (both containers of the Deployment run it), applies the overlay with the kubeconfig in the `ORIGO_KUBECONFIG` secret, waits for the `origod` rollout, then runs `tools/smoke/release.sh` against `https://code.latere.ai` every five seconds for up to two minutes until it serves the tag. `/` belongs to the browsing interface on that hostname, so the smoke leaves the landing check off. Only `origod` is passed: `origo-stubs` is pushed too, but `deploy/prod` does not run it |
 | `live` | the conformance suite against `ORIGO_LIVE_URL` |
 | `publish` | the publish stage. Tags both digests with the version, writes `checksums.txt` over every file the release attaches, the fixture included, signs it keylessly, and publishes the GitHub release with the changelog section and the evidence of the jobs above |
 | `install-release` | checks that `checksums.txt` names the deploy archive and the fixture and that the archive carries the base, the page and `origod` at the tag, then walks `docs/install.md` on a bare kind cluster against the published images and the published deploy archive, with nothing from this workflow's own build |

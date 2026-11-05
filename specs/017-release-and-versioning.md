@@ -146,12 +146,12 @@ makes. On a `v*` tag:
    identity. It runs here and not in `build` because the fixture exists
    only once this step has packed it.
 3. `deploy`: runs only when the repository variable
-   `ORIGO_RELEASE_DEPLOY` (spec 002) is set: `kubectl`, with the
-   kubeconfig held in the repository secret `ORIGO_KUBECONFIG` (spec
-   002), runs `apply -k deploy/prod/` with the image pinned to the tag
-   and `rollout status` with a 10 minute wait, then
-   `tools/smoke/release.sh` runs against the public URL, whose markdown
-   output is the evidence. This repository sets the variable and the
+   `ORIGO_RELEASE_DEPLOY` (spec 002) is set: the shared `image-deploy.yml`
+   stage of latere-ai/ci, with the kubeconfig held in the repository
+   secret `ORIGO_KUBECONFIG` (spec 002), pins the image by digest in
+   `deploy/prod`, runs `apply -k deploy/prod/` and `rollout status` with a
+   10 minute wait, then `tools/smoke/release.sh` runs against the public
+   URL until it serves the tag, whose markdown output is the evidence. This repository sets the variable and the
    secret; a fork does not, so a tag on a fork publishes every artifact
    and skips this step.
 4. `live`: the live run of spec 021, `TestContract` against

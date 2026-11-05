@@ -12,6 +12,14 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- **A release deploys through the shared image-deploy stage.** The deploy job
+  of the release workflow now calls latere-ai/ci's `image-deploy.yml`: it pins
+  `origod` by digest in `deploy/prod`, applies the overlay, waits for the
+  rollout, and runs the smoke again until the live service serves the tag.
+  Nothing changes for an installation that deploys from its own tooling.
+- **`tools/smoke/release.sh` skips the landing check unless `LANDING=1`.**
+  The check was on unless `LANDING=0`. An installation whose `/` is Origo's
+  own landing page now sets `LANDING=1` to check it.
 - **The production overlay requests 160 MiB of memory per replica, not
   256 MiB.** A replica uses about 120 MiB at its peak; the 2 GiB limit is
   unchanged. The base is unchanged.

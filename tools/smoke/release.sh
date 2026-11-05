@@ -15,6 +15,8 @@
 #                  from the previous pod, so the first answer may be the old one
 #   COMMIT         release commit, for evidence output
 #   DEPLOY_URL     deploy workflow URL, for evidence output
+#   LANDING        1 checks that GET / serves the landing page naming the served
+#                  version; default 0, where / belongs to the browsing interface
 #   OUTPUT_MD      optional path for markdown evidence
 #   EXPECTED_ASSET, SERVICE_TOKEN  accepted (pipeline contract), unused
 
@@ -83,17 +85,18 @@ fi
 # read a page, not a credential dialog: the 200 without an Authorization
 # header is that proof, and the version on it is the one just rolled out.
 #
-# An installation that shares its hostname with the browsing interface
-# (latere-ai/origo-web) serves / from that interface instead, and there is
-# no landing page of Origo's to check. Such an installation sets LANDING=0
-# and keeps the proof the check was for: a browser still reads a page.
-if [ "${LANDING:-1}" = "1" ]; then
+# The check is off unless LANDING=1. Latere's installation shares its
+# hostname with the browsing interface (latere-ai/origo-web), which serves /
+# in place of a landing page of Origo's, so the release pipeline sets
+# nothing and the default is the production case. An installation that
+# serves Origo's own page at / sets LANDING=1 to check it.
+if [ "${LANDING:-0}" = "1" ]; then
   check_status "GET /" "/" "200" "$tmp/root"
   grep -q "$served" "$tmp/root" || fail "GET /: the page does not name the served version $served"
   pass "the landing page names the served version"
   root_note="\`GET /\` returned 200"
 else
-  pass "/ is served by the browsing interface on this hostname (LANDING=0)"
+  pass "/ is served by the browsing interface on this hostname (LANDING unset)"
   root_note="\`GET /\` was not checked: the browsing interface serves it"
 fi
 

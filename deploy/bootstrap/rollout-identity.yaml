@@ -19,7 +19,8 @@ metadata:
   name: origod-rollout
   namespace: latere
 rules:
-  # `kubectl apply -k` reads before it writes, and `set image` patches.
+  # `kubectl apply -k` reads before it writes and patches the Deployment to
+  # the image digest the release pinned.
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "create", "update", "patch"]

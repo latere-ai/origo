@@ -205,6 +205,7 @@ jobs:
 // workflow's own.
 const (
 	stageBuild   = "uses: latere-ai/ci/.github/workflows/image-build.yml@"
+	stageDeploy  = "uses: latere-ai/ci/.github/workflows/image-deploy.yml@"
 	stagePublish = "uses: latere-ai/ci/.github/workflows/image-publish.yml@"
 	stageVerify  = "uses: latere-ai/ci/.github/workflows/release-verify.yml@"
 )
@@ -382,6 +383,49 @@ func TestReleasePublishesUnderTheRepositoryOwnersNamespace(t *testing.T) {
 		if strings.Contains(line, "ORIGOD_IMAGE") || strings.Contains(line, "IMAGE_NAMESPACE") {
 			continue
 		}
+		// The deploy stage is given the overlay's name for the image next
+		// to the ref the build pushed, which is the same substitution.
+		if strings.Contains(line, "=${{ needs.build.outputs.ref_1 }}") {
+			continue
+		}
 		t.Errorf("release.yml:%d fixes an image namespace a fork cannot write: %s", i+1, code)
+	}
+}
+
+// TestTheDeployJobCallsTheDeployStageWithOnlyTheDeployedImage holds the
+// deploy job to the shared stage: it is gated by the repository variable,
+// hands the stage the one image deploy/prod runs under the overlay's own
+// name for it, by the digest the build pushed, and maps its kubeconfig
+// secret onto the stage's. The build also pushes origo-stubs, which the
+// overlay does not name, and the stage fails on an image it cannot place, so
+// that one is never passed. live and publish still wait for the job.
+func TestTheDeployJobCallsTheDeployStageWithOnlyTheDeployedImage(t *testing.T) {
+	text := readWorkflow(t, "release.yml")
+	jobs := parseJobs(text)
+	if got := stageJobs(text, jobs, stageDeploy); !slices.Equal(got, []string{"deploy"}) {
+		t.Fatalf("jobs with %q = %v, want [deploy]", stageDeploy, got)
+	}
+	deploy := jobText(text, "deploy")
+	for _, want := range []string{
+		"\n    if: ${{ vars.ORIGO_RELEASE_DEPLOY != '' }}",
+		"\n      images: ghcr.io/latere-ai/origod=${{ needs.build.outputs.ref_1 }}@${{ needs.build.outputs.digest_1 }}\n",
+		"\n      deployments: origod\n",
+		"\n      url: https://code.latere.ai\n",
+		"\n      DEPLOY_KUBECONFIG: ${{ secrets.ORIGO_KUBECONFIG }}",
+		"\n      contents: read",
+	} {
+		if !strings.Contains(deploy, want) {
+			t.Errorf("the deploy job does not carry %q", strings.TrimSpace(want))
+		}
+	}
+	for _, not := range []string{"needs.build.outputs.images", "ref_2", "digest_2", "kubectl", "sed -i", "LANDING", "tools/smoke/release.sh"} {
+		if strings.Contains(deploy, not) {
+			t.Errorf("the deploy job names %q; it passes only origod, and the stage runs the rest", not)
+		}
+	}
+	for _, waiter := range []string{"live", "publish"} {
+		if !dependsOn(jobs, waiter, "deploy") {
+			t.Errorf("%s does not need deploy", waiter)
+		}
 	}
 }
