@@ -1,6 +1,6 @@
 ## What this changes
 
-<!-- What behaviour is different after this, for whoever uses or runs Origo. -->
+<!-- What behavior is different after this, for whoever uses or runs Origo. -->
 
 ## Why
 

@@ -101,7 +101,7 @@ closed, 1 open, 2 half-open, and `OrigoBreakerOpen` (spec 011) fires.
 
 A call the caller's own context ended counts toward neither side of
 the breaker: the bucket did not fail it. Only a failure the wrapper's
-own deadline or the store itself produced counts, so the cancelled
+own deadline or the store itself produced counts, so the canceled
 fetches of a busy node cannot open its read breaker.
 
 `origo_storage_ops_total{op,result}` is recorded on every call, a
@@ -342,7 +342,7 @@ reader finds one answer:
 - A call the caller's own context ended counts toward neither side of
   the breaker: the bucket did not fail it. The first stack run of the
   slow tier showed why: under 200 concurrent clones a busy node's
-  cancelled fetches opened its read breaker and a push through it was
+  canceled fetches opened its read breaker and a push through it was
   refused. The readiness listing, which the probe's 2 second budget
   would end before the deadline, runs detached under the storage
   deadline alone and is shared by the probes that arrive while it
@@ -435,7 +435,7 @@ reader finds one answer:
 
 A defect found in existing code and fixed at its root, recorded in
 spec 005's Outcome: a worker's failure in the batched materialization
-was masked by the indexer's cancelled `index-pack` run, so a missing
+was masked by the indexer's canceled `index-pack` run, so a missing
 entry read as `context canceled`
 (`TestWorkerErrorIsNotMaskedByTheCancelledIndexer`).
 
@@ -489,7 +489,7 @@ at its root: the component's argument list without the proxy target,
 readiness that let a replica the bucket never answered into
 rotation, the pooled connections that hid a replica leaving the
 endpoint list, the cleanup order that deleted the repository the
-health wait read, the cancelled fetch masking the worker's error, and
+health wait read, the canceled fetch masking the worker's error, and
 the caller's cancellation counted as the bucket's failure.
 
 One defect of this build, found by review and fixed on 2026-09-08 by
