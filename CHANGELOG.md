@@ -178,26 +178,6 @@ committed: the commit log already holds that.
 
 ## v0.16.0 - 2026-10-07
 
-### Fixed
-
-- The install page was walked over SSH from the `v0.14.0` release
-  alone, to a key registered, a clone and a push over SSH, and the push
-  read back. Its SSH walkthrough now pushes as well as clones, and
-  registers the example key under the subject the HTTPS token carries,
-  `<issuer>|<sub>`, so a push over either transport is recorded under
-  one subject; before, the key's bare `sub` was a second subject that
-  the built-in owner policy would refuse. It prints the fingerprints of
-  the host keys it read, so the comparison it asks for can be made.
-- The install page inside `deploy-<version>.tar.gz` links the other
-  pages and the reference stubs at that release's tag in the
-  repository. Its relative links led nowhere in an unpacked archive.
-- The host key step removes the private keys it generated, as the
-  signing key step does, and both say the Secret is then the only copy
-  and how to take one. The page says the throwaway cluster needs the
-  host key Secret before its pods start, names the `origod-ssh-keys`
-  Secret a real overlay creates, and points at verifying the archive
-  before applying it.
-
 ### Added
 
 - The conformance suite verifies: `014/verify`, in the source group,
@@ -237,6 +217,26 @@ committed: the commit log already holds that.
   must shorten them before the nodes move to this release.
 - Replacing `ORIGO_TOKEN_KEY` now also ends every repository listing in
   progress, since its cursors are encrypted under a key derived from it.
+
+### Fixed
+
+- The install page was walked over SSH from the `v0.14.0` release
+  alone, to a key registered, a clone and a push over SSH, and the push
+  read back. Its SSH walkthrough now pushes as well as clones, and
+  registers the example key under the subject the HTTPS token carries,
+  `<issuer>|<sub>`, so a push over either transport is recorded under
+  one subject; before, the key's bare `sub` was a second subject that
+  the built-in owner policy would refuse. It prints the fingerprints of
+  the host keys it read, so the comparison it asks for can be made.
+- The install page inside `deploy-<version>.tar.gz` links the other
+  pages and the reference stubs at that release's tag in the
+  repository. Its relative links led nowhere in an unpacked archive.
+- The host key step removes the private keys it generated, as the
+  signing key step does, and both say the Secret is then the only copy
+  and how to take one. The page says the throwaway cluster needs the
+  host key Secret before its pods start, names the `origod-ssh-keys`
+  Secret a real overlay creates, and points at verifying the archive
+  before applying it.
 
 ## v0.15.0 - 2026-10-07
 
@@ -491,6 +491,15 @@ committed: the commit log already holds that.
 
 ## v0.8.0 - 2026-09-20
 
+### Added
+
+- Latere's own installation answers the repository API at
+  `https://api.latere.ai/v1/repos` as well as at `code.latere.ai`. It is
+  the same API, byte for byte, reached under the platform's origin;
+  clone, LFS and SSH URLs still name `code.latere.ai`, whichever host a
+  JSON request arrived on. Nothing changes for a self-hosted node, whose
+  own address is `ORIGO_PUBLIC_URL` as before.
+
 ### Changed
 
 - A node can accept more than one audience. `ORIGO_OIDC_AUDIENCE` reads a
@@ -502,15 +511,6 @@ committed: the commit log already holds that.
   single value means exactly what it meant before, unset is still
   `origo`, and an empty or repeated entry fails the start-up, so a
   trailing comma is found at the restart rather than at the first 401.
-
-### Added
-
-- Latere's own installation answers the repository API at
-  `https://api.latere.ai/v1/repos` as well as at `code.latere.ai`. It is
-  the same API, byte for byte, reached under the platform's origin;
-  clone, LFS and SSH URLs still name `code.latere.ai`, whichever host a
-  JSON request arrived on. Nothing changes for a self-hosted node, whose
-  own address is `ORIGO_PUBLIC_URL` as before.
 
 ## v0.7.0 - 2026-09-17
 
@@ -712,8 +712,8 @@ committed: the commit log already holds that.
   repository; the answer is `{allow, reason, ttl, limits}`. Contract 2
   replaces contract 1 in this one release with no compatibility window,
   and the empty `actor` field is gone from the envelope. The client
-  protocol contract of spec 003 — the one a git client and an API caller
-  code against, carried by `Origo-Contract` — is unchanged and stays
+  protocol contract of spec 003, the one a git client and an API caller
+  code against, carried by `Origo-Contract`, is unchanged and stays
   contract 1.
 - `ORIGO_OIDC_AUDIENCE` sets the audience a node accepts in a token,
   defaulting to `origo`, so an installation can name itself.
@@ -725,10 +725,21 @@ committed: the commit log already holds that.
   028, identity id-06): `ORIGO_AUTHORIZER_URL` and `ORIGO_SSH_KEYS_URL`
   name the in-cluster Service `platformd-internal`, not `auth-internal`.
   The authorizer URL moves out of the `origod-auth` Secret into a manifest
-  patch (`deploy/prod/authorizer.yaml`) beside the SSH keys URL — a URL is
+  patch (`deploy/prod/authorizer.yaml`) beside the SSH keys URL: a URL is
   not a secret, only the bearer is.
 
 ## v0.3.0 - 2026-09-13
+
+### Changed
+
+- The production overlay reaches auth's Origo endpoints on the in-cluster
+  Service `auth-internal` (auth v0.25.0 serves `/internal/origo/*` there,
+  behind no ingress), and the SSH key resolve endpoint takes its own
+  bearer, `ORIGO_SSH_KEYS_TOKEN`, distinct from `ORIGO_AUTHORIZER_TOKEN`.
+  The operator points `ORIGO_AUTHORIZER_URL` in the `origod-auth` Secret
+  at `http://auth-internal.latere.svc.cluster.local/internal/origo/authorize`
+  and sets the new key token on both sides; until then the node's calls
+  to auth answer 404.
 
 ### Removed
 
@@ -746,17 +757,6 @@ committed: the commit log already holds that.
   `actor` key and records nothing from it.
 - The conformance case `007/delegation` now asserts the refusal, and the
   stub's `Token` takes the subject alone.
-
-### Changed
-
-- The production overlay reaches auth's Origo endpoints on the in-cluster
-  Service `auth-internal` (auth v0.25.0 serves `/internal/origo/*` there,
-  behind no ingress), and the SSH key resolve endpoint takes its own
-  bearer, `ORIGO_SSH_KEYS_TOKEN`, distinct from `ORIGO_AUTHORIZER_TOKEN`.
-  The operator points `ORIGO_AUTHORIZER_URL` in the `origod-auth` Secret
-  at `http://auth-internal.latere.svc.cluster.local/internal/origo/authorize`
-  and sets the new key token on both sides; until then the node's calls
-  to auth answer 404.
 
 ## v0.2.2 - 2026-09-13
 
