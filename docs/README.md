@@ -1,8 +1,12 @@
 # Documentation
 
-For people who run Origo, build against it, or change it. Trying it out
-before installing it takes one command: see the quick start in the
-[README](../README.md#try-it-in-a-few-minutes).
+For people who run Origo, build against it, or change it.
+
+## Trying it
+
+| Page | |
+|---|---|
+| [Running it locally](local.md) | `make dev`: the node, a bucket, a stub issuer, a stub authorizer and an event sink on one machine, from a clone, with a push, the read API and the `origo` command |
 
 ## Running it
 
@@ -15,6 +19,7 @@ Read these in order the first time.
 | [Operations](operations.md) | backup, restore, scaling, repository administration, metrics and alerts, and what to do during an outage |
 | [Upgrades](upgrades/README.md) | what a version number promises, how to upgrade and roll back, and how to verify what you install |
 | [Migration](migration.md) | moving repositories in from another git host |
+| [Security](security.md) | what Origo guarantees, what it sees and how long it keeps it, what it does not defend, and what an operator keeps safe |
 | [origo-web](https://github.com/latere-ai/origo-web) | an optional browsing interface, in its own repository |
 
 ## Building against it

@@ -456,5 +456,5 @@ behavior without an installation:
   your own implementation of the same surface.
 
 For a whole installation on your machine, `make dev` in a checkout
-starts one node with a bucket and stub services; see the
-[README](../README.md#try-it-in-a-few-minutes).
+starts one node with a bucket and stub services; see
+[Running it locally](local.md).
