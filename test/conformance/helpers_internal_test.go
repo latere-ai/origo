@@ -62,7 +62,7 @@ func TestACloneURLCredentialIsHidden(t *testing.T) {
 // Retry-After is waited out as given, and a missing, zero or malformed
 // one waits a second.
 func TestRetryAfterIsReadInSecondsWithASecondByDefault(t *testing.T) {
-	for value, want := range map[string]time.Duration{"3": 3 * time.Second, "": time.Second, "0": time.Second, "soon": time.Second} {
+	for value, want := range map[string]time.Duration{"3": 3 * time.Second, "": time.Second, "0": time.Second, "soon": time.Second, "0.5": 500 * time.Millisecond, "9223372037": time.Duration(1<<63 - 1)} {
 		h := http.Header{}
 		if value != "" {
 			h.Set("Retry-After", value)

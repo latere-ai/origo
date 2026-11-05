@@ -424,6 +424,32 @@ func TestRetryAfterThatIsNotAWaitIsNotSleptThrough(t *testing.T) {
 	}
 }
 
+// A Retry-After past the largest time.Duration is a long wait that is
+// returned, never a wrapped negative one that reads as short: no sleep, and
+// no second request.
+func TestAnOverflowingRetryAfterIsNotSleptThrough(t *testing.T) {
+	for _, header := range []string{"9223372037", "9223372036854775807", "99999999999999999999"} {
+		var slept []time.Duration
+		var n int
+		rec := &recorder{handler: func(w http.ResponseWriter, r *http.Request) {
+			n++
+			w.Header().Set("Retry-After", header)
+			refuse(w, 429, contract.CodeRateLimited, map[string]any{"limit": "repository"})
+		}}
+		srv := httptest.NewServer(rec)
+		c := origoclient.New(origoclient.Config{URL: srv.URL, Token: "t", Sleep: func(d time.Duration) { slept = append(slept, d) }})
+		_, err := c.Repository(t.Context(), "r")
+		srv.Close()
+		ref, ok := origoclient.AsRefusal(err)
+		if !ok || ref.RetryAfter != header {
+			t.Fatalf("Retry-After %q: err = %v", header, err)
+		}
+		if len(slept) != 0 || n != 1 {
+			t.Fatalf("Retry-After %q: slept %v over %d calls, want none over 1", header, slept, n)
+		}
+	}
+}
+
 // TestRefusalsDecodeWithTheirDetails walks the error table: every code becomes
 // a typed refusal carrying the code, the sentence and the details, and nothing
 // is rendered into a line here.

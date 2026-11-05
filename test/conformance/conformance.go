@@ -34,11 +34,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"latere.ai/x/pkg/retryafter"
 
 	"latere.ai/x/origo/internal/contract"
 	"latere.ai/x/origo/internal/gittest"
@@ -509,8 +510,8 @@ func deleteUntilGone(del, read func() response, sleep func(time.Duration)) error
 // retryAfter is the Retry-After header as a duration, a second when
 // it is missing or malformed.
 func retryAfter(h http.Header) time.Duration {
-	if n, err := strconv.Atoi(h.Get("Retry-After")); err == nil && n > 0 {
-		return time.Duration(n) * time.Second
+	if d, ok := retryafter.Parse(h.Get(retryafter.Header), time.Now()); ok && d > 0 {
+		return d
 	}
 	return time.Second
 }

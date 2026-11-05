@@ -38,6 +38,8 @@ import (
 	"strings"
 	"time"
 
+	"latere.ai/x/pkg/retryafter"
+
 	"latere.ai/x/origo/internal/contract"
 )
 
@@ -309,14 +311,11 @@ func shortWait(r *reply) (time.Duration, bool) {
 	if r.status != http.StatusTooManyRequests && r.status != http.StatusServiceUnavailable {
 		return 0, false
 	}
-	n, err := strconv.Atoi(r.header.Get("Retry-After"))
-	if err != nil || n <= 0 {
+	d, ok := retryafter.Parse(r.header.Get(retryafter.Header), time.Now())
+	if !ok || d <= 0 || d > ShortWaitLimit {
 		return 0, false
 	}
-	if d := time.Duration(n) * time.Second; d <= ShortWaitLimit {
-		return d, true
-	}
-	return 0, false
+	return d, true
 }
 
 // envelope is spec 003's refusal body as httpjson writes it.
