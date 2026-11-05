@@ -6,12 +6,12 @@ and how to run it locally. Every tier runs in CI; the table says when.
 | Tier | Needs | Run it with | In CI |
 |---|---|---|---|
 | the gate | the Go toolchain and git | `make` | every push and pull request |
-| store and one-node end-to-end | a bucket (MinIO) | `make test-integration` | every push and pull request |
+| store and one-node end-to-end | a bucket (MinIO) | `make test-integration` | every push and pull request, as the `wal-integration` and `one-node-e2e` suites of `go tool lateregate e2e` |
 | cluster | a container engine and kind | `make dev-up`, then `go test -tags=e2e ./test/e2e/... -run TestCluster` | every tag, and on demand |
 | slow cluster | the same, and `git-lfs` | `go test -tags=e2e ./test/e2e/... -run TestSlow` | every tag, and Monday mornings |
 | conformance | an installation | `go test -tags=e2e ./test/conformance/... -run TestContract` | every tag, against the stack and against the live installation |
 | mutation | a bucket | see below | every tag |
-| install document | a bare kind cluster | `tools/docs/run-blocks.sh docs/install.md` | every push, and against the published artifacts on every tag |
+| install document | a bare kind cluster | `tools/docs/install-walk.sh`, which builds the images and walks `docs/install.md` | every push, as the `install` suite of `go tool lateregate e2e`, and against the published artifacts on every tag |
 | fuzz | the Go toolchain | `make fuzz` | Sunday mornings, and on demand |
 
 ## The gate
@@ -140,8 +140,9 @@ page cites a spec by number.
 
 `make docs` regenerates `docs/configuration.md` from `internal/config`,
 `docs/internals/contract.md` from the specs' tables, and
-`api/openapi.yaml` from the same tables. CI runs it and fails on any
-diff, so a change to a variable or a spec table ships with its
+`api/openapi.yaml` from the same tables. The suite writes each page
+into a temporary directory and fails when it differs from the committed
+one, so a change to a variable or a spec table ships with its
 documentation. `make specindex` checks the cross-reference table at the
 end of `specs/README.md`. The `manifests` and `rules` gates of
 `go tool lateregate` render every kustomization and check the alert rules

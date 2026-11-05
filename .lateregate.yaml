@@ -123,6 +123,85 @@ depcheck:
         latere.ai/x/pkg: the shared library every Latere service is built on (spec 002), reached through internal/contract's error envelope and through the authorizer vocabulary's authz.Vocabulary
         github.com/google/uuid: reached behind latere.ai/x/pkg; not a cloud SDK
 
+# The Go modules beside the root. tools/specindex parses the specs and holds
+# the test that the cross-reference table in specs/README.md equals what the
+# specs define; tools/apidoc renders docs/internals/contract.md and
+# api/openapi.yaml from the same specs and holds the tests that the committed
+# files equal what it writes. Neither is in the root's ./..., so without this
+# list nothing would run their tests. The root's own generator test, in
+# tools/configdoc, checks docs/configuration.md the same way.
+modules:
+  - tools/specindex
+  - tools/apidoc
+
+# The suites that need a real service or a cluster, run by `lateregate e2e`.
+e2e:
+  # The write-ahead log against a real bucket: every test tagged integration
+  # in internal/wal. lateregate starts MinIO, creates the bucket and hands the
+  # tests the family of variables they read; the path-style flag is the fixed
+  # value MinIO needs when it is addressed by IP.
+  - name: wal-integration
+    why: the write-ahead log keeps its guarantees against a real S3 bucket, with the race detector on
+    test: {tags: [integration], packages: [./internal/wal/...], race: true}
+    services: [minio]
+    buckets: [origo-test]
+    env:
+      ORIGO_TEST_S3_ENDPOINT: "${minio.endpoint}"
+      ORIGO_TEST_S3_REGION: "${minio.region}"
+      ORIGO_TEST_S3_BUCKET: origo-test
+      ORIGO_TEST_S3_KEY: "${minio.access_key}"
+      ORIGO_TEST_S3_SECRET: "${minio.secret_key}"
+      ORIGO_TEST_S3_PATH_STYLE: "1"
+  # The one-node tier of spec 013: every e2e test named TestE2E starts nodes
+  # of its own beside the bucket, with no cluster. The cluster tiers stay in
+  # tiers.yml, because they cost about half the minutes of a run and the
+  # release is where they decide anything.
+  - name: one-node-e2e
+    why: nodes started beside a real bucket serve pushes, fetches and recovery end to end, with the race detector on
+    test: {tags: [e2e], packages: [./test/e2e/...], run: TestE2E, race: true}
+    services: [minio]
+    buckets: [origo-test]
+    env:
+      ORIGO_TEST_S3_ENDPOINT: "${minio.endpoint}"
+      ORIGO_TEST_S3_REGION: "${minio.region}"
+      ORIGO_TEST_S3_BUCKET: origo-test
+      ORIGO_TEST_S3_KEY: "${minio.access_key}"
+      ORIGO_TEST_S3_SECRET: "${minio.secret_key}"
+      ORIGO_TEST_S3_PATH_STYLE: "1"
+    timeout: 20m
+  # Spec 018's install job: docs/install.md is walked against a bare kind
+  # cluster with Cilium, from images built out of this tree, and the
+  # conformance contract is run against the installation it produces. The
+  # script builds the two candidate images itself, so the suite reads what
+  # they are built from (the Dockerfiles and the module files; a Go change
+  # runs it anyway), what it installs (deploy, which holds the kind overlay
+  # and the Cilium pin, and the embedded api/ document) and what it walks
+  # (the document and the scripts).
+  - name: install
+    why: docs/install.md, walked block by block against a bare cluster with the candidate images, brings up an installation that passes the conformance contract
+    command: tools/docs/install-walk.sh
+    tools: [kind, helm, kubectl]
+    reads:
+      - docs/install.md
+      - deploy
+      - api
+      - authorizer
+      - Dockerfile
+      - Dockerfile.stubs
+      - go.mod
+      - go.sum
+      - tools/docs
+      - test/conformance
+      - test/stubs
+    # The subtests that skip are the cases that need a stub the
+    # installation does not carry (an issuer, a controllable authorizer, a
+    # fault injector, a quota to exceed, a source to hold): the contract
+    # suite skips each by name when its target is a live installation, and
+    # the cluster tiers in tiers.yml run them against the stack with the
+    # stubs wired.
+    allow_skip: the contract suite skips by name the subtests that need stub wiring an installation from docs/install.md does not have
+    timeout: 40m
+
 license:
   spdx: MIT
   holder: Latere AI

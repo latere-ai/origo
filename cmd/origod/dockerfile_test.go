@@ -43,7 +43,8 @@ func fenced(t *testing.T, name, text, start, end string) string {
 // base and the same runtime stage byte for byte between the markers, the
 // base is debian:trixie-slim by one digest, and Dockerfile.stubs runs on
 // that base too. The other half, git --version inside the built image,
-// is the build job of verify.yml and the conformance job of release.yml.
+// is the build job of tiers.yml, tools/docs/install-walk.sh and the
+// conformance job of release.yml.
 func TestDockerfilesShareOneRuntimeStage(t *testing.T) {
 	root := moduleRoot(t)
 	read := func(name string) string {

@@ -222,7 +222,8 @@ dev-down:
 # (integration tag) and the e2e tier's one-node run, the TestE2E prefix,
 # against whatever values of the ORIGO_TEST_S3_* variables the
 # environment carries; the tiers skip when the endpoint is unset. The
-# integration job calls this with its MinIO; a cluster test targets the
+# wal-integration and one-node-e2e suites of .lateregate.yaml run the
+# same two commands with the MinIO lateregate starts; a cluster test targets the
 # stack through ORIGO_TEST_URL and is selected by its job's prefix.
 # ORIGO_E2E_MEASURE=1 with -run TestMeasure prints the measurements spec
 # 004's Outcome records.
@@ -264,9 +265,10 @@ specindex:
 # where the reference lives beside the code that reads each variable,
 # docs/internals/contract.md from the endpoint, header, and code tables
 # of the specs, and api/openapi.yaml from the same reading of the same
-# tables (spec 030), which the node embeds and serves. The specindex job runs this and
-# then `git diff --exit-code`, so a change to a variable or to a spec
-# table shows up as a documentation diff on the same push.
+# tables (spec 030), which the node embeds and serves. The generators' tests write each
+# page into a temporary directory and compare it with the committed
+# one, so a change to a variable or to a spec table fails the suite on
+# the same push until this target has been run.
 docs:
 	$(GO) run ./tools/configdoc -write
 	cd tools/apidoc && $(GO) run . -write

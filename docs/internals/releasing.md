@@ -62,7 +62,7 @@ stages in latere-ai/ci and are bound to this repository by the
 certificate's workflow repository; `docs/upgrades/README.md` gives the
 commands.
 
-The same tag also runs the tag-only jobs of `verify.yml`: the cluster
+The same tag also runs the tag-only jobs of `tiers.yml`: the cluster
 tier, the kind up-script check, and the mutation job. See
 [`testing.md`](testing.md).
 

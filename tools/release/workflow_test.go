@@ -326,7 +326,7 @@ func pipeIntoGrepQ(text string) []string {
 // broken-pipe race above: a check that reads a listing must not decide
 // its own outcome on the size of what it listed.
 func TestNoStepPipesIntoGrepQ(t *testing.T) {
-	for _, name := range []string{"release.yml", "verify.yml"} {
+	for _, name := range []string{"release.yml", "verify.yml", "tiers.yml"} {
 		if got := pipeIntoGrepQ(readWorkflow(t, name)); len(got) != 0 {
 			for _, line := range got {
 				t.Errorf("%s pipes into grep -q under pipefail: %s", name, line)

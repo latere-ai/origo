@@ -1,0 +1,296 @@
+# The tiers that cost minutes a push should not spend: the cluster tiers on
+# the kind stack, the slow cluster tier, the up-script check, and the
+# mutation job of spec 021 run on a tag, where the release is the point at
+# which they decide anything; workflow_dispatch runs them from main on
+# demand. The fuzz job runs on the Sunday schedule and on a manual dispatch
+# and nowhere else; the slow cluster tier also runs on the Monday schedule,
+# beside its tag and workflow_dispatch triggers, so a stale assertion in it
+# is caught within a week instead of at the next tag. A job that names the
+# schedule event alone takes both crons, so fuzz and build name the cron
+# they mean and e2e-slow is held to the Monday one by `needs: build`.
+# Each job selects its tests by name prefix and nothing else, and no job
+# but build has a docker build step. Every run on the stack passes -v,
+# so the log names the tests that ran and a spec's stack proof is read
+# from the run rather than argued from the package's wall-clock time
+# (spec 017).
+#
+# The per-push verification is verify.yml, which calls the shared gate. The
+# suites a push needs a service for (MinIO beside the runner, and the install
+# walk against a bare cluster) are declared in .lateregate.yaml.
+name: tiers
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  schedule:
+    # Sunday 03:00 UTC: the 40 second run of every fuzz function.
+    - cron: '0 3 * * 0'
+    # Monday 04:00 UTC: the slow cluster tier on main.
+    - cron: '0 4 * * 1'
+
+# A newer push to the same ref supersedes this run: its commit carries every
+# change this one would verify, and the runner is better spent on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# MinIO for the mutation job, which runs a node of its own beside a bucket and
+# no stack: the fixed values of spec 013's MinIO row, on the runner's port
+# 9000. A step rather than a service container because the minio image
+# takes its subcommand as an argument, which the services key cannot
+# pass.
+env:
+  MINIO_IMAGE: ghcr.io/latere-ai/minio:RELEASE.2026-09-25T12-30-31Z@sha256:025fb85cf53bad7b734dc05b012c65ce617105248ddd044d8974fb636f2a8824
+  MC_IMAGE: ghcr.io/latere-ai/mc:RELEASE.2026-09-24T19-45-33Z@sha256:6e37dec77ff93cb690b9ba3f1fe2c3b34efa1cd77181fca909039819bd670a24
+
+jobs:
+  # Every job runs on GitHub's hosted runners. The repository is public,
+  # so they cost nothing, and a hosted runner is a fresh machine per job:
+  # the self-hosted VM held four slots, so jobs starved each other and
+  # containers on fixed ports collided.
+  # The two candidate images, built once from the tree and shared with
+  # every job that needs them as docker save tarballs. It runs everywhere
+  # but the Sunday fuzz schedule, which needs no image. It runs on the
+  # Monday schedule, precisely, because e2e-slow needs it there and a job
+  # skipped by `needs` skips its dependents regardless of their own `if`.
+  build:
+    name: build the candidate images
+    if: github.event_name != 'schedule' || github.event.schedule == '0 4 * * 1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build origod and origo-stubs
+        run: |
+          docker build -t ghcr.io/latere-ai/origod:candidate .
+          docker build -f Dockerfile.stubs -t ghcr.io/latere-ai/origo-stubs:candidate .
+          mkdir -p out/images
+          docker save -o out/images/origod.tar ghcr.io/latere-ai/origod:candidate
+          docker save -o out/images/origo-stubs.tar ghcr.io/latere-ai/origo-stubs:candidate
+      # Spec 017's image criterion: the git inside the candidate image is
+      # at or above the 2.40 floor origod check enforces (spec 018). This
+      # job and tools/docs/install-walk.sh are the two places the images are
+      # built, and each checks the git it built.
+      - name: Check git inside the candidate image
+        run: |
+          set -euo pipefail
+          got=$(docker run --rm --entrypoint git ghcr.io/latere-ai/origod:candidate --version | awk '{print $3}')
+          echo "git $got"
+          [ "$(printf '%s\n2.40\n' "$got" | sort -V | head -1)" = "2.40" ] || { echo "::error::git $got is below 2.40"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate-images
+          path: out/images/*.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  # The cluster scenarios on the three-node stack.
+  e2e:
+    name: cluster e2e tier
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-images
+          path: out/images
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          install_only: true
+      - name: Bring the stack up
+        run: deploy/examples/kind/up.sh out/images/origod.tar out/images/origo-stubs.tar
+      - name: Run the cluster scenarios
+        env:
+          ORIGO_TEST_S3_ENDPOINT: http://localhost:30900
+          ORIGO_TEST_S3_REGION: us-east-1
+          ORIGO_TEST_S3_BUCKET: origo-test
+          ORIGO_TEST_S3_KEY: minioadmin
+          ORIGO_TEST_S3_SECRET: minioadmin
+          ORIGO_TEST_S3_PATH_STYLE: "1"
+        run: go test -v -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestCluster' -skip 'TestClusterUpScript'
+      # The conformance suite of spec 021 against the same stack, with
+      # the stubs and the Fault wired and nothing skipped, and the
+      # stub-against-stack comparison that needs the stack as its second
+      # target. The run drives node 1 of spec 013's ports table rather
+      # than the balanced port: the rate limit is a bucket per node, and
+      # at the overlay's 6000 a minute the three buckets behind the
+      # balanced port refill faster than a runner sends, so the
+      # rate_limited row is reachable on one node alone; a live
+      # installation runs at 600, where the balanced ingress is the
+      # target.
+      # Spec 017's compatibility criterion beside the suite: the fixture
+      # the latest release attached, when there is one, downloaded into
+      # the path ORIGO_PREVIOUS_RELEASE_FIXTURE names; unset, the test
+      # skips, which is the case before the first release and on a fork.
+      - name: Download the latest release's fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous"
+          if gh release download --repo "$GITHUB_REPOSITORY" --pattern 'fixture-*.tar.gz' --dir "$RUNNER_TEMP/previous"; then
+            fixture=$(ls "$RUNNER_TEMP/previous"/fixture-*.tar.gz | head -1)
+            echo "ORIGO_PREVIOUS_RELEASE_FIXTURE=$fixture" >> "$GITHUB_ENV"
+            echo "previous release fixture: $fixture"
+          else
+            echo "no release carries a fixture; TestPreviousReleaseFixture skips"
+          fi
+      - name: Run the conformance suite against the stack
+        env:
+          ORIGO_TEST_URL: http://localhost:30180
+          ORIGO_TEST_S3_ENDPOINT: http://localhost:30900
+          ORIGO_TEST_S3_REGION: us-east-1
+          ORIGO_TEST_S3_BUCKET: origo-test
+          ORIGO_TEST_S3_KEY: minioadmin
+          ORIGO_TEST_S3_SECRET: minioadmin
+          ORIGO_TEST_S3_PATH_STYLE: "1"
+        run: go test -count=1 -timeout 25m -tags=e2e ./test/conformance/... -run 'TestContract|TestSameAnswersOnStubAndStack|TestPreviousReleaseFixture' -v
+
+  # The slow scenarios on the same stack, with git-lfs for spec 010.
+  # The longest is spec 004's materialization ceiling, which writes
+  # 10 000 entries through the log before it materializes them: 7 minutes
+  # of the job's 12, measured on run 34629785911. Also runs on the
+  # Monday schedule (build gates this to that one, not the Sunday fuzz
+  # schedule), so a stale assertion in this tier surfaces within a week
+  # of a release that broke it instead of at the next tag.
+  e2e-slow:
+    name: slow cluster e2e tier
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-images
+          path: out/images
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          install_only: true
+      - name: Install git-lfs
+        run: sudo apt-get update && sudo apt-get install -y git-lfs && git lfs version
+      - name: Bring the stack up
+        run: deploy/examples/kind/up.sh out/images/origod.tar out/images/origo-stubs.tar
+      - name: Run the slow scenarios
+        env:
+          ORIGO_TEST_S3_ENDPOINT: http://localhost:30900
+          ORIGO_TEST_S3_REGION: us-east-1
+          ORIGO_TEST_S3_BUCKET: origo-test
+          ORIGO_TEST_S3_KEY: minioadmin
+          ORIGO_TEST_S3_SECRET: minioadmin
+          ORIGO_TEST_S3_PATH_STYLE: "1"
+        run: go test -v -count=1 -timeout 25m -tags=e2e ./test/e2e/... -run 'TestSlow'
+
+  # up.sh on a cluster of its own, with the ports offset by 1000.
+  up-script:
+    name: up.sh creates and down.sh removes a stack
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-images
+          path: out/images
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          install_only: true
+      - name: Run the up-script check
+        run: go test -count=1 -timeout 12m -tags=e2e ./test/e2e/... -run 'TestClusterUpScript'
+
+  # Spec 021's mutation job: one node of its own per dropped capability,
+  # against MinIO and no stack. The five capabilities are the set
+  # ORIGO_TEST_DROP_CAPABILITY takes its value from (internal/config),
+  # and TestMutation passes only when the suite fails on that
+  # capability's subtests alone.
+  mutation:
+    name: mutation
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MUTATION_CAPABILITIES: "filter allow-tip-sha1-in-want allow-reachable-sha1-in-want atomic push-options"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Start MinIO with the bucket
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin "$MINIO_IMAGE" server /data
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+          docker run --rm --network host --entrypoint /bin/sh "$MC_IMAGE" -c 'mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/origo-test'
+      - name: Run the mutation test once per capability
+        env:
+          ORIGO_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          ORIGO_TEST_S3_REGION: us-east-1
+          ORIGO_TEST_S3_BUCKET: origo-test
+          ORIGO_TEST_S3_KEY: minioadmin
+          ORIGO_TEST_S3_SECRET: minioadmin
+          ORIGO_TEST_S3_PATH_STYLE: "1"
+        run: |
+          for capability in $MUTATION_CAPABILITIES; do
+            ORIGO_TEST_DROP_CAPABILITY="$capability" go test -count=1 -timeout 15m -tags=e2e ./test/e2e/... -run 'TestMutation'
+          done
+
+  # Every fuzz function of the module for 40 seconds, weekly, and on a
+  # manual dispatch. A job that can only be started by waiting a week is a
+  # job nobody can verify when they need it: spec 009 waited on the Sunday
+  # run for a criterion a dispatch answers in an hour. The cron is named,
+  # not just the event: two schedules reach this workflow since 1c63439,
+  # and `github.event_name == 'schedule'` alone ran the whole sweep a
+  # second time every Monday, on the trigger the slow cluster tier was
+  # given.
+  fuzz:
+    name: fuzz
+    if: (github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: make fuzz
+      # The other half of the marker sweep the `live` job of release.yml
+      # runs. Two specs name this job as what holds them at `testing`, and
+      # a green run that nobody reads back into them is how the deck fell
+      # behind before. Warns, never fails.
+      - name: Name the specs this run unblocks
+        if: ${{ success() }}
+        run: |
+          set -euo pipefail
+          waiting=$(tools/release/waiting.sh specs 'the weekly fuzz job of tiers.yml')
+          if [ -z "$waiting" ]; then
+            echo "no spec at testing waits on the fuzz job"
+            exit 0
+          fi
+          {
+            echo "## Specs this fuzz run unblocks"
+            echo
+            echo "The 40 second search passed. Each spec below is still at"
+            echo "\`testing\` and names this job as what it waits on."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for spec in $waiting; do
+            echo "::warning title=Spec waiting on the fuzz job::$spec is at testing and waits on this job, which has now passed"
+            echo "- \`specs/$spec\`" >> "$GITHUB_STEP_SUMMARY"
+          done

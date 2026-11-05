@@ -374,8 +374,8 @@ func TestTheOriginIngressClaimsTheRepositoryPrefix(t *testing.T) {
 
 // TestMinIOImagesAreOnePinFromOneRegistry holds the three places the
 // test stack names MinIO to one reference each: the compose file of
-// spec 002's local stack, the kind overlay of spec 013, and the two
-// jobs of verify.yml that run MinIO beside the runner. Each is pinned
+// spec 002's local stack, the kind overlay of spec 013, and the
+// mutation job of tiers.yml that runs MinIO beside the runner. Each is pinned
 // by tag and digest on ghcr.io/latere-ai, the images of the maintained
 // forks of the MinIO server and client. MinIO's own community images
 // stopped answering anonymous pulls: Docker Hub began answering 404
@@ -385,7 +385,7 @@ func TestTheOriginIngressClaimsTheRepositoryPrefix(t *testing.T) {
 // earlier. A reference that names another registry, or differs between
 // the three files, fails here on the push that introduces it.
 func TestMinIOImagesAreOnePinFromOneRegistry(t *testing.T) {
-	files := []string{"docker-compose.yml", "deploy/examples/kind/minio.yaml", ".github/workflows/verify.yml"}
+	files := []string{"docker-compose.yml", "deploy/examples/kind/minio.yaml", ".github/workflows/tiers.yml"}
 	// An image reference ending in minio or mc, with or without a
 	// registry; a URL such as http://minio:9000 has no path before the
 	// name and does not match.

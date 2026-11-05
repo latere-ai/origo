@@ -42,7 +42,7 @@ func root(t *testing.T) string {
 // proves.
 var markerTokens = []string{
 	"the live job of release.yml",
-	"the weekly fuzz job of verify.yml",
+	"the weekly fuzz job of tiers.yml",
 	"a maintainer",
 	"a test not yet in the tree",
 }
@@ -151,8 +151,8 @@ func contains(all []string, s string) bool {
 // job it names, or a spec can sit at `testing` naming a run that has
 // already proved it and nothing will say so, which is the whole defect.
 var jobTokens = map[string]string{
-	"the live job of release.yml":       filepath.Join(".github", "workflows", "release.yml"),
-	"the weekly fuzz job of verify.yml": filepath.Join(".github", "workflows", "verify.yml"),
+	"the live job of release.yml":      filepath.Join(".github", "workflows", "release.yml"),
+	"the weekly fuzz job of tiers.yml": filepath.Join(".github", "workflows", "tiers.yml"),
 }
 
 // TestEveryJobTokenIsSwept pins the wiring to the token set. Adding a
