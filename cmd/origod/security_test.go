@@ -87,13 +87,14 @@ func TestEgressAdmitsNoLoopbackInProduction(t *testing.T) {
 }
 
 // TestSecurityPolicyIsPresent: SECURITY.md exists at the module root and
-// names the report address.
+// holds the report address, the private reporting link, and the link to
+// the organization policy that sets response times and disclosure.
 func TestSecurityPolicyIsPresent(t *testing.T) {
 	policy, err := os.ReadFile(filepath.Join(moduleRoot(t), "SECURITY.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"security@latere.ai", "three business days", "thirty days"} {
+	for _, want := range []string{"security@latere.ai", "https://github.com/latere-ai/origo/security/advisories/new", "https://github.com/latere-ai/.github/blob/main/SECURITY.md"} {
 		if !strings.Contains(string(policy), want) {
 			t.Errorf("SECURITY.md lacks %q", want)
 		}
