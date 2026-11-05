@@ -284,6 +284,20 @@ func TestReadBreakerServesStaleThenRefuses(t *testing.T) {
 	}
 }
 
+// TestRetryAfterRoundsUpTheLastSecond is spec 015's "at least one": with
+// half a second of the write breaker's window left, the client is told to
+// wait one second, not zero.
+func TestRetryAfterRoundsUpTheLastSecond(t *testing.T) {
+	d := newDegradedNode(t, 5*time.Minute)
+	d.warm()
+	d.openWrites()
+	d.clock.Advance(29*time.Second + 500*time.Millisecond)
+	resp, _ := d.get("/r/" + repoA + ".git/info/refs?service=git-receive-pack")
+	if got := resp.Header.Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After %q with half a second of the window left, want 1", got)
+	}
+}
+
 // TestWriteBreakerRefusesBeforeUpload is spec 015's third criterion's
 // first half: with the write breaker open, info/refs?service=git-receive-pack
 // answers 200 with the ERR pkt-line and Retry-After, git push exits with

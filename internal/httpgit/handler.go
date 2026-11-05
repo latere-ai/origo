@@ -34,6 +34,7 @@ import (
 	"time"
 
 	pkgmetrics "latere.ai/x/pkg/metrics"
+	"latere.ai/x/pkg/retryafter"
 
 	"latere.ai/x/origo/internal/auth"
 	"latere.ai/x/origo/internal/contract"
@@ -307,12 +308,13 @@ func (h *Handler) storageError(w http.ResponseWriter, r *http.Request, err error
 	contract.Write(w, http.StatusServiceUnavailable, contract.CodeStorageUnavailable, wal.ErrorDetails(err))
 }
 
-// retryAfter sets Retry-After to the whole seconds that remain of the
-// class's open window, at least one (spec 015).
+// retryAfter sets Retry-After to the seconds that remain of the class's
+// open window, rounded up so the last fraction of a second still reads as
+// one (spec 015).
 func (h *Handler) retryAfter(w http.ResponseWriter, class wal.Class) {
 	if bs := h.log.Breakers(); bs != nil {
 		if d := bs.RetryAfter(class); d > 0 {
-			w.Header().Set("Retry-After", strconv.Itoa(int(d/time.Second)))
+			w.Header().Set(retryafter.Header, retryafter.Format(d))
 		}
 	}
 }
