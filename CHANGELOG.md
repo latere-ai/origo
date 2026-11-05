@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.9 - 2026-11-05
+
 ### Fixed
 
 - **A push turned away while Origo is degraded says to retry in at least
