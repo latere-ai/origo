@@ -10,6 +10,15 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Fixed
+
+- **A push turned away while Origo is degraded says to retry in at least
+  one second.** The last half second of the window read as `Retry-After:
+  0`.
+
+- **`origoclient` reads an oversized `Retry-After` as a long wait,** where
+  it wrapped to a negative one and retried at once.
+
 ## v0.16.8 - 2026-11-05
 
 ### Changed
