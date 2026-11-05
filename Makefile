@@ -105,11 +105,12 @@ DEV_COMPOSE_ENV = DEV_PROJECT=$(DEV_PROJECT) DEV_S3_PORT=$(DEV_S3_PORT) \
                   DEV_S3_CONSOLE_PORT=$(DEV_S3_CONSOLE_PORT) DEV_S3_KEY=$(DEV_S3_KEY) \
                   DEV_S3_SECRET=$(DEV_S3_SECRET) DEV_S3_BUCKET=$(DEV_S3_BUCKET)
 
-# The stubs of spec 013 take the four ports after the node's and
+# The stubs of spec 013 take the five ports after the node's and
 # MinIO's, on the loopback interface, so two checkouts run side by side.
 DEV_ISSUER_PORT ?= $(shell expr $(DEV_PORT_BASE) + 4)
 DEV_AUTHORIZER_PORT ?= $(shell expr $(DEV_PORT_BASE) + 5)
 DEV_SINK_PORT ?= $(shell expr $(DEV_PORT_BASE) + 6)
+DEV_SSHKEYS_PORT ?= $(shell expr $(DEV_PORT_BASE) + 7)
 DEV_ISSUER_URL = http://localhost:$(DEV_ISSUER_PORT)
 DEV_DIR = $(CURDIR)/$(OUT_DIR)/dev/$(DEV_PROJECT)
 # The cache is per project like the bucket: a cache warmed from one
@@ -160,6 +161,7 @@ define stubs-up
 	if ! { [ -f $(DEV_STUBS_PID) ] && kill -0 $$(cat $(DEV_STUBS_PID)) 2>/dev/null; }; then \
 		$(OUT_DIR)/$(STUBS) -issuer-listen 127.0.0.1:$(DEV_ISSUER_PORT) \
 			-authorizer-listen 127.0.0.1:$(DEV_AUTHORIZER_PORT) -sink-listen 127.0.0.1:$(DEV_SINK_PORT) \
+			-sshkeys-listen 127.0.0.1:$(DEV_SSHKEYS_PORT) \
 			-issuer-url $(DEV_ISSUER_URL) -authorizer-token stub-authorizer-token \
 			>$(DEV_STUBS_LOG) 2>&1 & echo $$! >$(DEV_STUBS_PID); \
 	fi
@@ -214,7 +216,10 @@ dev-up:
 # stubs, the compose stack, and the kind cluster. Each half is a no-op
 # when nothing of it runs; out/ stays in place (`make clean` removes it).
 dev-down:
-	-@if [ -f $(DEV_STUBS_PID) ]; then kill $$(cat $(DEV_STUBS_PID)) 2>/dev/null; rm -f $(DEV_STUBS_PID); echo "stubs stopped"; fi
+	-@if [ -f $(DEV_STUBS_PID) ]; then \
+		if kill $$(cat $(DEV_STUBS_PID)) 2>/dev/null; then echo "stubs stopped"; else echo "stubs were not running"; fi; \
+		rm -f $(DEV_STUBS_PID); \
+	fi
 	-@$(DEV_COMPOSE_ENV) $(COMPOSE) down --remove-orphans 2>/dev/null
 	-@if command -v kind >/dev/null 2>&1; then $(KIND_PROVIDER) deploy/examples/kind/down.sh -name $(DEV_PROJECT); fi
 

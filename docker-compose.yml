@@ -26,7 +26,7 @@ services:
       timeout: 3s
       retries: 30
 
-  # Creates the bucket and exits. `make dev-wait` waits for it to have run.
+  # Creates the bucket and exits. `make dev` waits for it to have run.
   minio-init:
     image: ghcr.io/latere-ai/mc:RELEASE.2026-09-24T19-45-33Z@sha256:6e37dec77ff93cb690b9ba3f1fe2c3b34efa1cd77181fca909039819bd670a24
     depends_on:

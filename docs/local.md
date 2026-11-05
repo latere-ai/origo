@@ -99,8 +99,8 @@ these things, in this order:
 the name of the directory you cloned into. For a checkout named `origo`
 it is 22180, and the ports above are that base plus 0 for git and the
 API, 1 for the probes (`/readyz`, `/livez`, `/metrics`), 2 for MinIO, 3
-for its console, 4 for the issuer, 5 for the authorizer and 6 for the
-event sink. A directory with another name gets other ports, which lets
+for its console, 4 for the issuer, 5 for the authorizer, 6 for the
+event sink and 7 for the key resolver. A directory with another name gets other ports, which lets
 two clones run side by side, so read your own from the printed lines.
 The stand-ins and MinIO answer on `127.0.0.1`. The node itself listens
 on every interface of the machine, and the stand-in issuer will sign a

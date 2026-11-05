@@ -11,7 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"io"
 	"math/big"
@@ -112,7 +112,7 @@ func do(t *testing.T, client *http.Client, method, url, bearer, body string) (in
 }
 
 var loopback = []string{
-	"-issuer-listen", "127.0.0.1:0", "-authorizer-listen", "127.0.0.1:0", "-sink-listen", "127.0.0.1:0",
+	"-issuer-listen", "127.0.0.1:0", "-authorizer-listen", "127.0.0.1:0", "-sink-listen", "127.0.0.1:0", "-sshkeys-listen", "127.0.0.1:0",
 	"-source-listen", "127.0.0.1:0", "-slowproxy-listen", "127.0.0.1:0", "-slowproxy-data", "127.0.0.1:0",
 }
 
@@ -318,7 +318,7 @@ func TestUsageAndStartFailures(t *testing.T) {
 		t.Fatalf("taken issuer port: %d %s", code, stderr.String())
 	}
 	stderr.Reset()
-	if code := run(context.Background(), append(loopback[:6], "-slowproxy-listen", "127.0.0.1:0", "-slowproxy-data", taken, "-slowproxy-target", "127.0.0.1:1", "-authorizer-token", "t"), io.Discard, &stderr); code != 1 || !strings.Contains(stderr.String(), "slowproxy data") {
+	if code := run(context.Background(), append(loopback[:8], "-slowproxy-listen", "127.0.0.1:0", "-slowproxy-data", taken, "-slowproxy-target", "127.0.0.1:1", "-authorizer-token", "t"), io.Discard, &stderr); code != 1 || !strings.Contains(stderr.String(), "slowproxy data") {
 		t.Fatalf("taken data port: %d %s", code, stderr.String())
 	}
 }
