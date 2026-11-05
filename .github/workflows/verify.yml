@@ -24,11 +24,39 @@
 # from the run rather than argued from the package's wall-clock time
 # (spec 017).
 name: verify
+
+# A push or pull request that changes only markdown outside the exceptions
+# starts no run, because no build or test reads it. The exceptions are specs/
+# and docs/, from which `make docs` generates the reference pages the docs job
+# diffs and which tests hold to the code; skills/, which a test holds to the
+# CLI; and README.md, CONTRIBUTING.md, CHANGELOG.md and SECURITY.md, which the
+# claims tests read. `lateregate release` runs the whole bar before every tag.
+# A tag is never filtered by paths.
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths:
+      - "**"
+      - "!**.md"
+      - "specs/**"
+      - "docs/**"
+      - "skills/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "CHANGELOG.md"
+      - "SECURITY.md"
   pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "specs/**"
+      - "docs/**"
+      - "skills/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "CHANGELOG.md"
+      - "SECURITY.md"
   workflow_dispatch:
   schedule:
     # Sunday 03:00 UTC: the 40 second run of every fuzz function.
