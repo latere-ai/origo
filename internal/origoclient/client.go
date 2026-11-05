@@ -28,7 +28,8 @@ package origoclient
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -206,7 +207,7 @@ func (c *Client) getRange(ctx context.Context, path string, q url.Values, first,
 
 // post calls an operation route under its own budget.
 func (c *Client) post(ctx context.Context, path string, body any, budget time.Duration) (*reply, error) {
-	raw, err := json.Marshal(body)
+	raw, err := json.Marshal(body, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return nil, &Unreachable{Op: "encode", Err: err}
 	}

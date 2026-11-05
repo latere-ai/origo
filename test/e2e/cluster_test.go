@@ -10,7 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -119,7 +119,7 @@ func mintAt(t *testing.T, issuer, sub string) string {
 	var out struct {
 		Token string `json:"token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.Token == "" {
+	if err := json.UnmarshalRead(resp.Body, &out); err != nil || out.Token == "" {
 		t.Fatalf("mint at %s: %d %v", issuer, resp.StatusCode, err)
 	}
 	return out.Token

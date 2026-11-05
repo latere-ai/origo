@@ -10,7 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -61,7 +61,7 @@ func parseJWKS(raw []byte) (map[string]crypto.PublicKey, error) {
 	var set struct {
 		Keys []jwk `json:"keys"`
 	}
-	if err := json.Unmarshal(raw, &set); err != nil {
+	if err := json.Unmarshal(raw, &set, foreignJSON); err != nil {
 		return nil, fmt.Errorf("jwks: %w", err)
 	}
 	keys := make(map[string]crypto.PublicKey, len(set.Keys))
@@ -186,7 +186,7 @@ func FetchKeys(ctx context.Context, client *http.Client, iss string, timeout tim
 		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
 	}
-	if err := json.Unmarshal(doc, &discovery); err != nil || discovery.JWKSURI == "" {
+	if err := json.Unmarshal(doc, &discovery, foreignJSON); err != nil || discovery.JWKSURI == "" {
 		return nil, errors.New("discovery: no jwks_uri")
 	}
 	// OIDC Discovery 4.3: the document's issuer must be the URL it was

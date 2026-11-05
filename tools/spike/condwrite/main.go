@@ -18,7 +18,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -49,11 +50,11 @@ type check struct {
 	// Fallback marks a probe of a substitute primitive. Its outcome is
 	// recorded but does not decide the exit status: the design needs the
 	// primary primitives, and a fallback matters only when those are absent.
-	Fallback bool `json:"fallback,omitempty"`
+	Fallback bool `json:"fallback,omitzero"`
 	// Optional marks a primitive the design no longer relies on (If-Match
 	// on PUT, which not every provider honors). It is recorded so the
 	// provider table stays complete and never decides the exit status.
-	Optional bool `json:"optional,omitempty"`
+	Optional bool `json:"optional,omitzero"`
 }
 
 // latency summarizes N timed samples of one operation.
@@ -210,7 +211,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 
 	print(out, rep)
 	if o.jsonOut != "" {
-		b, _ := json.MarshalIndent(rep, "", "  ")
+		b, _ := json.Marshal(rep, jsontext.WithIndent("  "), json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 		if err := os.WriteFile(o.jsonOut, b, 0o644); err != nil {
 			return err
 		}

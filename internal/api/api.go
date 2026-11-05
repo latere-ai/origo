@@ -11,7 +11,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -231,9 +231,7 @@ type createRequest struct {
 }
 
 func decode(r *http.Request, v any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
-	dec.DisallowUnknownFields()
-	return dec.Decode(v)
+	return json.UnmarshalRead(io.LimitReader(r.Body, 64<<10), v, json.RejectUnknownMembers(true))
 }
 
 // invalid answers 400 with the validation failure in the developer

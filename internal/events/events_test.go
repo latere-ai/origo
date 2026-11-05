@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/sha1" //nolint:gosec // UUID v5 is SHA-1 by definition (RFC 9562)
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"

@@ -24,7 +24,7 @@ import (
 	"crypto/x509/pkix"
 	_ "embed"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -410,7 +410,7 @@ func (s *Server) postCommit(w http.ResponseWriter, r *http.Request) {
 		Repo   string `json:"repo"`
 		Branch string `json:"branch"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 4<<10), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -430,7 +430,7 @@ func (s *Server) postRepos(w http.ResponseWriter, r *http.Request) {
 		Name   string `json:"name"`
 		Bundle string `json:"bundle"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<20)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 256<<20), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -537,7 +537,7 @@ func parseECKey(block *pem.Block) (*ecdsa.PrivateKey, error) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

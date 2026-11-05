@@ -4,7 +4,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -638,7 +639,7 @@ func title(s string) string {
 // converted from. It cannot fail: a Document is a closed set of strings,
 // numbers, booleans, and slices and maps of those.
 func (d *Document) JSON() []byte {
-	out, err := json.MarshalIndent(d, "", "  ")
+	out, err := json.Marshal(d, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		panic("apidoc: the document does not marshal: " + err.Error())
 	}

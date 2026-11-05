@@ -13,19 +13,19 @@
     "email": "test@example.com",
     "at": "2026-09-06T10:05:00Z"
   },
-  "message": "Sign the work\n\nThe body of the message.\n\nSigned-off-by: Alice \u003calice@example.com\u003e\nSigned-off-by: Bob \u003cbob@example.com\u003e\nCo-authored-by: Carol \u003ccarol@example.com\u003e\n",
+  "message": "Sign the work\n\nThe body of the message.\n\nSigned-off-by: Alice <alice@example.com>\nSigned-off-by: Bob <bob@example.com>\nCo-authored-by: Carol <carol@example.com>\n",
   "trailers": [
     {
       "key": "Signed-off-by",
-      "value": "Alice \u003calice@example.com\u003e"
+      "value": "Alice <alice@example.com>"
     },
     {
       "key": "Signed-off-by",
-      "value": "Bob \u003cbob@example.com\u003e"
+      "value": "Bob <bob@example.com>"
     },
     {
       "key": "Co-authored-by",
-      "value": "Carol \u003ccarol@example.com\u003e"
+      "value": "Carol <carol@example.com>"
     }
   ],
   "stats": {
@@ -34,4 +34,3 @@
     "deletions": 0
   }
 }
-

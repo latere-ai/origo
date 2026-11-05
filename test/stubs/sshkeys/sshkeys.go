@@ -15,7 +15,7 @@ package sshkeys
 
 import (
 	"crypto/subtle"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -43,7 +43,7 @@ type Key struct {
 	Fingerprint string `json:"fingerprint"`
 	Subject     string `json:"subject"`
 	KeyID       string `json:"key_id,omitempty"`
-	TTL         int    `json:"ttl,omitempty"`
+	TTL         int    `json:"ttl,omitzero"`
 }
 
 // Option configures a Server.
@@ -206,7 +206,7 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req Request
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 64<<10), &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -247,7 +247,7 @@ func (s *Server) putKeys(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Keys []Key `json:"keys"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -261,7 +261,7 @@ func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status int `json:"status"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 4<<10), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -271,7 +271,7 @@ func (s *Server) putFail(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

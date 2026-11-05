@@ -14,7 +14,7 @@ package slowproxy
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -90,7 +90,7 @@ func (p *Proxy) Handler() http.Handler {
 		var body struct {
 			Delay string `json:"delay"`
 		}
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(io.LimitReader(r.Body, 1024), &body); err != nil {
 			http.Error(w, "body: "+err.Error(), http.StatusBadRequest)
 			return
 		}

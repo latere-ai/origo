@@ -11,7 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -136,7 +136,7 @@ type header struct {
 
 // mustJSON encodes a value of a type that always marshals.
 func mustJSON[T any](v T) []byte {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		panic(err)
 	}
@@ -178,7 +178,7 @@ func (s *Signer) Mint(minter Principal, repo string, scope Scope, ttl time.Durat
 		"iss": s.issuer, "aud": []string{s.audience}, "sub": minter.Subject,
 		"repo": repo, "scope": string(scope), "iat": now.Unix(), "exp": exp.Unix(), "jti": newUUID(),
 	}
-	body, err := json.Marshal(claims)
+	body, err := json.Marshal(claims, json.Deterministic(true))
 	if err != nil {
 		return "", time.Time{}, err
 	}

@@ -5,7 +5,7 @@ package events
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"testing"
@@ -121,7 +121,7 @@ func BenchmarkJSONCursorRoundTrip(b *testing.B) {
 			}
 			// A push raises the sequence only, so the stored cursor is
 			// the same size on every iteration.
-			seed, err := json.Marshal(c)
+			seed, err := json.Marshal(c, json.Deterministic(true))
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -5,7 +5,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -327,11 +327,11 @@ func TestTheEnvelopeCarriesTheTwoClaims(t *testing.T) {
 			}
 			// Verbatim: the entry the endpoint reads is the entry the
 			// token carried, field for field.
-			got, err := json.Marshal(details)
+			got, err := json.Marshal(details, json.Deterministic(true))
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, err := json.Marshal([]any{grant("origo:repo.write", repoA)})
+			want, err := json.Marshal([]any{grant("origo:repo.write", repoA)}, json.Deterministic(true))
 			if err != nil {
 				t.Fatal(err)
 			}

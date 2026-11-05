@@ -85,7 +85,7 @@ type Commit struct {
 	Committer Identity  `json:"committer"`
 	Message   string    `json:"message"`
 	Trailers  []Trailer `json:"trailers"`
-	Stats     *Stats    `json:"stats,omitempty"`
+	Stats     *Stats    `json:"stats,omitzero"`
 }
 
 // TreeEntry is one entry of a tree listing. Size is null for a tree.

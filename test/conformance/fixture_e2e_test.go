@@ -7,7 +7,8 @@ package conformance_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"net/http"
 	"os"
@@ -56,7 +57,7 @@ func TestReleaseFixturePush(t *testing.T) {
 	}
 	target := stackTarget(t)
 	f := conformance.PushReleaseFixture(t, target)
-	data, err := json.MarshalIndent(f, "", "  ")
+	data, err := json.Marshal(f, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -282,7 +282,7 @@ func TestInternalListenerServesProbes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var envelope httpjson.ErrorEnvelope
-	_ = json.NewDecoder(resp.Body).Decode(&envelope)
+	_ = json.UnmarshalRead(resp.Body, &envelope)
 	resp.Body.Close()
 	if resp.StatusCode != 400 || envelope.Error.Code != contract.CodeInvalid || envelope.Error.Details["reason"] != "no such route" {
 		t.Fatalf("unknown route: %d %+v", resp.StatusCode, envelope.Error)
@@ -694,7 +694,7 @@ func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 				t.Fatal(err)
 			}
 			var env httpjson.ErrorEnvelope
-			_ = json.NewDecoder(resp.Body).Decode(&env)
+			_ = json.UnmarshalRead(resp.Body, &env)
 			resp.Body.Close()
 			if resp.StatusCode != 401 || env.Error.Code != contract.CodeUnauthenticated || env.Error.Details["reason"] != tok.reason || resp.Header.Get("WWW-Authenticate") != `Basic realm="origo"` || resp.Header.Get(contract.Header) != contract.Version {
 				t.Errorf("%s %s with %s: %d %+v %v", r.method, r.path, tok.reason, resp.StatusCode, env.Error, resp.Header)
@@ -755,7 +755,7 @@ func everyRouteRequiresAToken(t *testing.T, anonymous bool) {
 		t.Fatal(err)
 	}
 	var env2 httpjson.ErrorEnvelope
-	_ = json.NewDecoder(resp.Body).Decode(&env2)
+	_ = json.UnmarshalRead(resp.Body, &env2)
 	resp.Body.Close()
 	if resp.StatusCode != 403 || env2.Error.Details["reason"] != auth.ReasonScope {
 		t.Fatalf("bound token on admin: %d %+v", resp.StatusCode, env2.Error)

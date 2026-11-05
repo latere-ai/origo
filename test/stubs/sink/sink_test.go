@@ -5,7 +5,7 @@ package sink_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"strings"
@@ -132,7 +132,7 @@ func TestSignatureAndFailures(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil || status != 200 || len(listed) != 10 || listed[0].Status != 500 {
 		t.Fatalf("GET /deliveries: %d %d %v", status, len(listed), err)
 	}
-	if status, raw := control(t, s, "GET", "/deliveries?kind=other", ""); status != 200 || strings.TrimSpace(string(raw)) != "null" {
+	if status, raw := control(t, s, "GET", "/deliveries?kind=other", ""); status != 200 || strings.TrimSpace(string(raw)) != "[]" {
 		t.Fatalf("GET /deliveries of nothing: %d %s", status, raw)
 	}
 	if status, _ := control(t, s, "DELETE", "/deliveries", ""); status != 204 || len(s.Deliveries("", "")) != 0 {

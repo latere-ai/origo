@@ -23,7 +23,7 @@
 package authorizer
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -245,7 +245,7 @@ func (s *Server) putDirectory(w http.ResponseWriter, r *http.Request) {
 		Supported bool             `json:"supported"`
 		Repos     []DirectoryEntry `json:"repos"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

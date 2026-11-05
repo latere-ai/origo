@@ -6,7 +6,8 @@
 package e2e
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -129,13 +130,13 @@ func TestClusterPodSecurityContext(t *testing.T) {
 						MatchLabels      map[string]string `json:"matchLabels"`
 						MatchExpressions []any             `json:"matchExpressions"`
 					} `json:"podSelector"`
-					NamespaceSelector *json.RawMessage `json:"namespaceSelector"`
-					IPBlock           *json.RawMessage `json:"ipBlock"`
+					NamespaceSelector *jsontext.Value `json:"namespaceSelector"`
+					IPBlock           *jsontext.Value `json:"ipBlock"`
 				} `json:"from"`
 				Ports []struct {
-					Port     json.RawMessage `json:"port"`
-					Protocol string          `json:"protocol"`
-					EndPort  *int            `json:"endPort"`
+					Port     jsontext.Value `json:"port"`
+					Protocol string         `json:"protocol"`
+					EndPort  *int           `json:"endPort"`
 				} `json:"ports"`
 			} `json:"ingress"`
 			Egress []any `json:"egress"`

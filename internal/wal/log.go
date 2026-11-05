@@ -7,7 +7,7 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -248,7 +248,7 @@ func (l *Log) Hint(ctx context.Context, repo string) (uint64, error) {
 	var hint struct {
 		Seq uint64 `json:"seq"`
 	}
-	if err := json.NewDecoder(io.LimitReader(rc, 1024)).Decode(&hint); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(rc, 1024), &hint); err != nil {
 		return 0, fmt.Errorf("wal: hint: %w", err)
 	}
 	return hint.Seq, nil

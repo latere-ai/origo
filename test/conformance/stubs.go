@@ -6,7 +6,7 @@ package conformance
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"sync"

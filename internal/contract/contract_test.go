@@ -4,7 +4,7 @@
 package contract
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,7 +47,7 @@ func TestWriteRendersTheEnvelopeFromTheTable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	Write(rec, http.StatusForbidden, CodeForbidden, map[string]any{"reason": "no"})
 	var env httpjson.ErrorEnvelope
-	if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+	if err := json.UnmarshalRead(rec.Body, &env); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Code != 403 || env.Error.Code != CodeForbidden || env.Error.Message != Sentence(CodeForbidden) || env.Error.Details["reason"] != "no" {

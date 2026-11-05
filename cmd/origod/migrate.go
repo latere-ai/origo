@@ -6,7 +6,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -131,6 +132,16 @@ type reportLine struct {
 	Error   string  `json:"error"`
 }
 
+// manifestJSON reads the manifest, a file the operator writes: any letter
+// case in a name, duplicate names and invalid UTF-8 are accepted, and a
+// name no line type knows is refused.
+var manifestJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+	json.RejectUnknownMembers(true),
+)
+
 // readManifest parses and validates the whole manifest before anything
 // is called: a line Origo would refuse is refused here, so a batch that
 // starts is a batch whose every line is addressable.
@@ -147,9 +158,7 @@ func readManifest(path string, getenv config.Getenv) ([]manifestLine, error) {
 			continue
 		}
 		var l manifestLine
-		dec := json.NewDecoder(strings.NewReader(raw))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&l); err != nil {
+		if err := json.Unmarshal([]byte(raw), &l, manifestJSON); err != nil {
 			return nil, fmt.Errorf("line %d: %w", n+1, err)
 		}
 		if err := l.validate(getenv); err != nil {
@@ -198,7 +207,7 @@ type reporter struct {
 }
 
 func (r *reporter) write(line reportLine) error {
-	raw, err := json.Marshal(line)
+	raw, err := json.Marshal(line, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}

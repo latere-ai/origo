@@ -26,7 +26,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -654,7 +654,7 @@ func obj(v any) map[string]any {
 // mustJSON encodes v for a request body.
 func mustJSON(t testing.TB, v any) string {
 	t.Helper()
-	raw, err := json.Marshal(v)
+	raw, err := json.Marshal(v, json.Deterministic(true))
 	failIf(t, err != nil, "%v", err)
 	return string(raw)
 }

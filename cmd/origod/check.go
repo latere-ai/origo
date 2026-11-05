@@ -5,7 +5,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -269,7 +269,7 @@ func checkEvents(ctx context.Context, cfg *config.Config, client *http.Client) r
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	id := uuid.NewString()
-	body, err := json.Marshal(map[string]any{"id": id, "kind": "ping", "at": time.Now().UTC()})
+	body, err := json.Marshal(map[string]any{"id": id, "kind": "ping", "at": time.Now().UTC()}, json.Deterministic(true))
 	if err != nil {
 		return fail("events", err)
 	}

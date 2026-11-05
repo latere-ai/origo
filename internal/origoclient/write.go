@@ -6,7 +6,8 @@ package origoclient
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"time"
 )
 
@@ -40,7 +41,7 @@ type Common struct {
 	ExpectedHead *string `json:"expected_head"`
 	Author       *Author `json:"author"`
 	Message      string  `json:"message,omitempty"`
-	DryRun       bool    `json:"dry_run,omitempty"`
+	DryRun       bool    `json:"dry_run,omitzero"`
 }
 
 // Change is one file of a commit. Exactly one of Content, ContentRef and
@@ -74,7 +75,7 @@ func (c Change) MarshalJSON() ([]byte, error) {
 	if c.Mode != "" {
 		out["mode"] = c.Mode
 	}
-	return json.Marshal(out)
+	return json.Marshal(out, jsontext.AllowInvalidUTF8(true))
 }
 
 // CommitRequest is POST /v1/repos/{id}/commits.
@@ -93,7 +94,7 @@ type CommitRequest struct {
 // `from` is three-state on the wire and a plain string cannot say so. The
 // node reads presence, not value: `create_branch` and `from` must be given
 // together or neither, and it counts a literal `null` as given
-// (operations.go, `hasFrom := len(req.From) > 0` over a json.RawMessage).
+// (operations.go, `hasFrom := len(req.From) > 0` over a jsontext.Value).
 // So creating the first branch of an empty repository is create_branch true
 // with `"from": null`, which an omitempty string would have dropped, and a
 // commit onto an existing branch omits the key entirely, which a plain null
@@ -121,7 +122,7 @@ func (r CommitRequest) MarshalJSON() ([]byte, error) {
 			out["from"] = r.From
 		}
 	}
-	return json.Marshal(out)
+	return json.Marshal(out, jsontext.AllowInvalidUTF8(true))
 }
 
 // MergeRequest is POST /v1/repos/{id}/merge.
@@ -135,7 +136,7 @@ type MergeRequest struct {
 type PickRequest struct {
 	Common
 	Commits  []string `json:"commits"`
-	Mainline int      `json:"mainline,omitempty"`
+	Mainline int      `json:"mainline,omitzero"`
 }
 
 // Receipt is the answer of all four operations.
@@ -150,7 +151,7 @@ type Receipt struct {
 	Branch    string  `json:"branch"`
 	EntrySeq  *uint64 `json:"entry_seq"`
 	Tree      string  `json:"tree"`
-	Committed *bool   `json:"committed,omitempty"`
+	Committed *bool   `json:"committed,omitzero"`
 	// Status is the HTTP status the node answered: 201 for a write that
 	// landed, 200 for a dry run.
 	Status int `json:"-"`

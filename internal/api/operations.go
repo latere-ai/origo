@@ -5,7 +5,8 @@ package api
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/url"
@@ -124,9 +125,9 @@ type commitsRequest struct {
 	// CreateBranch and From are the commits operation's own: the branch
 	// is created at From, whose tree the first commit starts from and
 	// whose commit is its parent. From is absent, null, or a name.
-	CreateBranch bool            `json:"create_branch"`
-	From         json.RawMessage `json:"from"`
-	Changes      []change        `json:"changes"`
+	CreateBranch bool           `json:"create_branch"`
+	From         jsontext.Value `json:"from"`
+	Changes      []change       `json:"changes"`
 }
 
 type mergeRequest struct {
@@ -148,7 +149,7 @@ type operationResult struct {
 	Branch    string  `json:"branch"`
 	EntrySeq  *uint64 `json:"entry_seq"`
 	Tree      string  `json:"tree"`
-	Committed *bool   `json:"committed,omitempty"`
+	Committed *bool   `json:"committed,omitzero"`
 }
 
 // invalidChange answers a change the request got wrong: the index of
@@ -187,9 +188,7 @@ func (h *Handler) decodeOperation(w http.ResponseWriter, r *http.Request, v any)
 		invalid(w, "body: larger than the 64 MiB request limit", "")
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxOperationBytes))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, MaxOperationBytes), v, json.RejectUnknownMembers(true)); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			invalid(w, "body: larger than the 64 MiB request limit", "")
 			return false

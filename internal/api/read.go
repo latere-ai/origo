@@ -413,7 +413,7 @@ type commitJSON struct {
 	Committer identity  `json:"committer"`
 	Message   string    `json:"message"`
 	Trailers  []trailer `json:"trailers"`
-	Stats     *stats    `json:"stats,omitempty"`
+	Stats     *stats    `json:"stats,omitzero"`
 }
 
 type identity struct {
@@ -578,7 +578,7 @@ func (h *Handler) commits(w http.ResponseWriter, r *http.Request) {
 		if re, ok := errors.AsType[*readError](err); ok && re.Code == contract.CodeRefNotFound && !hasHistory(rr.repo) {
 			// No commit yet: the reference cannot exist, and the log
 			// is empty rather than missing.
-			httpjson.Write(w, http.StatusOK, map[string]any{"commits": []commitJSON{}, "next_cursor": nil})
+			httpjson.Write(w, http.StatusOK, commitsPage{Commits: []commitJSON{}})
 			return
 		}
 		rr.fail(ctx, err)
@@ -634,7 +634,7 @@ func (h *Handler) commits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set(HeaderCommit, oid)
-	httpjson.Write(w, http.StatusOK, map[string]any{"commits": page, "next_cursor": next})
+	httpjson.Write(w, http.StatusOK, commitsPage{Commits: page, NextCursor: next})
 }
 
 // hasHistory reports whether the repository has any reference besides
@@ -886,7 +886,7 @@ func (h *Handler) tree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set(HeaderCommit, oid)
-	httpjson.Write(w, http.StatusOK, map[string]any{"entries": entries, "next_cursor": next})
+	httpjson.Write(w, http.StatusOK, entriesPage{Entries: entries, NextCursor: next})
 }
 
 // parseTreeEntry reads one ls-tree -l record: mode, type, id, and the
@@ -1087,4 +1087,18 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	if err := s.finish(false); err != nil {
 		rr.fail(ctx, err)
 	}
+}
+
+// commitsPage is the body of a page of the commit log. NextCursor is null
+// on the last page.
+type commitsPage struct {
+	Commits    []commitJSON `json:"commits"`
+	NextCursor *string      `json:"next_cursor"`
+}
+
+// entriesPage is the body of a page of a tree listing. NextCursor is null
+// on the last page.
+type entriesPage struct {
+	Entries    []treeEntry `json:"entries"`
+	NextCursor *string     `json:"next_cursor"`
 }

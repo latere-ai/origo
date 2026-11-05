@@ -8,7 +8,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -114,7 +115,7 @@ func PackReleaseFixture(ctx context.Context, store wal.Store, logPrefix string, 
 			err = cerr
 		}
 	}()
-	manifest, err := json.MarshalIndent(f, "", "  ")
+	manifest, err := json.Marshal(f, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return err
 	}

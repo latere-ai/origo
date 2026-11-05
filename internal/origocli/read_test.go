@@ -4,7 +4,8 @@
 package origocli_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"strconv"
@@ -589,7 +590,7 @@ func TestJSONIsTheContractsOwnShape(t *testing.T) {
 		t.Fatalf("a paged --json wrote %d lines, want one merged object", n)
 	}
 	var merged struct {
-		Commits []json.RawMessage `json:"commits"`
+		Commits []jsontext.Value `json:"commits"`
 	}
 	if err := json.Unmarshal([]byte(got.stdout), &merged); err != nil || len(merged.Commits) != 5 {
 		t.Fatalf("the pages did not merge: %v\n%s", err, got.stdout)
@@ -597,7 +598,7 @@ func TestJSONIsTheContractsOwnShape(t *testing.T) {
 
 	got = run(t, env, "ls", "-r", "-n", "0", "--json")
 	var tree struct {
-		Entries []json.RawMessage `json:"entries"`
+		Entries []jsontext.Value `json:"entries"`
 	}
 	if err := json.Unmarshal([]byte(got.stdout), &tree); err != nil || len(tree.Entries) != 5 {
 		t.Fatalf("ls --json: %v\n%s", err, got.stdout)
@@ -605,7 +606,7 @@ func TestJSONIsTheContractsOwnShape(t *testing.T) {
 
 	// refs is a bare array on the wire, so it is a bare array here.
 	got = run(t, env, "refs", "--json")
-	var refs []json.RawMessage
+	var refs []jsontext.Value
 	if err := json.Unmarshal([]byte(got.stdout), &refs); err != nil || len(refs) != 1 {
 		t.Fatalf("refs --json: %v\n%s", err, got.stdout)
 	}
@@ -624,7 +625,7 @@ func TestJSONIsTheContractsOwnShape(t *testing.T) {
 
 	got = run(t, env, "repos", "--json")
 	var dir struct {
-		Repos []json.RawMessage `json:"repos"`
+		Repos []jsontext.Value `json:"repos"`
 	}
 	if err := json.Unmarshal([]byte(got.stdout), &dir); err != nil || len(dir.Repos) != 2 {
 		t.Fatalf("repos --json: %v\n%s", err, got.stdout)

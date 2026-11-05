@@ -6,7 +6,7 @@ package origocli_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +81,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, r.Method+" "+r.URL.RequestURI())
 	if r.Method == http.MethodPost {
 		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.UnmarshalRead(r.Body, &body)
 		f.bodies = append(f.bodies, body)
 	}
 	f.mu.Unlock()
@@ -384,7 +384,7 @@ func (f *fake) refuse(w http.ResponseWriter, status int, code string, details ma
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 // result is one run of the command: what a pipeline would read, what a person

@@ -5,7 +5,7 @@ package wal
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -45,15 +45,15 @@ type Meta struct {
 	ImportNode     string     `json:"import_node,omitempty"`
 	ImportError    string     `json:"import_error,omitempty"`
 	ImportedAt     *time.Time `json:"imported_at,omitempty"`
-	ImportRefs     int        `json:"import_refs,omitempty"`
-	ImportBytes    int64      `json:"import_bytes,omitempty"`
+	ImportRefs     int        `json:"import_refs,omitzero"`
+	ImportBytes    int64      `json:"import_bytes,omitzero"`
 
 	// The verification of spec 014: when verify last compared this
 	// repository with a source, and whether the two sides were
 	// identical. Both are absent until one ran, which is the state
 	// origod migrate resumes from.
 	VerifiedAt    *time.Time `json:"verified_at,omitempty"`
-	VerifiedEqual *bool      `json:"verified_equal,omitempty"`
+	VerifiedEqual *bool      `json:"verified_equal,omitzero"`
 }
 
 // ErrNameTaken reports an owner/slug pair another repository holds.
@@ -84,7 +84,7 @@ func (l *Log) CreateRepo(ctx context.Context, m Meta, defaultBranch string) (*In
 	}
 	now := l.now().UTC()
 	m.CreatedAt, m.UpdatedAt = now, now
-	data, err := json.Marshal(m)
+	data, err := json.Marshal(m, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (l *Log) ReadMeta(ctx context.Context, id string) (*Meta, error) {
 	}
 	defer func() { _ = rc.Close() }()
 	var m Meta
-	if err := json.NewDecoder(io.LimitReader(rc, 64<<10)).Decode(&m); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(rc, 64<<10), &m); err != nil {
 		return nil, fmt.Errorf("wal: meta: %w", err)
 	}
 	return &m, nil
@@ -137,7 +137,7 @@ func (l *Log) WriteMeta(ctx context.Context, m *Meta) error {
 		return errors.New("wal: invalid repository id")
 	}
 	m.UpdatedAt = l.now().UTC()
-	data, err := json.Marshal(m)
+	data, err := json.Marshal(m, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func (l *Log) Rename(ctx context.Context, id, owner, slug string) (*Meta, error)
 	}
 	old := *m
 	m.Owner, m.Slug, m.UpdatedAt = owner, slug, l.now().UTC()
-	data, err := json.Marshal(m)
+	data, err := json.Marshal(m, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}

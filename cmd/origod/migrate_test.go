@@ -6,7 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"net/http"
@@ -423,3 +423,32 @@ type failingWriter struct{}
 func (failingWriter) Write([]byte) (int, error) { return 0, os.ErrClosed }
 
 var _ config.Getenv = getenv(nil)
+
+// The manifest is a file the operator writes: names in any letter case
+// and a repeated name are read, the last one winning, and a name no line
+// knows is still refused.
+func TestManifestIsReadLeniently(t *testing.T) {
+	env := getenv(map[string]string{})
+	line := `{"ID":"0f5c1d2e-3a4b-4c5d-8e6f-7a8b9c0d1e2f","Owner":"x","owner":"acme","slug":"api","source":"https://old.example.com/acme/api.git"}`
+	lines, err := readManifest(writeRaw(t, line+"\n"), env)
+	if err != nil || len(lines) != 1 || lines[0].Owner != "acme" || lines[0].Slug != "api" {
+		t.Fatalf("%+v %v", lines, err)
+	}
+	if _, err := readManifest(writeRaw(t, strings.Replace(line, `"slug"`, `"extra":1,"slug"`, 1)+"\n"), env); err == nil {
+		t.Fatal("a name no line type knows is read")
+	}
+}
+
+// A report line is written as one JSON line whatever bytes an error text
+// carries.
+func TestReportLineKeepsInvalidUTF8(t *testing.T) {
+	var out bytes.Buffer
+	r := &reporter{w: &out}
+	if err := r.write(reportLine{ID: "i", Error: "bad \xff byte"}); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"id":"i","prior_id":"","owner":"","slug":"","state":"","refs":0,"objects":0,"seconds":0,"error":"bad ` + "�" + ` byte"}` + "\n"
+	if out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+}

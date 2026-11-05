@@ -4,7 +4,8 @@
 package auth
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"slices"
 
 	"latere.ai/x/pkg/authkit/jwt"
@@ -49,6 +50,15 @@ func (r *Refusal) Error() string { return "auth: token refused: " + r.Reason }
 
 func refuse(reason string) error { return &Refusal{Reason: reason} }
 
+// foreignJSON reads JSON this package does not produce: token claims, an
+// issuer's discovery document and key set, and the authorizer's answers.
+// It accepts duplicate names, invalid UTF-8 and any letter case in a name.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
 // Audience decodes the aud claim in both forms a JWT allows: one string
 // or a list of strings.
 type Audience []string
@@ -56,12 +66,12 @@ type Audience []string
 // UnmarshalJSON accepts both forms.
 func (a *Audience) UnmarshalJSON(b []byte) error {
 	var one string
-	if err := json.Unmarshal(b, &one); err == nil {
+	if err := json.Unmarshal(b, &one, foreignJSON); err == nil {
 		*a = Audience{one}
 		return nil
 	}
 	var many []string
-	if err := json.Unmarshal(b, &many); err != nil {
+	if err := json.Unmarshal(b, &many, foreignJSON); err != nil {
 		return err
 	}
 	*a = many

@@ -6,7 +6,8 @@ package sshd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,23 @@ const (
 	// maxAnswerBytes bounds the body read from the endpoint.
 	maxAnswerBytes = 64 << 10
 	keysAttempts   = 2
+)
+
+// outboundJSON encodes the request to the operator's endpoint: sorted
+// keys, and null for a nil slice or map.
+var outboundJSON = json.JoinOptions(
+	json.Deterministic(true),
+	json.FormatNilSliceAsNull(true),
+	json.FormatNilMapAsNull(true),
+)
+
+// foreignJSON reads the operator's answer, which this package does not
+// produce: duplicate names, invalid UTF-8 and any letter case in a name
+// are accepted.
+var foreignJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
 )
 
 // Answer is what the operator's endpoint said about one public key.
@@ -179,7 +197,7 @@ func (r *Resolver) CacheLen() int { return r.cache.Len() }
 // connection failed before a response line arrived. The rule is spec
 // 007's for the authorizer, shared rather than restated.
 func (r *Resolver) call(ctx context.Context, req Request) (Answer, error) {
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, outboundJSON)
 	if err != nil {
 		return Answer{}, &auth.Unavailable{URL: r.url, Err: err}
 	}
@@ -225,7 +243,7 @@ func (r *Resolver) once(ctx context.Context, body []byte) (Answer, error) {
 		KeyID   string `json:"key_id"`
 		TTL     *int   `json:"ttl"`
 	}
-	if err := json.Unmarshal(raw, &answer); err != nil || answer.Found == nil {
+	if err := json.Unmarshal(raw, &answer, foreignJSON); err != nil || answer.Found == nil {
 		if err == nil {
 			err = errors.New("no found field")
 		}

@@ -5,7 +5,8 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func BenchmarkJSONCommitsRequestDecode(b *testing.B) {
 			req := commitsRequest{
 				Branch: "refs/heads/main", ExpectedHead: &head, Message: "billing: round invoice totals half to even",
 				Author:       &identityRequest{Name: "Ada Lovelace", Email: "ada@acme.example"},
-				CreateBranch: true, From: json.RawMessage(`"main"`),
+				CreateBranch: true, From: jsontext.Value(`"main"`),
 			}
 			for i := 0; i < s.files; i++ {
 				content := benchSource(s.lines)

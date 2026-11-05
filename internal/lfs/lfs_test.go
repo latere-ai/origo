@@ -8,7 +8,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -458,7 +459,7 @@ func TestUploadSkipsAnObjectTheStoreHolds(t *testing.T) {
 		t.Errorf("the held object: %+v", o)
 	}
 	var raw struct {
-		Objects []map[string]json.RawMessage `json:"objects"`
+		Objects []map[string]jsontext.Value `json:"objects"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatal(err)

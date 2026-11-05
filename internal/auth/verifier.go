@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -373,7 +373,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Principal, error) {
 	// chain: the caller is the token's sub and nobody else. It is read
 	// through a type of its own, holding nothing the node decides from.
 	var second struct {
-		Act json.RawMessage `json:"act"`
+		Act jsontext.Value `json:"act"`
 	}
 	if err := jwt.DecodePayload(raw, &second); err != nil {
 		return Principal{}, refuse(ReasonMalformed)

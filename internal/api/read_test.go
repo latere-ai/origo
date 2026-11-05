@@ -8,7 +8,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"io"
@@ -283,11 +284,11 @@ func alive(pid int) bool {
 func golden(t *testing.T, name string, body []byte) {
 	t.Helper()
 	if strings.HasSuffix(name, ".json") {
-		var buf bytes.Buffer
-		if err := json.Indent(&buf, body, "", "  "); err != nil {
+		indented := jsontext.Value(bytes.Clone(body))
+		if err := indented.Indent(jsontext.WithIndent("  ")); err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, body)
 		}
-		body = append(buf.Bytes(), '\n')
+		body = append(indented, '\n')
 	}
 	path := filepath.Join("testdata", "golden", name)
 	if *update {

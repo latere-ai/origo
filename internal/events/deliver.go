@@ -9,7 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -55,7 +55,7 @@ func (d *Dispatcher) readCursor(ctx context.Context, repo string) (cursor, error
 		return c, err
 	}
 	defer func() { _ = rc.Close() }()
-	if err := json.NewDecoder(io.LimitReader(rc, 1<<20)).Decode(&c); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(rc, 1<<20), &c); err != nil {
 		return cursor{}, fmt.Errorf("cursor %s: %w", repo, err)
 	}
 	return c, nil
@@ -78,7 +78,7 @@ func (d *Dispatcher) advanceCursor(ctx context.Context, env envelope) error {
 	}
 	cut := d.now().Add(-Window)
 	c.Delivered = slices.DeleteFunc(c.Delivered, func(x delivered) bool { return x.At.Before(cut) })
-	data, err := json.Marshal(c)
+	data, err := json.Marshal(c, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -200,7 +200,7 @@ func (d *Dispatcher) attempt(ctx context.Context, key string) {
 	}
 	obj.Attempts++
 	obj.NextAt = now.Add(Delay(obj.Attempts)).UTC()
-	if data, merr := json.Marshal(obj); merr != nil {
+	if data, merr := json.Marshal(obj, json.Deterministic(true)); merr != nil {
 		d.logger.WarnContext(ctx, "event object not encoded", "key", key, "error", merr)
 	} else if _, err := d.store.Put(ctx, key, wal.BytesBody(data)); err != nil {
 		d.logger.WarnContext(ctx, "event object not rewritten", "key", key, "error", err)

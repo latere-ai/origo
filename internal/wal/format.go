@@ -5,8 +5,8 @@ package wal
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -103,7 +103,7 @@ type IndexEntry struct {
 	// compaction (spec 006) reads the sum for its byte threshold
 	// without opening an entry. Absent on a row with no pack and on an
 	// index object written before the field existed.
-	PackBytes  int64  `json:"pack_bytes,omitempty"`
+	PackBytes  int64  `json:"pack_bytes,omitzero"`
 	PackSHA256 string `json:"pack_sha256"`
 }
 
@@ -281,9 +281,7 @@ func ParseHeader(line []byte) (Header, error) {
 		Header
 		Actor string `json:"actor"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&wire); err != nil {
+	if err := json.Unmarshal(line, &wire, json.RejectUnknownMembers(true)); err != nil {
 		return h, fmt.Errorf("wal: header: %w", err)
 	}
 	h = wire.Header
@@ -318,9 +316,7 @@ func ParseTransaction(line []byte) ([]RefUpdate, error) {
 		return nil, errors.New("wal: transaction exceeds 64 MiB")
 	}
 	var refs []RefUpdate
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&refs); err != nil {
+	if err := json.Unmarshal(line, &refs, json.RejectUnknownMembers(true)); err != nil {
 		return nil, fmt.Errorf("wal: transaction: %w", err)
 	}
 	return refs, ValidateTransaction(refs)
@@ -354,9 +350,7 @@ func ParseIndex(data []byte) (*Index, error) {
 		return nil, errors.New("wal: index exceeds 64 MiB")
 	}
 	var ix Index
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&ix); err != nil {
+	if err := json.Unmarshal(data, &ix, json.RejectUnknownMembers(true)); err != nil {
 		return nil, fmt.Errorf("wal: index: %w", err)
 	}
 	if err := checkVersion("index", ix.V); err != nil {
@@ -426,7 +420,7 @@ func EncodeIndex(ix *Index) ([]byte, error) {
 	if ix.Packs == nil {
 		ix.Packs = []string{}
 	}
-	return json.Marshal(ix)
+	return json.Marshal(ix, json.Deterministic(true))
 }
 
 // EncodeEntryHead renders the two lines that precede the pack.
@@ -434,11 +428,13 @@ func EncodeEntryHead(h Header, refs []RefUpdate) ([]byte, error) {
 	if refs == nil {
 		refs = []RefUpdate{}
 	}
-	hb, err := json.Marshal(h)
+	// A push option is bytes the git client chose, and v1 wrote U+FFFD for
+	// any that were not UTF-8.
+	hb, err := json.Marshal(h, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return nil, err
 	}
-	rb, err := json.Marshal(refs)
+	rb, err := json.Marshal(refs, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,8 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -199,7 +200,7 @@ func (s *Sweeper) readReport(ctx context.Context) {
 	}
 	defer func() { _ = rc.Close() }()
 	var rep SweepReport
-	if err := json.NewDecoder(io.LimitReader(rc, 64<<10)).Decode(&rep); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(rc, 64<<10), &rep); err != nil {
 		s.logger.WarnContext(ctx, "sweep report unreadable", "error", err)
 		return
 	}
@@ -257,7 +258,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (SweepReport, error) {
 }
 
 func (s *Sweeper) writeReport(ctx context.Context, rep SweepReport) error {
-	data, err := json.Marshal(rep)
+	data, err := json.Marshal(rep, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -58,7 +58,7 @@ type payload struct {
 // Seal encodes a payload as a datagram: the HMAC-SHA256 of the payload
 // bytes under secret, then the bytes.
 func Seal(secret []byte, p payload) ([]byte, error) {
-	body, err := json.Marshal(p)
+	body, err := json.Marshal(p, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}

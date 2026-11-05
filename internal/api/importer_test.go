@@ -6,7 +6,7 @@ package api
 import (
 	"context"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/url"
 	"os"

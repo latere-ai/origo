@@ -5,7 +5,8 @@ package origocli
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"sort"
 	"strconv"
@@ -35,7 +36,7 @@ const (
 // `origo log -n 1 --json | jq -r '.commits[0].sha'` reads the same field
 // whether the command made one call or ten.
 func (s *session) emit(v any) error {
-	raw, err := json.Marshal(v)
+	raw, err := json.Marshal(v, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}
@@ -639,7 +640,7 @@ func render(v any) string {
 		// off the wire, so it can be anything, and a value that will not
 		// marshal is named rather than dropped: a caller reading an empty
 		// field would think the installation sent none.
-		raw, err := json.Marshal(t)
+		raw, err := json.Marshal(t, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 		if err != nil {
 			return "<unrenderable>"
 		}

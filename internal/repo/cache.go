@@ -11,7 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -1115,7 +1115,7 @@ func (c *Cache) Advance(r *Repo, ix *wal.Index) error {
 }
 
 func (c *Cache) writeState(r *Repo, seq uint64) error {
-	data, err := json.Marshal(state{Seq: seq})
+	data, err := json.Marshal(state{Seq: seq}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

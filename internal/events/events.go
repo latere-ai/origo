@@ -13,7 +13,8 @@ package events
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -202,9 +203,9 @@ func build(repo string, m *wal.Meta, e Entry) (Push, bool) {
 // object is one event object: the payload as delivered, the attempts so
 // far, and when the next one is due.
 type object struct {
-	Event    json.RawMessage `json:"event"`
-	Attempts int             `json:"attempts"`
-	NextAt   time.Time       `json:"next_at"`
+	Event    jsontext.Value `json:"event"`
+	Attempts int            `json:"attempts"`
+	NextAt   time.Time      `json:"next_at"`
 }
 
 // envelope is what the dispatcher reads back from a payload of any kind.
@@ -446,11 +447,11 @@ func (d *Dispatcher) emitFailed(ctx context.Context, repo, kind string, err erro
 // create-if-absent when ifAbsent is set, which is how two sweeps
 // repairing one entry produce one object.
 func (d *Dispatcher) write(ctx context.Context, key string, payload any, now time.Time, ifAbsent bool) error {
-	event, err := json.Marshal(payload)
+	event, err := json.Marshal(payload, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(object{Event: event, NextAt: now.UTC()})
+	data, err := json.Marshal(object{Event: event, NextAt: now.UTC()}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

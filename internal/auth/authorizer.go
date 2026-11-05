@@ -5,7 +5,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -271,7 +271,7 @@ func (c *Client) directory(raw []byte) (Directory, error) {
 		Reason     string            `json:"reason"`
 		Directory  *bool             `json:"directory"`
 	}
-	if err := json.Unmarshal(raw, &answer); err != nil {
+	if err := json.Unmarshal(raw, &answer, foreignJSON); err != nil {
 		return Directory{}, &Unavailable{URL: c.inner.URL(), Status: http.StatusOK, Err: fmt.Errorf("body: %w", err)}
 	}
 	switch {

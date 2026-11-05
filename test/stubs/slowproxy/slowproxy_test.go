@@ -5,7 +5,7 @@ package slowproxy
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net"
 	"net/http"
@@ -93,7 +93,7 @@ func TestProxyHoldsTheFirstBytesForTheDelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	var st state
-	_ = json.NewDecoder(resp.Body).Decode(&st)
+	_ = json.UnmarshalRead(resp.Body, &st)
 	resp.Body.Close()
 	if st.Target != p.Target() || st.Delay != "0s" {
 		t.Fatalf("state %+v", st)

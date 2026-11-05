@@ -5,7 +5,7 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"strings"
 	"sync"

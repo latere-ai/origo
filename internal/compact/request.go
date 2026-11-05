@@ -5,7 +5,7 @@ package compact
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"strings"
@@ -45,7 +45,7 @@ func (m *Manager) request(ctx context.Context, id, reason string) error {
 	if !wal.ValidID(id) {
 		return errors.New("compact: invalid repository id")
 	}
-	body, err := json.Marshal(Request{RequestedAt: m.now().UTC(), Node: m.node, Reason: reason})
+	body, err := json.Marshal(Request{RequestedAt: m.now().UTC(), Node: m.node, Reason: reason}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,8 @@ package cluster
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os/exec"
 	"strings"
 	"testing"
@@ -88,6 +89,15 @@ func ApplyManifestExpectRefusal(t testing.TB, path string) string {
 	return stderr
 }
 
+// kubectlJSON reads kubectl's output, which this package does not
+// produce: duplicate names, invalid UTF-8 and any letter case in a name
+// are accepted.
+var kubectlJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
 // HPAStatus returns the current and desired replica counts of the
 // HorizontalPodAutoscaler.
 func HPAStatus(t testing.TB, name string) (current, desired int) {
@@ -98,7 +108,7 @@ func HPAStatus(t testing.TB, name string) (current, desired int) {
 			Desired int `json:"desiredReplicas"`
 		} `json:"status"`
 	}
-	if err := json.Unmarshal([]byte(must(t, "get", "hpa", name, "-o", "json")), &hpa); err != nil {
+	if err := json.Unmarshal([]byte(must(t, "get", "hpa", name, "-o", "json")), &hpa, kubectlJSON); err != nil {
 		t.Fatalf("kubectl get hpa %s: %v", name, err)
 	}
 	return hpa.Status.Current, hpa.Status.Desired

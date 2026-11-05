@@ -5,7 +5,7 @@ package origoclient_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -58,7 +58,7 @@ func serve(t *testing.T, h http.HandlerFunc) (*origoclient.Client, *recorder) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 // sentenceOf holds every code these tests refuse with, beside its sentence.
@@ -639,7 +639,7 @@ func TestOperationsSendTheFlatBodyAndReadTheThreeStateReceipt(t *testing.T) {
 	var paths []string
 	c, _ := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.UnmarshalRead(r.Body, &body)
 		bodies = append(bodies, body)
 		paths = append(paths, r.URL.Path)
 		if dry, _ := body["dry_run"].(bool); dry {

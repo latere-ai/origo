@@ -5,7 +5,7 @@ package sshkeys
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,7 +26,7 @@ func post(t *testing.T, s *Server, token, body string) (int, map[string]any) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&out)
+	_ = json.UnmarshalRead(resp.Body, &out)
 	return resp.StatusCode, out
 }
 
@@ -106,7 +106,7 @@ func TestControlEndpointsDriveTheTableAndTheOutages(t *testing.T) {
 		t.Fatal(err)
 	}
 	var listed []Request
-	_ = json.NewDecoder(resp.Body).Decode(&listed)
+	_ = json.UnmarshalRead(resp.Body, &listed)
 	_ = resp.Body.Close()
 	if len(listed) != 1 {
 		t.Fatalf("GET /requests listed %d", len(listed))
@@ -170,7 +170,7 @@ func TestHangHoldsUntilResume(t *testing.T) {
 	// the stub binary runs.
 	h := NewHandler(WithToken("t"))
 	var buf bytes.Buffer
-	_ = json.NewEncoder(&buf).Encode(map[string]string{"fingerprint": "y"})
+	_ = json.MarshalWrite(&buf, map[string]string{"fingerprint": "y"})
 	if h.Handler() == nil {
 		t.Error("NewHandler serves nothing")
 	}

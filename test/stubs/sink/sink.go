@@ -12,7 +12,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,14 +41,14 @@ const (
 // Origo-Signature matched, Status is what the sink answered, and Body
 // is the bytes as sent when they are JSON, or a JSON string of them.
 type Delivery struct {
-	ID       string          `json:"id"`
-	Kind     string          `json:"kind"`
-	Repo     string          `json:"repo"`
-	Verified bool            `json:"verified"`
-	Status   int             `json:"status"`
-	At       time.Time       `json:"at"`
-	Headers  http.Header     `json:"headers"`
-	Body     json.RawMessage `json:"body"`
+	ID       string         `json:"id"`
+	Kind     string         `json:"kind"`
+	Repo     string         `json:"repo"`
+	Verified bool           `json:"verified"`
+	Status   int            `json:"status"`
+	At       time.Time      `json:"at"`
+	Headers  http.Header    `json:"headers"`
+	Body     jsontext.Value `json:"body"`
 }
 
 // Option configures a Server.
@@ -66,7 +67,7 @@ type Server struct {
 	// The configured answer: status with body for the next count
 	// deliveries, every one while count is 0, 200 when status is 0.
 	status  int
-	body    json.RawMessage
+	body    jsontext.Value
 	count   int
 	changed chan struct{}
 	srv     *httptest.Server
@@ -143,7 +144,7 @@ func (s *Server) Fail(n, status int) { s.SetStatus(status, nil, n) }
 // SetStatus is what a PUT of /status does: the next count deliveries
 // are answered status with body, every one while count is 0, then 200
 // with no body again; a status of 0 restores 200 at once.
-func (s *Server) SetStatus(status int, body json.RawMessage, count int) {
+func (s *Server) SetStatus(status int, body jsontext.Value, count int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status, s.body, s.count = status, slices.Clone(body), count
@@ -188,9 +189,9 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 		ID: r.Header.Get(HeaderDelivery), Kind: r.Header.Get(HeaderEvent),
 		At: time.Now(), Headers: r.Header.Clone(),
 	}
-	if json.Valid(raw) {
+	if jsontext.Value(raw).IsValid() {
 		d.Body = raw
-	} else if quoted, err := json.Marshal(string(raw)); err == nil {
+	} else if quoted, err := json.Marshal(string(raw), jsontext.AllowInvalidUTF8(true)); err == nil {
 		d.Body = quoted
 	}
 	var fields struct {
@@ -206,7 +207,7 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 	d.Verified = hmac.Equal([]byte(given), []byte(Sign(s.secret, raw)))
 
 	s.mu.Lock()
-	var body json.RawMessage
+	var body jsontext.Value
 	switch {
 	case !d.Verified:
 		d.Status = http.StatusUnauthorized
@@ -240,11 +241,11 @@ func (s *Server) deliver(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) putStatus(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Status int             `json:"status"`
-		Body   json.RawMessage `json:"body"`
-		Count  int             `json:"count"`
+		Status int            `json:"status"`
+		Body   jsontext.Value `json:"body"`
+		Count  int            `json:"count"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -261,7 +262,7 @@ func (s *Server) putStatus(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if err := json.MarshalWrite(w, v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

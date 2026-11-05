@@ -14,7 +14,8 @@
 package lfs
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -146,14 +147,14 @@ type responseObject struct {
 	OID     string            `json:"oid"`
 	Size    int64             `json:"size"`
 	Actions map[string]action `json:"actions,omitempty"`
-	Error   *objectError      `json:"error,omitempty"`
+	Error   *objectError      `json:"error,omitzero"`
 }
 
 // action is one transfer the client performs itself.
 type action struct {
 	Href      string            `json:"href"`
 	Header    map[string]string `json:"header,omitempty"`
-	ExpiresIn int               `json:"expires_in,omitempty"`
+	ExpiresIn int               `json:"expires_in,omitzero"`
 }
 
 // objectError is a per-object failure: the status as the code, and the
@@ -284,6 +285,15 @@ func (h *Handler) exists(w http.ResponseWriter, r *http.Request, id string) (int
 	return ix.SizeBytes, true
 }
 
+// gitLFSClientJSON reads requests from git-lfs clients, which this
+// package does not produce: any letter case in a name, duplicate names
+// and invalid UTF-8 are accepted.
+var gitLFSClientJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
 // decode reads a body of at most MaxBatchBytes into v. A larger body,
 // or one that does not parse, is the invalid_request sentence.
 func decode(r *http.Request, v any) error {
@@ -294,7 +304,7 @@ func decode(r *http.Request, v any) error {
 	if len(raw) > MaxBatchBytes {
 		return errors.New("body over 1 MiB")
 	}
-	return json.Unmarshal(raw, v)
+	return json.Unmarshal(raw, v, gitLFSClientJSON)
 }
 
 // validOID is the object id rule: 64 lower-case hexadecimal characters,
@@ -416,7 +426,7 @@ func (h *Handler) held(r *http.Request, id string, o requestObject) (bool, error
 	}
 	defer func() { _ = rc.Close() }()
 	var m marker
-	if err := json.NewDecoder(io.LimitReader(rc, 64<<10)).Decode(&m); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(rc, 64<<10), &m); err != nil {
 		return false, err
 	}
 	return m.Size == o.Size, nil
@@ -575,7 +585,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, contract.Refuse(http.StatusUnprocessableEntity, contract.CodeLFSObjectMismatch, nil))
 		return
 	}
-	body, err := json.Marshal(marker{Size: o.Size, At: h.now().UTC(), Subject: auth.Subject(r.Context())})
+	body, err := json.Marshal(marker{Size: o.Size, At: h.now().UTC(), Subject: auth.Subject(r.Context())}, json.Deterministic(true))
 	if err != nil {
 		h.storageError(w, r, "marker", err)
 		return

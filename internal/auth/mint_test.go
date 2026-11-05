@@ -10,7 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"encoding/pem"
 	"net/http/httptest"
 	"regexp"
@@ -79,9 +79,9 @@ func TestSignerMintsAndServesItsKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	var extra struct {
-		Iat *float64        `json:"iat"`
-		JTI string          `json:"jti"`
-		Act json.RawMessage `json:"act"`
+		Iat *float64       `json:"iat"`
+		JTI string         `json:"jti"`
+		Act jsontext.Value `json:"act"`
 	}
 	if err := jwt.DecodePayload(tok, &extra); err != nil {
 		t.Fatal(err)
