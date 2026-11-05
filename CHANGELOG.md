@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.16.8 - 2026-11-05
+
 ### Changed
 
 - **A release deploys through the shared image-deploy stage.** The deploy job
