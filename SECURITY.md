@@ -18,7 +18,7 @@ says when you will hear back, how a fix is disclosed, and the safe harbor
 for research that follows it.
 
 Fixes go to the two most recent minor release series.
-v0.17.1 is the current release.
+v0.17.2 is the current release.
 
 These are the reports we most want: anything that lets a caller read or
 push to a repository without the authorizer's allow, or with a token for

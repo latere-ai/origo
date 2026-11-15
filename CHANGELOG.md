@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.17.2 - 2026-11-15
+
 - **v0.17.0 is published with this release.** The release of v0.17.1 also
   stopped before publishing: its conformance run could not load the images
   into the test cluster on GitHub's new Ubuntu 26.04 runner, so the release
