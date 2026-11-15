@@ -96,7 +96,10 @@ jobs:
   conformance:
     name: conformance against the pushed images
     needs: build
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04's Docker keeps images in containerd's store, where a
+    # pulled multi-platform image has one platform's content, and kind's load
+    # imports every platform the index names, so it fails on the missing one.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     # The digests are pulled from the registry, and a package a fork's
     # first release creates is private.
@@ -393,7 +396,10 @@ jobs:
     # above it in the graph is, and deploy is skipped on every repository
     # that sets no ORIGO_RELEASE_DEPLOY.
     if: ${{ always() && needs.publish.result == 'success' }}
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04's Docker keeps images in containerd's store, where a
+    # pulled multi-platform image has one platform's content, and kind's load
+    # imports every platform the index names, so it fails on the missing one.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # Pulling the published images needs a token that can read the
     # registry, since a fork's packages start private.

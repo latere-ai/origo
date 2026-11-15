@@ -10,6 +10,12 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+- **v0.17.0 is published with this release.** The release of v0.17.1 also
+  stopped before publishing: its conformance run could not load the images
+  into the test cluster on GitHub's new Ubuntu 26.04 runner, so the release
+  jobs that use a test cluster now run on Ubuntu 24.04. Nothing else changed;
+  the notes for v0.17.0 below apply.
+
 ## v0.17.1 - 2026-11-15
 
 - **v0.17.0 is published with this release.** Its own release stopped before
