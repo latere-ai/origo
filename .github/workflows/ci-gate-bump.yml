@@ -5,8 +5,8 @@ name: ci-gate bump
 # gate on that commit; when the bar fails, open an issue for the version
 # instead. The pipeline is ci-gate-bump.yml in latere-ai/ci.
 #
-# The minute is this repository's own, so the repositories sharing a runner
-# do not start together.
+# The minute is this repository's own, so the bump runs of the Latere
+# repositories do not start together.
 
 on:
   schedule:

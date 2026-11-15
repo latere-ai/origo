@@ -49,9 +49,8 @@ env:
 
 jobs:
   # Every job runs on GitHub's hosted runners. The repository is public,
-  # so they cost nothing, and a hosted runner is a fresh machine per job:
-  # the self-hosted VM held four slots, so jobs starved each other and
-  # containers on fixed ports collided.
+  # so they cost nothing, and a hosted runner is a fresh machine per job,
+  # so containers on fixed ports never collide with another job's.
   # The two candidate images, built once from the tree and shared with
   # every job that needs them as docker save tarballs. It runs everywhere
   # but the Sunday fuzz schedule, which needs no image. It runs on the
