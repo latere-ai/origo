@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- Built with Go 1.27.4, which fixes GO-2026-6859.
+
 ### Added
 
 - **An authorization endpoint behind an ingress can see each caller's
